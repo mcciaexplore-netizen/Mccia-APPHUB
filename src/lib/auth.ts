@@ -12,7 +12,7 @@ import { clientIp, isLoginBlocked, recordLoginAttempt } from "@/lib/login-guard"
 const domain = () => (process.env.ALLOWED_EMAIL_DOMAIN ?? "").trim().toLowerCase();
 
 /** Zoho accounts server for your data centre: .com (US), .in (India), .eu, .com.au, .jp, .sa, .ca. */
-const zohoBase = () => (process.env.ZOHO_ACCOUNTS_URL ?? "https://accounts.zoho.com").trim().replace(/\/+$/, "");
+const zohoBase = () => (process.env.ZOHO_ACCOUNTS_URL?.trim() || "https://accounts.zoho.com").replace(/\/+$/, "");
 
 /** Sessions expire 8 hours after sign-in. */
 const SESSION_MAX_AGE = 8 * 60 * 60;
