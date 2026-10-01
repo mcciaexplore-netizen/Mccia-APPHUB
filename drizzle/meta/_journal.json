@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790682393142,
+      "tag": "0000_vengeful_thena",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790685220171,
+      "tag": "0001_new_power_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790685962853,
+      "tag": "0002_green_ego",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790845558407,
+      "tag": "0003_access_control",
+      "breakpoints": true
+    }
+  ]
+}
