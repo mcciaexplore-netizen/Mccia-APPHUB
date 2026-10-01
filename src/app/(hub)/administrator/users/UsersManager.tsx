@@ -2,18 +2,24 @@
 
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { KeyRound, Pencil, Plus, RefreshCw, ShieldCheck } from "lucide-react";
-import type { Role } from "@/db/schema";
+import { Check, KeyRound, Pencil, Plus, RefreshCw, ShieldCheck, Upload, X } from "lucide-react";
+import type { Role, UserStatus } from "@/db/schema";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import { formatIST, roleBadge, roleLabel } from "@/lib/format";
 import { generatePassword } from "@/lib/generate-password";
-import { createUser, resetPassword, setUserActive, updateUser } from "@/actions/users";
+import { approveUser, createUser, rejectUser, resetPassword, setUserActive, updateUser } from "@/actions/users";
+import { ImportUsers } from "./ImportUsers";
 
 type U = {
   id: string; name: string; email: string; phone: string | null; designation: string | null; role: Role;
   homeDepartmentId: string | null; isActive: boolean; mustChangePassword: boolean; lastLoginAt: string | null;
+  status: UserStatus; signupSource: string | null; hasPassword: boolean; createdAt: string;
 };
+const TABS: { key: UserStatus; label: string }[] = [
+  { key: "pending", label: "Pending" }, { key: "approved", label: "Accepted" }, { key: "rejected", label: "Rejected" },
+];
+const sourceLabel = (s: string | null) => (s === "google" ? "Google" : s === "zoho" ? "Zoho" : s === "csv" ? "CSV import" : s === "admin" ? "Added by admin" : "—");
 type D = { id: string; name: string; isActive: boolean };
 type Res = { ok: true } | { ok: false; error: string };
 
@@ -74,6 +80,8 @@ export function UsersManager({ meId, domain, users, departments }: { meId: strin
   const [q, setQ] = useState("");
   const [fRole, setFRole] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [tab, setTab] = useState<UserStatus>(() => (users.some((u) => u.status === "pending") ? "pending" : "approved"));
   const [edit, setEdit] = useState<U | null>(null);
   const [reset, setReset] = useState<U | null>(null);
   const [resetPw, setResetPw] = useState("");
@@ -83,8 +91,13 @@ export function UsersManager({ meId, domain, users, departments }: { meId: strin
     const t = q.trim().toLowerCase();
     if (t && !`${u.name} ${u.email} ${u.designation ?? ""}`.toLowerCase().includes(t)) return false;
     if (fRole && u.role !== fRole) return false;
-    return true;
-  }), [users, q, fRole]);
+    return u.status === tab;
+  }), [users, q, fRole, tab]);
+  const counts = useMemo(() => ({
+    pending: users.filter((u) => u.status === "pending").length,
+    approved: users.filter((u) => u.status === "approved").length,
+    rejected: users.filter((u) => u.status === "rejected").length,
+  }), [users]);
 
   function run(fn: () => Promise<Res>, okMsg: string, after?: () => void) {
     start(async () => {
@@ -97,7 +110,10 @@ export function UsersManager({ meId, domain, users, departments }: { meId: strin
     <div className="space-y-6">
       <div className="flex flex-wrap gap-3">
         <button className="btn btn-primary btn-sm" onClick={() => setShowAdd((s) => !s)}><Plus size={14} /> Add user</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => setShowImport((s) => !s)}><Upload size={14} /> Import CSV</button>
       </div>
+
+      {showImport && <ImportUsers />}
 
       {showAdd && (
         <div className="glass p-5 sm:p-6">
@@ -105,6 +121,15 @@ export function UsersManager({ meId, domain, users, departments }: { meId: strin
             onSubmit={(v) => run(() => createUser({ ...v, phone: v.phone || null, designation: v.designation || null }), "User created. Share the temporary password with them.", () => setShowAdd(false))} />
         </div>
       )}
+
+      <div className="flex gap-2 border-b border-line pb-3" role="tablist" aria-label="Account status">
+        {TABS.map((t) => (
+          <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-all duration-200 ${tab === t.key ? "bg-blue-tint text-primary" : "text-muted hover:bg-blue-tint hover:text-primary"}`}>
+            {t.label} <span className={`badge ml-1 ${t.key === "pending" && counts.pending > 0 ? "badge-red" : "badge-neutral"}`}>{counts[t.key]}</span>
+          </button>
+        ))}
+      </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <input className="input !w-full sm:!w-64" placeholder="Search name, email or designation" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -115,24 +140,37 @@ export function UsersManager({ meId, domain, users, departments }: { meId: strin
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>User</th><th>Department</th><th>Role</th><th>Last login</th><th>Active</th><th className="text-right">Actions</th></tr></thead>
+          <thead><tr><th>User</th><th>{tab === "approved" ? "Department" : "Signed up with"}</th><th>Role</th><th>{tab === "approved" ? "Last login" : "Requested"}</th>{tab === "approved" && <th>Active</th>}<th className="text-right">Actions</th></tr></thead>
           <tbody>
             {shown.map((u) => (
               <tr key={u.id} className={u.isActive ? "" : "opacity-60"}>
                 <td><b>{u.name}</b>{u.designation && <span className="text-xs text-muted"> · {u.designation}</span>}
                   <span className="block text-xs text-muted">{u.email}{u.phone ? ` · ${u.phone}` : ""}</span>
-                  {u.mustChangePassword && <span className="badge badge-neutral mt-1">Temporary password</span>}</td>
-                <td>{u.homeDepartmentId ? deptName.get(u.homeDepartmentId) : <span className="text-subtle">—</span>}</td>
+                  {u.mustChangePassword && <span className="badge badge-neutral mt-1">Temporary password</span>}
+                  {u.status !== "approved" && !u.hasPassword && <span className="badge badge-neutral mt-1">No password yet</span>}</td>
+                <td>{tab === "approved"
+                  ? (u.homeDepartmentId ? deptName.get(u.homeDepartmentId) : <span className="text-subtle">—</span>)
+                  : sourceLabel(u.signupSource)}</td>
                 <td><span className={roleBadge[u.role]}>{roleLabel[u.role]}</span></td>
-                <td className="whitespace-nowrap text-xs">{formatIST(u.lastLoginAt)}</td>
+                <td className="whitespace-nowrap text-xs">{formatIST(tab === "approved" ? u.lastLoginAt : u.createdAt)}</td>
+                {tab === "approved" && (
                 <td>
                   <button className={`badge cursor-pointer ${u.isActive ? "badge-green" : "badge-red"}`} disabled={pending || (u.id === meId && u.isActive)}
                     title={u.id === meId ? "You cannot deactivate yourself" : undefined}
                     onClick={() => run(() => setUserActive(u.id, !u.isActive), u.isActive ? "User deactivated" : "User reactivated")}>
                     {u.isActive ? "Active" : "Inactive"}</button>
                 </td>
+                )}
                 <td>
                   <div className="flex justify-end gap-1.5">
+                    {u.status !== "approved" && (
+                      <button className="btn btn-primary btn-sm" disabled={pending}
+                        onClick={() => run(() => approveUser(u.id), `${u.name} accepted. Now give them access to their applications.`)}><Check size={14} /> {u.status === "rejected" ? "Accept now" : "Accept"}</button>
+                    )}
+                    {u.status === "pending" && (
+                      <button className="btn btn-ghost btn-sm" disabled={pending}
+                        onClick={() => run(() => rejectUser(u.id), `${u.name} rejected.`)}><X size={14} /> Reject</button>
+                    )}
                     {u.role !== "head_admin" && (
                       <Link className="chip !p-1.5 text-muted" aria-label="Manage access" title="Manage access" href={`/administrator/access/user/${u.id}`}><ShieldCheck size={14} /></Link>
                     )}
@@ -142,7 +180,7 @@ export function UsersManager({ meId, domain, users, departments }: { meId: strin
                 </td>
               </tr>
             ))}
-            {shown.length === 0 && <tr><td colSpan={6} className="text-subtle">No users match.</td></tr>}
+            {shown.length === 0 && <tr><td colSpan={6} className="text-subtle">{q || fRole ? "No users match." : `No ${tab === "approved" ? "accepted" : tab} users.`}</td></tr>}
           </tbody>
         </table>
       </div>

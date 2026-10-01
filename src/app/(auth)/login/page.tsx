@@ -3,15 +3,18 @@ import { AlertCircle, LayoutGrid } from "lucide-react";
 import { AuthError } from "next-auth";
 import { signIn } from "@/lib/auth";
 import { getCurrentUser } from "@/lib/permissions";
+import { domainsLabel } from "@/lib/domains";
 import { AnimatedGrid } from "@/components/AnimatedGrid";
 
-const ERRORS: Record<string, string> = {
-  NotInvited: "You do not have access. Contact the administrator.",
-  BadCredentials: "Incorrect email or password.",
-  Locked: "Too many failed attempts. Please wait 15 minutes and try again, or ask the administrator to reset your password.",
-  Deactivated: "Your account has been deactivated. Contact the administrator.",
-  WrongDomain: "Please use your MCCIA organisation account.",
-};
+const errorText = (code: string): string =>
+  ({
+    NotInvited: "We could not read a verified email from that account. Please try again.",
+    BadCredentials: "Incorrect email or password.",
+    Locked: "Too many failed attempts. Please wait 15 minutes and try again, or ask the administrator to reset your password.",
+    Deactivated: "Your account has been deactivated. Contact the administrator.",
+    Rejected: "Your request to use this hub was not approved. Contact the administrator.",
+    WrongDomain: `Please use an email ending in ${domainsLabel()}.`,
+  })[code] ?? "Sign-in failed. Please try again.";
 
 export const metadata = { title: "Sign in · MCCIA App Hub" };
 
@@ -21,7 +24,8 @@ const zohoEnabled = () => !!(process.env.AUTH_ZOHO_ID && process.env.AUTH_ZOHO_S
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   if (await getCurrentUser()) redirect("/");
   const { error } = await searchParams;
-  const message = error ? (ERRORS[error] ?? "Sign-in failed. Please try again.") : null;
+  const message = error ? errorText(error) : null;
+  const providers = zohoEnabled() || googleEnabled();
 
   return (
     <main className="relative grid min-h-screen place-items-center px-4 py-16">
@@ -39,8 +43,40 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             </div>
           )}
 
+          {providers && (
+            <div className="mt-7 space-y-2">
+              {zohoEnabled() && (
+                <form
+                  action={async () => {
+                    "use server";
+                    await signIn("zoho", { redirectTo: "/" });
+                  }}
+                >
+                  <button type="submit" className="btn btn-primary w-full">Continue with Zoho</button>
+                </form>
+              )}
+              {googleEnabled() && (
+                <form
+                  action={async () => {
+                    "use server";
+                    await signIn("google", { redirectTo: "/" });
+                  }}
+                >
+                  <button type="submit" className={`btn w-full ${zohoEnabled() ? "btn-ghost" : "btn-primary"}`}>Continue with Google</button>
+                </form>
+              )}
+              <p className="pt-1 text-xs text-subtle">
+                New here? Use {zohoEnabled() && googleEnabled() ? "either one" : "this"} with an email ending in {domainsLabel()}. After you
+                choose a password, an administrator accepts your request.
+              </p>
+              <div className="flex items-center gap-3 pt-3 text-xs uppercase tracking-widest text-subtle">
+                <span className="h-px flex-1 bg-line" />or sign in with a password<span className="h-px flex-1 bg-line" />
+              </div>
+            </div>
+          )}
+
           <form
-            className="mt-7 space-y-3 text-left"
+            className="mt-5 space-y-3 text-left"
             action={async (fd: FormData) => {
               "use server";
               try {
@@ -64,32 +100,6 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             </label>
             <button type="submit" className="btn btn-primary w-full">Sign in</button>
           </form>
-
-          {(zohoEnabled() || googleEnabled()) && (
-            <div className="mt-4 space-y-2 border-t border-line pt-4">
-              {zohoEnabled() && (
-                <form
-                  action={async () => {
-                    "use server";
-                    await signIn("zoho", { redirectTo: "/" });
-                  }}
-                >
-                  <button type="submit" className="btn btn-ghost w-full">Continue with Zoho</button>
-                </form>
-              )}
-              {googleEnabled() && (
-                <form
-                  action={async () => {
-                    "use server";
-                    await signIn("google", { redirectTo: "/" });
-                  }}
-                >
-                  <button type="submit" className="btn btn-ghost w-full">Continue with Google</button>
-                </form>
-              )}
-            </div>
-          )}
-          <p className="mt-5 text-xs text-subtle">Accounts are created by the administrator.</p>
         </div>
       </div>
     </main>

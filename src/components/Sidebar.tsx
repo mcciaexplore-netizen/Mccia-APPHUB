@@ -6,7 +6,8 @@ import { Activity, ChevronRight, ShieldCheck, X } from "lucide-react";
 import { Icon } from "@/components/Icon";
 
 export type SidebarDept = { id: string; name: string; icon: string };
-export type SidebarUser = { name: string; role: "head_admin" | "dept_lead" | "member" };
+/** `pendingUsers` is only filled in for head admins: sign-ups waiting for a decision. */
+export type SidebarUser = { name: string; role: "head_admin" | "dept_lead" | "member"; pendingUsers?: number };
 
 function Item({ href, active, onNavigate, children }: { href: string; active: boolean; onNavigate: () => void; children: React.ReactNode }) {
   return (
@@ -64,6 +65,9 @@ export function Sidebar({
         {user?.role === "head_admin" && (
           <Item href="/administrator/apps" active={pathname.startsWith("/administrator")} onNavigate={onNavigate}>
             <ShieldCheck size={20} /> <span className="flex-1 py-2">Administrator</span>
+            {!!user.pendingUsers && (
+              <span className="rounded-full bg-brand-red px-2 py-0.5 text-xs font-bold text-white" aria-label={`${user.pendingUsers} waiting for approval`}>{user.pendingUsers}</span>
+            )}
             {pathname.startsWith("/administrator") && <ChevronRight size={16} />}
           </Item>
         )}

@@ -18,12 +18,15 @@ export const getCurrentUser = cache(async (): Promise<User | null> => {
     }
   }
   const session = await auth();
-  const su = session?.user as { id?: string; test?: boolean } | undefined;
+  const su = session?.user as { id?: string; test?: boolean; via?: string } | undefined;
   if (!su?.id) return null;
   const [u] = await db.select().from(users).where(eq(users.id, su.id));
-  if (!u || !u.isActive) return null;
-  // The env test login is explicit and opt-in, so it is exempt from the first-login password change.
-  return su.test && testLoginEnabled() ? { ...u, mustChangePassword: false } : u;
+  // Rejected people are signed out of everything. Pending people keep a session so they can set a password and wait.
+  if (!u || !u.isActive || u.status === "rejected") return null;
+  // The env test login is explicit and opt-in, and a Google/Zoho sign-in already proves the email, so neither owes the
+  // first-login password change (a temporary password may have been set for them by CSV import or an admin).
+  const exempt = (su.test && testLoginEnabled()) || su.via === "google" || su.via === "zoho";
+  return exempt ? { ...u, mustChangePassword: false } : u;
 });
 
 /** Signed in, but may still owe a first-login password change. Only the change-password flow uses this directly. */
@@ -36,6 +39,8 @@ export async function requireSessionUser(): Promise<User> {
 /** Signed in and past the forced password change. Use this for every page and route. */
 export async function requireUser(): Promise<User> {
   const u = await requireSessionUser();
+  if (!u.passwordHash) redirect("/set-password"); // Google/Zoho sign-ups choose a password first
+  if (u.status !== "approved") redirect("/pending"); // then wait for an administrator
   if (u.mustChangePassword) redirect("/change-password");
   return u;
 }
@@ -56,6 +61,6 @@ export async function requireActivityViewer(): Promise<User> {
 /** For server actions: throw instead of redirecting so the client gets a clean error. */
 export async function assertHeadAdmin(): Promise<User> {
   const u = await getCurrentUser();
-  if (!u || u.mustChangePassword || u.role !== "head_admin") throw new Error("Not allowed");
+  if (!u || u.mustChangePassword || u.status !== "approved" || u.role !== "head_admin") throw new Error("Not allowed");
   return u;
 }
