@@ -28,8 +28,9 @@ async function loggedIn(u: { id: string; email: string; name: string }, ip: stri
 const digest = (v: string) => createHash("sha256").update(v).digest();
 const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
 
-/** True when a test username/password is configured in the environment. */
-export const testLoginEnabled = () => !!(process.env.TEST_LOGIN_USER && process.env.TEST_LOGIN_PASSWORD);
+/** True when a test username/password is configured. Never true in production builds, even if the variables are set. */
+export const testLoginEnabled = () =>
+  process.env.NODE_ENV !== "production" && !!(process.env.TEST_LOGIN_USER && process.env.TEST_LOGIN_PASSWORD);
 
 class LockedError extends CredentialsSignin {
   code = "Locked";
@@ -48,7 +49,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (await isLoginBlocked(email, ip)) throw new LockedError();
 
         // Optional test login: a fixed username/password from env that signs in as HEAD_ADMIN_EMAIL.
-        // Only active when both TEST_LOGIN_USER and TEST_LOGIN_PASSWORD are set. Remove them in production.
+        // Only active outside production, and only when both TEST_LOGIN_USER and TEST_LOGIN_PASSWORD are set.
         if (testLoginEnabled() && same(email, process.env.TEST_LOGIN_USER!.trim().toLowerCase())) {
           const adminEmail = process.env.HEAD_ADMIN_EMAIL?.trim().toLowerCase();
           const ok = same(password, process.env.TEST_LOGIN_PASSWORD!) && !!adminEmail;

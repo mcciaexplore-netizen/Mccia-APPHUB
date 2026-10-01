@@ -36,7 +36,7 @@ Useful scripts: `npm run db:generate`, `npm run db:migrate`, `npm run db:seed`, 
 
 ## Test login (optional)
 
-Set `TEST_LOGIN_USER` and `TEST_LOGIN_PASSWORD` in the env and typing that username and password into the normal login form signs in as `HEAD_ADMIN_EMAIL`. Leave both empty (or remove them) in production. `DEV_AUTH_BYPASS=true` (development only) skips login entirely.
+Set `TEST_LOGIN_USER` and `TEST_LOGIN_PASSWORD` in the env and typing that username and password into the normal login form signs in as `HEAD_ADMIN_EMAIL`. It is ignored in production builds, so setting them on Vercel has no effect; remove them there anyway. `DEV_AUTH_BYPASS=true` (development only) skips login entirely.
 
 ## Access model
 
