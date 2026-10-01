@@ -16,7 +16,7 @@ npx tsx scripts/seed.ts               # or: npm run db:seed (safe to re-run)
 npm run dev
 ```
 
-Environment variables (see `.env.example`): `DATABASE_URL`, `DB_DRIVER` (`neon` or `pg`), `DATABASE_SSL`, `AUTH_SECRET`, `AUTH_URL`, `HEAD_ADMIN_EMAIL`, `HEAD_ADMIN_NAME`, and optionally `HEAD_ADMIN_TEMP_PASSWORD` (otherwise the seed generates one and prints it once), `ALLOWED_EMAIL_DOMAIN` (when set, new users must use it), `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (Google sign-in appears only when both are set).
+Environment variables (see `.env.example`): `DATABASE_URL`, `DB_DRIVER` (`neon` or `pg`), `DATABASE_SSL`, `AUTH_SECRET`, `AUTH_URL`, `HEAD_ADMIN_EMAIL`, `HEAD_ADMIN_NAME`, and optionally `HEAD_ADMIN_TEMP_PASSWORD` (otherwise the seed generates one and prints it once), `ALLOWED_EMAIL_DOMAIN` (when set, new users must use it), `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (Google sign-in appears only when both are set), `AUTH_ZOHO_ID` / `AUTH_ZOHO_SECRET` (Zoho sign-in appears only when both are set) and `ZOHO_ACCOUNTS_URL` (your Zoho data centre, for example `https://accounts.zoho.in`; defaults to `.com`).
 
 The seed creates the six departments (Finance, CRM, Creative, Inventory, Safety Week, Approval System) and the head admin with a temporary password that must be changed at first login. Applications are added later in Administrator.
 
@@ -25,13 +25,14 @@ Useful scripts: `npm run db:generate`, `npm run db:migrate`, `npm run db:seed`, 
 ## Deployment (Vercel + Neon)
 
 1. Create the Neon project and copy the **pooled** connection string into `DATABASE_URL`.
-2. In Google Cloud Console create OAuth credentials (Web application). Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google` and `https://<your-domain>/api/auth/callback/google`.
-3. Generate the secret: `npx auth secret` and put it in `AUTH_SECRET`.
-4. Apply migrations: `npx drizzle-kit migrate`. Never use `push` on production.
-5. Seed: `npx tsx scripts/seed.ts` (note the head admin temporary password it prints)
-6. Push to GitHub, import the repo in Vercel, add all env vars, deploy.
-7. Set `AUTH_URL` to the production URL and add the custom domain (for example `apps.<orgdomain>`).
-8. Sign in as the head admin, open Administrator, and replace the sample data with real departments, apps and users.
+2. For Zoho sign-in, open the [Zoho API Console](https://api-console.zoho.com) (use the console of your data centre, for example `api-console.zoho.in`), add a **Server-based Application**, and set the redirect URI to `https://<your-domain>/api/auth/callback/zoho` (plus `http://localhost:3000/api/auth/callback/zoho` for local use). Put the client id and secret in `AUTH_ZOHO_ID` / `AUTH_ZOHO_SECRET`.
+3. For Google sign-in, in Google Cloud Console create OAuth credentials (Web application). Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google` and `https://<your-domain>/api/auth/callback/google`.
+4. Generate the secret: `npx auth secret` and put it in `AUTH_SECRET`.
+5. Apply migrations: `npx drizzle-kit migrate`. Never use `push` on production.
+6. Seed: `npx tsx scripts/seed.ts` (note the head admin temporary password it prints)
+7. Push to GitHub, import the repo in Vercel, add all env vars, deploy.
+8. Set `AUTH_URL` to the production URL and add the custom domain (for example `apps.<orgdomain>`).
+9. Sign in as the head admin, open Administrator, and replace the sample data with real departments, apps and users.
 
 ## Test login (optional)
 

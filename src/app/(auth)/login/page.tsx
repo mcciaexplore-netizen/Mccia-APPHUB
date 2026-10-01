@@ -16,6 +16,7 @@ const ERRORS: Record<string, string> = {
 export const metadata = { title: "Sign in · MCCIA App Hub" };
 
 const googleEnabled = () => !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
+const zohoEnabled = () => !!(process.env.AUTH_ZOHO_ID && process.env.AUTH_ZOHO_SECRET);
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   if (await getCurrentUser()) redirect("/");
@@ -64,16 +65,29 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             <button type="submit" className="btn btn-primary w-full">Sign in</button>
           </form>
 
-          {googleEnabled() && (
-            <form
-              className="mt-4 border-t border-line pt-4"
-              action={async () => {
-                "use server";
-                await signIn("google", { redirectTo: "/" });
-              }}
-            >
-              <button type="submit" className="btn btn-ghost w-full">Continue with Google</button>
-            </form>
+          {(zohoEnabled() || googleEnabled()) && (
+            <div className="mt-4 space-y-2 border-t border-line pt-4">
+              {zohoEnabled() && (
+                <form
+                  action={async () => {
+                    "use server";
+                    await signIn("zoho", { redirectTo: "/" });
+                  }}
+                >
+                  <button type="submit" className="btn btn-ghost w-full">Continue with Zoho</button>
+                </form>
+              )}
+              {googleEnabled() && (
+                <form
+                  action={async () => {
+                    "use server";
+                    await signIn("google", { redirectTo: "/" });
+                  }}
+                >
+                  <button type="submit" className="btn btn-ghost w-full">Continue with Google</button>
+                </form>
+              )}
+            </div>
           )}
           <p className="mt-5 text-xs text-subtle">Accounts are created by the administrator.</p>
         </div>

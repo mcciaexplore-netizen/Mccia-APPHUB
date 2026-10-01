@@ -1,5 +1,6 @@
 import NextAuth, { CredentialsSignin } from "next-auth";
 import Google from "next-auth/providers/google";
+import Zoho from "next-auth/providers/zoho";
 import Credentials from "next-auth/providers/credentials";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -9,6 +10,9 @@ import { burnPasswordCheck, verifyPassword } from "@/lib/passwords";
 import { clientIp, isLoginBlocked, recordLoginAttempt } from "@/lib/login-guard";
 
 const domain = () => (process.env.ALLOWED_EMAIL_DOMAIN ?? "").trim().toLowerCase();
+
+/** Zoho accounts server for your data centre: .com (US), .in (India), .eu, .com.au, .jp, .sa, .ca. */
+const zohoBase = () => (process.env.ZOHO_ACCOUNTS_URL ?? "https://accounts.zoho.com").trim().replace(/\/+$/, "");
 
 /** Sessions expire 8 hours after sign-in. */
 const SESSION_MAX_AGE = 8 * 60 * 60;
@@ -69,14 +73,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     ...(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET
       ? [Google({ authorization: { params: { hd: domain() || undefined, prompt: "select_account" } } })]
       : []),
+    // Zoho SSO (credentials AUTH_ZOHO_ID / AUTH_ZOHO_SECRET). Also invite-only: the email must already exist.
+    ...(process.env.AUTH_ZOHO_ID && process.env.AUTH_ZOHO_SECRET
+      ? [
+          Zoho({
+            authorization: `${zohoBase()}/oauth/v2/auth?scope=AaaServer.profile.Read`,
+            token: `${zohoBase()}/oauth/v2/token`,
+            userinfo: `${zohoBase()}/oauth/user/info`,
+          }),
+        ]
+      : []),
   ],
   session: { strategy: "jwt", maxAge: SESSION_MAX_AGE },
   pages: { signIn: "/login", error: "/login" },
   trustHost: true,
   callbacks: {
-    async signIn({ profile, account }) {
+    async signIn({ user, profile, account }) {
       if (account?.provider === "credentials") return true; // already verified in authorize()
-      const email = profile?.email?.trim().toLowerCase();
+      // `user.email` is normalised by each provider (Zoho's raw profile uses `Email`, so `profile.email` is empty).
+      const email = (user?.email ?? profile?.email)?.trim().toLowerCase();
       if (!email || profile?.email_verified === false) return "/login?error=NotInvited";
       // Server-side domain enforcement; the `hd` hint alone is not a control.
       if (domain() && !email.endsWith(`@${domain()}`)) return "/login?error=WrongDomain";
@@ -93,8 +108,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.test = !!(user as { test?: boolean }).test;
       }
       // Only present on sign-in: bind the token to our user row.
-      if (profile?.email) {
-        const [u] = await db.select({ id: users.id }).from(users).where(eq(users.email, profile.email.trim().toLowerCase()));
+      const oauthEmail = account && account.provider !== "credentials" ? (user?.email ?? profile?.email) : undefined;
+      if (oauthEmail) {
+        const [u] = await db.select({ id: users.id }).from(users).where(eq(users.email, oauthEmail.trim().toLowerCase()));
         if (u) token.uid = u.id;
       }
       return token;
