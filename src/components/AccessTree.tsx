@@ -25,7 +25,10 @@ export function AccessTree({ departments, apps, value, onChange, disabled }: {
   const on = new Set(value);
   const set = (ids: string[], tick: boolean) => {
     const next = new Set(on);
-    for (const id of ids) tick ? next.add(id) : next.delete(id);
+    for (const id of ids) {
+      if (tick) next.add(id);
+      else next.delete(id);
+    }
     onChange([...next]);
   };
 

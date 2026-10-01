@@ -134,7 +134,6 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
     font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.1em; color: var(--c-subtle);
   }
-  .page-title { font-size: clamp(2rem, 5vw, 4.2rem); }
   .section-title { font-size: clamp(1.9rem, 3.5vw, 2.5rem); }
   .big-number {
     font-family: var(--font-heading); font-weight: 800;
@@ -201,7 +200,6 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
     background: var(--c-blue-tint); border: 1px solid var(--c-blue-tint-border); color: var(--c-primary);
     transition: transform 0.3s var(--ease); flex: none;
   }
-  .icon-tile-green { background: var(--c-green-tint); border-color: var(--c-green-tint-border); color: var(--c-green-text); }
   .group:hover .icon-tile { transform: scale(1.1) rotate(5deg); }
 
   .alert {
@@ -212,32 +210,12 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
   .alert-green { background: var(--c-green-tint); border-color: var(--c-green-tint-border); color: var(--c-green-text); }
   .alert-red { background: var(--c-red-tint); border-color: var(--c-red-tint-border); color: var(--c-red); }
 
-  .cta-banner {
-    position: relative; overflow: hidden; background: var(--grad-primary); color: var(--c-white);
-    border-radius: var(--radius-lg); padding: 3rem 2rem;
-  }
-  .cta-banner::before {
-    content: ""; position: absolute; inset: 0; pointer-events: none;
-    background: radial-gradient(circle at 80% 20%, rgba(16, 185, 129, 0.12), transparent 55%);
-  }
-  .quote-box { border-left: 4px solid var(--c-primary); background: var(--c-blue-tint); padding: 1rem 1.25rem; border-radius: 0 var(--radius-md) var(--radius-md) 0; }
 
   .skeleton {
     border-radius: var(--radius-md);
     background: linear-gradient(90deg, var(--c-alt) 25%, var(--c-border) 37%, var(--c-alt) 63%);
     background-size: 400% 100%; animation: var(--animate-shimmer);
   }
-  .toggle {
-    width: 36px; height: 20px; border-radius: var(--radius-pill); background: var(--c-border);
-    position: relative; cursor: pointer; transition: background 0.2s var(--ease); border: 0; flex: none;
-  }
-  .toggle::after {
-    content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
-    background: var(--c-white); transition: transform 0.2s var(--ease); box-shadow: 0 1px 3px rgba(15,23,42,.2);
-  }
-  .toggle[aria-checked="true"] { background: var(--c-green); }
-  .toggle[aria-checked="true"]::after { transform: translateX(16px); }
-  .toggle:disabled { opacity: 0.5; cursor: wait; }
 }
 
 @media (prefers-reduced-motion: reduce) {

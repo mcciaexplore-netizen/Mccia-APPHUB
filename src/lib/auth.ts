@@ -11,7 +11,7 @@ import { clientIp, isLoginBlocked, recordLoginAttempt } from "@/lib/login-guard"
 const domain = () => (process.env.ALLOWED_EMAIL_DOMAIN ?? "").trim().toLowerCase();
 
 /** Sessions expire 8 hours after sign-in. */
-export const SESSION_MAX_AGE = 8 * 60 * 60;
+const SESSION_MAX_AGE = 8 * 60 * 60;
 
 async function loggedIn(u: { id: string; email: string; name: string }, ip: string | null, test = false) {
   await Promise.all([

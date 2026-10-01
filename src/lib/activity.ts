@@ -7,7 +7,7 @@ const IST_MS = 5.5 * 3600 * 1000;
 const DAY = 86400000;
 
 /** Start of the current IST day, as a UTC instant. */
-export function istDayStart(now = Date.now()) {
+function istDayStart(now = Date.now()) {
   return new Date(Math.floor((now + IST_MS) / DAY) * DAY - IST_MS);
 }
 const istDate = (s: string, endOfDay = false) => {
@@ -29,7 +29,7 @@ export function parseFilters(sp: Record<string, string | string[] | undefined>):
 }
 
 /** [start, end) window as UTC instants. */
-export function rangeWindow(f: Filters): { start: Date; end: Date } {
+function rangeWindow(f: Filters): { start: Date; end: Date } {
   const today = istDayStart();
   const end = new Date(today.getTime() + DAY);
   if (f.range === "today") return { start: today, end };

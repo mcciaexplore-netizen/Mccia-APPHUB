@@ -1,4 +1,4 @@
-import { asc, count, eq, ne } from "drizzle-orm";
+import { asc, count, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { accessTemplateApps, accessTemplates, userAppAccess, users } from "@/db/schema";
 import { requireHeadAdmin } from "@/lib/permissions";
