@@ -1,0 +1,13 @@
+# Keep the upload small: Vercel installs dependencies and builds on its side.
+.next
+.next.nosync
+node_modules
+node_modules.nosync
+tsconfig.tsbuildinfo
+backups
+
+# Local secrets stay local; production settings live in Vercel's environment variables.
+.env
+.env.*
+!.env.example
+.vercel
