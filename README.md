@@ -24,6 +24,17 @@ The seed only creates the head admin named in the environment. Departments, apps
 
 Useful scripts: `npm run db:generate`, `npm run db:migrate`, `npm run db:seed`, `npm run typecheck`, `npm run lint`, `npm run build`.
 
+### Finding and removing unused code
+
+```powershell
+npm run clean:scan                         # report only: unused files, exports, dependencies, lint warnings, CSS, public files
+npm run clean:fix                          # remove unused exports and dependencies
+node scripts/cleanup.mjs --fix --files     # also delete unused source files
+node scripts/cleanup.mjs --caches          # delete build caches
+```
+
+`clean:fix` refuses to run with uncommitted changes, then re-runs typecheck, lint and the build, and reverts everything by itself if one of them fails. Review the result with `git diff`. Unused CSS classes and `public/` files are only reported, because a scan cannot be sure nothing builds those names from a string.
+
 ## Deployment (Vercel + Neon)
 
 1. Create the Neon project and copy the **pooled** connection string into `DATABASE_URL`.
