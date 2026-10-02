@@ -1,11 +1,11 @@
-import NextAuth, { CredentialsSignin } from "next-auth";
+import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { activityLog, users } from "@/db/schema";
 import { burnPasswordCheck, verifyPassword } from "@/lib/passwords";
-import { clientIp, isLoginBlocked, recordLoginAttempt } from "@/lib/login-guard";
+import { clientIp, recordLoginAttempt } from "@/lib/login-guard";
 
 /** Sessions expire 8 hours after sign-in. */
 const SESSION_MAX_AGE = 8 * 60 * 60;
@@ -25,10 +25,6 @@ const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
 export const testLoginEnabled = () =>
   process.env.NODE_ENV !== "production" && !!(process.env.TEST_LOGIN_USER && process.env.TEST_LOGIN_PASSWORD);
 
-class LockedError extends CredentialsSignin {
-  code = "Locked";
-}
-
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Credentials({
@@ -38,8 +34,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const password = String(c?.password ?? "");
         if (!email || !password) return null;
         const ip = clientIp(request.headers);
-
-        if (await isLoginBlocked(email, ip)) throw new LockedError();
 
         // Optional test login: a fixed username/password from env that signs in as HEAD_ADMIN_EMAIL.
         // Only active outside production, and only when both TEST_LOGIN_USER and TEST_LOGIN_PASSWORD are set.

@@ -195,7 +195,6 @@ export function UsersManager({ meId, domain, users, departments }: { meId: strin
         <Modal title={`Reset password for ${reset.name}`} onClose={() => setReset(null)}>
           <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); run(() => resetPassword(reset.id, resetPw), "Password reset. Share the temporary password with the user.", () => setReset(null)); }}>
             <PasswordField label="New temporary password" value={resetPw} onChange={setResetPw} />
-            <p className="text-xs text-subtle">This also unlocks the account if it was locked after failed attempts.</p>
             <button className="btn btn-primary btn-sm" disabled={pending}>Reset password</button>
           </form>
         </Modal>

@@ -65,7 +65,7 @@ export async function resetPassword(id: string, tempPassword: unknown) {
     const [u] = await db.select({ email: users.email }).from(users).where(eq(users.id, id));
     if (!u) throw new UserError("User not found.");
     await db.update(users).set({ passwordHash: await hashPassword(pw), mustChangePassword: true }).where(eq(users.id, id));
-    await clearLoginFailures(u.email); // also unlocks the account
+    await clearLoginFailures(u.email);
   });
 }
 

@@ -8,7 +8,6 @@ import { AnimatedGrid } from "@/components/AnimatedGrid";
 const errorText = (code: string): string =>
   ({
     BadCredentials: "Incorrect email or password.",
-    Locked: "Too many failed attempts. Please wait 15 minutes and try again, or ask the administrator to reset your password.",
   })[code] ?? "Sign-in failed. Please try again.";
 
 export const metadata = { title: "Sign in · MCCIA App Hub" };
@@ -42,10 +41,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
               try {
                 await signIn("credentials", { email: fd.get("email"), password: fd.get("password"), redirectTo: "/" });
               } catch (e) {
-                if (e instanceof AuthError) {
-                  const locked = (e as { code?: string }).code === "Locked";
-                  redirect(`/login?error=${locked ? "Locked" : "BadCredentials"}`);
-                }
+                if (e instanceof AuthError) redirect("/login?error=BadCredentials");
                 throw e; // lets the success redirect through
               }
             }}
