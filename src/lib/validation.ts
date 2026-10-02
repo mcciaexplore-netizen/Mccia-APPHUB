@@ -26,7 +26,6 @@ export const appInput = z.object({
   icon,
 });
 
-export const roleSchema = z.enum(["head_admin", "dept_lead", "member"]);
 export const emailSchema = z.string().trim().toLowerCase().email("Enter a valid email");
 
 export const slugify = (name: string) =>

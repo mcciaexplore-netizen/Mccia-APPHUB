@@ -6,13 +6,13 @@ import { useToast } from "@/components/Toast";
 import { parseCsv, toCsv } from "@/lib/csv";
 import { importUsers, type ImportResult } from "@/actions/users";
 
-type Row = { line: number; email: string; name: string; designation: string; apps: string };
+type Row = { line: number; name: string; email: string; department: string; applications: string; designation: string };
 
 const BATCH = 20; // a big file is sent a few rows at a time
 const MAX_ROWS = 1000;
 const TEMPLATE = toCsv([
-  ["email", "name", "apps", "designation"],
-  ["name@example.com", "Full Name", "App name; Department / App name", "Job title"],
+  ["name", "email", "department", "applications", "designation"],
+  ["Full Name", "name@example.com", "Department name", "App name, Other app name", "Job title"],
 ]);
 
 function download(name: string, text: string) {
@@ -43,9 +43,10 @@ export function ImportUsers() {
     if (col("email") < 0 || col("name") < 0) return setProblem('The first row must contain the columns "email" and "name".');
     if (table.length - 1 > MAX_ROWS) return setProblem(`At most ${MAX_ROWS} users per file.`);
     const cell = (r: string[], n: string) => (col(n) >= 0 ? (r[col(n)] ?? "").trim() : "");
+    const appsCol = col("applications") >= 0 ? "applications" : "apps";
     setRows(table.slice(1).map((r, i) => ({
-      line: i + 2, email: cell(r, "email"), name: cell(r, "name"),
-      designation: cell(r, "designation"), apps: cell(r, "apps"),
+      line: i + 2, name: cell(r, "name"), email: cell(r, "email"), department: cell(r, "department"),
+      applications: cell(r, appsCol), designation: cell(r, "designation"),
     })));
   }
 
@@ -71,8 +72,10 @@ export function ImportUsers() {
       <div>
         <h2 className="text-lg font-semibold">Import users from CSV</h2>
         <p className="mt-1 text-sm text-muted">
-          Columns: <b>email</b>, <b>name</b> (required) and <b>apps</b>, <b>designation</b> (optional). List several apps with <code>;</code>, and
-          write <code>Department / App</code> if two apps share a name. Emails that already exist are skipped.
+          One-time setup for many users. Columns: <b>name</b>, <b>email</b> (required) and <b>department</b>, <b>applications</b>, <b>designation</b>
+          (optional). Put several applications in one cell separated by commas, quoted, for example <code>&quot;Tally, CRM&quot;</code>. Each is looked up in the
+          user&apos;s own department first; write <code>Department / App</code> if the same name exists in more than one. Departments and applications must already
+          exist, and emails that already exist are skipped.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
@@ -88,9 +91,9 @@ export function ImportUsers() {
         <div className="space-y-3">
           <p className="text-sm"><b>{rows.length}</b> user{rows.length === 1 ? "" : "s"} ready to import.</p>
           <div className="table-wrap"><table>
-            <thead><tr><th>Line</th><th>Name</th><th>Email</th><th>Apps</th></tr></thead>
-            <tbody>{rows.slice(0, 5).map((r) => <tr key={r.line}><td>{r.line}</td><td>{r.name}</td><td>{r.email}</td><td>{r.apps || <span className="text-subtle">none</span>}</td></tr>)}
-              {rows.length > 5 && <tr><td colSpan={4} className="text-subtle">…and {rows.length - 5} more</td></tr>}</tbody>
+            <thead><tr><th>Line</th><th>Name</th><th>Email</th><th>Department</th><th>Applications</th></tr></thead>
+            <tbody>{rows.slice(0, 5).map((r) => <tr key={r.line}><td>{r.line}</td><td>{r.name}</td><td>{r.email}</td><td>{r.department || <span className="text-subtle">none</span>}</td><td>{r.applications || <span className="text-subtle">none</span>}</td></tr>)}
+              {rows.length > 5 && <tr><td colSpan={5} className="text-subtle">…and {rows.length - 5} more</td></tr>}</tbody>
           </table></div>
           <button className="btn btn-primary btn-sm" disabled={running} onClick={run}>Import {rows.length} user{rows.length === 1 ? "" : "s"}</button>
         </div>

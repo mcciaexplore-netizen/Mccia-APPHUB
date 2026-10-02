@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 
-// Applications now live inside their department. Old links and bookmarks land on the departments list.
 export default function Page() {
   redirect("/administrator/departments");
 }
