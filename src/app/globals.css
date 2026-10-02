@@ -27,8 +27,6 @@
   --c-purple-tint: rgba(139, 92, 246, 0.07);
   --c-purple-tint-border: rgba(139, 92, 246, 0.16);
   --c-overlay: rgba(15, 23, 42, 0.4);
-  --grid-line: rgba(0, 63, 138, 0.04);
-  --grid-fill: rgba(0, 63, 138, 0.06);
   --grad-primary: linear-gradient(135deg, #003f8a 0%, #0056b3 100%);
   --grad-page: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   --grad-side: linear-gradient(165deg, #0056b3 0%, #0056b3 30%, #10b981 100%);

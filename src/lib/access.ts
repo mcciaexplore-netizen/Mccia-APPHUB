@@ -1,8 +1,8 @@
 import "server-only";
 import { cache } from "react";
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { apps, departments, userAppAccess, users, type User } from "@/db/schema";
+import { apps, departments, userAppAccess, type User } from "@/db/schema";
 
 /** What the hub is allowed to know about an app. The URL is deliberately absent. */
 export type HubApp = { id: string; name: string; description: string | null; icon: string; departmentId: string };
@@ -56,9 +56,3 @@ export async function getLaunchTarget(user: Pick<User, "id" | "role">, appId: st
     .where(and(eq(userAppAccess.userId, user.id), eq(userAppAccess.appId, appId)));
   return grant ? row : null;
 }
-
-/** Sign-ups waiting for a decision. Cached per request so the hub and Administrator layouts share one query. */
-export const getPendingUserCount = cache(async (): Promise<number> => {
-  const [{ n }] = await db.select({ n: count() }).from(users).where(eq(users.status, "pending"));
-  return n;
-});

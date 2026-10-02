@@ -6,9 +6,9 @@ import { Sidebar, type SidebarDept, type SidebarUser } from "@/components/Sideba
 import { UserMenu } from "@/components/UserMenu";
 
 export function HubShell({
-  user, departments, signOutAction, children,
+  user, departments, children,
 }: {
-  user: SidebarUser | null; departments: SidebarDept[]; signOutAction: () => Promise<void>; children: React.ReactNode;
+  user: SidebarUser | null; departments: SidebarDept[]; children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
@@ -31,7 +31,7 @@ export function HubShell({
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 lg:justify-end border-b border-line bg-white px-4 shadow-card sm:px-6">
           <button aria-label="Open menu" onClick={() => setOpen(true)} className="text-muted transition-colors hover:text-primary lg:hidden"><Menu size={22} /></button>
           {user ? (
-            <UserMenu name={user.name} role={user.role} signOutAction={signOutAction} />
+            <UserMenu name={user.name} role={user.role} />
           ) : null}
         </header>
         <main className="bg-canvas p-1.5 sm:p-2.5">

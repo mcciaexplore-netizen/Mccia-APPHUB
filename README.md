@@ -1,8 +1,10 @@
 # MCCIA App Hub
 
-One front office for every MCCIA web app. Staff sign in with email and password, pick a department in the sidebar, and open the applications the administrator has given them, shown as square cards. The hub stores links, controls exactly which user sees which app, and logs logins and launches. It does not host the apps. Everything is managed from **Administrator** (head admin only), so adding a department, app, user or access change never needs a redeploy.
+One front office for every MCCIA web app. Pick a department in the sidebar and open its applications, shown as square cards. The hub stores links and logs launches. It does not host the apps. Everything is managed from **Administrator**, so adding a department, app or user never needs a redeploy.
 
-Stack: Next.js 16 (App Router, TypeScript), Tailwind CSS v4, Postgres + Drizzle ORM, Auth.js v5 (email + password with bcrypt), lucide-react, zod.
+**There is no login.** Everyone who opens the hub acts as the head admin, so anyone who can reach the URL can see and change everything. Keep the deployment private (for example with Vercel Deployment Protection) or add a login back before sharing it widely.
+
+Stack: Next.js 16 (App Router, TypeScript), Tailwind CSS v4, Postgres + Drizzle ORM, lucide-react, zod.
 
 All commands below are PowerShell.
 
@@ -16,39 +18,31 @@ npx tsx scripts/seed.ts               # or: npm run db:seed (safe to re-run)
 npm run dev
 ```
 
-Environment variables (see `.env.example`): `DATABASE_URL`, `DB_DRIVER` (`neon` or `pg`), `DATABASE_SSL`, `AUTH_SECRET`, `AUTH_URL`, `HEAD_ADMIN_EMAIL`, `HEAD_ADMIN_NAME`, and optionally `HEAD_ADMIN_TEMP_PASSWORD` (otherwise the seed generates one and prints it once), `ALLOWED_EMAIL_DOMAIN` (comma-separated domains that users may have; defaults to `mcciapune.com,gmail.com`).
+Environment variables (see `.env.example`): `DATABASE_URL`, `DB_DRIVER` (`neon` or `pg`), `DATABASE_SSL`, `HEAD_ADMIN_EMAIL` and `HEAD_ADMIN_NAME` (the head admin the hub acts as), and `ALLOWED_EMAIL_DOMAIN` (comma-separated domains that users may have; defaults to `mcciapune.com,gmail.com`).
 
-The seed creates the six departments (Finance, CRM, Creative, Inventory, Safety Week, Approval System) and the head admin with a temporary password that must be changed at first login. Applications are added later in Administrator.
+The seed creates the six departments (Finance, CRM, Creative, Inventory, Safety Week, Approval System) and the head admin. Applications are added later in Administrator.
 
 Useful scripts: `npm run db:generate`, `npm run db:migrate`, `npm run db:seed`, `npm run typecheck`, `npm run lint`, `npm run build`.
 
 ## Deployment (Vercel + Neon)
 
 1. Create the Neon project and copy the **pooled** connection string into `DATABASE_URL`.
-2. Generate the secret: `npx auth secret` and put it in `AUTH_SECRET`.
-3. Apply migrations: `npx drizzle-kit migrate`. Never use `push` on production.
-4. Seed: `npx tsx scripts/seed.ts` (note the head admin temporary password it prints)
-5. Push to GitHub, import the repo in Vercel, add all env vars, deploy.
-6. Set `AUTH_URL` to the production URL and add the custom domain (for example `apps.<orgdomain>`).
-7. Sign in as the head admin, open Administrator, and replace the sample data with real departments, apps and users.
-
-## Test login (optional)
-
-Set `TEST_LOGIN_USER` and `TEST_LOGIN_PASSWORD` in the env and typing that username and password into the normal login form signs in as `HEAD_ADMIN_EMAIL`. It is ignored in production builds, so setting them on Vercel has no effect; remove them there anyway. `DEV_AUTH_BYPASS=true` (development only) skips login entirely.
+2. Apply migrations: `npx drizzle-kit migrate`. Never use `push` on production.
+3. Seed: `npx tsx scripts/seed.ts` with `HEAD_ADMIN_EMAIL` and `HEAD_ADMIN_NAME` set.
+4. Push to GitHub, import the repo in Vercel, add `DATABASE_URL`, `HEAD_ADMIN_EMAIL`, `HEAD_ADMIN_NAME` (and the other variables you use), deploy.
+5. Open the site, go to Administrator, and replace the sample data with real departments, apps and users.
 
 ## Access model
 
-- **Login is required for everything.** There is no public page except `/login`.
+- **No login.** Every page is open, and everyone acts as the head admin (`HEAD_ADMIN_EMAIL`). Users, per-app access and templates are still stored and editable, but nothing enforces them until a login is added back.
 - **Departments contain apps; every app belongs to exactly one department.** Access is granted per user per app (table `user_app_access`), never per department. A user can hold apps from several departments.
 - **Roles:** `head_admin` sees every app and is the only role that can open Administrator. `member` ("User") sees only the apps assigned to them. `dept_lead` ("Department admin") exists in the schema for later; there is no UI to create it and it has no extra powers beyond a read-only Activity page for its home department.
 - **The sidebar** lists only departments where the user has at least one app. App URLs are never sent to the browser in lists; every card opens `/go/[appId]`, which re-checks access on the server, logs the launch, and redirects. Without access it returns 404.
-- **Approval status:** every user is `approved`, `pending` or `rejected`. Only approved, active users can sign in. Administrator → Users has Pending / Accepted / Rejected tabs, with Accept and Reject for moving someone between them. There is no self sign-up; accounts are created by an admin or by CSV import.
-- **CSV import:** Administrator → Users → Import CSV takes columns `email`, `name` (required) and `password`, `apps`, `designation` (optional). Blank passwords are generated, `apps` lists app names separated by `;` (write `Department / App` when two apps share a name), and imported users are accepted at once with the apps granted and a temporary password they must change when they sign in with it. After the import the page offers a credentials CSV (the only time the passwords are shown) to email people their sign-in details. Existing emails are skipped, never changed. The hub does not send email itself.
-- **Accounts:** the head admin can also create users one at a time with a temporary password (`must_change_password`), and the user must change it before doing anything else. Passwords are bcrypt-hashed (cost 12) and never logged.
-- **Login attempts:** every attempt is recorded in `login_attempts` for the record. Nothing is ever locked or blocked: a wrong password simply fails and can be retried straight away. Sessions last 8 hours.
+- **CSV import:** Administrator → Users → Import CSV takes columns `email`, `name` (required) and `apps`, `designation` (optional). `apps` lists app names separated by `;` (write `Department / App` when two apps share a name). Existing emails are skipped, never changed. A template can be downloaded from the panel.
+- **Accounts:** the head admin creates users one at a time or by CSV. There are no passwords.
 - **Soft delete only:** users, apps and departments are deactivated, never deleted, so the activity log stays intact. The last active head admin cannot be deactivated or demoted. Role and `is_active` are re-read from the database on every request, and every mutation runs through a server action that first checks head-admin status.
 - **Access management** (Administrator → Access): a per-user checklist tree (ticking a department ticks all its apps), a per-app user list with bulk add/remove, bulk assignment to many users, and reusable templates that are copied onto users and can then be customised.
-- **Activity:** `activity_log` records `login` and `launch` actions with user, app, IP and time. Administrator → Activity shows the log, launches per app and department, active users this week, users who never launched an app, last login per user, and CSV export.
+- **Activity:** `activity_log` records `launch` actions (earlier `login` entries are kept) with user, app, IP and time. Administrator → Activity shows the log, launches per app and department, active users this week, users who never launched an app, last login per user, and CSV export.
 - **`app_token`** on each app is reserved for a future single sign-on handoff (a signed JWT passed to the child app). It is stored and shown to the head admin only; nothing uses it yet.
 
 ## Database portability
@@ -78,7 +72,7 @@ Requires `pg_dump` and `psql` (PostgreSQL client tools) on PATH.
 3. Run the migrations against the new database: `$env:DATABASE_URL="<new url>"; npx drizzle-kit migrate`
 4. `pg_dump` the data from Neon and restore it on the new server: run `.\scripts\backup.ps1 -DataOnly` with the Neon URL, then `.\scripts\restore.ps1 -File <dump>` with the new URL.
 5. In Vercel set `DB_DRIVER=pg`, `DATABASE_URL` and `DATABASE_SSL`.
-6. Redeploy and verify (sign in, open an app, check the activity log).
+6. Redeploy and verify (open the hub, open an app, check the activity log).
 7. Keep Neon read-only for a week, then delete it.
 
 If the app stays on Vercel, the new database server must be reachable from the internet over SSL, with firewall rules restricted where possible. If the app later moves onto the same server, no public database access is needed.

@@ -21,11 +21,9 @@ async function main() {
   // Import after env is loaded so src/db/index.ts sees DATABASE_URL.
   const { db } = await import("../src/db");
   const { apps, departments, users } = await import("../src/db/schema");
-  const { hashPassword } = await import("../src/lib/passwords");
-  const { generatePassword } = await import("../src/lib/generate-password");
   const { slugify } = await import("../src/lib/validation");
 
-  // Head admin: created if missing; given a temporary password only if they have none yet.
+  // Head admin: created if missing. There is no sign-in, so no password is set.
   const email = process.env.HEAD_ADMIN_EMAIL?.trim().toLowerCase();
   const name = process.env.HEAD_ADMIN_NAME?.trim() || "Head Admin";
   if (!email) throw new Error("HEAD_ADMIN_EMAIL is required");
@@ -36,11 +34,6 @@ async function main() {
     console.log(`Created head admin ${email}`);
   } else console.log(`Head admin ${email} already exists`);
 
-  if (!admin.passwordHash) {
-    const temp = process.env.HEAD_ADMIN_TEMP_PASSWORD?.trim() || generatePassword();
-    await db.update(users).set({ passwordHash: await hashPassword(temp), mustChangePassword: true }).where(eq(users.id, admin.id));
-    console.log(`Temporary password for ${email}: ${temp}   (must be changed at first login)`);
-  }
 
   // Departments, in the order given.
   let order = 0;

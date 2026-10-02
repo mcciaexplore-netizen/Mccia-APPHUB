@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
-  if (!user || user.mustChangePassword || user.status !== "approved" || user.role !== "head_admin") return new NextResponse("Forbidden", { status: 403 });
+  if (!user) return new NextResponse("Forbidden", { status: 403 });
   const f = parseFilters(Object.fromEntries(req.nextUrl.searchParams));
   const rows = await listRows(f, undefined, 100000, 0);
   const csv = toCsv([["User", "Email", "Action", "Application", "Department", "IP address", "Time (IST)"], ...rows.map((r) => [r.user ?? "Unknown", r.email ?? "", r.action, r.action === "login" ? "" : (r.app ?? "Deleted application"), r.department ?? "", r.ip ?? "", formatIST(r.openedAt)])]);

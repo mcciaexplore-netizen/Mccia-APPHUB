@@ -6,14 +6,14 @@ import { useToast } from "@/components/Toast";
 import { parseCsv, toCsv } from "@/lib/csv";
 import { importUsers, type ImportResult } from "@/actions/users";
 
-type Row = { line: number; email: string; name: string; password: string; designation: string; apps: string };
+type Row = { line: number; email: string; name: string; designation: string; apps: string };
 
-const BATCH = 8; // bcrypt is slow, so a big file is sent a few rows at a time
+const BATCH = 20; // a big file is sent a few rows at a time
 const MAX_ROWS = 1000;
 const TEMPLATE = toCsv([
-  ["email", "name", "password", "apps", "designation"],
-  ["asha@mcciapune.com", "Asha Patil", "", "Tally; Finance / Invoices", "Accountant"],
-  ["ravi@gmail.com", "Ravi Kulkarni", "Welcome2025x", "CRM", ""],
+  ["email", "name", "apps", "designation"],
+  ["asha@mcciapune.com", "Asha Patil", "Tally; Finance / Invoices", "Accountant"],
+  ["ravi@gmail.com", "Ravi Kulkarni", "CRM", ""],
 ]);
 
 function download(name: string, text: string) {
@@ -45,7 +45,7 @@ export function ImportUsers() {
     if (table.length - 1 > MAX_ROWS) return setProblem(`At most ${MAX_ROWS} users per file.`);
     const cell = (r: string[], n: string) => (col(n) >= 0 ? (r[col(n)] ?? "").trim() : "");
     setRows(table.slice(1).map((r, i) => ({
-      line: i + 2, email: cell(r, "email"), name: cell(r, "name"), password: cell(r, "password"),
+      line: i + 2, email: cell(r, "email"), name: cell(r, "name"),
       designation: cell(r, "designation"), apps: cell(r, "apps"),
     })));
   }
@@ -57,7 +57,7 @@ export function ImportUsers() {
       const batch = rows.slice(i, i + BATCH);
       const r = await importUsers(batch);
       if (r.ok) all.push(...r.data);
-      else all.push(...batch.map((b) => ({ line: b.line, email: b.email, name: b.name, apps: [], status: "error" as const, message: r.error })));
+      else all.push(...batch.map((b) => ({ line: b.line, email: b.email, name: b.name, status: "error" as const, message: r.error })));
       setResults([...all]); setDone(Math.min(i + BATCH, rows.length));
     }
     setRunning(false);
@@ -66,17 +66,14 @@ export function ImportUsers() {
   }
 
   const created = results.filter((r) => r.status === "created");
-  const credentials = () =>
-    download("new-user-credentials.csv", toCsv([["Name", "Email", "Temporary password", "Apps"], ...created.map((r) => [r.name, r.email, r.password ?? "", r.apps.join("; ")])]));
 
   return (
     <div className="glass space-y-4 p-5 sm:p-6">
       <div>
         <h2 className="text-lg font-semibold">Import users from CSV</h2>
         <p className="mt-1 text-sm text-muted">
-          Columns: <b>email</b>, <b>name</b> (required) and <b>password</b>, <b>apps</b>, <b>designation</b> (optional). Leave the password blank and one is
-          generated. List several apps with <code>;</code>, and write <code>Department / App</code> if two apps share a name. Imported users are accepted
-          straight away and must change their password at first login.
+          Columns: <b>email</b>, <b>name</b> (required) and <b>apps</b>, <b>designation</b> (optional). List several apps with <code>;</code>, and
+          write <code>Department / App</code> if two apps share a name. Emails that already exist are skipped.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
@@ -103,12 +100,6 @@ export function ImportUsers() {
       {(running || results.length > 0) && (
         <div className="space-y-3">
           <p className="text-sm">{running ? `Importing… ${done} of ${rows.length}` : `Finished: ${created.length} created, ${results.filter((r) => r.status === "skipped").length} skipped, ${results.filter((r) => r.status === "error").length} with errors.`}</p>
-          {!running && created.length > 0 && (
-            <div className="alert alert-green flex-wrap items-center justify-between">
-              <span>Passwords are shown only now. Download them to email each person their sign-in details.</span>
-              <button className="btn btn-primary btn-sm" onClick={credentials}><Download size={14} /> Download credentials</button>
-            </div>
-          )}
           <div className="table-wrap max-h-96 overflow-y-auto"><table>
             <thead><tr><th>Line</th><th>Email</th><th>Result</th></tr></thead>
             <tbody>{results.map((r) => (
