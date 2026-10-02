@@ -12,8 +12,7 @@ const BATCH = 20; // a big file is sent a few rows at a time
 const MAX_ROWS = 1000;
 const TEMPLATE = toCsv([
   ["email", "name", "apps", "designation"],
-  ["asha@mcciapune.com", "Asha Patil", "Tally; Finance / Invoices", "Accountant"],
-  ["ravi@gmail.com", "Ravi Kulkarni", "CRM", ""],
+  ["name@example.com", "Full Name", "App name; Department / App name", "Job title"],
 ]);
 
 function download(name: string, text: string) {

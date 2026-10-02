@@ -18,9 +18,9 @@ npx tsx scripts/seed.ts               # or: npm run db:seed (safe to re-run)
 npm run dev
 ```
 
-Environment variables (see `.env.example`): `DATABASE_URL`, `DB_DRIVER` (`neon` or `pg`), `DATABASE_SSL`, `HEAD_ADMIN_EMAIL` and `HEAD_ADMIN_NAME` (the head admin the hub acts as), and `ALLOWED_EMAIL_DOMAIN` (comma-separated domains that users may have; defaults to `mcciapune.com,gmail.com`).
+Environment variables (see `.env.example`): `DATABASE_URL`, `DB_DRIVER` (`neon` or `pg`), `DATABASE_SSL`, `HEAD_ADMIN_EMAIL` and `HEAD_ADMIN_NAME` (the head admin the hub acts as), and `ALLOWED_EMAIL_DOMAIN` (optional, comma-separated domains that users may have; empty means any domain).
 
-The seed creates the six departments (Finance, CRM, Creative, Inventory, Safety Week, Approval System) and the head admin. Applications are added later in Administrator.
+The seed only creates the head admin named in the environment. Departments, apps and users are all added from Administrator.
 
 Useful scripts: `npm run db:generate`, `npm run db:migrate`, `npm run db:seed`, `npm run typecheck`, `npm run lint`, `npm run build`.
 
