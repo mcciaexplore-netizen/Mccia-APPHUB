@@ -132,7 +132,6 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
     font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.1em; color: var(--c-subtle);
   }
-  .section-title { font-size: clamp(1.9rem, 3.5vw, 2.5rem); }
   .big-number {
     font-family: var(--font-heading); font-weight: 800;
     font-size: clamp(2.2rem, 4vw, 2.8rem); color: var(--c-primary); line-height: 1.1;
