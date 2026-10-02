@@ -15,7 +15,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ appI
 
   const user = await getCurrentUser();
   if (!user) return NextResponse.redirect(new URL("/login", req.url), 302);
-  if (user.status !== "approved" || !user.passwordHash) return NextResponse.redirect(new URL("/", req.url), 302);
   if (user.mustChangePassword) return NextResponse.redirect(new URL("/change-password", req.url), 302);
 
   const target = await getLaunchTarget(user, appId);

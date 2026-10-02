@@ -2,7 +2,7 @@
 
 One front office for every MCCIA web app. Staff sign in with email and password, pick a department in the sidebar, and open the applications the administrator has given them, shown as square cards. The hub stores links, controls exactly which user sees which app, and logs logins and launches. It does not host the apps. Everything is managed from **Administrator** (head admin only), so adding a department, app, user or access change never needs a redeploy.
 
-Stack: Next.js 16 (App Router, TypeScript), Tailwind CSS v4, Postgres + Drizzle ORM, Auth.js v5 (email + password with bcrypt; Google optional), lucide-react, zod.
+Stack: Next.js 16 (App Router, TypeScript), Tailwind CSS v4, Postgres + Drizzle ORM, Auth.js v5 (email + password with bcrypt), lucide-react, zod.
 
 All commands below are PowerShell.
 
@@ -16,7 +16,7 @@ npx tsx scripts/seed.ts               # or: npm run db:seed (safe to re-run)
 npm run dev
 ```
 
-Environment variables (see `.env.example`): `DATABASE_URL`, `DB_DRIVER` (`neon` or `pg`), `DATABASE_SSL`, `AUTH_SECRET`, `AUTH_URL`, `HEAD_ADMIN_EMAIL`, `HEAD_ADMIN_NAME`, and optionally `HEAD_ADMIN_TEMP_PASSWORD` (otherwise the seed generates one and prints it once), `ALLOWED_EMAIL_DOMAIN` (comma-separated domains that may sign up or be added; defaults to `mcciapune.com,gmail.com`) and `ZOHO_ALLOWED_EMAIL_DOMAIN` (domains allowed through Zoho sign-in; defaults to `mcciapune.com`, so Gmail addresses must use Google), `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (Google sign-in appears only when both are set), `AUTH_ZOHO_ID` / `AUTH_ZOHO_SECRET` (Zoho sign-in appears only when both are set) and `ZOHO_ACCOUNTS_URL` (your Zoho data centre, for example `https://accounts.zoho.in`; defaults to `.com`).
+Environment variables (see `.env.example`): `DATABASE_URL`, `DB_DRIVER` (`neon` or `pg`), `DATABASE_SSL`, `AUTH_SECRET`, `AUTH_URL`, `HEAD_ADMIN_EMAIL`, `HEAD_ADMIN_NAME`, and optionally `HEAD_ADMIN_TEMP_PASSWORD` (otherwise the seed generates one and prints it once), `ALLOWED_EMAIL_DOMAIN` (comma-separated domains that users may have; defaults to `mcciapune.com,gmail.com`).
 
 The seed creates the six departments (Finance, CRM, Creative, Inventory, Safety Week, Approval System) and the head admin with a temporary password that must be changed at first login. Applications are added later in Administrator.
 
@@ -25,14 +25,12 @@ Useful scripts: `npm run db:generate`, `npm run db:migrate`, `npm run db:seed`, 
 ## Deployment (Vercel + Neon)
 
 1. Create the Neon project and copy the **pooled** connection string into `DATABASE_URL`.
-2. For Zoho sign-in, open the [Zoho API Console](https://api-console.zoho.com) (use the console of your data centre, for example `api-console.zoho.in`), add a **Server-based Application**, and set the redirect URI to `https://<your-domain>/api/auth/callback/zoho` (plus `http://localhost:3000/api/auth/callback/zoho` for local use). Put the client id and secret in `AUTH_ZOHO_ID` / `AUTH_ZOHO_SECRET`.
-3. For Google sign-in, in Google Cloud Console create OAuth credentials (Web application). Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google` and `https://<your-domain>/api/auth/callback/google`.
-4. Generate the secret: `npx auth secret` and put it in `AUTH_SECRET`.
-5. Apply migrations: `npx drizzle-kit migrate`. Never use `push` on production.
-6. Seed: `npx tsx scripts/seed.ts` (note the head admin temporary password it prints)
-7. Push to GitHub, import the repo in Vercel, add all env vars, deploy.
-8. Set `AUTH_URL` to the production URL and add the custom domain (for example `apps.<orgdomain>`).
-9. Sign in as the head admin, open Administrator, and replace the sample data with real departments, apps and users.
+2. Generate the secret: `npx auth secret` and put it in `AUTH_SECRET`.
+3. Apply migrations: `npx drizzle-kit migrate`. Never use `push` on production.
+4. Seed: `npx tsx scripts/seed.ts` (note the head admin temporary password it prints)
+5. Push to GitHub, import the repo in Vercel, add all env vars, deploy.
+6. Set `AUTH_URL` to the production URL and add the custom domain (for example `apps.<orgdomain>`).
+7. Sign in as the head admin, open Administrator, and replace the sample data with real departments, apps and users.
 
 ## Test login (optional)
 
@@ -44,9 +42,9 @@ Set `TEST_LOGIN_USER` and `TEST_LOGIN_PASSWORD` in the env and typing that usern
 - **Departments contain apps; every app belongs to exactly one department.** Access is granted per user per app (table `user_app_access`), never per department. A user can hold apps from several departments.
 - **Roles:** `head_admin` sees every app and is the only role that can open Administrator. `member` ("User") sees only the apps assigned to them. `dept_lead` ("Department admin") exists in the schema for later; there is no UI to create it and it has no extra powers beyond a read-only Activity page for its home department.
 - **The sidebar** lists only departments where the user has at least one app. App URLs are never sent to the browser in lists; every card opens `/go/[appId]`, which re-checks access on the server, logs the launch, and redirects. Without access it returns 404.
-- **Sign-up and approval:** anyone with an allowed email (`ALLOWED_EMAIL_DOMAIN`) can click Continue with Google or Zoho. After the provider confirms their email they set a password, and their account is saved as **pending**. They see only a "waiting for approval" page until a head admin accepts them in Administrator → Users (tabs Pending / Accepted / Rejected, with the pending count shown on the sidebar). A rejected person cannot sign in by any route and can be accepted later. Accepting gives no apps; grant them under Access. The email in `HEAD_ADMIN_EMAIL` is always an active, approved head admin: it signs in the same way but needs no approval.
+- **Approval status:** every user is `approved`, `pending` or `rejected`. Only approved, active users can sign in. Administrator → Users has Pending / Accepted / Rejected tabs, with Accept and Reject for moving someone between them. There is no self sign-up; accounts are created by an admin or by CSV import.
 - **CSV import:** Administrator → Users → Import CSV takes columns `email`, `name` (required) and `password`, `apps`, `designation` (optional). Blank passwords are generated, `apps` lists app names separated by `;` (write `Department / App` when two apps share a name), and imported users are accepted at once with the apps granted and a temporary password they must change when they sign in with it. After the import the page offers a credentials CSV (the only time the passwords are shown) to email people their sign-in details. Existing emails are skipped, never changed. The hub does not send email itself.
-- **Accounts:** the head admin can also create users one at a time with a temporary password (`must_change_password`), and the user must change it before doing anything else. People who sign in with Google or Zoho skip that forced change. Passwords are bcrypt-hashed (cost 12) and never logged.
+- **Accounts:** the head admin can also create users one at a time with a temporary password (`must_change_password`), and the user must change it before doing anything else. Passwords are bcrypt-hashed (cost 12) and never logged.
 - **Login protection:** every attempt is recorded in `login_attempts`. 5 failed attempts for an email within 15 minutes lock it until the window passes (or the admin resets the password); 25 failed attempts from one IP in 15 minutes block that IP. Sessions last 8 hours.
 - **Soft delete only:** users, apps and departments are deactivated, never deleted, so the activity log stays intact. The last active head admin cannot be deactivated or demoted. Role and `is_active` are re-read from the database on every request, and every mutation runs through a server action that first checks head-admin status.
 - **Access management** (Administrator → Access): a per-user checklist tree (ticking a department ticks all its apps), a per-app user list with bulk add/remove, bulk assignment to many users, and reusable templates that are copied onto users and can then be customised.
@@ -99,7 +97,7 @@ MCCIA Applied AI Studio tokens live in `src/app/globals.css`. Tailwind v4 has no
 
 ## Future work: SSO for the linked apps
 
-Each linked app keeps its own login for now. The `apps.app_token` column is there so a signed-JWT handoff can be added later without a schema change. Google or Microsoft sign-in for the hub itself can be added as another Auth.js provider (Google is already wired and switches on when its credentials are set).
+Each linked app keeps its own login for now. The `apps.app_token` column is there so a signed-JWT handoff can be added later without a schema change.
 
 ## Out of scope
 

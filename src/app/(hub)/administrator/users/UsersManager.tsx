@@ -19,7 +19,7 @@ type U = {
 const TABS: { key: UserStatus; label: string }[] = [
   { key: "pending", label: "Pending" }, { key: "approved", label: "Accepted" }, { key: "rejected", label: "Rejected" },
 ];
-const sourceLabel = (s: string | null) => (s === "google" ? "Google" : s === "zoho" ? "Zoho" : s === "csv" ? "CSV import" : s === "admin" ? "Added by admin" : "—");
+const sourceLabel = (s: string | null) => (s === "csv" ? "CSV import" : s === "admin" ? "Added by admin" : "—");
 type D = { id: string; name: string; isActive: boolean };
 type Res = { ok: true } | { ok: false; error: string };
 

@@ -29,19 +29,3 @@ export async function changePassword(input: unknown): Promise<Result> {
     return { ok: false, error: "Something went wrong. Please try again." };
   }
 }
-
-/** First-time password for someone who signed up with Google or Zoho. Only allowed while they have no password yet. */
-export async function setInitialPassword(input: unknown): Promise<Result> {
-  try {
-    const me = await getCurrentUser();
-    if (!me) return { ok: false, error: "Please sign in again." };
-    if (me.passwordHash) return { ok: false, error: "A password is already set. Use Change password instead." };
-    const v = z.object({ next: passwordSchema }).parse(input);
-    await db.update(users).set({ passwordHash: await hashPassword(v.next), mustChangePassword: false }).where(eq(users.id, me.id));
-    return { ok: true };
-  } catch (e) {
-    if (e instanceof z.ZodError) return { ok: false, error: e.issues[0]?.message ?? "Invalid input" };
-    console.error(e);
-    return { ok: false, error: "Something went wrong. Please try again." };
-  }
-}

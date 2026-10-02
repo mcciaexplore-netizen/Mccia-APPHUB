@@ -18,15 +18,13 @@ export const getCurrentUser = cache(async (): Promise<User | null> => {
     }
   }
   const session = await auth();
-  const su = session?.user as { id?: string; test?: boolean; via?: string } | undefined;
+  const su = session?.user as { id?: string; test?: boolean } | undefined;
   if (!su?.id) return null;
   const [u] = await db.select().from(users).where(eq(users.id, su.id));
-  // Rejected people are signed out of everything. Pending people keep a session so they can set a password and wait.
-  if (!u || !u.isActive || u.status === "rejected") return null;
-  // The env test login is explicit and opt-in, and a Google/Zoho sign-in already proves the email, so neither owes the
-  // first-login password change (a temporary password may have been set for them by CSV import or an admin).
-  const exempt = (su.test && testLoginEnabled()) || su.via === "google" || su.via === "zoho";
-  return exempt ? { ...u, mustChangePassword: false } : u;
+  // Only accepted, active people may use the hub (rejected or pending accounts are signed out).
+  if (!u || !u.isActive || u.status !== "approved") return null;
+  // The env test login is explicit and opt-in, so it is exempt from the first-login password change.
+  return su.test && testLoginEnabled() ? { ...u, mustChangePassword: false } : u;
 });
 
 /** Signed in, but may still owe a first-login password change. Only the change-password flow uses this directly. */
@@ -39,8 +37,6 @@ export async function requireSessionUser(): Promise<User> {
 /** Signed in and past the forced password change. Use this for every page and route. */
 export async function requireUser(): Promise<User> {
   const u = await requireSessionUser();
-  if (!u.passwordHash) redirect("/set-password"); // Google/Zoho sign-ups choose a password first
-  if (u.status !== "approved") redirect("/pending"); // then wait for an administrator
   if (u.mustChangePassword) redirect("/change-password");
   return u;
 }

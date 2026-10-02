@@ -15,7 +15,7 @@ import { sql } from "drizzle-orm";
 
 // "member" is the plain User role; "dept_lead" is reserved for a future Department Admin (no UI yet).
 export const roleEnum = pgEnum("role", ["head_admin", "dept_lead", "member"]);
-// New Google/Zoho sign-ups start as "pending" until a head admin accepts or rejects them.
+// Only "approved" users may sign in. An admin moves people between pending, approved and rejected.
 export const userStatusEnum = pgEnum("user_status", ["pending", "approved", "rejected"]);
 export const activityActionEnum = pgEnum("activity_action", ["login", "launch"]);
 
@@ -46,9 +46,9 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash"),
   mustChangePassword: boolean("must_change_password").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
-  // Existing and admin-created users are approved; only the Google/Zoho sign-up path sets "pending".
+  // Existing, admin-created and CSV-imported users are approved.
   status: userStatusEnum("status").notNull().default("approved"),
-  signupSource: text("signup_source"), // google | zoho | csv | admin
+  signupSource: text("signup_source"), // csv | admin
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   reviewedById: uuid("reviewed_by_id"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
