@@ -1,9 +1,6 @@
-import { count, eq } from "drizzle-orm";
-import { db } from "@/db";
-import { users } from "@/db/schema";
 import { signOut } from "@/lib/auth";
 import { requireUser } from "@/lib/permissions";
-import { getVisibleDepartments } from "@/lib/access";
+import { getPendingUserCount, getVisibleDepartments } from "@/lib/access";
 import { HubShell } from "@/components/HubShell";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +11,7 @@ export default async function HubLayout({ children }: { children: React.ReactNod
   const [departments, pendingUsers] = await Promise.all([
     getVisibleDepartments(user),
     // Head admins are told how many sign-ups are waiting for a decision.
-    user.role === "head_admin"
-      ? db.select({ n: count() }).from(users).where(eq(users.status, "pending")).then((r) => r[0].n)
-      : Promise.resolve(0),
+    user.role === "head_admin" ? getPendingUserCount() : Promise.resolve(0),
   ]);
 
   async function signOutAction() {

@@ -1,21 +1,23 @@
 import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { auth, testLoginEnabled } from "@/lib/auth";
 import { db } from "@/db";
 import { users, type User } from "@/db/schema";
 
 /** Current user, re-read from the DB on every request so deactivation and role changes are immediate. */
 export const getCurrentUser = cache(async (): Promise<User | null> => {
-  // Local development only: skip sign-in and act as the seeded head admin.
-  // Requires BOTH NODE_ENV=development and DEV_AUTH_BYPASS=true, so it can never be active in a production build.
-  if (process.env.NODE_ENV === "development" && process.env.DEV_AUTH_BYPASS === "true") {
+  // No sign-in: everyone acts as the head admin. Off unless OPEN_ACCESS=true is set (any environment), or locally
+  // when NODE_ENV=development and DEV_AUTH_BYPASS=true. Anyone who can reach the site can do everything while it is on.
+  if (process.env.OPEN_ACCESS === "true" || (process.env.NODE_ENV === "development" && process.env.DEV_AUTH_BYPASS === "true")) {
     const email = process.env.HEAD_ADMIN_EMAIL?.trim().toLowerCase();
-    if (email) {
-      const [u] = await db.select().from(users).where(eq(users.email, email));
-      return u && u.isActive ? u : null;
-    }
+    const [u] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.role, "head_admin"), eq(users.isActive, true), email ? eq(users.email, email) : undefined))
+      .limit(1);
+    return u ? { ...u, mustChangePassword: false, status: "approved" } : null;
   }
   const session = await auth();
   const su = session?.user as { id?: string; test?: boolean } | undefined;

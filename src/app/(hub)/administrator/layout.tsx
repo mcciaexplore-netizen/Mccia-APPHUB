@@ -1,13 +1,11 @@
-import { count, eq } from "drizzle-orm";
-import { db } from "@/db";
-import { users } from "@/db/schema";
 import { requireHeadAdmin } from "@/lib/permissions";
+import { getPendingUserCount } from "@/lib/access";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { AdminNav } from "./AdminNav";
 
 export default async function AdministratorLayout({ children }: { children: React.ReactNode }) {
-  await requireHeadAdmin();
-  const [{ n: pendingUsers }] = await db.select({ n: count() }).from(users).where(eq(users.status, "pending"));
+  // The count is the same query the hub layout runs, so it is shared; checking the admin runs alongside it.
+  const [, pendingUsers] = await Promise.all([requireHeadAdmin(), getPendingUserCount()]);
   return (
     <ConfirmProvider>
       <h1 className="text-3xl sm:text-4xl">Administrator</h1>
