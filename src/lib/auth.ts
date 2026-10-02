@@ -96,7 +96,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const email = (user?.email ?? profile?.email)?.trim().toLowerCase();
       if (!email || profile?.email_verified === false) return "/login?error=NotInvited";
       // Server-side domain enforcement.
-      if (!isEmailAllowed(email)) return "/login?error=WrongDomain";
+      if (!isEmailAllowed(email, account?.provider)) return `/login?error=${account?.provider === "zoho" ? "WrongDomainZoho" : "WrongDomain"}`;
 
       const isAdmin = email === headAdminEmail();
       let [u] = await db.select().from(users).where(eq(users.email, email));

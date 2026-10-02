@@ -14,6 +14,7 @@ const errorText = (code: string): string =>
     Deactivated: "Your account has been deactivated. Contact the administrator.",
     Rejected: "Your request to use this hub was not approved. Contact the administrator.",
     WrongDomain: `Please use an email ending in ${domainsLabel()}.`,
+    WrongDomainZoho: "Zoho sign-in is only for @mcciapune.com accounts. Use Google if you have a Gmail address.",
   })[code] ?? "Sign-in failed. Please try again.";
 
 export const metadata = { title: "Sign in · MCCIA App Hub" };

@@ -6,9 +6,21 @@ function allowedDomains(): string[] {
   return raw.split(",").map((d) => d.trim().toLowerCase().replace(/^@/, "")).filter(Boolean);
 }
 
-export function isEmailAllowed(email: string): boolean {
-  const at = email.trim().toLowerCase().lastIndexOf("@");
-  return at > 0 && allowedDomains().includes(email.trim().toLowerCase().slice(at + 1));
+/** Zoho accounts belong to the organisation, so Zoho sign-in is limited to ZOHO_ALLOWED_EMAIL_DOMAIN (default mcciapune.com). */
+const DEFAULT_ZOHO_DOMAINS = "mcciapune.com";
+
+function zohoDomains(): string[] {
+  const raw = process.env.ZOHO_ALLOWED_EMAIL_DOMAIN?.trim() || DEFAULT_ZOHO_DOMAINS;
+  return raw.split(",").map((d) => d.trim().toLowerCase().replace(/^@/, "")).filter(Boolean);
+}
+
+export function isEmailAllowed(email: string, provider?: string): boolean {
+  const e = email.trim().toLowerCase();
+  const at = e.lastIndexOf("@");
+  if (at <= 0) return false;
+  const domain = e.slice(at + 1);
+  if (provider === "zoho") return zohoDomains().includes(domain) && allowedDomains().includes(domain);
+  return allowedDomains().includes(domain);
 }
 
 export const domainsLabel = () => allowedDomains().map((d) => `@${d}`).join(" or ");
