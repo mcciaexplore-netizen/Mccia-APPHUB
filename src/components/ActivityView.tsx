@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Download, UserX } from "lucide-react";
+import { Download } from "lucide-react";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, departments } from "@/db/schema";
-import { getActivity, getMetrics, lastLogins, neverLaunched, type Filters } from "@/lib/activity";
+import { getActivity, getMetrics, type Filters } from "@/lib/activity";
 import { formatIST } from "@/lib/format";
 import { CountUp } from "@/components/CountUp";
 
@@ -19,15 +19,13 @@ function Kpi({ label, children }: { label: string; children: React.ReactNode }) 
 export async function ActivityView({ filters, basePath, scopeDeptId, isAdmin, searchParams }: {
   filters: Filters; basePath: string; scopeDeptId?: string; isAdmin: boolean; searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const [data, m, deps, appList, never, logins] = await Promise.all([
+  const [data, m, deps, appList] = await Promise.all([
     getActivity(filters, scopeDeptId),
     getMetrics(scopeDeptId),
     db.select({ id: departments.id, name: departments.name }).from(departments).orderBy(asc(departments.name)),
     scopeDeptId
       ? db.select({ id: apps.id, name: apps.name }).from(apps).where(eq(apps.departmentId, scopeDeptId)).orderBy(asc(apps.name))
       : db.select({ id: apps.id, name: apps.name }).from(apps).orderBy(asc(apps.name)),
-    isAdmin ? neverLaunched() : Promise.resolve([]),
-    isAdmin ? lastLogins() : Promise.resolve([]),
   ]);
 
   const qs = (over: Record<string, string | number>) => {
@@ -41,7 +39,7 @@ export async function ActivityView({ filters, basePath, scopeDeptId, isAdmin, se
   return (
     <div className="space-y-10">
       <div className="grid gap-4 sm:grid-cols-3">
-        <Kpi label="Active users this week"><CountUp value={m.activeUsersWeek} className="big-number" /></Kpi>
+        <Kpi label="App launches this week"><CountUp value={m.launchesWeek} className="big-number" /></Kpi>
         <Kpi label="App launches today"><CountUp value={m.launchesToday} className="big-number big-number-green" /></Kpi>
         <Kpi label="Most used app this week">
           {m.topApp ? (<><p className="big-number !text-2xl">{m.topApp.name}</p><p className="text-sm text-brand-green-text"><CountUp value={m.topApp.n} /> launches</p></>) : <p className="big-number !text-2xl">—</p>}
@@ -98,24 +96,6 @@ export async function ActivityView({ filters, basePath, scopeDeptId, isAdmin, se
             <tbody>{data.perDept.map((r, i) => <tr key={i}><td>{r.name}</td><td className="text-right">{r.n.toLocaleString("en-IN")}</td></tr>)}
               {data.perDept.length === 0 && <tr><td colSpan={2} className="text-subtle">No data.</td></tr>}</tbody></table></div></section>
       </div>
-
-      {isAdmin && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <section>
-            <h2 className="mb-3 flex items-center gap-2 text-xl"><UserX size={18} /> Never launched an app</h2>
-            {never.length === 0 ? <div className="alert alert-green">Every active user has opened at least one application.</div> : (
-              <div className="table-wrap"><table><thead><tr><th>User</th><th>Last login</th></tr></thead>
-                <tbody>{never.map((u) => <tr key={u.id}><td><b>{u.name}</b><span className="block text-xs text-muted">{u.email}</span></td><td className="whitespace-nowrap text-xs">{formatIST(u.lastLoginAt)}</td></tr>)}</tbody></table></div>
-            )}
-          </section>
-          <section>
-            <h2 className="mb-3 text-xl">Last login per user</h2>
-            <div className="table-wrap"><table><thead><tr><th>User</th><th>Last login</th></tr></thead>
-              <tbody>{logins.map((u) => <tr key={u.id} className={u.isActive ? "" : "opacity-60"}><td><b>{u.name}</b><span className="block text-xs text-muted">{u.email}</span></td><td className="whitespace-nowrap text-xs">{formatIST(u.lastLoginAt)}</td></tr>)}
-                {logins.length === 0 && <tr><td colSpan={2} className="text-subtle">No users.</td></tr>}</tbody></table></div>
-          </section>
-        </div>
-      )}
     </div>
   );
 }

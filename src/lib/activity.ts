@@ -1,5 +1,5 @@
 import "server-only";
-import { and, count, countDistinct, desc, eq, gte, isNotNull, lt, notExists, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gte, lt, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { activityLog, apps, departments, users } from "@/db/schema";
 
@@ -84,21 +84,9 @@ export async function getMetrics(scopeDeptId?: string) {
   const scope = scopeDeptId ? eq(activityLog.departmentId, scopeDeptId) : undefined;
   const [[t], [w], top] = await Promise.all([
     db.select({ opens: count() }).from(activityLog).where(and(gte(activityLog.openedAt, today), eq(activityLog.action, "launch"), scope)),
-    db.select({ users: countDistinct(activityLog.userId) }).from(activityLog).where(and(gte(activityLog.openedAt, weekStart), isNotNull(activityLog.userId), scope)),
+    db.select({ opens: count() }).from(activityLog).where(and(gte(activityLog.openedAt, weekStart), eq(activityLog.action, "launch"), scope)),
     db.select({ name: apps.name, n: count() }).from(activityLog).innerJoin(apps, eq(apps.id, activityLog.appId))
       .where(and(gte(activityLog.openedAt, weekStart), eq(activityLog.action, "launch"), scope)).groupBy(apps.id, apps.name).orderBy(desc(count())).limit(1),
   ]);
-  return { launchesToday: t.opens, activeUsersWeek: w.users, topApp: top[0] ?? null };
+  return { launchesToday: t.opens, launchesWeek: w.opens, topApp: top[0] ?? null };
 }
-
-/** Active users who have never launched an application. */
-export const neverLaunched = () =>
-  db.select({ id: users.id, name: users.name, email: users.email, lastLoginAt: users.lastLoginAt })
-    .from(users)
-    .where(and(eq(users.isActive, true), notExists(db.select({ x: activityLog.id }).from(activityLog).where(and(eq(activityLog.userId, users.id), eq(activityLog.action, "launch"))))))
-    .orderBy(users.name);
-
-/** Every user with their most recent sign-in, newest first (never-signed-in users last). */
-export const lastLogins = () =>
-  db.select({ id: users.id, name: users.name, email: users.email, isActive: users.isActive, lastLoginAt: users.lastLoginAt })
-    .from(users).orderBy(sql`${users.lastLoginAt} desc nulls last`, users.name);

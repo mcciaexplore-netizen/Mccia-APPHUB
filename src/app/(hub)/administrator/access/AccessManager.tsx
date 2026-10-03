@@ -97,7 +97,7 @@ export function AccessManager({ initialTab, catalog, people, appCounts, template
                     <td className="text-right"><Link className="btn btn-ghost btn-sm" href={`/administrator/access/user/${p.id}`}>Manage</Link></td>
                   </tr>
                 ))}
-                {shown.length === 0 && <tr><td colSpan={5} className="text-subtle">{people.length === 0 ? "No users yet. Add users first." : "No users match."}</td></tr>}
+                {shown.length === 0 && <tr><td colSpan={5} className="text-subtle">{people.length === 0 ? "No users yet. Use Bulk import under Users." : "No users match."}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -151,7 +151,7 @@ export function AccessManager({ initialTab, catalog, people, appCounts, template
                     <td className="text-right"><Link className="btn btn-ghost btn-sm" href={`/administrator/access/app/${a.id}`}>Manage</Link></td>
                   </tr>
                 ))}
-                {catalog.apps.length === 0 && <tr><td colSpan={4} className="text-subtle">No applications yet. Add some under Apps &amp; departments.</td></tr>}
+                {catalog.apps.length === 0 && <tr><td colSpan={4} className="text-subtle">No applications yet. Add some under Departments.</td></tr>}
               </tbody>
             </table>
           </div>
