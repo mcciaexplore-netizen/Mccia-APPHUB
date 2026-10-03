@@ -69,11 +69,11 @@ What to know:
 |---|---|
 | Typecheck, lint, unused-code scan, production build | all clean |
 | Unit tests (`npm run test:unit`) | 18 of 18 |
-| End-to-end tests on the live site (`npm run test:e2e`), Chrome | 170 of 170 |
-| End-to-end tests on the live site, WebKit (Safari's engine) | 170 of 170 |
+| End-to-end tests on the live site (`npm run test:e2e`), Chrome | 186 of 186 |
+| End-to-end tests on the live site, WebKit (Safari's engine) | 170 of 170 before the delete feature was added; not rerun since |
 | Firefox | not run: the browser would not start on the test machine |
 
-The suite signs in as the main admin and covers the login gate, wrong passwords (including many in a row), forged cookies, creating and importing people with passwords, signing in as a normal user and seeing only their applications, deactivation, password reset and change, the Administrator lock, department and application management with bad input, CSV edge cases, access templates, bulk assignment, the per-application editor, the icon pickers, the activity export and a phone-sized screen. It creates test data and removes it, retries when the connection drops, and checks that real data is unchanged.
+The suite signs in as the main admin and covers the login gate, wrong passwords (including many in a row), forged cookies, creating, importing and deleting people and applications, signing in as a normal user and seeing only their applications, deactivation, password reset and change, the Administrator lock, department and application management with bad input, CSV edge cases, access templates, bulk assignment, the per-application editor, the icon pickers, the activity export and a phone-sized screen. It creates test data and removes it, retries when the connection drops, and checks that real data is unchanged.
 
 Bugs found and fixed while testing: new departments appeared at the top of the menu; an inactive application could not be switched on from its edit form; the sidebar reused one element id twice; the activity page showed login-based figures that had stopped meaning anything; a background router fetch was re-locking Administrator right after it was unlocked; the CSV export checked only that someone was signed in (it now checks for head admin with Administrator unlocked).
 
