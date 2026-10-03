@@ -24,6 +24,15 @@ The seed only creates the head admin named in the environment. Departments, apps
 
 Useful scripts: `npm run db:generate`, `npm run db:migrate`, `npm run db:seed`, `npm run typecheck`, `npm run lint`, `npm run build`.
 
+### Tests
+
+```powershell
+npm run test:unit                                            # fast: CSV parsing/export and the email-domain rule
+$env:E2E_BASE_URL="http://localhost:3000"; npm run test:e2e  # the whole app in a real browser
+```
+
+`test:e2e` needs `E2E_BASE_URL` (it will not guess) and optionally `E2E_BROWSER` = `chromium` (default, uses installed Chrome), `firefox` or `webkit` (run `npx playwright-core install firefox webkit` once). It writes test data whose names start with `ZZ` / `zz-` to the database the site uses, removes it afterwards, and checks your real data is unchanged. See `REPORT.md` for the latest results and a full description of the application.
+
 ### Finding and removing unused code
 
 ```powershell

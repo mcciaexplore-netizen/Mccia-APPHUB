@@ -12,7 +12,9 @@
     "db:seed": "tsx scripts/seed.ts",
     "typecheck": "tsc --noEmit",
     "clean:scan": "node scripts/cleanup.mjs",
-    "clean:fix": "node scripts/cleanup.mjs --fix"
+    "clean:fix": "node scripts/cleanup.mjs --fix",
+    "test:unit": "tsx tests/unit.ts",
+    "test:e2e": "node tests/e2e/suite.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
@@ -36,6 +38,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.7",
     "knip": "^6.39.0",
+    "playwright-core": "^1.63.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5"
