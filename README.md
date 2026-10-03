@@ -2,7 +2,7 @@
 
 One front office for every MCCIA web app. Pick a department in the sidebar and open its applications, shown as square cards. The hub stores links and logs launches. It does not host the apps. Everything is managed from **Administrator**, so adding a department, app or user never needs a redeploy.
 
-**There is no login.** Everyone who opens the hub acts as the head admin, so anyone who can reach the URL can see and change everything. Keep the deployment private (for example with Vercel Deployment Protection) or add a login back before sharing it widely.
+**Sign-in.** Everything is behind a login. The main admin (`HEAD_ADMIN_EMAIL`) signs in with `HEAD_ADMIN_PASSWORD` from the environment; the admin then creates everyone else (one by one or from a CSV) with a username (their email) and a password, and decides which applications each person sees. Administrator asks for the password again and locks itself the moment you leave it.
 
 Stack: Next.js 16 (App Router, TypeScript), Tailwind CSS v4, Postgres + Drizzle ORM, lucide-react, zod.
 
@@ -18,7 +18,7 @@ npx tsx scripts/seed.ts               # or: npm run db:seed (safe to re-run)
 npm run dev
 ```
 
-Environment variables (see `.env.example`): `DATABASE_URL`, `DB_DRIVER` (`neon` or `pg`), `DATABASE_SSL`, `HEAD_ADMIN_EMAIL` and `HEAD_ADMIN_NAME` (the head admin the hub acts as), and `ALLOWED_EMAIL_DOMAIN` (optional, comma-separated domains that users may have; empty means any domain).
+Environment variables (see `.env.example`): `DATABASE_URL`, `DB_DRIVER` (`neon` or `pg`), `DATABASE_SSL`, `AUTH_SECRET` (signs the login cookie; `openssl rand -base64 32`), `HEAD_ADMIN_EMAIL`, `HEAD_ADMIN_NAME`, `HEAD_ADMIN_PASSWORD` (at least 10 characters, a letter and a number), and optionally `ALLOWED_EMAIL_DOMAIN` (comma-separated domains users may have; empty means any).
 
 The seed only creates the head admin named in the environment. Departments, apps and users are all added from Administrator.
 
@@ -48,21 +48,22 @@ node scripts/cleanup.mjs --caches          # delete build caches
 
 1. Create the Neon project and copy the **pooled** connection string into `DATABASE_URL`.
 2. Apply migrations: `npx drizzle-kit migrate`. Never use `push` on production.
-3. Seed: `npx tsx scripts/seed.ts` with `HEAD_ADMIN_EMAIL` and `HEAD_ADMIN_NAME` set.
-4. Push to GitHub, import the repo in Vercel, add `DATABASE_URL`, `HEAD_ADMIN_EMAIL`, `HEAD_ADMIN_NAME` (and the other variables you use), deploy.
+3. Seed: `npx tsx scripts/seed.ts` with `HEAD_ADMIN_EMAIL` and `HEAD_ADMIN_NAME` set (the first sign-in also creates the admin row).
+4. Push to GitHub, import the repo in Vercel, add `DATABASE_URL`, `AUTH_SECRET`, `HEAD_ADMIN_EMAIL`, `HEAD_ADMIN_NAME`, `HEAD_ADMIN_PASSWORD` (and `ALLOWED_EMAIL_DOMAIN` if you use it), deploy.
 5. Open the site, go to Administrator, and replace the sample data with real departments, apps and users.
 
 ## Access model
 
-- **No login.** Every page is open, and everyone acts as the head admin (`HEAD_ADMIN_EMAIL`). Users, per-app access and templates are still stored and editable, but nothing enforces them until a login is added back.
+- **Login is required for everything** except `/login`. A signed cookie (HMAC with `AUTH_SECRET`, 8 hours) names the person; their account is re-read from the database on every request, so deactivating someone or changing their password takes effect immediately. A wrong password just fails and can be retried at once; nothing is ever locked or blocked.
+- **Administrator is locked separately.** Opening it asks for the password again (the unlock lasts while it is in use, up to 30 idle minutes, and is a session cookie). Moving to the hub, or loading any page outside Administrator, locks it again. Every server action and route re-checks this itself; the gate in `src/proxy.ts` is only the first line.
 - **Departments contain apps; every app belongs to exactly one department.** Access is granted per user per app (table `user_app_access`), never per department. A user can hold apps from several departments.
 - **Roles:** `head_admin` sees every app and is the only role that can open Administrator. `member` ("User") sees only the apps assigned to them. `dept_lead` ("Department admin") exists in the schema for later; there is no UI to create it and it has no extra powers beyond a read-only Activity page for its home department.
 - **The sidebar** lists only departments where the user has at least one app. App URLs are never sent to the browser in lists; every card opens `/go/[appId]`, which re-checks access on the server, logs the launch, and redirects. Without access it returns 404.
 - **Administrator** (head admin only) is a sidebar item that opens three sections: **Departments**, **Users** and **Notifications Panel** (a placeholder for now). Access and Activity log stay reachable from the tabs at the top of every Administrator page.
 - **Departments:** the list shows every department; open one to see its **Applications** tab (with *Add application*, which adds to that department only) and its **Users** tab (people whose home department it is, with the applications they can open there).
-- **Users** is a read-only map of every user and the applications they can open. There is no add-user form: people are created in bulk with **Bulk import (CSV)** for the one-time setup.
+- **Users:** everyone who can sign in, with their department and the applications they can open. **Add user** creates one account (email as the username, plus a password you can generate); **Reset password** and the Active toggle manage existing ones; the main admin's password lives in the environment, so it cannot be reset or deactivated here. **Bulk import (CSV)** takes `name, email, password` (required) and `department, applications, designation`. Passwords are stored as scrypt hashes, never in plain text. People can change their own password from the menu in the top-right corner.
 - **Bulk import (CSV):** columns `name`, `email` (required) and `department`, `applications`, `designation` (optional). Put several applications in one quoted cell separated by commas, for example `"Tally, CRM"`. An application is looked up in the user's own department first; write `Department / App` when the same name exists in several. Departments and applications must exist first. Existing emails are skipped, never changed. A template can be downloaded from the panel.
-- **Accounts:** there are no passwords. Users exist so access can be assigned per application.
+- **Accounts:** the username is the email address. Users see only the applications assigned to them (Access page); the admin sees everything.
 - **Soft delete only:** users, apps and departments are deactivated, never deleted, so the activity log stays intact. The last active head admin cannot be deactivated or demoted. Role and `is_active` are re-read from the database on every request, and every mutation runs through a server action that first checks head-admin status.
 - **Access management** (Administrator → Access): a per-user checklist tree (ticking a department ticks all its apps), a per-app user list with bulk add/remove, bulk assignment to many users, and reusable templates that are copied onto users and can then be customised.
 - **Activity:** `activity_log` records `launch` actions (earlier `login` entries are kept) with user, app, IP and time. Administrator → Activity shows the log, launches per app and department, active users this week, users who never launched an app, last login per user, and CSV export.

@@ -22,6 +22,9 @@ const { neon } = req("@neondatabase/serverless");
 const sql = neon(process.env.DATABASE_URL);
 const playwright = req("playwright-core");
 const SP = fs.mkdtempSync(path.join(os.tmpdir(), "hub-e2e-"));
+const ADMIN_EMAIL = (process.env.HEAD_ADMIN_EMAIL || "").trim().toLowerCase();
+const ADMIN_PW = process.env.HEAD_ADMIN_PASSWORD || "";
+if (!ADMIN_EMAIL || !ADMIN_PW) { console.error("HEAD_ADMIN_EMAIL and HEAD_ADMIN_PASSWORD must be set in .env: the suite signs in as the main admin."); process.exit(2); }
 const launch = () => BROWSER === "chromium"
   ? playwright.chromium.launch({ channel: process.env.E2E_CHROME_CHANNEL || "chrome", headless: true }).catch(() => playwright.chromium.launch({ headless: true }))
   : playwright[BROWSER].launch({ headless: true });
@@ -32,12 +35,26 @@ const startedAt = new Date();
 const snap = async () => ({
   departments: (await sql`select name,is_active from departments where name not like 'ZZ%' order by sort_order,name`),
   apps: await sql`select a.name,a.is_active,d.name dept from apps a join departments d on d.id=a.department_id where a.name not like 'ZZ%' order by a.name`,
-  users: await sql`select email,role,is_active from users where email not like 'zz-%' order by email`,
+  users: await sql`select email,role,is_active from users where email not like 'zz-%' and email <> ${ADMIN_EMAIL} order by email`,
 });
 const before = await snap();
 const browser = await launch();
 const ctx = await browser.newContext({ viewport: { width: 1300, height: 1000 }, acceptDownloads: true });
 const page = await ctx.newPage();
+const unlockIf = async (pg) => {
+  if (new URL(pg.url()).pathname !== "/unlock") return false;
+  await pg.locator("input[name=password]").fill(ADMIN_PW); await pg.getByRole("button", { name: "Unlock" }).click();
+  await pg.waitForURL((u) => u.pathname !== "/unlock", { timeout: 20000 }).catch(() => {}); return true;
+};
+const rawGoto = page.goto.bind(page);
+page.goto = async (url, opts) => { let r = await rawGoto(url, opts); if (await unlockIf(page)) r = await rawGoto(url, opts); return r; };
+const signIn = async (pg, email, password) => {
+  await pg.goto(BASE + "/login"); await pg.locator("input[name=email]").fill(email); await pg.locator("input[name=password]").fill(password);
+  await pg.getByRole("button", { name: "Sign in" }).click();
+  // Done once the page left /login (signed in) or came back with ?error (refused).
+  await pg.waitForFunction(() => location.pathname !== "/login" || location.search.includes("error"), null, { timeout: 25000 }).catch(() => {});
+  await pg.waitForLoadState("networkidle").catch(() => {}); await pg.waitForTimeout(300);
+};
 const consoleErrors = [], pageErrors = [], dialogs = [];
 page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text().slice(0, 160)); });
 page.on("pageerror", (e) => pageErrors.push(String(e).slice(0, 160)));
@@ -50,13 +67,33 @@ const app = async (name) => (await sql`select * from apps where name=${name}`)[0
 const sidebarLink = (n) => page.locator("aside:visible").getByRole("link", { name: n, exact: true });
 
 try {
+  section("0. Sign-in gate");
+  {
+    const anon = await browser.newContext(); const ap0 = await anon.newPage();
+    for (const p of ["/", "/administrator/users", "/go/00000000-0000-4000-8000-000000000000", "/change-password"]) { await ap0.goto(BASE + p); check("signed out, " + p + " goes to the login page", new URL(ap0.url()).pathname === "/login", ap0.url()); }
+    check("the login page asks for an email and a password", (await ap0.locator("input[name=email]").count()) === 1 && (await ap0.locator("input[name=password]").count()) === 1);
+    await signIn(ap0, ADMIN_EMAIL, "definitely-wrong-1");
+    const wrongTxt = await ap0.content(); check("a wrong password shows an error and stays on the login page", /Incorrect email or password/.test(wrongTxt) && new URL(ap0.url()).pathname === "/login");
+    await signIn(ap0, "nobody-here@example.com", "definitely-wrong-1");
+    check("an unknown email gets exactly the same message (no hint which emails exist)", /Incorrect email or password/.test(await ap0.content()));
+    for (let i = 0; i < 6; i++) await signIn(ap0, ADMIN_EMAIL, "wrong-attempt-" + i + "x");
+    await signIn(ap0, ADMIN_EMAIL, ADMIN_PW);
+    check("after many wrong passwords the right one still works (no lockout)", new URL(ap0.url()).pathname === "/", ap0.url());
+    const sess = (await anon.cookies()).find((c) => c.name === "hub_session");
+    check("the sign-in cookie is HttpOnly, SameSite=Lax" + (BASE.startsWith("https") ? " and Secure" : ""), sess && sess.httpOnly && sess.sameSite === "Lax" && (!BASE.startsWith("https") || sess.secure), JSON.stringify(sess && { httpOnly: sess.httpOnly, sameSite: sess.sameSite, secure: sess.secure }));
+    await anon.close();
+    const forged = await browser.newContext(); await forged.addCookies([{ name: "hub_session", value: "eyJ1IjoieCIsImYiOiJ5IiwiZSI6OTk5OTk5OTk5OSwicCI6InNlc3Npb24ifQ.AAAA", url: BASE }]);
+    const fp = await forged.newPage(); await fp.goto(BASE + "/"); check("a forged cookie is rejected", new URL(fp.url()).pathname === "/login", fp.url()); await forged.close();
+    await signIn(page, ADMIN_EMAIL, ADMIN_PW);
+  }
+
   section("1. Hub: first load, navigation, search");
   const r0 = await page.goto(BASE + "/"); await page.waitForLoadState("networkidle").catch(() => {});
-  check("home returns 200 with no login", r0.status() === 200 && page.url() === BASE + "/", r0.status());
+  check("home opens after signing in", r0.status() === 200 && page.url() === BASE + "/", r0.status());
   const realDeps = before.departments.filter((d) => d.is_active).map((d) => d.name);
   const links = await page.locator("aside:visible nav a").allInnerTexts();
   check("sidebar lists every active department", realDeps.every((n) => links.some((l) => l.trim() === n)), links.map((s) => s.trim()).join(" | "));
-  check("hub shows who it is acting as", (await page.content()).includes("HEAD ADMIN") || (await page.content()).toLowerCase().includes("head admin"));
+  check("the header shows who is signed in", (await page.locator("header").first().innerText()).includes(process.env.HEAD_ADMIN_NAME || ADMIN_EMAIL), (await page.locator("header").first().innerText()).trim());
   for (const d of realDeps) { await sidebarLink(d).click(); await page.waitForFunction((x) => document.querySelector("main h1")?.innerText.trim() === x, d, { timeout: 15000 }).catch(() => {}); const h = await page.locator("main h1").first().innerText(); if (h.trim() !== d) check("department page title for " + d, false, h); }
   check("each department link opens its own page", true);
   await sidebarLink("Finance").click(); await page.waitForFunction(() => document.querySelector("main h1")?.innerText.trim() === "Finance", null, { timeout: 15000 }).catch(() => {}); await page.waitForTimeout(800);
@@ -77,7 +114,7 @@ try {
   const nf = await page.goto(BASE + "/this-page-does-not-exist"); check("unknown page is a branded 404", nf.status() === 404 && (await page.content()).includes("Page not found"));
   const hh = (await page.request.get(BASE + "/")).headers();
   check("security headers present", hh["x-frame-options"] === "DENY" && hh["x-content-type-options"] === "nosniff" && !!hh["referrer-policy"], `${hh["x-frame-options"]} / ${hh["x-content-type-options"]}`);
-  check("login routes are gone", (await page.request.get(BASE + "/login")).status() === 404 && (await page.request.get(BASE + "/api/auth/session")).status() === 404);
+  check("the old auth endpoints are gone", (await page.request.get(BASE + "/api/auth/session")).status() === 404);
 
   section("3. Departments: add, duplicate, edit, reorder, deactivate");
   await go("/administrator/departments");
@@ -137,31 +174,34 @@ try {
 
   section("5. Users: read-only overview and CSV import edge cases");
   await go("/administrator/users");
-  const ut = await main(); check("users view is read-only", !/Add user|Create user|Deactivate/.test(ut) && (await page.locator('button[aria-label="Edit"]').count()) === 0);
+  const ut = await main(); check("Users page offers Add user and Bulk import", (await page.getByRole("button", { name: /Add user/ }).count()) === 1 && (await page.getByRole("button", { name: /Bulk import/ }).count()) === 1);
+  check("the main admin row says its password lives in the settings", ut.toLowerCase().includes("main admin"));
   const importCsv = async (name, content) => { fs.writeFileSync(SP + "/" + name, content); if (!(await page.getByText(/Choose CSV file/).count())) await page.getByRole("button", { name: /Bulk import/ }).click(); await page.locator("input[type=file]").setInputFiles(SP + "/" + name); };
   // bad files first
-  await importCsv("bad1.csv", "email,name\n"); check("header-only file is rejected with a message", await toast("at least one user"));
-  await importCsv("bad2.csv", "foo,bar\n1,2"); check("missing email/name columns is rejected", await toast('"email" and "name"'));
+  await importCsv("bad1.csv", "name,email,password\n"); check("header-only file is rejected with a message", await toast("at least one user"));
+  await importCsv("bad2.csv", "foo,bar\n1,2"); check("missing name/email/password columns is rejected", await toast('"name", "email" and "password"'));
   await importCsv("bad3.csv", ""); check("empty file is rejected", await toast("at least one user"));
   fs.writeFileSync(SP + "/big.csv", "email,name\n" + "x".repeat(1_100_000)); await page.locator("input[type=file]").setInputFiles(SP + "/big.csv"); check("file over 1 MB is rejected", await toast("over 1 MB"));
-  const csv = "﻿" + ["name,email,department,applications,designation,ignored",
-    '"Asha Patil",zz-asha@gmail.com,ZZ Dept A2,"ZZ App Uno, ZZ App Uno",Accountant,x',
-    '  Mixed Case  ,  ZZ-UP@GMAIL.COM  ,ZZ Dept A2,ZZ App Uno,,',
-    '"Line\nBreak",zz-nl@gmail.com,,,,',
-    "=1+1,zz-formula@gmail.com,,,,",
+  const csv = "\uFEFF" + ["name,email,password,department,applications,designation,ignored",
+    '"Asha Patil",zz-asha@gmail.com,Asha-pass-12345,ZZ Dept A2,"ZZ App Uno, ZZ App Uno",Accountant,x',
+    '  Mixed Case  ,  ZZ-UP@GMAIL.COM  ,Mixed-pass-12345,ZZ Dept A2,ZZ App Uno,,',
+    '"Line\nBreak",zz-nl@gmail.com,Newline-pass-123,,,,',
+    "=1+1,zz-formula@gmail.com,Formula-pass-123,,,,",
     "",
-    "Dup One,zz-dup@gmail.com,,,,",
-    "Dup Two,ZZ-DUP@gmail.com,,,,",
-    "Wrong Domain,zz-bad@yahoo.com,,,,",
-    "Bad Dept,zz-baddept@gmail.com,No Such Dept,,,",
-    "Bad App,zz-badapp@gmail.com,ZZ Dept A2,No Such App,,",
-    ",zz-noname@gmail.com,,,,",
-    "Not An Email,not-an-email,,,,"].join("\r\n");
+    "Dup One,zz-dup@gmail.com,Dup-pass-12345,,,,",
+    "Dup Two,ZZ-DUP@gmail.com,Dup-pass-12345,,,,",
+    "Wrong Domain,zz-bad@yahoo.com,Wrong-pass-12345,,,,",
+    "Bad Dept,zz-baddept@gmail.com,Bad-pass-12345,No Such Dept,,,",
+    "Bad App,zz-badapp@gmail.com,Bad-pass-12345,ZZ Dept A2,No Such App,,",
+    ",zz-noname@gmail.com,Noname-pass-123,,,,",
+    "Not An Email,not-an-email,Notmail-pass-123,,,,",
+    "No Password,zz-nopw@gmail.com,,,,,",
+    "Weak Password,zz-weak@gmail.com,short1,,,,"].join("\r\n");
   fs.writeFileSync(SP + "/edge.csv", csv); await page.locator("input[type=file]").setInputFiles(SP + "/edge.csv");
   const importBtn = page.getByRole("button", { name: /^Import \d+ users?/ }); await importBtn.waitFor({ timeout: 10000 });
-  check("blank lines are not counted as rows", /Import 11 users/.test(await importBtn.innerText()), await importBtn.innerText());
+  check("blank lines are not counted as rows", /Import 13 users/.test(await importBtn.innerText()), await importBtn.innerText());
   await importBtn.click(); await page.getByText(/Finished:/).waitFor({ timeout: 60000 }); const sum = await page.getByText(/Finished:/).innerText();
-  check("summary: 5 created, 1 skipped, 5 errors", sum.includes("5 created, 1 skipped, 5 with errors"), sum);
+  check("summary: 5 created, 1 skipped, 7 errors", sum.includes("5 created, 1 skipped, 7 with errors"), sum);
   const u = async (e) => (await sql`select id,name,email,designation,home_department_id from users where email=${e}`)[0];
   const asha = await u("zz-asha@gmail.com"); check("department and designation set; BOM/CRLF handled", asha && asha.home_department_id === dA.id && asha.designation === "Accountant");
   check("same app listed twice gives one grant", (await sql`select count(*)::int n from user_app_access where user_id=${asha.id}`)[0].n === 1);
@@ -169,8 +209,8 @@ try {
   check("name with a line break in quotes is kept whole", (await u("zz-nl@gmail.com"))?.name === "Line\nBreak");
   check("formula-looking name is stored as plain text", (await u("zz-formula@gmail.com"))?.name === "=1+1");
   check("duplicate email inside one file: first created, second skipped", (await u("zz-dup@gmail.com"))?.name === "Dup One");
-  check("wrong domain / unknown department / unknown app / no name / bad email: none created", !(await u("zz-bad@yahoo.com")) && !(await u("zz-baddept@gmail.com")) && !(await u("zz-badapp@gmail.com")) && !(await u("zz-noname@gmail.com")) && !(await u("not-an-email")));
-  const rtxt = await main(); check("each error row explains why", /not found|must end|missing|valid email/i.test(rtxt));
+  check("wrong domain / unknown department / unknown app / no name / bad email: none created", !(await u("zz-bad@yahoo.com")) && !(await u("zz-baddept@gmail.com")) && !(await u("zz-badapp@gmail.com")) && !(await u("zz-noname@gmail.com")) && !(await u("not-an-email")) && !(await u("zz-nopw@gmail.com")) && !(await u("zz-weak@gmail.com")));
+  const rtxt = await main(); check("each error row explains why", /not found|must end|missing|valid email|at least 10/i.test(rtxt));
   await page.getByRole("button", { name: /Bulk import/ }).click(); await page.waitForTimeout(300);
   await page.getByPlaceholder("Search name, email or application").fill("zz app uno"); await page.waitForTimeout(500);
   const ft = (await main()).toLowerCase(); check("overview search by application name filters users", ft.includes("asha patil") && !ft.includes("line"));
@@ -293,10 +333,115 @@ try {
   await ia.getByPlaceholder("Search icons").fill("globe"); await ia.getByRole("option").first().click(); await ia.getByRole("button", { name: "Save" }).click(); await toast("Application saved"); await page.waitForTimeout(1500);
   check("application icon saved", (await app("ZZ App Uno")).icon === "Globe", (await app("ZZ App Uno")).icon);
 
+  section("8d. Accounts: sign-in, per-user access, deactivation, passwords, the Administrator lock");
+  const unoApp = await app("ZZ App Uno"), hidApp = await app("ZZ Hidden App");
+  await sql`delete from user_app_access where user_id=${asha.id}`; await sql`insert into user_app_access (user_id, app_id) values (${asha.id}, ${unoApp.id})`;
+  const ashaPw = "Asha-pass-12345"; const ashaEmail = "zz-asha@gmail.com";
+  const ac = await browser.newContext({ viewport: { width: 1300, height: 1000 } }); const ap = await ac.newPage();
+  await signIn(ap, ashaEmail, ashaPw);
+  check("a user created from the CSV signs in with the CSV password", new URL(ap.url()).pathname === "/", ap.url());
+  const sidebarNames = (await ap.locator("aside:visible nav a").allInnerTexts()).map((s) => s.trim());
+  const hubText = await ap.locator("main").innerText();
+  check("the user's sidebar lists only departments where they have an app", sidebarNames.length === 1 && sidebarNames[0] === "ZZ Dept A2", sidebarNames.join(" | "));
+  check("the hub shows only the applications assigned to them", hubText.includes("ZZ App Uno") && !hubText.includes("ZZ Hidden App") && !hubText.includes("<img"), hubText.slice(0, 120));
+  check("no Administrator item for a normal user", (await ap.locator("aside:visible").getByRole("button", { name: "Administrator" }).count()) === 0);
+  check("launching an application they were not given is a 404", (await ap.request.get(BASE + "/go/" + hidApp.id, { maxRedirects: 0 })).status() === 404);
+  check("launching their own application works", (await ap.request.get(BASE + "/go/" + unoApp.id, { maxRedirects: 0 })).status() === 302);
+  await ap.goto(BASE + "/administrator/users"); await ap.waitForLoadState("networkidle").catch(() => {});
+  check("a normal user who opens Administrator is sent back to the hub", new URL(ap.url()).pathname === "/", ap.url());
+  await page.goto(BASE + "/administrator/users");
+  const adminUnlock = (await ctx.cookies()).find((c) => c.name === "hub_admin");
+  check("the admin unlock cookie exists while Administrator is open", !!adminUnlock && adminUnlock.httpOnly);
+  if (adminUnlock) await ac.addCookies([{ name: adminUnlock.name, value: adminUnlock.value, url: BASE }]);
+  await ap.goto(BASE + "/administrator/users"); await ap.waitForLoadState("networkidle").catch(() => {});
+  check("someone else's unlock cookie does not open Administrator for a normal user", new URL(ap.url()).pathname === "/", ap.url());
+
+  const nobody = await browser.newContext(); const np = await nobody.newPage();
+  for (let i = 0; i < 6; i++) await signIn(np, ashaEmail, "Wrong-guess-" + i + "xx");
+  await signIn(np, ashaEmail, ashaPw);
+  check("six wrong passwords in a row never lock a user's account", new URL(np.url()).pathname === "/", np.url());
+  await nobody.close();
+
+  // admin: create a user by hand
+  await page.goto(BASE + "/administrator/users"); await page.getByRole("button", { name: /^Add user/ }).click();
+  const uf = page.locator("form").filter({ has: page.getByRole("button", { name: "Create user" }) });
+  const submitUser = async (name, email) => { await uf.locator("input").nth(0).fill(name); await uf.locator("input[type=email]").fill(email); await uf.getByRole("button", { name: "Create user" }).click(); };
+  const typedPw = await uf.locator("input.font-mono").inputValue();
+  await submitUser("ZZ By Hand", "zz-ui@gmail.com"); check("Add user shows a success message", await toast("User created")); await page.waitForTimeout(1500);
+  const ui = (await sql`select password_hash, status, role, is_active from users where email='zz-ui@gmail.com'`)[0];
+  check("the new account is stored with a hashed password, never the password itself", !!ui && ui.password_hash.startsWith("scrypt$") && !ui.password_hash.includes(typedPw) && ui.role === "member" && ui.status === "approved");
+  const uc = await browser.newContext(); const up = await uc.newPage(); await signIn(up, "zz-ui@gmail.com", typedPw);
+  check("the hand-made user can sign in with that password", new URL(up.url()).pathname === "/", up.url()); await uc.close();
+  await page.reload(); await page.getByRole("button", { name: /^Add user/ }).click();
+  await submitUser("ZZ Dup", "zz-ui@gmail.com"); check("a duplicate email is refused", await toast("already exists")); await page.waitForTimeout(800);
+  await page.reload(); await page.getByRole("button", { name: /^Add user/ }).click();
+  await submitUser("ZZ Bad Domain", "zz-bad2@yahoo.com"); check("an email outside the allowed domains is refused", await toast("must end with")); await page.waitForTimeout(800);
+
+  // admin: deactivate / reactivate
+  await page.reload(); await page.waitForLoadState("networkidle").catch(() => {});
+  const urow = (e) => page.locator("tr", { hasText: e });
+  await urow(ashaEmail).getByRole("button", { name: "Active", exact: true }).click(); await toast("deactivated"); await page.waitForTimeout(1200);
+  check("deactivating saves", (await sql`select is_active from users where email=${ashaEmail}`)[0].is_active === false);
+  await ap.goto(BASE + "/"); check("a deactivated user is signed out on their very next click", new URL(ap.url()).pathname === "/login", ap.url());
+  const blocked = await browser.newContext(); const bp = await blocked.newPage(); await signIn(bp, ashaEmail, ashaPw);
+  check("a deactivated user cannot sign in", new URL(bp.url()).pathname === "/login" && /Incorrect email or password/.test(await bp.content())); await blocked.close();
+  await page.reload(); await page.waitForLoadState("networkidle").catch(() => {});
+  await urow(ashaEmail).getByRole("button", { name: "Inactive", exact: true }).click(); await toast("activated"); await page.waitForTimeout(1200);
+  await ap.goto(BASE + "/"); if (new URL(ap.url()).pathname !== "/") await signIn(ap, ashaEmail, ashaPw);
+  check("reactivating lets them back in", new URL(ap.url()).pathname === "/", ap.url());
+
+  // admin: reset password
+  const ashaNew = "Asha-new-pass-777";
+  await urow(ashaEmail).getByRole("button", { name: /^Reset password for/ }).click();
+  const rf = page.locator("form").filter({ has: page.getByRole("button", { name: "Reset password", exact: true }) }); await rf.locator("input.font-mono").fill(ashaNew); await rf.getByRole("button", { name: "Reset password", exact: true }).click();
+  check("reset password shows a success message", await toast("Password reset")); await page.waitForTimeout(1500);
+  await ap.goto(BASE + "/"); check("a password reset signs the person out everywhere", new URL(ap.url()).pathname === "/login", ap.url());
+  await signIn(ap, ashaEmail, ashaPw); check("the old password no longer works", new URL(ap.url()).pathname === "/login");
+  await signIn(ap, ashaEmail, ashaNew); check("the new password works", new URL(ap.url()).pathname === "/", ap.url());
+
+  // user: change own password, sign out
+  await ap.goto(BASE + "/change-password");
+  const cp = async (cur, nw, again) => { await ap.locator("input[autocomplete=current-password]").fill(cur); await ap.locator("input[autocomplete=new-password]").nth(0).fill(nw); await ap.locator("input[autocomplete=new-password]").nth(1).fill(again); await ap.getByRole("button", { name: "Save password" }).click(); await ap.waitForTimeout(2500); };
+  await cp("Totally-wrong-1", "Asha-third-pass-9", "Asha-third-pass-9"); check("a wrong current password is refused", /Current password is incorrect/.test(await ap.content()));
+  await cp(ashaNew, "Asha-third-pass-9", "Different-pass-9"); check("mismatched new passwords are refused", /do not match/.test(await ap.content()));
+  await cp(ashaNew, "abcdefghijkl", "abcdefghijkl"); check("a weak new password is refused", /one letter and one number/.test(await ap.content()));
+  await cp(ashaNew, "Asha-third-pass-9", "Asha-third-pass-9"); check("changing the password works", /Password changed/.test(await ap.content()));
+  await ap.goto(BASE + "/"); check("they stay signed in on this browser after changing it", new URL(ap.url()).pathname === "/", ap.url());
+  await ap.locator("header").first().getByRole("button", { name: /Asha Patil/ }).click(); await ap.getByRole("button", { name: "Sign out" }).click(); await ap.waitForURL("**/login", { timeout: 20000 }).catch(() => {});
+  check("Sign out returns to the login page", new URL(ap.url()).pathname === "/login", ap.url());
+  await ap.goto(BASE + "/"); check("after signing out the hub is closed again", new URL(ap.url()).pathname === "/login");
+  await signIn(ap, ashaEmail, ashaNew); check("the previous password no longer works after a change", new URL(ap.url()).pathname === "/login");
+  await signIn(ap, ashaEmail, "Asha-third-pass-9"); check("the changed password signs in", new URL(ap.url()).pathname === "/", ap.url());
+  await ac.close();
+
+  // main admin protections
+  await page.goto(BASE + "/administrator/users"); await page.waitForLoadState("networkidle").catch(() => {});
+  const mrow = urow(ADMIN_EMAIL);
+  check("the main admin has no Reset password button", (await mrow.getByRole("button", { name: /^Reset password for/ }).count()) === 0);
+  check("the main admin cannot be deactivated from the screen", await mrow.getByRole("button", { name: "Active", exact: true }).isDisabled());
+  await page.goto(BASE + "/change-password"); check("the main admin is told the password lives in the settings", /environment settings/.test(await page.content()));
+
+  // the Administrator lock
+  await page.goto(BASE + "/administrator/users"); await page.waitForTimeout(3500);
+  await page.reload(); await page.waitForLoadState("networkidle").catch(() => {});
+  check("background prefetching of other pages does not lock Administrator", new URL(page.url()).pathname === "/administrator/users", page.url());
+  await page.locator("aside:visible nav a", { hasText: "Finance" }).first().click(); await page.waitForTimeout(1800);
+  const usersLink = page.locator("aside:visible").getByRole("link", { name: "Users", exact: true });
+  if (!(await usersLink.count())) await page.locator("aside:visible").getByRole("button", { name: "Administrator" }).click();
+  await usersLink.click(); await page.waitForURL((u) => /unlock|administrator\/users/.test(u.pathname), { timeout: 20000 }).catch(() => {});
+  check("after leaving Administrator, going back asks for the password again", new URL(page.url()).pathname === "/unlock", page.url());
+  check("the unlock page remembers where you were going", new URL(page.url()).searchParams.get("next") === "/administrator/users");
+  await page.locator("input[name=password]").fill("not-the-password-1"); await page.getByRole("button", { name: "Unlock" }).click(); await page.waitForTimeout(2000);
+  check("a wrong unlock password is refused and stays locked", new URL(page.url()).pathname === "/unlock" && /Incorrect password/.test(await page.content()));
+  await unlockIf(page); check("the right password opens it at the page you asked for", new URL(page.url()).pathname === "/administrator/users", page.url());
+  const exportAfterLeave = await (async () => { await page.goto(BASE + "/"); return page.request.get(BASE + "/administrator/activity/export", { maxRedirects: 0 }); })();
+  check("once locked, even the CSV export is closed", exportAfterLeave.status() >= 300 && exportAfterLeave.status() < 400, exportAfterLeave.status());
+
+  await page.goto(BASE + "/administrator/departments");
   section("9. Phone-sized screen");
-  const m = await browser.newContext({ viewport: { width: 390, height: 844 }, ...(BROWSER === "firefox" ? {} : { isMobile: true, hasTouch: true }) }); const mp = await m.newPage();
+  const m = await browser.newContext({ viewport: { width: 390, height: 844 }, ...(BROWSER === "firefox" ? {} : { isMobile: true, hasTouch: true }) }); const mp = await m.newPage(); await m.addCookies(await ctx.cookies());
   const mErr = []; mp.on("pageerror", (e) => mErr.push(String(e).slice(0, 120)));
-  const noOverflow = async (p, label) => { const pg = await m.newPage(); pg.on("pageerror", (e) => mErr.push(String(e).slice(0, 120))); await pg.goto(BASE + p); await pg.waitForLoadState("networkidle").catch(() => {}); const o = await pg.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth })); check("no sideways page scroll on " + label, o.sw <= o.iw + 1, `${o.sw} vs ${o.iw}`); await pg.close(); };
+  const noOverflow = async (p, label) => { const pg = await m.newPage(); pg.on("pageerror", (e) => mErr.push(String(e).slice(0, 120))); await pg.goto(BASE + p); await unlockIf(pg); await pg.waitForLoadState("networkidle").catch(() => {}); const o = await pg.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth })); check("no sideways page scroll on " + label, o.sw <= o.iw + 1, `${o.sw} vs ${o.iw}`); await pg.close(); };
   await mp.goto(BASE + "/"); await mp.waitForLoadState("networkidle").catch(() => {});
   const sb = async () => { const b = await mp.locator("aside").last().boundingBox(); return b && b.x + b.width > 1; };
   check("sidebar is off-screen until the menu button is pressed", !(await sb()));
@@ -304,7 +449,7 @@ try {
   check("menu button slides the sidebar in", await sb());
   await mp.locator("aside").last().getByRole("button", { name: "Administrator" }).click(); await mp.waitForTimeout(300);
   check("Administrator expands to three sections on a phone", (await mp.locator("aside").last().locator("a[href^='/administrator/']").count()) === 3);
-  await mp.locator("aside").last().locator("a[href='/administrator/users']").click(); await mp.waitForURL("**/administrator/users"); await mp.waitForLoadState("networkidle").catch(() => {}); check("tapping a section navigates", mp.url().endsWith("/administrator/users"), mp.url());
+  await mp.locator("aside").last().locator("a[href='/administrator/users']").click(); await mp.waitForURL((u) => /unlock|administrator\/users/.test(u.pathname)); await unlockIf(mp); await mp.waitForURL("**/administrator/users"); await mp.waitForLoadState("networkidle").catch(() => {}); check("tapping a section navigates", mp.url().endsWith("/administrator/users"), mp.url());
   for (const [p, l] of [["/", "home"], ["/administrator/departments", "departments"], ["/administrator/users", "users"], ["/administrator/access", "access"], ["/administrator/activity", "activity"], ["/administrator/notifications", "notifications"], [deptUrl.replace(BASE, ""), "department detail"]]) await noOverflow(p, l);
   check("no script errors on the phone layout", mErr.length === 0, mErr.join(" | "));
   await m.close();
@@ -323,7 +468,7 @@ try {
   for (const id of zzUsers) { await sql`delete from user_app_access where user_id=${id}`; await sql`delete from activity_log where user_id=${id}`; }
   await sql`delete from users where email like 'zz-%'`;
   await sql`delete from access_templates where name like 'ZZ%'`;
-  await sql`delete from activity_log where opened_at >= ${startedAt} and action='launch'`;
+  await sql`delete from activity_log where opened_at >= ${startedAt} and action in ('launch','login')`;
   await sql`delete from apps where name like 'ZZ%' or name like '<img%' or name like '=HYPERLINK%'`;
   await sql`delete from departments where name like 'ZZ%'`;
   const after = await snap();

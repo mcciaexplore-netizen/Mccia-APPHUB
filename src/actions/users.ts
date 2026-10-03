@@ -4,18 +4,64 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { apps, departments, userAppAccess, users } from "@/db/schema";
+import { isEnvAdmin } from "@/lib/auth";
+import { hashPassword, passwordSchema } from "@/lib/passwords";
 import { adminAction, UserError } from "@/lib/action";
 import { domainsLabel, isEmailAllowed } from "@/lib/domains";
-import { emailSchema } from "@/lib/validation";
+import { emailSchema, uuid } from "@/lib/validation";
 
 function checkDomain(email: string) {
   if (!isEmailAllowed(email)) throw new UserError(`Email must end with ${domainsLabel()}`);
+}
+
+const optionalText = (max: number) => z.string().trim().max(max).nullish().transform((v) => v || null);
+
+const newUser = z.object({
+  name: z.string().trim().min(1, "Name is required").max(120),
+  email: emailSchema,
+  password: passwordSchema,
+  designation: optionalText(120),
+  homeDepartmentId: uuid.nullish().transform((v) => v ?? null),
+});
+
+/** One person, with the password they will sign in with. Everyone created here is a normal user; the main admin is set in the environment. */
+export async function createUser(input: unknown) {
+  return adminAction(async (admin) => {
+    const v = newUser.parse(input);
+    checkDomain(v.email);
+    if (isEnvAdmin(v.email)) throw new UserError("That address is the main admin, which is set in the environment settings.");
+    const { password, ...rest } = v;
+    await db.insert(users).values({ ...rest, passwordHash: await hashPassword(password), signupSource: "admin", reviewedAt: new Date(), reviewedById: admin.id });
+  });
+}
+
+export async function resetPassword(id: string, password: unknown) {
+  return adminAction(async () => {
+    uuid.parse(id);
+    const pw = passwordSchema.parse(password);
+    const [u] = await db.select({ email: users.email }).from(users).where(eq(users.id, id));
+    if (!u) throw new UserError("User not found.");
+    if (isEnvAdmin(u.email)) throw new UserError("The main admin's password is set in the environment settings (HEAD_ADMIN_PASSWORD).");
+    await db.update(users).set({ passwordHash: await hashPassword(pw) }).where(eq(users.id, id)); // also signs them out everywhere
+  });
+}
+
+/** Users are never hard-deleted so the activity log keeps its history. A deactivated person is signed out at once. */
+export async function setUserActive(id: string, active: boolean) {
+  return adminAction(async (admin) => {
+    uuid.parse(id);
+    const [u] = await db.select({ email: users.email }).from(users).where(eq(users.id, id));
+    if (!u) throw new UserError("User not found.");
+    if (!active && (id === admin.id || isEnvAdmin(u.email))) throw new UserError("The main admin cannot be deactivated.");
+    await db.update(users).set({ isActive: !!active }).where(eq(users.id, id));
+  });
 }
 
 const importRow = z.object({
   line: z.number().int().min(1),
   name: z.string().trim().max(120),
   email: z.string().trim().toLowerCase().max(200),
+  password: z.string().max(200).default(""),
   department: z.string().trim().max(120).default(""),
   applications: z.string().max(2000).default(""), // "App A, App B" or "Dept / App"
   designation: z.string().trim().max(120).default(""),
@@ -28,7 +74,7 @@ export type ImportResult = {
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s*\/\s*/g, " / ").replace(/\s+/g, " ");
 
 /**
- * Bulk setup from a CSV: creates each user with their home department and the listed applications. An application name
+ * Bulk setup from a CSV: creates each user with their password, home department and the listed applications. An application name
  * is looked up in the user's own department first, then across all departments (it must be unique there), or can be
  * written as "Department / App". Callers send a few rows at a time so a big file never hits the request time limit,
  * and one bad row never blocks the others. Existing emails are skipped, never changed.
@@ -62,6 +108,9 @@ export async function importUsers(rows: unknown) {
         const email = emailSchema.parse(r.email);
         if (!r.name) throw new UserError("Name is missing.");
         checkDomain(email);
+        if (isEnvAdmin(email)) throw new UserError("That address is the main admin, set in the environment settings.");
+        const password = passwordSchema.safeParse(r.password.trim());
+        if (!password.success) throw new UserError(r.password.trim() ? (password.error.issues[0]?.message ?? "Invalid password.") : "Password is missing.");
 
         let departmentId: string | null = null;
         if (r.department) {
@@ -91,7 +140,7 @@ export async function importUsers(rows: unknown) {
           .insert(users)
           .values({
             name: r.name, email, designation: r.designation || null, homeDepartmentId: departmentId,
-            signupSource: "csv", reviewedAt: new Date(), reviewedById: admin.id,
+            passwordHash: await hashPassword(password.data), signupSource: "csv", reviewedAt: new Date(), reviewedById: admin.id,
           })
           .returning({ id: users.id });
         const unique = [...new Set(appIds)];

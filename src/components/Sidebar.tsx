@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Activity, Bell, Building2, ChevronDown, ChevronRight, ShieldCheck, Users, X } from "lucide-react";
+import { lockAdmin } from "@/actions/auth";
 import { Icon } from "@/components/Icon";
 
 export type SidebarDept = { id: string; name: string; icon: string };
@@ -40,6 +41,12 @@ export function Sidebar({
   const onHome = pathname === "/";
   const inAdmin = pathname.startsWith("/administrator");
   const [adminOpen, setAdminOpen] = useState(inAdmin);
+  // Administrator locks itself the moment you leave it (the proxy only re-checks on the way in).
+  const wasInAdmin = useRef(inAdmin);
+  useEffect(() => {
+    if (wasInAdmin.current && !inAdmin) void lockAdmin();
+    wasInAdmin.current = inAdmin;
+  }, [inAdmin]);
   const submenuId = useId(); // the sidebar is rendered twice (desktop and mobile), so ids must be unique
   const selected = d && departments.some((x) => x.id === d) ? d : departments[0]?.id;
 

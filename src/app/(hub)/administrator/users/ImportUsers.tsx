@@ -6,13 +6,13 @@ import { useToast } from "@/components/Toast";
 import { parseCsv, toCsv } from "@/lib/csv";
 import { importUsers, type ImportResult } from "@/actions/users";
 
-type Row = { line: number; name: string; email: string; department: string; applications: string; designation: string };
+type Row = { line: number; name: string; email: string; password: string; department: string; applications: string; designation: string };
 
 const BATCH = 20; // a big file is sent a few rows at a time
 const MAX_ROWS = 1000;
 const TEMPLATE = toCsv([
-  ["name", "email", "department", "applications", "designation"],
-  ["Full Name", "name@example.com", "Department name", "App name, Other app name", "Job title"],
+  ["name", "email", "password", "department", "applications", "designation"],
+  ["Full Name", "name@example.com", "Choose-a-password-1", "Department name", "App name, Other app name", "Job title"],
 ]);
 
 function download(name: string, text: string) {
@@ -40,12 +40,12 @@ export function ImportUsers() {
     if (table.length < 2) return setProblem("The file needs a header row and at least one user.");
     const head = table[0].map((h) => h.trim().toLowerCase());
     const col = (n: string) => head.indexOf(n);
-    if (col("email") < 0 || col("name") < 0) return setProblem('The first row must contain the columns "email" and "name".');
+    if (col("email") < 0 || col("name") < 0 || col("password") < 0) return setProblem('The first row must contain the columns "name", "email" and "password".');
     if (table.length - 1 > MAX_ROWS) return setProblem(`At most ${MAX_ROWS} users per file.`);
     const cell = (r: string[], n: string) => (col(n) >= 0 ? (r[col(n)] ?? "").trim() : "");
     const appsCol = col("applications") >= 0 ? "applications" : "apps";
     setRows(table.slice(1).map((r, i) => ({
-      line: i + 2, name: cell(r, "name"), email: cell(r, "email"), department: cell(r, "department"),
+      line: i + 2, name: cell(r, "name"), email: cell(r, "email"), password: cell(r, "password"), department: cell(r, "department"),
       applications: cell(r, appsCol), designation: cell(r, "designation"),
     })));
   }
@@ -72,10 +72,10 @@ export function ImportUsers() {
       <div>
         <h2 className="text-lg font-semibold">Import users from CSV</h2>
         <p className="mt-1 text-sm text-muted">
-          One-time setup for many users. Columns: <b>name</b>, <b>email</b> (required) and <b>department</b>, <b>applications</b>, <b>designation</b>
-          (optional). Put several applications in one cell separated by commas, quoted, for example <code>&quot;Tally, CRM&quot;</code>. Each is looked up in the
-          user&apos;s own department first; write <code>Department / App</code> if the same name exists in more than one. Departments and applications must already
-          exist, and emails that already exist are skipped.
+          Set up many accounts at once. Columns: <b>name</b>, <b>email</b> (the username) and <b>password</b> (required, at least 10 characters with a letter and a number), plus
+          optional <b>department</b>, <b>applications</b> and <b>designation</b>. Several applications go in one quoted cell separated by commas, for example
+          <code>&quot;Tally, CRM&quot;</code>. Each is looked up in the user&apos;s own department first; write <code>Department / App</code> if the same name exists in
+          more than one. Departments and applications must already exist, and emails that already exist are skipped. From Excel, use File, Save As, CSV.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">

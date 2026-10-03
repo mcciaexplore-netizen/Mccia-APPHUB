@@ -14,7 +14,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ appI
   if (!z.string().uuid().safeParse(appId).success) return new NextResponse("Not found", { status: 404 });
 
   const user = await getCurrentUser();
-  if (!user) return new NextResponse("Not found", { status: 404 });
+  if (!user) return NextResponse.redirect(new URL("/login", req.url), 302);
 
   const target = await getLaunchTarget(user, appId);
   if (!target) return new NextResponse("Not found", { status: 404 });

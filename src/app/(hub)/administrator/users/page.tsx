@@ -1,13 +1,17 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, departments, userAppAccess, users } from "@/db/schema";
+import { isEnvAdmin } from "@/lib/auth";
+import { domainsLabel } from "@/lib/domains";
 import { requireHeadAdmin } from "@/lib/permissions";
 import { UsersOverview } from "./UsersOverview";
 
 export const metadata = { title: "Users · MCCIA App Hub" };
+// A bulk import hashes one password per row; give each batch room.
+export const maxDuration = 60;
 
 export default async function Page() {
-  await requireHeadAdmin();
+  const me = await requireHeadAdmin();
   const [list, deps, grants] = await Promise.all([
     db.select().from(users).orderBy(asc(users.name)),
     db.select({ id: departments.id, name: departments.name }).from(departments).orderBy(asc(departments.sortOrder), asc(departments.name)),
@@ -24,10 +28,14 @@ export default async function Page() {
 
   return (
     <UsersOverview
-      departments={deps.map((d) => d.name)}
+      meId={me.id}
+      domains={domainsLabel()}
+      departments={deps}
       users={list.map((u) => ({
         id: u.id, name: u.name, email: u.email, designation: u.designation, role: u.role, isActive: u.isActive,
         department: u.homeDepartmentId ? (deptName.get(u.homeDepartmentId) ?? null) : null,
+        mainAdmin: isEnvAdmin(u.email),
+        hasPassword: !!u.passwordHash,
         applications: byUser.get(u.id) ?? [],
       }))}
     />
