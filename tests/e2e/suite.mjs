@@ -530,6 +530,8 @@ try {
     const [row] = await sql`select l.ip_address ip from activity_log l join users u on u.id = l.user_id where u.email = ${ADMIN_EMAIL} and l.action = 'login' and l.opened_at >= ${new Date(startedAt.getTime() - 60000)} order by l.opened_at desc limit 1`;
     if (row) await sql`delete from activity_log where action in ('login','launch') and opened_at >= ${new Date(startedAt.getTime() - 60000)} and ip_address is not distinct from ${row.ip} and user_id = (select id from users where email = ${ADMIN_EMAIL})`;
     await sql`delete from activity_log where action = 'launch' and app_id is null and opened_at >= ${new Date(startedAt.getTime() - 60000)}`;
+    // Sign-ins of test users the run deleted lose their person (the history is kept), so they are matched by time instead.
+    await sql`delete from activity_log where action = 'login' and user_id is null and opened_at >= ${new Date(startedAt.getTime() - 60000)}`;
   });
   const after = await retry(snap);
   check("your real departments, apps and users are exactly as before", JSON.stringify(before) === JSON.stringify(after), JSON.stringify(before) === JSON.stringify(after) ? "" : "DIFFERENT");
