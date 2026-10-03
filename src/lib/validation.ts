@@ -24,6 +24,7 @@ export const appInput = z.object({
   // Reserved for a future SSO handoff; only ever shown to the head admin in Administrator.
   appToken: z.string().trim().max(500).nullish().transform((v) => v || null),
   icon,
+  isActive: z.boolean().optional(), // shown in the hub; omitted means unchanged (new apps start active)
 });
 
 export const emailSchema = z.string().trim().toLowerCase().email("Enter a valid email");

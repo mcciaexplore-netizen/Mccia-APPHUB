@@ -57,7 +57,7 @@ export function DepartmentApps({ department, apps }: { department: { id: string;
       {edit && (
         <Modal title="Edit application" onClose={() => setEdit(null)}>
           <AppForm departments={dept} submitLabel="Save" pending={pending}
-            initial={{ departmentId: department.id, name: edit.name, description: edit.description ?? "", url: edit.url, icon: edit.icon, appToken: edit.appToken ?? "" }}
+            initial={{ departmentId: department.id, name: edit.name, description: edit.description ?? "", url: edit.url, icon: edit.icon, appToken: edit.appToken ?? "", isActive: edit.isActive }}
             onSubmit={(v) => run(() => updateApp(edit.id, { ...v, departmentId: department.id }), "Application saved", () => setEdit(null))} />
         </Modal>
       )}
