@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { KeyRound, Plus, RefreshCw, ShieldCheck, Upload } from "lucide-react";
+import { KeyRound, Plus, RefreshCw, ShieldCheck, Trash2, Upload } from "lucide-react";
 import type { Role } from "@/db/schema";
 import { Modal } from "@/components/Modal";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
 import { roleBadge, roleLabel } from "@/lib/format";
 import { generatePassword } from "@/lib/generate-password";
-import { createUser, resetPassword, setUserActive } from "@/actions/users";
+import { createUser, deleteUser, resetPassword, setUserActive } from "@/actions/users";
 import { useRun } from "../departments/forms";
 import { ImportUsers } from "./ImportUsers";
 
@@ -56,6 +57,7 @@ function AddUserForm({ departments, domains, pending, onSubmit }: {
 /** Everyone who can sign in, and the applications each can open. People are added here, one by one or from a CSV. */
 export function UsersOverview({ users, departments, meId, domains }: { users: U[]; departments: Dept[]; meId: string; domains: string }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const { run, pending } = useRun();
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("");
@@ -130,6 +132,14 @@ export function UsersOverview({ users, departments, meId, domains }: { users: U[
                     )}
                     {!u.mainAdmin && (
                       <button className="chip !p-1.5 text-muted" aria-label={`Reset password for ${u.name}`} title="Reset password" onClick={() => { setReset(u); setResetPw(generatePassword()); }}><KeyRound size={14} /></button>
+                    )}
+                    {!u.mainAdmin && u.id !== meId && (
+                      <button className="chip !p-1.5 text-brand-red" aria-label={`Delete ${u.name}`} title="Delete" disabled={pending}
+                        onClick={async () => {
+                          if (await confirm({ title: "Delete this user?", confirmLabel: "Delete", danger: true,
+                            message: `${u.name} (${u.email}) will be removed for good, with their password and their access to applications. Their past activity stays in the log as an unknown user. To stop someone signing in but keep the account, deactivate them instead.` }))
+                            run(() => deleteUser(u.id), "User deleted");
+                        }}><Trash2 size={14} /></button>
                     )}
                   </div>
                 </td>

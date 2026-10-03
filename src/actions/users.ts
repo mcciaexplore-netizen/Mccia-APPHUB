@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { apps, departments, userAppAccess, users } from "@/db/schema";
@@ -46,7 +46,7 @@ export async function resetPassword(id: string, password: unknown) {
   });
 }
 
-/** Users are never hard-deleted so the activity log keeps its history. A deactivated person is signed out at once. */
+/** A deactivated person is signed out at once and can be activated again. */
 export async function setUserActive(id: string, active: boolean) {
   return adminAction(async (admin) => {
     uuid.parse(id);
@@ -54,6 +54,25 @@ export async function setUserActive(id: string, active: boolean) {
     if (!u) throw new UserError("User not found.");
     if (!active && (id === admin.id || isEnvAdmin(u.email))) throw new UserError("The main admin cannot be deactivated.");
     await db.update(users).set({ isActive: !!active }).where(eq(users.id, id));
+  });
+}
+
+/**
+ * Permanently removes a person: their account, password and access. Their activity stays in the history as an unknown user.
+ * The main admin, yourself and the last head admin cannot be deleted. Deactivating is the reversible alternative.
+ */
+export async function deleteUser(id: string) {
+  return adminAction(async (admin) => {
+    uuid.parse(id);
+    const [u] = await db.select({ email: users.email, role: users.role }).from(users).where(eq(users.id, id));
+    if (!u) throw new UserError("User not found.");
+    if (id === admin.id) throw new UserError("You cannot delete your own account.");
+    if (isEnvAdmin(u.email)) throw new UserError("The main admin is set in the environment settings and cannot be deleted.");
+    if (u.role === "head_admin") {
+      const [{ n }] = await db.select({ n: count() }).from(users).where(and(eq(users.role, "head_admin"), eq(users.isActive, true), ne(users.id, id)));
+      if (n === 0) throw new UserError("There must always be at least one active head admin.");
+    }
+    await db.delete(users).where(eq(users.id, id));
   });
 }
 

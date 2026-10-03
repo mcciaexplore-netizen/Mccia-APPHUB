@@ -36,6 +36,13 @@
       "when": 1790861353576,
       "tag": "0004_user_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791044999137,
+      "tag": "0005_activity_user_set_null",
+      "breakpoints": true
     }
   ]
 }

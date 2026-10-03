@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDown, ArrowUp, Pencil, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from "lucide-react";
 import { Icon } from "@/components/Icon";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
-import { createApp, moveApp, setAppActive, updateApp } from "@/actions/apps";
+import { createApp, deleteApp, moveApp, setAppActive, updateApp } from "@/actions/apps";
 import { ActiveToggle, AppForm, IconBtn, useRun } from "../forms";
 
 type AppRow = { id: string; name: string; description: string | null; url: string; icon: string; appToken: string | null; isActive: boolean };
@@ -12,6 +13,7 @@ type AppRow = { id: string; name: string; description: string | null; url: strin
 /** Applications of one department. Everything added here belongs to this department only. */
 export function DepartmentApps({ department, apps }: { department: { id: string; name: string }; apps: AppRow[] }) {
   const { run, pending } = useRun();
+  const confirm = useConfirm();
   const [showAdd, setShowAdd] = useState(false);
   const [edit, setEdit] = useState<AppRow | null>(null);
   const dept = [department];
@@ -45,6 +47,12 @@ export function DepartmentApps({ department, apps }: { department: { id: string;
                     <IconBtn label="Move up" disabled={i === 0 || pending} onClick={() => run(() => moveApp(a.id, "up"), "Reordered")}><ArrowUp size={14} /></IconBtn>
                     <IconBtn label="Move down" disabled={i === apps.length - 1 || pending} onClick={() => run(() => moveApp(a.id, "down"), "Reordered")}><ArrowDown size={14} /></IconBtn>
                     <IconBtn label="Edit" onClick={() => setEdit(a)}><Pencil size={14} /></IconBtn>
+                    <IconBtn label={`Delete ${a.name}`} danger disabled={pending}
+                      onClick={async () => {
+                        if (await confirm({ title: "Delete this application?", confirmLabel: "Delete", danger: true,
+                          message: `“${a.name}” will be removed for good. Everyone loses access to it and any template drops it. Launches already logged stay in the activity log as a deleted application. To hide it without deleting, untick Active instead.` }))
+                          run(() => deleteApp(a.id), "Application deleted");
+                      }}><Trash2 size={14} /></IconBtn>
                   </div>
                 </td>
               </tr>

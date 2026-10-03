@@ -141,7 +141,8 @@ export const activityLog = pgTable(
   "activity_log",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    userId: uuid("user_id").references(() => users.id),
+    // Set to null when the person is deleted; the row stays so the activity history is not lost.
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
     // Set to null when the app is deleted; the row (and its department) stays for history.
     appId: uuid("app_id").references(() => apps.id, { onDelete: "set null" }),
     // Null for login rows, which belong to no department.

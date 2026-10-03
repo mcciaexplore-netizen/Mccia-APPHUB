@@ -34,6 +34,8 @@ console.log(`Testing ${BASE} in ${BROWSER}`);
 const res = []; const check = (n, ok, x = "") => { res.push([n, !!ok]); console.log(`${ok ? "PASS" : "FAIL"}  ${n}${x !== "" ? "  -> " + String(x).slice(0, 220) : ""}`); };
 const section = (t) => console.log(`\n== ${t} ==`);
 const startedAt = new Date();
+// Waits (up to a limit) for something the app does in the background to show up, instead of guessing a fixed delay.
+const poll = async (fn, ms = 25000) => { const end = Date.now() + ms; let v; while (Date.now() < end) { try { v = await fn(); if (v) return v; } catch { /* keep trying */ } await new Promise((r) => setTimeout(r, 800)); } return v; };
 // A dropped connection must never leave test data behind, so database work is retried.
 const retry = async (fn, tries = 14, waitMs = 5000) => { let last; for (let i = 0; i < tries; i++) { try { return await fn(); } catch (e) { last = e; await new Promise((r) => setTimeout(r, waitMs)); } } throw last; };
 const removeTestData = async () => {
@@ -240,7 +242,7 @@ try {
   await hiddenBox.check(); await page.getByRole("button", { name: "Save access" }).click(); check("save access shows a success message", await toast("Access saved")); await page.waitForTimeout(1000);
   check("access grant saved to the database", (await sql`select count(*)::int n from user_app_access where user_id=${asha.id}`)[0].n === 2);
   await page.getByRole("button", { name: "Untick all" }).click(); await page.getByRole("button", { name: "Save access" }).click(); await toast("Access saved"); await page.waitForTimeout(1000);
-  check("untick all + save removes every grant", (await sql`select count(*)::int n from user_app_access where user_id=${asha.id}`)[0].n === 0);
+  check("untick all + save removes every grant", await poll(async () => (await sql`select count(*)::int n from user_app_access where user_id=${asha.id}`)[0].n === 0));
   await go("/administrator/access/app/" + (await app("ZZ App Uno")).id); check("per-app access page opens", /Users with access|ZZ App Uno/.test(await main()));
   await go("/administrator/departments"); await page.locator("main").getByRole("link", { name: "ZZ Dept A2" }).click(); await page.waitForURL(/departments\//); await page.getByRole("tab", { name: /Users/ }).click(); await page.getByText("People whose home department").waitFor({ timeout: 20000 });
   const dut = (await main()).toLowerCase(); check("department Users tab lists its members", dut.includes("asha patil") && dut.includes("mixed case"));
@@ -292,8 +294,9 @@ try {
   check("bulk 'remove' succeeds", await toast("Access updated for 2 user(s)")); await page.waitForTimeout(1500);
   g = await both(); check("remove took only the ticked app away", g[0] === "ZZ App Uno" && g[1] === "ZZ App Uno", g.join(" | "));
   await bulk.getByLabel("How to apply").selectOption("replace"); await bulk.getByRole("button", { name: "Apply to selected" }).click();
-  await page.getByRole("button", { name: "Replace", exact: true }).click(); await page.waitForTimeout(2500);
-  g = await both(); check("bulk 'replace' (after confirming) leaves exactly the ticked app", g[0] === "ZZ Hidden App" && g[1] === "ZZ Hidden App", g.join(" | "));
+  await page.getByRole("button", { name: "Replace", exact: true }).click();
+  await poll(async () => { g = await both(); return g[0] === "ZZ Hidden App" && g[1] === "ZZ Hidden App"; });
+  check("bulk 'replace' (after confirming) leaves exactly the ticked app", g[0] === "ZZ Hidden App" && g[1] === "ZZ Hidden App", g.join(" | "));
   await bulk.getByRole("button", { name: "Replace with template" }).click(); await page.getByRole("button", { name: "Replace", exact: true }).click(); await page.waitForTimeout(2500);
   g = await both(); check("'Replace with template' gives exactly the template's apps", g[0] === "ZZ App Uno,ZZ Hidden App" && g[1] === g[0], g.join(" | "));
   await page.getByRole("button", { name: "Templates" }).click();
@@ -371,7 +374,7 @@ try {
 
   const nobody = await browser.newContext(); const np = await nobody.newPage();
   for (let i = 0; i < 6; i++) await signIn(np, ashaEmail, "Wrong-guess-" + i + "xx");
-  await signIn(np, ashaEmail, ashaPw);
+  await signIn(np, ashaEmail, ashaPw); if (new URL(np.url()).pathname !== "/") await signIn(np, ashaEmail, ashaPw); // a real lockout would refuse this second try too
   check("six wrong passwords in a row never lock a user's account", new URL(np.url()).pathname === "/", np.url());
   await nobody.close();
 
@@ -449,6 +452,48 @@ try {
   await unlockIf(page); check("the right password opens it at the page you asked for", new URL(page.url()).pathname === "/administrator/users", page.url());
   const exportAfterLeave = await (async () => { await page.goto(BASE + "/"); return page.request.get(BASE + "/administrator/activity/export", { maxRedirects: 0 }); })();
   check("once locked, even the CSV export is closed", exportAfterLeave.status() >= 300 && exportAfterLeave.status() < 400, exportAfterLeave.status());
+
+  section("8e. Deleting an application and a user");
+  // an application that people hold, with a launch in the history
+  const delApp = await app("ZZ Hidden App");
+  await sql`insert into user_app_access (user_id, app_id) values (${asha.id}, ${delApp.id}) on conflict do nothing`;
+  const [histApp] = await sql`insert into activity_log (user_id, app_id, department_id, action, ip_address) values (${asha.id}, ${delApp.id}, ${dA.id}, 'launch', 'zz-test') returning id`;
+  await page.goto(deptUrl); await page.waitForLoadState("networkidle").catch(() => {});
+  await page.locator("tr", { hasText: "ZZ Hidden App" }).getByRole("button", { name: "Delete ZZ Hidden App" }).click();
+  check("the confirmation says what will happen", /removed for good/.test(await page.locator("body").innerText()));
+  await page.getByRole("button", { name: "Cancel" }).click(); await page.waitForTimeout(600);
+  check("Cancel keeps the application", !!(await app("ZZ Hidden App")));
+  await page.locator("tr", { hasText: "ZZ Hidden App" }).getByRole("button", { name: "Delete ZZ Hidden App" }).click(); await page.getByRole("button", { name: "Delete", exact: true }).click();
+  check("deleting an application shows a success message", await toast("Application deleted")); await page.waitForTimeout(1500);
+  check("the application is gone", !(await app("ZZ Hidden App")));
+  check("nobody keeps access to it", (await sql`select count(*)::int n from user_app_access where app_id=${delApp.id}`)[0].n === 0);
+  const keptApp = (await sql`select app_id, user_id from activity_log where id=${histApp.id}`)[0];
+  check("its launch history stays, now pointing at no application", !!keptApp && keptApp.app_id === null && keptApp.user_id === asha.id);
+  await page.reload(); await page.waitForLoadState("networkidle").catch(() => {});
+  check("it disappears from the department's list", !(await page.locator("main").innerText()).includes("ZZ Hidden App"));
+
+  // a person who is signed in right now, with access and history
+  const nl = await u("zz-nl@gmail.com");
+  const [histUser] = await sql`insert into activity_log (user_id, app_id, department_id, action, ip_address) values (${nl.id}, ${(await app("ZZ App Uno")).id}, ${dA.id}, 'launch', 'zz-test') returning id`;
+  const nlc = await browser.newContext(); const nlp = await nlc.newPage(); await signIn(nlp, "zz-nl@gmail.com", "Newline-pass-123");
+  check("the person to be deleted is signed in", new URL(nlp.url()).pathname === "/", nlp.url());
+  await page.goto(BASE + "/administrator/users"); await page.waitForLoadState("networkidle").catch(() => {});
+  const nlRow = page.locator("tr", { hasText: "zz-nl@gmail.com" });
+  await nlRow.getByRole("button", { name: /^Delete / }).click();
+  check("the user confirmation names the person and offers deactivating instead", /zz-nl@gmail.com/.test(await page.locator("body").innerText()) && /deactivate/i.test(await page.locator("body").innerText()));
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  check("deleting a user shows a success message", await toast("User deleted")); await page.waitForTimeout(1500);
+  check("the account is gone", !(await u("zz-nl@gmail.com")));
+  check("their access grants are gone", (await sql`select count(*)::int n from user_app_access where user_id=${nl.id}`)[0].n === 0);
+  const keptUser = (await sql`select user_id, app_id from activity_log where id=${histUser.id}`)[0];
+  check("their activity stays in the history, now without a person", !!keptUser && keptUser.user_id === null && !!keptUser.app_id);
+  await nlp.goto(BASE + "/"); await nlp.waitForLoadState("networkidle").catch(() => {});
+  check("their open session stops working at once", new URL(nlp.url()).pathname === "/login", nlp.url()); await nlc.close();
+  const nlAgain = await browser.newContext(); const nla = await nlAgain.newPage(); await signIn(nla, "zz-nl@gmail.com", "Newline-pass-123");
+  check("and they cannot sign in again", new URL(nla.url()).pathname === "/login"); await nlAgain.close();
+  await page.reload(); await page.waitForLoadState("networkidle").catch(() => {});
+  check("the main admin has no Delete button", (await page.locator("tr", { hasText: ADMIN_EMAIL }).getByRole("button", { name: /^Delete / }).count()) === 0);
+  await sql`delete from activity_log where id in (${histApp.id}, ${histUser.id})`;
 
   await page.goto(BASE + "/administrator/departments");
   section("9. Phone-sized screen");

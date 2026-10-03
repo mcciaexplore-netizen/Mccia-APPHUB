@@ -1,8 +1,26 @@
-import { neon } from "@neondatabase/serverless";
+import { neon, neonConfig } from "@neondatabase/serverless";
 import { drizzle as drizzleNeon } from "drizzle-orm/neon-http";
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "./schema";
+
+// A request that could not even reach the database (DNS or connection failure) never ran, so trying again is safe, even for a
+// write. Anything that failed after the request was sent is not retried, so nothing can be applied twice.
+const NEVER_SENT = new Set(["ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED", "ETIMEDOUT", "UND_ERR_CONNECT_TIMEOUT"]);
+const codeOf = (e: unknown): string | undefined => {
+  let c = e as { code?: unknown; cause?: unknown } | undefined;
+  for (let i = 0; i < 5 && c; i++, c = c.cause as typeof c) if (typeof c.code === "string") return c.code;
+};
+neonConfig.fetchFunction = async (input: RequestInfo | URL, init?: RequestInit) => {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetch(input, init);
+    } catch (e) {
+      if (attempt >= 2 || !NEVER_SENT.has(codeOf(e) ?? "")) throw e;
+      await new Promise((r) => setTimeout(r, 250 * (attempt + 1) ** 2));
+    }
+  }
+};
 
 /**
  * The single place that knows which Postgres driver is active.

@@ -36,9 +36,9 @@ One front door for MCCIA's web applications. Staff sign in, pick a department in
 ## 5. What the administrator can do
 
 - **Departments:** list, add (new ones go to the end), rename, change icon, reorder, activate or deactivate. Open a department for two tabs:
-  - **Applications:** add, edit, reorder, activate or deactivate. Applications belong to exactly one department. The form validates the address (https only) and has an **Active** checkbox.
+  - **Applications:** add, edit, reorder, activate or deactivate, or delete. Applications belong to exactly one department. The form validates the address (https only) and has an **Active** checkbox.
   - **Users:** the people whose home department it is, with the applications they can open there.
-- **Users:** everyone who can sign in, with department, role and applications; search and a department filter. **Add user**, **Reset password**, the Active toggle, and **Bulk import (CSV)** with columns `name, email, password` (required) and `department, applications, designation`. Existing emails are skipped; unknown departments or applications, wrong email domains, blank names and weak or missing passwords are reported per row. The main admin's row cannot be reset or deactivated here.
+- **Users:** everyone who can sign in, with department, role and applications; search and a department filter. **Add user**, **Reset password**, the Active toggle, **Delete**, and **Bulk import (CSV)** with columns `name, email, password` (required) and `department, applications, designation`. Existing emails are skipped; unknown departments or applications, wrong email domains, blank names and weak or missing passwords are reported per row. The main admin's row cannot be reset or deactivated here.
 - **Access:** per-user checklists, per-application user lists, bulk assignment (add, remove, replace) and reusable templates.
 - **Activity log:** launches (and the old sign-ins) with filters, per-app and per-department counts, and a CSV export that neutralises spreadsheet-formula cells.
 - **Notifications Panel:** a placeholder page.
@@ -47,7 +47,7 @@ One front door for MCCIA's web applications. Staff sign in, pick a department in
 
 - Pages render on the server and read the database directly. Changes go through server actions that validate their input with Zod; every admin action calls one shared check (head admin, Administrator unlocked).
 - Tables in use: `departments`, `apps`, `users`, `user_app_access`, `access_templates`, `access_template_apps`, `activity_log`.
-- Nothing is hard-deleted from the interface: departments, applications and users are deactivated, so the activity history stays intact.
+- Departments are only deactivated. Applications and users can be deactivated (reversible) or deleted for good after a confirmation; the activity log keeps its rows either way (shown as a deleted application or an unknown user). The main admin, your own account and the last head admin cannot be deleted.
 - Settings the app reads: `DATABASE_URL`, `DB_DRIVER`, `DATABASE_SSL`, `AUTH_SECRET`, `HEAD_ADMIN_EMAIL`, `HEAD_ADMIN_NAME`, `HEAD_ADMIN_PASSWORD` and (optional) `ALLOWED_EMAIL_DOMAIN`.
 
 ## 7. Data today

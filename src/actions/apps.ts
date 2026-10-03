@@ -52,3 +52,14 @@ export async function moveApp(id: string, dir: "up" | "down") {
     await Promise.all(list.map((a, k) => db.update(apps).set({ sortOrder: k * 10 }).where(eq(apps.id, a.id))));
   });
 }
+
+/**
+ * Permanently removes an application. People lose access to it and templates drop it; launches already logged stay in the
+ * activity history as "Deleted application". To hide an application without losing any of that, deactivate it instead.
+ */
+export async function deleteApp(id: string) {
+  return adminAction(async () => {
+    const cur = await loadApp(id);
+    await db.delete(apps).where(eq(apps.id, cur.id));
+  });
+}
