@@ -6,10 +6,16 @@ import { departments } from "@/db/schema";
 import { adminAction } from "@/lib/action";
 import { departmentInput, slugify, uuid } from "@/lib/validation";
 
+/** A new department goes to the end of the list unless an explicit sort order is given. */
+async function nextOrder() {
+  const rows = await db.select({ s: departments.sortOrder }).from(departments);
+  return rows.reduce((m, r) => Math.max(m, r.s), 0) + 10;
+}
+
 export async function createDepartment(input: unknown) {
   return adminAction(async () => {
     const v = departmentInput.parse(input);
-    await db.insert(departments).values({ name: v.name, slug: slugify(v.name), icon: v.icon, sortOrder: v.sortOrder ?? 0 });
+    await db.insert(departments).values({ name: v.name, slug: slugify(v.name), icon: v.icon, sortOrder: v.sortOrder || (await nextOrder()) });
   });
 }
 

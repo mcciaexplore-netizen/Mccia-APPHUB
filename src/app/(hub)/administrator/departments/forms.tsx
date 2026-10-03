@@ -36,7 +36,7 @@ export function DepartmentForm({ initial, submitLabel, onSubmit, pending }: {
     <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); onSubmit({ name, icon, sortOrder: Number(sortOrder) || 0 }); }}>
       <Field label="Name"><input className="input" value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} /></Field>
       {initial?.sortOrder === undefined && (
-        <Field label="Sort order"><input className="input" type="number" min={0} value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} /></Field>
+        <Field label="Sort order (0 or empty adds it at the end)"><input className="input" type="number" min={0} value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} /></Field>
       )}
       <Field label="Icon"><IconPicker value={icon} onChange={setIcon} /></Field>
       <button className="btn btn-primary btn-sm" disabled={pending}>{submitLabel}</button>
