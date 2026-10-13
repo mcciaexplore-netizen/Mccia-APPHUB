@@ -69,6 +69,29 @@ node scripts/cleanup.mjs --caches          # delete build caches
 - **Activity:** `activity_log` records `launch` actions (earlier `login` entries are kept) with user, app, IP and time. Administrator → Activity shows the log, launches per app and department, active users this week, users who never launched an app, last login per user, and CSV export.
 - **`app_token`** on each app is reserved for a future single sign-on handoff (a signed JWT passed to the child app). It is stored and shown to the head admin only; nothing uses it yet.
 
+## Approvals module (`/approvals`)
+
+HR and expenditure approvals (a replica of the Zoho "DG Approval" and "Expenditure" apps), mounted inside the hub as one app card. It lives in `src/lib/approvals/`, `src/components/approvals/`, `src/app/approvals/` and `src/app/api/approvals/`, and its tables are all prefixed `apr_` (schema in `src/db/approvals-schema.ts`, migration `drizzle/0006_approvals_foundation.sql`, additive only). Built in phases; the screens that are not built yet show a placeholder that says which phase brings them.
+
+**Turn it on (PowerShell):**
+
+```powershell
+# 1. In .env.local (see .env.example): APPROVALS_ENABLED=true, and the three routing emails below
+npx drizzle-kit migrate               # adds the apr_ tables; nothing existing is touched
+npm run db:seed:approvals             # 40 expense categories, 6 HR categories, settings, 5 routing rules (safe to re-run)
+npm run dev
+```
+
+`APPROVALS_HR_APPROVER_EMAIL`, `APPROVALS_EXPENDITURE_APPROVER_EMAIL` and `APPROVALS_DG_EMAIL` name the people on the routing rules. They must already be users in the hub. Set them and run the seed again; a rule that already has an approver is never overwritten.
+
+**Add the card:** Administrator → a department → Add application, name `Approvals`, icon `ClipboardList`, URL `/approvals` (or `https://<your-domain>/approvals`). Then tick it for each person in Administrator → Access. Without a grant, a person gets a 404 inside `/approvals`, exactly as for any other app.
+
+**Who can do what.** Everyone with the card is a requester. The hub's head admin is an Approvals admin automatically, and an Approvals admin can make others Approvals admins or viewers (Approvals → Roles and Access). Approvers and the DG are not granted: a person is an approver when named on step 1 of a routing rule, and a DG when named on a later step. The module reads the hub's session and user list only through `src/lib/approvals/host-adapter.ts`.
+
+**Switching it off.** `APPROVALS_ENABLED` unset or not `true`: every `/approvals` page and `/api/approvals` route returns 404, and the hub hides the Approvals card.
+
+**Money and dates.** Money is stored as integer paise and shown with Indian grouping (12,34,567.00). Dates are stored in UTC and shown as dd-MMM-yyyy in Asia/Kolkata. The financial year runs April to March, judged in IST.
+
 ## Database portability
 
 - Plain Postgres only, no Neon-specific features. Portable column types; uuids come from `gen_random_uuid()` (Postgres 13+, no extension).

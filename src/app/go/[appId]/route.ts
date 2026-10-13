@@ -26,5 +26,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ appI
     action: "launch",
     ipAddress: clientIp(req.headers),
   });
-  return NextResponse.redirect(target.url, 302);
+  // A built-in app is stored as a path on this site (for example /approvals); redirect() needs a full address.
+  return NextResponse.redirect(new URL(target.url, req.url), 302);
 }

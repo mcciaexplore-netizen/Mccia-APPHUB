@@ -10,11 +10,13 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx scripts/seed.ts",
+    "db:seed:approvals": "tsx scripts/seed-approvals.ts",
     "typecheck": "tsc --noEmit",
     "clean:scan": "node scripts/cleanup.mjs",
     "clean:fix": "node scripts/cleanup.mjs --fix",
     "test:unit": "tsx tests/unit.ts",
-    "test:e2e": "node tests/e2e/suite.mjs"
+    "test:e2e": "node tests/e2e/suite.mjs",
+    "test:e2e:approvals": "node tests/e2e/approvals.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

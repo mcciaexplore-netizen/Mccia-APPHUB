@@ -3,6 +3,7 @@ import { cache } from "react";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, departments, userAppAccess, type User } from "@/db/schema";
+import { hideApprovalsCardWhenOff } from "@/lib/approvals/flags";
 
 /** What the hub is allowed to know about an app. The URL is deliberately absent. */
 export type HubApp = { id: string; name: string; description: string | null; icon: string; departmentId: string };
@@ -14,7 +15,7 @@ export type HubDepartment = { id: string; name: string; icon: string };
  */
 export const getAccessibleApps = cache(async (user: Pick<User, "id" | "role">): Promise<HubApp[]> => {
   const cols = { id: apps.id, name: apps.name, description: apps.description, icon: apps.icon, departmentId: apps.departmentId };
-  const live = and(eq(apps.isActive, true), eq(departments.isActive, true));
+  const live = and(eq(apps.isActive, true), eq(departments.isActive, true), hideApprovalsCardWhenOff());
   const base = db.select(cols).from(apps).innerJoin(departments, eq(departments.id, apps.departmentId));
   if (user.role === "head_admin") return base.where(live).orderBy(asc(apps.sortOrder), asc(apps.name));
   return db
@@ -47,7 +48,7 @@ export async function getLaunchTarget(user: Pick<User, "id" | "role">, appId: st
     .select({ id: apps.id, url: apps.url, departmentId: apps.departmentId })
     .from(apps)
     .innerJoin(departments, eq(departments.id, apps.departmentId))
-    .where(and(eq(apps.id, appId), eq(apps.isActive, true), eq(departments.isActive, true)));
+    .where(and(eq(apps.id, appId), eq(apps.isActive, true), eq(departments.isActive, true), hideApprovalsCardWhenOff()));
   if (!row) return null;
   if (user.role === "head_admin") return row;
   const [grant] = await db

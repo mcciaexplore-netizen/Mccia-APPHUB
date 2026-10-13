@@ -1,0 +1,39 @@
+/*
+ * Approvals module theme. Everything is scoped to .apr-root, so nothing here reaches the rest of the hub.
+ * Colours come from the hub's own tokens (globals.css); amber is the only value the hub does not have.
+ */
+.apr-root {
+  --apr-side: color-mix(in srgb, var(--c-primary) 48%, var(--c-dark));
+  --apr-side-hover: color-mix(in srgb, white 9%, var(--apr-side));
+  --apr-side-line: color-mix(in srgb, white 11%, transparent);
+  --apr-amber: #e8a33d;
+  --apr-amber-tint: color-mix(in srgb, var(--apr-amber) 16%, white);
+  --apr-amber-line: color-mix(in srgb, var(--apr-amber) 40%, white);
+}
+
+/* Green primary buttons, like the Zoho forms. */
+.apr-root .btn-primary {
+  background: linear-gradient(135deg, var(--c-green-text), var(--c-green));
+  box-shadow: 0 4px 15px color-mix(in srgb, var(--c-green) 28%, transparent);
+}
+.apr-root .btn-primary:hover:not(:disabled) {
+  box-shadow: 0 8px 25px color-mix(in srgb, var(--c-green) 38%, transparent);
+}
+
+.apr-root .badge-amber {
+  background: var(--apr-amber-tint);
+  border-color: var(--apr-amber-line);
+  color: color-mix(in srgb, var(--apr-amber) 55%, black);
+}
+
+.apr-root .apr-scroll { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, white 25%, transparent) transparent; }
+
+/* A gentle heads-up box (warnings that are not errors). */
+.apr-root .apr-notice {
+  padding: 0.8rem 1.1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  background: var(--apr-amber-tint);
+  border: 1px solid var(--apr-amber-line);
+  color: var(--c-text);
+}

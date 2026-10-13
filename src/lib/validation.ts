@@ -2,11 +2,12 @@ import { z } from "zod";
 import { ICONS } from "@/lib/icons";
 
 const icon = z.string().refine((v) => v in ICONS, "Pick an icon from the list");
+/** A full https:// address, or a path on this same site (a built-in app such as /approvals). */
 const httpsUrl = z
   .string()
   .trim()
-  .refine((v) => v.startsWith("https://"), "URL must start with https://")
-  .refine((v) => { try { new URL(v); return true; } catch { return false; } }, "Enter a valid URL");
+  .refine((v) => v.startsWith("https://") || /^\/(?!\/)[^\s\\]*$/.test(v), "URL must start with https:// (or be a path on this site, like /approvals)")
+  .refine((v) => { try { new URL(v, "https://example.com"); return true; } catch { return false; } }, "Enter a valid URL");
 export const uuid = z.string().uuid();
 const sortOrder = z.coerce.number().int().min(0).max(100000).default(0);
 

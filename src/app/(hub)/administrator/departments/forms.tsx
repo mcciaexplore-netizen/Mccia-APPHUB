@@ -55,15 +55,15 @@ export function AppForm({ departments, initial, submitLabel, onSubmit, pending }
     description: initial?.description ?? "", url: initial?.url ?? "https://", icon: initial?.icon ?? DEFAULT_ICON, appToken: initial?.appToken ?? "", isActive: initial?.isActive ?? true,
   });
   const set = <K extends keyof AppVals>(k: K, val: AppVals[K]) => setV((s) => ({ ...s, [k]: val }));
-  const urlBad = v.url.length > 8 && !/^https:\/\/\S+$/.test(v.url);
+  const urlBad = v.url.length > 8 && !/^(https:\/\/\S+|\/(?!\/)\S*)$/.test(v.url);
   return (
     <div className="grid gap-6 md:grid-cols-[1fr_11rem]">
       <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); onSubmit(v); }}>
         <Field label="Name"><input className="input" value={v.name} onChange={(e) => set("name", e.target.value)} required maxLength={80} /></Field>
         <Field label="Description (one line)"><input className="input" value={v.description} onChange={(e) => set("description", e.target.value)} maxLength={140} /></Field>
-        <Field label="URL (https)">
-          <input className="input" type="url" value={v.url} onChange={(e) => set("url", e.target.value)} required />
-          {urlBad && <span className="mt-1 block text-xs text-brand-red">Must start with https://</span>}
+        <Field label="URL (https, or a path on this site such as /approvals)">
+          <input className="input" type="text" inputMode="url" value={v.url} onChange={(e) => set("url", e.target.value)} required />
+          {urlBad && <span className="mt-1 block text-xs text-brand-red">Must start with https:// (or be a path like /approvals)</span>}
         </Field>
         {departments.length === 1 ? (
           <p className="text-sm text-muted">Department: <b>{departments[0].name}</b></p>
