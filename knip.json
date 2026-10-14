@@ -1,4 +1,5 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignore": ["approvals-app/**"],
   "ignoreDependencies": ["playwright-core"]
 }

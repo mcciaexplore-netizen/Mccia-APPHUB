@@ -6,6 +6,7 @@ node_modules.nosync
 tsconfig.tsbuildinfo
 backups
 tests
+approvals-app
 
 # Local secrets stay local; production settings live in Vercel's environment variables.
 .env

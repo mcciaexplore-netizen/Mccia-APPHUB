@@ -69,6 +69,8 @@ node scripts/cleanup.mjs --caches          # delete build caches
 - **Activity:** `activity_log` records `launch` actions (earlier `login` entries are kept) with user, app, IP and time. Administrator → Activity shows the log, launches per app and department, active users this week, users who never launched an app, last login per user, and CSV export.
 - **`app_token`** on each app is reserved for a future single sign-on handoff (a signed JWT passed to the child app). It is stored and shown to the head admin only; nothing uses it yet.
 
+> **Also in this repository:** `approvals-app/` is a separate, standalone approvals application (React + Tailwind, Express, SQLite) for expenditure, DG approvals, HR, reimbursement and events. It has its own `package.json`, is not part of the hub's build, and is ignored by the hub's lint and Vercel upload. See `approvals-app/README.md`.
+
 ## Approvals module (`/approvals`)
 
 HR and expenditure approvals (a replica of the Zoho "DG Approval" and "Expenditure" apps), mounted inside the hub as one app card. It lives in `src/lib/approvals/`, `src/components/approvals/`, `src/app/approvals/` and `src/app/api/approvals/`, and its tables are all prefixed `apr_` (schema in `src/db/approvals-schema.ts`; migrations `0006_approvals_foundation.sql` and `0007_approvals_requests.sql`, both additive only). It is separate from the hub's own parameters and functions: it reads the hub's session and user list only through `src/lib/approvals/host-adapter.ts`.

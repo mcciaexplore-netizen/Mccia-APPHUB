@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // A separate app (React + Express) with its own setup; it is not part of the hub.
+    "approvals-app/**",
   ]),
 ]);
 
