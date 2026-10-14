@@ -5,7 +5,7 @@ import {
   Landmark, Layers, LayoutDashboard, LifeBuoy, LineChart, Lock, Mail, Map, Megaphone,
   MessageSquare, Newspaper, Package, PieChart, Phone, Receipt, Scale, Search, Settings,
   Shield, ShoppingCart, Sparkles, Store, Target, Ticket, TrendingUp, Truck, UserCheck,
-  UserPlus, Users, Wallet, Wrench, Zap, Factory, Banknote, Presentation, Mic, Video,
+  UserPlus, Users, Wallet, Wrench, Zap, Factory, Banknote, Presentation, Mic, Video, DollarSign, Hourglass,
   type LucideIcon,
 } from "lucide-react";
 
@@ -16,7 +16,7 @@ export const ICONS: Record<string, LucideIcon> = {
   Landmark, Layers, LayoutDashboard, LifeBuoy, LineChart, Lock, Mail, Map, Megaphone,
   MessageSquare, Newspaper, Package, PieChart, Phone, Receipt, Scale, Search, Settings,
   Shield, ShoppingCart, Sparkles, Store, Target, Ticket, TrendingUp, Truck, UserCheck,
-  UserPlus, Users, Wallet, Wrench, Zap, Factory, Banknote, Presentation, Mic, Video,
+  UserPlus, Users, Wallet, Wrench, Zap, Factory, Banknote, Presentation, Mic, Video, DollarSign, Hourglass,
 };
 
 export const ICON_NAMES = Object.keys(ICONS).sort();

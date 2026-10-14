@@ -95,7 +95,7 @@ export function HrForm({ me, categories: initialCategories, canAdd, now }: HrFor
         />
       </Row>
       <Row label="Date of Request" htmlFor="hr-date"><DateTimeInput id="hr-date" value={requestedAt} onChange={setRequestedAt} /></Row>
-      <Row label="Amount" htmlFor="hr-amount" error={errors.amount} hint="Only needed for money-related categories such as Celebration or Expenses."><MoneyInput id="hr-amount" value={amount} onChange={setAmount} invalid={!!errors.amount} /></Row>
+      <Row label="Amount" htmlFor="hr-amount" error={errors.amount}><MoneyInput id="hr-amount" value={amount} onChange={setAmount} invalid={!!errors.amount} /></Row>
       <Row label="Description" htmlFor="hr-desc"><TextArea id="hr-desc" value={description} onChange={setDescription} /></Row>
       <Row label="File upload" htmlFor="hr-file1"><FileInput id="hr-file1" label="File upload" value={file1} onChange={setFile1} onBusy={busy} /></Row>
       <Row label="File upload" htmlFor="hr-file2"><FileInput id="hr-file2" label="File upload (second)" value={file2} onChange={setFile2} onBusy={busy} /></Row>
@@ -132,7 +132,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   const defaultEmployee = start.employeeId && p.people.some((x) => x.value === start.employeeId) ? start.employeeId : meListed ? p.meId : "";
   const emailOf = (id: string) => p.people.find((x) => x.value === id)?.email ?? "";
   const defaults = {
-    employeeId: defaultEmployee, email: start.email ?? emailOf(defaultEmployee), categoryId: start.categoryId ?? "", branchId: start.branchId ?? "",
+    employeeId: defaultEmployee, email: start.email || emailOf(defaultEmployee), categoryId: start.categoryId ?? "", branchId: start.branchId ?? "",
     nature: start.nature ?? "", vendor: start.vendor ?? "", amount: start.amount ?? "",
   };
 
@@ -264,7 +264,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
       {emailRow}
       <Row label={large ? "Date of Request" : "Date"} htmlFor="ex-requested"><DateTimeInput id="ex-requested" value={requestedAt} onChange={setRequestedAt} /></Row>
 
-      {large && <Row label="Difference" htmlFor="ex-diff" hint="Budget remaining minus the amount."><ReadOnlyMoney id="ex-diff" paise={assessment?.afterPaise ?? null} empty={noBudgetText} /></Row>}
+      {large && <Row label="Difference" htmlFor="ex-diff"><ReadOnlyMoney id="ex-diff" placeholder="#######" paise={assessment?.afterPaise ?? null} empty={noBudgetText} /></Row>}
       {categoryRow}
       {natureRow}
       {branchRow}
@@ -272,7 +272,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
       {large ? (
         <>
           <Row label="Budget Allocated" htmlFor="ex-alloc"><ReadOnlyMoney id="ex-alloc" paise={assessment?.allocatedPaise ?? null} empty={noBudgetText} /></Row>
-          <Row label="Budget Remaining" htmlFor="ex-remaining" hint="Allocated minus approved spend."><ReadOnlyMoney id="ex-remaining" paise={assessment?.availablePaise ?? null} empty={noBudgetText} /></Row>
+          <Row label="Budget Remaining" htmlFor="ex-remaining"><ReadOnlyMoney id="ex-remaining" paise={assessment?.availablePaise ?? null} empty={noBudgetText} /></Row>
           {amountRow}
           {vendorRow}
           <Row label="Tax Invoice/Supporting Documents" htmlFor="ex-supporting"><FileInput id="ex-supporting" label="Tax Invoice or supporting documents" value={supporting} onChange={setSupporting} onBusy={busy} /></Row>
@@ -280,10 +280,10 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
         </>
       ) : (
         <>
-          <Row label="Available budget" htmlFor="ex-available" hint="Allocated minus approved spend."><ReadOnlyMoney id="ex-available" paise={assessment?.availablePaise ?? null} empty={noBudgetText} /></Row>
+          <Row label="Available budget" htmlFor="ex-available"><ReadOnlyMoney id="ex-available" paise={assessment?.availablePaise ?? null} empty={noBudgetText} /></Row>
           <Row label="File upload" htmlFor="ex-file"><FileInput id="ex-file" label="File upload" value={fileUpload} onChange={setFileUpload} onBusy={busy} /></Row>
-          <Row label="Budget Remaining" htmlFor="ex-after" hint="Available budget minus the amount."><ReadOnlyMoney id="ex-after" paise={assessment?.afterPaise ?? null} empty={noBudgetText} /></Row>
-          <Row label="Date" htmlFor="ex-expense-date" hint="The date of the expense itself."><DateInput id="ex-expense-date" value={expenseDate} onChange={setExpenseDate} /></Row>
+          <Row label="Budget Remaining" htmlFor="ex-after"><ReadOnlyMoney id="ex-after" paise={assessment?.afterPaise ?? null} empty={noBudgetText} /></Row>
+          <Row label="Date" htmlFor="ex-expense-date"><DateInput id="ex-expense-date" value={expenseDate} onChange={setExpenseDate} /></Row>
           <Row label="Type of Publication" htmlFor="ex-pub-type" error={errors.pubType}>
             <SearchSelect
               id="ex-pub-type" options={pubTypes} value={pubTypeId} onChange={onType} invalid={!!errors.pubType}
@@ -299,7 +299,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
           {vendorRow}
           <Row label="Tax Invoice" htmlFor="ex-invoice"><FileInput id="ex-invoice" label="Tax Invoice" value={taxInvoice} onChange={setTaxInvoice} onBusy={busy} /></Row>
           <Row label="Quotation" htmlFor="ex-quotation"><FileInput id="ex-quotation" label="Quotation" value={quotation} onChange={setQuotation} onBusy={busy} /></Row>
-          <Row label="Date of Tax Invoice" htmlFor="ex-invoice-date" error={errors.taxInvoiceDate} hint="Cannot be in the future."><DateInput id="ex-invoice-date" value={taxInvoiceDate} onChange={setTaxInvoiceDate} max={todayIST()} invalid={!!errors.taxInvoiceDate} /></Row>
+          <Row label="Date of Tax Invoice" htmlFor="ex-invoice-date" error={errors.taxInvoiceDate}><DateInput id="ex-invoice-date" value={taxInvoiceDate} onChange={setTaxInvoiceDate} max={todayIST()} invalid={!!errors.taxInvoiceDate} /></Row>
           {amountRow}
         </>
       )}

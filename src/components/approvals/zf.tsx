@@ -65,10 +65,10 @@ export function MoneyInput({ value, onChange, id, invalid }: { value: string; on
 }
 
 /** A figure the form works out itself: grey, not editable, with the rupee sign. Negative values are red. */
-export function ReadOnlyMoney({ paise, empty = "" , id }: { paise: number | null; empty?: string; id?: string }) {
+export function ReadOnlyMoney({ paise, empty = "", id, placeholder = "##,##,###.##" }: { paise: number | null; empty?: string; id?: string; placeholder?: string }) {
   return (
     <div className="zf-control">
-      <input id={id} readOnly tabIndex={-1} className={inputClass(false, `zf-ro ${paise != null && paise < 0 ? "zf-neg" : ""}`)} value={paise == null ? empty : formatINR(paise)} placeholder="#######" aria-readonly="true" />
+      <input id={id} readOnly tabIndex={-1} className={inputClass(false, `zf-ro ${paise != null && paise < 0 ? "zf-neg" : ""}`)} value={paise == null ? empty : formatINR(paise)} placeholder={placeholder} aria-readonly="true" />
       <span className="zf-addon" aria-hidden>₹</span>
     </div>
   );

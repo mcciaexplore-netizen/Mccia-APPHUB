@@ -83,6 +83,7 @@ export const approvalsApps: NavApp[] = [
       {
         label: "Administration", icon: "Settings",
         items: [
+          { label: "Setup", href: "/approvals/admin/setup", roles: ADMIN },
           { label: "Expense Categories", href: "/approvals/admin/categories", roles: ADMIN },
           { label: "Branches", href: "/approvals/admin/branches", roles: ADMIN },
           { label: "Publications", href: "/approvals/admin/publications", roles: ADMIN },
@@ -99,14 +100,14 @@ export const approvalsApps: NavApp[] = [
     title: "Expenditure",
     nav: [
       {
-        label: "Expenses", icon: "Wallet",
+        label: "Expenses", icon: "DollarSign",
         items: [
           { label: "Expenses", href: "/approvals/expenses/new" },
           { label: "Approved Expenses", href: "/approvals/expenses/approved" },
         ],
       },
       {
-        label: "Approvals", icon: "UserCheck",
+        label: "Approvals", icon: "Hourglass",
         items: [
           { label: "Pending", href: "/approvals/expenses/pending" },
           { label: "My Requests", href: "/approvals/expenses/mine" },

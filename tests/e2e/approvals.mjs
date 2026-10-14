@@ -125,8 +125,11 @@ try {
   const A = admin.page;
   await signIn(A, ADMIN_EMAIL, ADMIN_PW);
   check("/approvals opens for the head admin", (await status(A, "/approvals")) === 200);
+  check("opening /approvals lands straight on the Expenses form (no landing page)", new URL(A.url()).pathname === "/approvals/expenses/new" && (await A.locator("main h1").first().innerText()) === "Expenses", A.url());
+  check("the sidebar opens on the Expenditure part, titled Expenditure", (await A.locator("aside:visible .zs-title").first().innerText()) === "Expenditure");
+  await A.locator("aside:visible .zs-switch button", { hasText: "DG Approval" }).click();
   const menu = await nav(A);
-  // The sidebar has two parts, DG Approval and Expenditure; the admin starts on DG Approval.
+  // The sidebar has two parts, DG Approval and Expenditure.
   for (const label of ["Hr", "Expenditures", "All_Budgets", "Administration"]) check(`DG Approval part shows ${label}`, menu.includes(label));
   check("DG APPROVALS (approver inbox) is hidden from someone who is not a named approver", !menu.includes("DG APPROVALS"));
   check("Event Approvals is in the menu, greyed out with a Coming soon tag", /Event Approvals[\s\S]*Coming soon/i.test(menu) && (await A.locator("aside:visible [aria-disabled=true]").count()) >= 1);
@@ -134,9 +137,9 @@ try {
   await A.locator("aside:visible .zs-switch button", { hasText: "Expenditure" }).click();
   const expMenu = await nav(A);
   check("switching to Expenditure shows Expenses and Approvals", expMenu.includes("Expenses") && expMenu.includes("Approvals") && expMenu.includes("My Requests"), expMenu.replace(/\s+/g, " ").slice(0, 120));
-  await A.locator("aside:visible .zs-switch button", { hasText: "DG Approval" }).click();
+  await A.goto(BASE + "/approvals/admin/setup");
   const home = await A.locator("main").first().innerText();
-  check("home greets the person and shows the setup checklist", /Welcome/.test(home) && /Setup/.test(home) && /Expense categories/.test(home));
+  check("the admin's Setup page shows the checklist", /Setup/.test(home) && /Expense categories/.test(home));
   check("setup checklist counts the 40 seeded categories", /40 active/.test(home), home.match(/\d+ active/)?.[0]);
   check("setup checklist flags the kinds of request that still have no approver", /of 3 kinds of request have an approver/.test(home), home.match(/\d+ of \d+ kinds[^\n]*/)?.[0]);
 
@@ -154,8 +157,8 @@ try {
   check("a department holding only an old Approvals card is not listed", !hubMenu.includes("ZZ Apr Dept"), hubMenu.replace(/\s+/g, " ").slice(0, 120));
   check("an old Approvals card cannot be launched", (await A.request.get(`${BASE}/go/${card.id}`, { maxRedirects: 0 })).status() === 404);
   await A.locator("aside:visible nav a", { hasText: "Approval System" }).first().click();
-  await A.waitForURL(/\/approvals$/);
-  check("clicking it opens the module in the same tab", new URL(A.url()).pathname === "/approvals" && (await A.locator("main").first().innerText()).includes("Welcome"));
+  await A.waitForURL(/\/approvals\/expenses\/new$/);
+  check("clicking it opens the application in the same tab, on the Expenses form", await poll(async () => new URL(A.url()).pathname === "/approvals/expenses/new" && (await A.locator("main h1").first().innerText()) === "Expenses"), A.url());
 
   section("5. Branches: add, reject duplicates and blanks, deactivate, audit");
   await A.goto(BASE + "/approvals/admin/branches");
@@ -226,8 +229,11 @@ try {
   await M.goto(BASE + "/");
   check("and the hub shows them the Approval System item", (await M.locator("aside:visible nav").first().innerText()).includes("Approval System"));
   await M.goto(BASE + "/approvals");
+  const mExp = await nav(M);
+  check("they land on the Expenditure part: Expenses and Approvals, no Administration", mExp.includes("Expenses") && mExp.includes("Approvals") && !mExp.includes("Administration"), mExp.replace(/\s+/g, " ").slice(0, 120));
+  await M.locator("aside:visible .zs-switch button", { hasText: "DG Approval" }).click();
   const mMenu = await nav(M);
-  check("they see the request groups but no Administration group", mMenu.includes("Expenditures") && mMenu.includes("Hr") && !mMenu.includes("Administration"), mMenu.replace(/\s+/g, " ").slice(0, 120));
+  check("the DG Approval part shows them the request groups but no Administration group", mMenu.includes("Expenditures") && mMenu.includes("Hr") && !mMenu.includes("Administration"), mMenu.replace(/\s+/g, " ").slice(0, 120));
   check("they do not see the oversight items (budgets, reports)", !/All_Budgets|HR Report|\bApproval Time\b/.test(mMenu));
   check("admin pages are a 404 for them", (await status(M, "/approvals/admin/categories")) === 404 && (await status(M, "/approvals/admin/access")) === 404);
   check("the budgets page is a 404 for them (viewers only)", (await status(M, "/approvals/budgets")) === 404);

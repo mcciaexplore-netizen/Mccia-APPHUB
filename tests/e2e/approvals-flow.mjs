@@ -166,6 +166,8 @@ try {
   check("Submit and Reset are there", (await R.page.getByRole("button", { name: "Submit" }).count()) === 1 && (await R.page.getByRole("button", { name: "Reset" }).count()) === 1);
   await R.page.goto(BASE + "/approvals/expenses/new");
   check("the below-10k form has its 17 fields in the Zoho order (two of them labelled Date)", JSON.stringify(await labels(R.page)) === JSON.stringify(["Name", "Email", "Date", "Category", "Nature of Expenditure", "Branch Name", "Available budget", "File upload", "Budget Remaining", "Date", "Type of Publication", "Publication", "Vendor Name", "Tax Invoice", "Quotation", "Date of Tax Invoice", "Amount"]), (await labels(R.page)).join(" | "));
+  check("the Name is the signed-in person and the Email is already filled in from it", (await R.page.locator("#ex-email").inputValue()) === PEOPLE.req.email && (await R.page.locator("#ex-name").innerText()).includes(PEOPLE.req.name), await R.page.locator("#ex-email").inputValue());
+  check("the budget boxes show the ##,##,###.## placeholder with the rupee sign", (await R.page.locator("#ex-available").getAttribute("placeholder")) === "##,##,###.##" && (await R.page.locator("#ex-after").getAttribute("placeholder")) === "##,##,###.##");
 
   section("2. + Add New is for admins only");
   await R.page.goto(BASE + "/approvals/hr/new");
