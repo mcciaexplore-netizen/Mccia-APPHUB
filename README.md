@@ -89,11 +89,11 @@ HR and expenditure approvals (a replica of the Zoho "DG Approval" and "Expenditu
 ```powershell
 # 1. In .env.local (see .env.example): APPROVALS_ENABLED=true
 npx drizzle-kit migrate               # adds the apr_ tables (0006 and 0007); nothing existing is touched
-npm run db:seed:approvals             # 40 expense categories, 6 HR categories, settings, 5 routing rules (safe to re-run)
+npm run db:seed:approvals             # 40 expense categories, 6 HR categories, settings, 5 routing rules, the hub card (safe to re-run)
 npm run dev
 ```
 
-**Add the card:** Administrator → a department → Add application, name `Approvals`, icon `ClipboardList`, URL `/approvals` (or `https://<your-domain>/approvals`). Then tick it for each person in Administrator → Access. Without a grant, a person gets a 404 inside `/approvals`, exactly as for any other app. The head admin can open `/approvals` directly without the card.
+**The hub card:** `npm run db:seed:approvals` also adds an **Approvals** card (URL `/approvals`) to the **Approval System** department, creating the department if it is missing; a card that already exists is left alone. The head admin sees it at once; for everyone else, tick it in Administrator → Access. Without a grant a person gets a 404 inside `/approvals`, exactly as for any other app. (You can also add it by hand: Administrator → a department → Add application, name `Approvals`, icon `ClipboardList`, URL `/approvals`.) The head admin can open `/approvals` directly without the card.
 
 **Who approves.** In Approvals → Approver Rules, name one person per step: the DG for HR and for expenditure of ₹10,000 and above, and the below-₹10,000 approver for Expenses. Those people become approvers automatically. (`APPROVALS_HR_APPROVER_EMAIL`, `APPROVALS_EXPENDITURE_APPROVER_EMAIL` and `APPROVALS_DG_EMAIL` only pre-fill the rules when the seed runs; the people must already be users in the hub.) Branches and budgets are entered by an Approvals admin; the Name lists on the forms come from the hub's users.
 
