@@ -9,10 +9,16 @@ type Dept = { id: string; name: string };
 type Row = CardApp & { departmentId: string };
 const KEY = "hub:lastDepartment";
 
-export function HomeClient({ departments, apps, isAdmin }: { departments: Dept[]; apps: Row[]; isAdmin: boolean }) {
+export function HomeClient({ departments: all, directIds, apps, isAdmin }: { departments: Dept[]; directIds: string[]; apps: Row[]; isAdmin: boolean }) {
   const router = useRouter();
   const param = useSearchParams().get("d");
   const [q, setQ] = useState("");
+  // A department that is only a module (Approvals) is opened from the sidebar straight into the module, so it is not the one shown here,
+  // unless it is all this person has (then "Back to App Hub" still lands on something).
+  const departments = useMemo(() => {
+    const browsable = all.filter((d) => !directIds.includes(d.id));
+    return browsable.length ? browsable : all;
+  }, [all, directIds]);
   const valid = (id: string | null) => !!id && departments.some((d) => d.id === id);
   const selected = valid(param) ? param! : departments[0]?.id;
 
@@ -30,7 +36,7 @@ export function HomeClient({ departments, apps, isAdmin }: { departments: Dept[]
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [param]);
 
-  const deptName = useMemo(() => new Map(departments.map((d) => [d.id, d.name])), [departments]);
+  const deptName = useMemo(() => new Map(all.map((d) => [d.id, d.name])), [all]);
   const searching = q.trim().length > 0;
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();

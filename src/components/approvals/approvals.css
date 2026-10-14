@@ -109,6 +109,7 @@
 .apr-root .zs-row:hover { background: var(--z-side-hover); color: #fff; }
 .apr-root .zs-sub { padding-left: 2.7rem; font-size: 0.86rem; min-height: 2.3rem; color: rgba(255, 255, 255, 0.78); }
 .apr-root .zs-active, .apr-root .zs-active:hover { background: var(--z-teal); color: #fff; font-weight: 700; }
+.apr-root .zs-soon { flex: none; border-radius: 3px; background: var(--z-amber); color: #3b2a00; padding: 0 0.35rem; font-size: 0.6rem; font-weight: 800; line-height: 1.1rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .apr-root .zs-foot { border-top: 1px solid var(--z-side-line); background: var(--z-side-2); }
 .apr-root .zs-icon-btn { position: relative; padding: 0.4rem; border-radius: 3px; color: rgba(255, 255, 255, 0.75); transition: background 0.12s, color 0.12s; }
 .apr-root .zs-icon-btn:hover { background: var(--z-side-hover); color: #fff; }

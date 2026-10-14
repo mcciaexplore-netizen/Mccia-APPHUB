@@ -130,7 +130,7 @@ try {
   // The sidebar has two parts, DG Approval and Expenditure; the admin starts on DG Approval.
   for (const label of ["Hr", "Expenditures", "All_Budgets", "Administration"]) check(`DG Approval part shows ${label}`, menu.includes(label));
   check("DG APPROVALS (approver inbox) is hidden from someone who is not a named approver", !menu.includes("DG APPROVALS"));
-  check("there is no Event Approvals entry (out of scope)", !menu.includes("Event Approvals"));
+  check("Event Approvals is in the menu, greyed out with a Coming soon tag", /Event Approvals[\s\S]*Coming soon/i.test(menu) && (await A.locator("aside:visible [aria-disabled=true]").count()) >= 1);
   check("the switcher offers both parts", (await A.locator("aside:visible .zs-switch button").allInnerTexts()).join("|") === "DG Approval|Expenditure");
   await A.locator("aside:visible .zs-switch button", { hasText: "Expenditure" }).click();
   const expMenu = await nav(A);
@@ -181,7 +181,7 @@ try {
   check("saving a budget shows a success message", await toast(A, "Budget saved"));
   const row1 = (await sql`select * from apr_budgets where branch_id = ${branch.id} and category_id = ${cat.item.id}`);
   check("the amount is stored as integer paise", row1.length === 1 && Number(row1[0].allocated_paise) === 123456700, row1[0]?.allocated_paise);
-  check("the table shows it with Indian grouping", (await A.locator("main").first().innerText()).includes("12,34,567.00"));
+  check("the table shows it with Indian grouping", await poll(async () => (await A.locator("main").first().innerText()).includes("12,34,567.00")));
   await A.getByPlaceholder("##,##,###.##").fill("1,00,000");
   await A.getByRole("button", { name: "Save budget" }).click();
   await poll(async () => Number((await sql`select allocated_paise from apr_budgets where branch_id = ${branch.id} and category_id = ${cat.item.id}`)[0]?.allocated_paise) === 10000000);

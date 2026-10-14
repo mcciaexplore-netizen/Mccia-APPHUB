@@ -17,6 +17,8 @@ export type NavItem = {
   href?: string;
   /** Visible to anyone holding at least one of these roles. Omitted means everyone. */
   roles?: readonly ApprovalsRole[];
+  /** Shown greyed out with a "Coming soon" tag, and not a link. */
+  disabled?: boolean;
 };
 export type NavGroup = { label: string; icon: string; items: NavItem[]; roles?: readonly ApprovalsRole[] };
 export type NavEntry = NavGroup | (NavItem & { icon: string });
@@ -69,6 +71,7 @@ export const approvalsApps: NavApp[] = [
           { label: "Budget Utilisation", href: "/approvals/budgets/utilisation", roles: OVERSIGHT },
         ],
       },
+      { label: "Event Approvals", icon: "Calendar", disabled: true },
       { label: "DG APPROVALS", icon: "Inbox", href: "/approvals/inbox", roles: HANDLERS },
       {
         label: "Approvals", icon: "UserCheck", roles: HANDLERS,

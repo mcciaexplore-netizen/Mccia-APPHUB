@@ -88,6 +88,14 @@ export function Sidebar({
         {entries.map((e) => {
           if (!isGroup(e)) {
             const withIcon = e as NavItem & { icon: string };
+            if (e.disabled) {
+              return (
+                <div key={e.label} className="zs-row cursor-not-allowed opacity-50" aria-disabled="true">
+                  <Icon name={withIcon.icon} size={18} /> <span className="flex-1 py-1.5">{e.label}</span>
+                  <span className="zs-soon">Coming soon</span>
+                </div>
+              );
+            }
             const active = e.href === activeHref;
             return (
               <Link key={e.label} href={e.href!} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`zs-row ${active ? "zs-active" : ""}`}>
