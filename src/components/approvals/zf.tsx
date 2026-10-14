@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CalendarDays, ChevronDown, Mail, Plus, Search, Upload, X } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { api } from "@/components/approvals/api";
@@ -196,7 +197,12 @@ export function SearchSelect({
           )}
         </div>
       )}
-      {adding && add && <AddNewDialog add={add} initial={q} onClose={() => setAdding(false)} onDone={(o) => { add.onAdded(o); onChange(o.value); setAdding(false); }} />}
+      {/* The dialog has a form of its own. Rendered in place it would sit inside the request form, and a form inside a form submits the
+          whole page. So it is moved out in the page (still inside .apr-root, so it keeps the module's look). */}
+      {adding && add && createPortal(
+        <AddNewDialog add={add} initial={q} onClose={() => setAdding(false)} onDone={(o) => { add.onAdded(o); onChange(o.value); setAdding(false); }} />,
+        document.querySelector(".apr-root") ?? document.body,
+      )}
     </div>
   );
 }

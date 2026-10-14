@@ -1,11 +1,24 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useState, useSyncExternalStore } from "react";
 import { Menu } from "lucide-react";
 import { Sidebar } from "@/components/approvals/Sidebar";
 import { approvalsManifest, type ApprovalsRole } from "@/lib/approvals/approvals.manifest";
 
 const LARGE_KEY = "apr-large-text";
+const LARGE_EVENT = "apr-large-text-change";
+
+/** "Larger text" is a per-person convenience, so it lives in the browser. Reading it can fail (private windows): then it stays off. */
+const readLarge = () => { try { return localStorage.getItem(LARGE_KEY) === "1"; } catch { return false; } };
+const watchLarge = (onChange: () => void) => {
+  window.addEventListener(LARGE_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => { window.removeEventListener(LARGE_EVENT, onChange); window.removeEventListener("storage", onChange); };
+};
+const setLarge = (on: boolean) => {
+  try { localStorage.setItem(LARGE_KEY, on ? "1" : "0"); } catch { /* the page works without it */ }
+  window.dispatchEvent(new Event(LARGE_EVENT));
+};
 
 /** The module's own full-screen layout: a dark sidebar like the Zoho apps, and a white page beside it. */
 export function Shell({
@@ -18,17 +31,9 @@ export function Shell({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const [large, setLarge] = useState(false);
+  const large = useSyncExternalStore(watchLarge, readLarge, () => false);
   const close = () => setOpen(false);
-
-  // Larger text is a per-person convenience, so it lives in the browser. Reading it can fail (private windows), and then it stays off.
-  useEffect(() => {
-    try { if (localStorage.getItem(LARGE_KEY) === "1") setLarge(true); } catch { /* the page works without it */ }
-  }, []);
-  const toggleLarge = () => setLarge((v) => {
-    try { localStorage.setItem(LARGE_KEY, v ? "0" : "1"); } catch { /* ignore */ }
-    return !v;
-  });
+  const toggleLarge = () => setLarge(!large);
 
   const sidebar = (
     <Suspense fallback={<div className="zs h-full" />}>

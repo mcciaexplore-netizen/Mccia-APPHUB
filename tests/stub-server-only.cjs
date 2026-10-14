@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- a plain CommonJS preload for Node, not app code */
 /**
  * Lets the module's server code run in a plain Node process (the integration test): the "server-only" marker package throws when it is
  * imported anywhere but a Next.js server bundle, so here it is swapped for its empty twin. Used only by tests/integration.mts.

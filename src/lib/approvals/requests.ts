@@ -202,7 +202,9 @@ export async function decideRequest(requestId: string, input: { action: "approve
   if (req.requesterUserId === actor.id) throw new ApprovalsError("You cannot approve or reject your own request.", 403);
 
   const [step] = await db.select().from(aprRequestSteps).where(and(eq(aprRequestSteps.requestId, requestId), eq(aprRequestSteps.stepNo, req.currentStep)));
-  if (!step || step.status !== "pending" || step.approverUserId !== actor.id) throw new ApprovalsError("This request is not waiting for you.", 403);
+  if (!step || step.approverUserId !== actor.id) throw new ApprovalsError("This request is not waiting for you.", 403);
+  // It was this person's step but someone got there first (two clicks at the same moment): say so, rather than "not yours".
+  if (step.status !== "pending") throw new ApprovalsError("Someone has already decided this request.", 409);
 
   // Over budget is judged again now, as well as when it was submitted: the budget may have changed since.
   let overBudget = req.overBudget;

@@ -23,8 +23,12 @@ const ADMIN_EMAIL = (process.env.HEAD_ADMIN_EMAIL || "").trim().toLowerCase();
 const ADMIN_PW = process.env.HEAD_ADMIN_PASSWORD || "";
 if (!ADMIN_EMAIL || !ADMIN_PW) { console.error("HEAD_ADMIN_EMAIL and HEAD_ADMIN_PASSWORD must be set: the suite signs in as the main admin."); process.exit(2); }
 
-const { neon } = req("@neondatabase/serverless");
-const rawSql = neon(process.env.DATABASE_URL);
+// The same query helper for both database drivers the app supports (DB_DRIVER=neon, the default, or DB_DRIVER=pg for a local Postgres).
+const rawSql = (() => {
+  if ((process.env.DB_DRIVER ?? "neon") !== "pg") return req("@neondatabase/serverless").neon(process.env.DATABASE_URL);
+  const pool = new (req("pg").Pool)({ connectionString: process.env.DATABASE_URL, max: 4, ssl: process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : false });
+  return async (strings, ...values) => (await pool.query(strings.reduce((q, s, i) => q + (i ? `$${i}` : "") + s, ""), values)).rows;
+})();
 const retry = async (fn, tries = 8, waitMs = 3000) => { let last; for (let i = 0; i < tries; i++) { try { return await fn(); } catch (e) { last = e; await new Promise((r) => setTimeout(r, waitMs)); } } throw last; };
 const sql = (...a) => retry(() => rawSql(...a));
 const playwright = req("playwright-core");
@@ -216,7 +220,7 @@ try {
   check("a person given the card can open /approvals", (await status(M, "/approvals")) === 200);
   const mMenu = await nav(M);
   check("they see the request groups but no Administration group", mMenu.includes("Expenditures") && mMenu.includes("Hr") && !mMenu.includes("Administration"), mMenu.replace(/\s+/g, " ").slice(0, 120));
-  check("they do not see the oversight items (budgets, reports)", !/All_Budgets|HR Report|Approval Time/.test(mMenu));
+  check("they do not see the oversight items (budgets, reports)", !/All_Budgets|HR Report|\bApproval Time\b/.test(mMenu));
   check("admin pages are a 404 for them", (await status(M, "/approvals/admin/categories")) === 404 && (await status(M, "/approvals/admin/access")) === 404);
   check("the budgets page is a 404 for them (viewers only)", (await status(M, "/approvals/budgets")) === 404);
   const read = await M.request.get(`${BASE}/api/approvals/masters/categories`);
