@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { navFor } from "../../constants/nav.js";
 import { useApp } from "../../context/AppContext.jsx";
 import { useCounts } from "../../hooks/useCounts.js";
+import ErrorBoundary from "../common/ErrorBoundary.jsx";
 import Sidebar from "./Sidebar.jsx";
 
 /** The frame around every signed-in page: the sidebar, a top bar on phones, and the page itself. */
@@ -22,7 +23,7 @@ export default function Layout({ children }) {
           <button aria-label="Open menu" onClick={() => setOpen(true)} className="text-2xl leading-none">☰</button>
           <span className="font-bold">MCCIA Approvals</span>
         </header>
-        <main className="p-4 sm:p-8">{children}</main>
+        <main className="p-4 sm:p-8"><ErrorBoundary resetKey={here}>{children}</ErrorBoundary></main>
       </div>
     </div>
   );
