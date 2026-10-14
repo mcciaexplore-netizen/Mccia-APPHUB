@@ -17,7 +17,7 @@ npm run build
 npm start               # http://localhost:3001
 ```
 
-`npm test` runs the API test (65 checks) on a throwaway database; it never touches `database/` or `uploads/`.
+`npm test` runs the API test (65 checks) and `npm run test:ui` the browser test (45 checks; run `npm run build` first and have Google Chrome installed). Both use a throwaway database and never touch `database/` or `uploads/`.
 
 ## Sign in
 
@@ -53,13 +53,48 @@ typed. Going over shows a warning but does not block the request. Pending and re
 ## Where things are
 
 ```
-client/      React app (Vite + Tailwind)
-server/      Express API: modules.js (the five forms and routes), app.js (the API), db.js (schema and seed), test.js
-database/    mccia.db (created on first start)
-uploads/     attached files (PDF, JPG, PNG, DOC, DOCX, XLS, XLSX, up to 10 MB each)
+client/                 React app (Vite + Tailwind)
+  src/
+    components/
+      common/           StatusBadge, PageTitle, Toaster
+      layout/           Layout (page frame, phone top bar), Sidebar
+      forms/            RequestForm (all five forms), FieldControl (one input per field type), FormRow
+      approvals/        DecisionPanel, MoreInfoNotice, StageProgress, SubmissionFields, AuditTrail
+    pages/
+      auth/             Login
+      dashboard/        Home, RequestList (every list), SubmissionDetail, ResubmitRequest
+      admin/            Budgets, Masters
+      expenditure/ dg-approval/ hr/ reimbursement/ events/    one thin page each: it opens that module's form
+    context/            AppContext: who is signed in, the form definitions, toasts
+    hooks/              useCounts, useSubmission, useBudget, useDebouncedCallback
+    services/           every call to the server (http, auth, config, submission, budget, masters)
+    constants/          nav (the menu per person), routes, status colours
+    utils/              format (dates, ₹), validators
+    styles/             index.css (Tailwind and the form look)
+server/                 Express API
+  modules.js            the five forms: their fields, order and who approves (the client draws the forms from this)
+  app.js                the API: login, config, masters, budgets, submissions, approval actions, files
+  db.js                 the SQLite schema, the starting data and password hashing
+  index.js              starts the server (reads .env)
+  test.js               API test (npm test)
+tests/ui.mjs            real-browser test (npm run build, then npm run test:ui)
+database/               mccia.db (created on first start)
+uploads/                attached files (PDF, JPG, PNG, DOC, DOCX, XLS, XLSX, up to 10 MB each)
+.env.example            the settings you can change
 ```
 
-The forms are defined once, in `server/modules.js`; the client draws them from `GET /api/config`.
+The forms are defined once, in `server/modules.js`; the client draws them from `GET /api/config`. To change a field, change it there.
+
+## Settings
+
+Copy `.env.example` to `.env`. Every setting is optional: `PORT`, `DB_FILE`, `UPLOAD_DIR`, `SESSION_SECRET`.
+
+## Deploying
+
+This app keeps its data in a SQLite file and its uploads in a folder, so it needs a server with a **persistent disk** (a small VM, or
+a host with a mounted volume): set `DB_FILE` and `UPLOAD_DIR` to paths on that disk. It cannot run as it is on Vercel, whose
+serverless functions have no persistent disk. On Vercel the approvals are the module inside the MCCIA App Hub (`/approvals`), which
+uses the hub's Postgres database.
 
 ## Before real use
 
