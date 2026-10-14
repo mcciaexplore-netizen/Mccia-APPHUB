@@ -71,13 +71,6 @@ export const resolveAccess = cache(async (): Promise<Access> => {
   return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles: await rolesFor(host.id, isHeadAdmin) } };
 });
 
-/** The signed-in person with their module roles, or null when signed out or without access. The host reads its session from cookies, so the request is not needed. */
-export async function getCurrentUser(req?: Request): Promise<ApprovalsUser | null> {
-  void req;
-  const a = await resolveAccess();
-  return a.status === "ok" ? a.user : null;
-}
-
 /** Everyone who can sign in to the hub, for the Name dropdown and the approver pickers. There is no second user table. */
 export async function listUsers(): Promise<DirectoryUser[]> {
   return db

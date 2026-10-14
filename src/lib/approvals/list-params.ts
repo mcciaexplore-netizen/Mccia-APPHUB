@@ -6,7 +6,7 @@ import type { AprRequestStatus } from "@/db/approvals-schema";
  * exported. This file reads and writes that state; it has no server-only imports, so the client filter bar uses it too.
  */
 
-export const SORT_KEYS = ["requestNo", "name", "category", "branch", "amount", "requestedAt", "status", "approver", "decidedAt"] as const;
+const SORT_KEYS = ["requestNo", "name", "category", "branch", "amount", "requestedAt", "status", "approver", "decidedAt"] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 
 export const STATUS_FILTERS = ["pending", "approved", "rejected", "withdrawn"] as const satisfies readonly AprRequestStatus[];
@@ -23,7 +23,7 @@ export type ListParams = {
   page: number;
 };
 
-export const DEFAULT_PARAMS: ListParams = { q: "", from: "", to: "", status: "", categoryId: "", branchId: "", sort: "requestedAt", dir: "desc", page: 1 };
+const DEFAULT_PARAMS: ListParams = { q: "", from: "", to: "", status: "", categoryId: "", branchId: "", sort: "requestedAt", dir: "desc", page: 1 };
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const uuid = z.string().uuid();

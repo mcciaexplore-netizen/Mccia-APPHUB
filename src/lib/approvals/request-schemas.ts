@@ -8,7 +8,7 @@ export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const CHUNK_BYTES = 3 * 1024 * 1024;
 export const ACCEPT_ATTRIBUTE = ALLOWED_EXTENSIONS.map((e) => `.${e}`).join(",");
 
-export const extensionOf = (name: string) => (/\.([A-Za-z0-9]+)$/.exec(name.trim())?.[1] ?? "").toLowerCase();
+const extensionOf = (name: string) => (/\.([A-Za-z0-9]+)$/.exec(name.trim())?.[1] ?? "").toLowerCase();
 export const isAllowedFileName = (name: string) => (ALLOWED_EXTENSIONS as readonly string[]).includes(extensionOf(name));
 
 const MIME_BY_EXTENSION: Record<(typeof ALLOWED_EXTENSIONS)[number], string> = {
@@ -62,7 +62,7 @@ const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date");
 const optionalDate = dateOnly.optional().or(z.literal("")).transform((s) => s || null);
 
 /** Pointing at a file the person already uploaded. */
-export const fileRef = z.object({ fileId: idSchema });
+const fileRef = z.object({ fileId: idSchema });
 const optionalFile = fileRef.nullish().transform((f) => f ?? null);
 
 export const hrRequestInput = z.object({

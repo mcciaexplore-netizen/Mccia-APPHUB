@@ -31,7 +31,7 @@ export function Row({
 /** The browser's own calendar, opened from our button. Some browsers refuse (no user gesture, or no support): then typing still works. */
 const openPicker = (el: HTMLInputElement | null) => { try { el?.showPicker?.(); } catch { el?.focus(); } };
 
-export const inputClass = (invalid?: boolean, extra = "") => `input ${invalid ? "zf-invalid" : ""} ${extra}`.trim();
+const inputClass = (invalid?: boolean, extra = "") => `input ${invalid ? "zf-invalid" : ""} ${extra}`.trim();
 
 export function TextInput({ value, onChange, id, invalid, maxLength, placeholder }: { value: string; onChange: (v: string) => void; id?: string; invalid?: boolean; maxLength?: number; placeholder?: string }) {
   return <input id={id} className={inputClass(invalid)} value={value} onChange={(e) => onChange(e.target.value)} maxLength={maxLength ?? 200} placeholder={placeholder} />;

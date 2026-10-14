@@ -1,5 +1,5 @@
 import "server-only";
-import { and, count, desc, eq, isNull, lt } from "drizzle-orm";
+import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { aprNotifications } from "@/db/approvals-schema";
 import { getDirectoryUsers } from "./host-adapter";
@@ -55,9 +55,4 @@ export async function markRead(userId: string, id?: string): Promise<void> {
     .update(aprNotifications)
     .set({ readAt: new Date() })
     .where(and(eq(aprNotifications.userId, userId), isNull(aprNotifications.readAt), id ? eq(aprNotifications.id, id) : undefined));
-}
-
-/** Old, already read notifications are dropped now and then so the table stays small. */
-export async function pruneNotifications(days = 90): Promise<void> {
-  await db.delete(aprNotifications).where(lt(aprNotifications.createdAt, new Date(Date.now() - days * 86400000)));
 }

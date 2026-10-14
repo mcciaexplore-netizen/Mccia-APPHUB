@@ -69,7 +69,7 @@ export type RuleLike = {
   approverUserIds: readonly string[];
   active: boolean;
 };
-export type PlannedStep = { stepNo: number; stepLabel: string; approverUserId: string };
+type PlannedStep = { stepNo: number; stepLabel: string; approverUserId: string };
 export type StepPlan = { steps: PlannedStep[]; problem: null } | { steps: []; problem: "no-approver" | "only-self" };
 
 /**

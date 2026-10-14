@@ -32,7 +32,7 @@ const HR: AprRequestType[] = ["hr"];
 const LARGE: AprRequestType[] = ["expenditure_large"];
 const SMALL: AprRequestType[] = ["expenditure_small"];
 
-export const LIST_SCREENS: Record<string, ListScreen> = {
+const LIST_SCREENS: Record<string, ListScreen> = {
   "hr/all": { title: "All Hr", intro: "Every HR request you are allowed to see.", types: HR, categories: "hr", newHref: "/approvals/hr/new" },
   "hr/approved": { title: "Approved HR requests", intro: "HR requests that were approved.", types: HR, statuses: ["approved"], categories: "hr" },
   "hr/pending": { title: "Pending HR Request", intro: "HR requests still waiting for a decision.", types: HR, statuses: ["pending"], categories: "hr" },

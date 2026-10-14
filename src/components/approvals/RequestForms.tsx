@@ -107,7 +107,7 @@ export function HrForm({ me, categories: initialCategories, canAdd, now }: HrFor
 
 /* ---------------------------------------------------------------- expenditure */
 
-export type PersonOption = Option & { email: string };
+type PersonOption = Option & { email: string };
 export type ExpenditureFormProps = {
   form: "large" | "small";
   people: PersonOption[];

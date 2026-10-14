@@ -2,7 +2,7 @@ import { z } from "zod";
 import { isFinancialYear } from "./format";
 
 /** Names are trimmed and inner whitespace collapsed, so "Admin  Expenses " and "Admin Expenses" are the same. */
-export const nameSchema = z
+const nameSchema = z
   .string()
   .transform((s) => s.trim().replace(/\s+/g, " "))
   .pipe(z.string().min(1, "Name is required").max(120, "Keep the name under 120 characters"));
@@ -10,7 +10,7 @@ export const nameSchema = z
 export const idSchema = z.string().uuid("Invalid id");
 const sortSchema = z.number().int().min(0).max(100000);
 
-export const masterKinds = ["categories", "hr-categories", "branches", "publication-types", "publications"] as const;
+const masterKinds = ["categories", "hr-categories", "branches", "publication-types", "publications"] as const;
 export type MasterKind = (typeof masterKinds)[number];
 export const kindSchema = z.enum(masterKinds);
 
