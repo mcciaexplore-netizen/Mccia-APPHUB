@@ -4,3 +4,8 @@ database/*.db*
 database/.secret
 uploads/*
 !uploads/.gitkeep
+
+# local settings: copy .env.example to .env
+.env
+.env.*
+!.env.example

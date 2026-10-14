@@ -1,73 +1,49 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { api } from "./api.js";
-import Layout from "./components/Layout.jsx";
-import Login from "./pages/Login.jsx";
-import Home from "./pages/Home.jsx";
-import ListPage from "./pages/ListPage.jsx";
-import FormPage from "./pages/FormPage.jsx";
-import DetailPage from "./pages/DetailPage.jsx";
-import BudgetsPage from "./pages/BudgetsPage.jsx";
-import MastersPage from "./pages/MastersPage.jsx";
+import Layout from "./components/layout/Layout.jsx";
+import { ROUTES } from "./constants/routes.js";
+import { AppProvider, useApp } from "./context/AppContext.jsx";
+import Login from "./pages/auth/Login.jsx";
+import Budgets from "./pages/admin/Budgets.jsx";
+import Masters from "./pages/admin/Masters.jsx";
+import Home from "./pages/dashboard/Home.jsx";
+import RequestList from "./pages/dashboard/RequestList.jsx";
+import ResubmitRequest from "./pages/dashboard/ResubmitRequest.jsx";
+import SubmissionDetail from "./pages/dashboard/SubmissionDetail.jsx";
+import NewDgExpenditure from "./pages/dg-approval/NewDgExpenditure.jsx";
+import NewEvent from "./pages/events/NewEvent.jsx";
+import NewExpenditure from "./pages/expenditure/NewExpenditure.jsx";
+import NewHrRequest from "./pages/hr/NewHrRequest.jsx";
+import NewReimbursement from "./pages/reimbursement/NewReimbursement.jsx";
 
-const Ctx = createContext(null);
-export const useApp = () => useContext(Ctx);
+function AppRoutes() {
+  const { user, config } = useApp();
+  if (user === undefined || (user && !config)) return <p className="p-8 text-gray-500">Loading…</p>;
+  if (!user) return <Login />;
+  const managers = (page) => (user.can_manage ? page : <Navigate to={ROUTES.home} />);
+  return (
+    <Layout>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/list" element={<RequestList />} />
+        <Route path="/new/expenditure" element={<NewExpenditure />} />
+        <Route path="/new/dg_expenditure" element={<NewDgExpenditure />} />
+        <Route path="/new/hr" element={<NewHrRequest />} />
+        <Route path="/new/reimbursement" element={<NewReimbursement />} />
+        <Route path="/new/event" element={<NewEvent />} />
+        <Route path="/edit/:id" element={<ResubmitRequest />} />
+        <Route path="/submission/:id" element={<SubmissionDetail />} />
+        <Route path="/budgets" element={managers(<Budgets />)} />
+        <Route path="/masters" element={managers(<Masters />)} />
+        <Route path="*" element={<Navigate to={ROUTES.home} />} />
+      </Routes>
+    </Layout>
+  );
+}
 
 export default function App() {
-  const [user, setUser] = useState(undefined); // undefined while checking, null when signed out
-  const [config, setConfig] = useState(null);
-  const [toasts, setToasts] = useState([]);
-
-  const toast = useCallback((kind, message) => {
-    const id = Math.random();
-    setToasts((t) => [...t, { id, kind, message }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
-  }, []);
-
-  const loadConfig = useCallback(async () => setConfig(await api("GET", "/api/config")), []);
-
-  useEffect(() => {
-    api("GET", "/api/me")
-      .then(async (r) => { setUser(r.user); await loadConfig(); })
-      .catch(() => setUser(null));
-  }, [loadConfig]);
-
-  const signIn = async (username, password) => {
-    const r = await api("POST", "/api/login", { username, password });
-    setUser(r.user);
-    await loadConfig();
-  };
-  const signOut = async () => { await api("POST", "/api/logout"); setUser(null); setConfig(null); };
-
-  let body;
-  if (user === undefined) body = <p className="p-8 text-gray-500">Loading…</p>;
-  else if (!user) body = <Login onSignIn={signIn} />;
-  else if (!config) body = <p className="p-8 text-gray-500">Loading…</p>;
-  else {
-    body = (
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/list" element={<ListPage />} />
-          <Route path="/new/:module" element={<FormPage />} />
-          <Route path="/edit/:id" element={<FormPage />} />
-          <Route path="/submission/:id" element={<DetailPage />} />
-          <Route path="/budgets" element={user.can_manage ? <BudgetsPage /> : <Navigate to="/" />} />
-          <Route path="/masters" element={user.can_manage ? <MastersPage /> : <Navigate to="/" />} />
-          <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
-      </Layout>
-    );
-  }
-
   return (
-    <Ctx.Provider value={{ user, config, toast, signOut, loadConfig }}>
-      {body}
-      <div className="fixed bottom-4 right-4 z-50 flex w-80 max-w-[92vw] flex-col gap-2" aria-live="polite">
-        {toasts.map((t) => (
-          <div key={t.id} className={`rounded border-l-4 bg-white px-4 py-3 shadow-lg ${t.kind === "error" ? "border-red-500" : "border-brand"}`}>{t.message}</div>
-        ))}
-      </div>
-    </Ctx.Provider>
+    <AppProvider>
+      <AppRoutes />
+    </AppProvider>
   );
 }

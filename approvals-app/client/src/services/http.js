@@ -1,4 +1,7 @@
-/** Calls the server and returns the JSON, or throws an Error whose message is safe to show. */
+/**
+ * The one place the client talks to the server. Returns the JSON, or throws an Error whose message is safe to show
+ * (with `status` set to the HTTP status). Cookies carry the session, so nothing else is sent.
+ */
 export async function api(method, url, body) {
   const isForm = body instanceof FormData;
   let res;

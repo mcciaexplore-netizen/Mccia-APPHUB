@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useApp } from "../App.jsx";
-import { api } from "../api.js";
-import { PageTitle } from "../components/ui.jsx";
+import PageTitle from "../../components/common/PageTitle.jsx";
+import { useApp } from "../../context/AppContext.jsx";
+import { addMaster } from "../../services/mastersService.js";
 
 const SECTIONS = [
   { kind: "branches", title: "Branches" },
@@ -12,20 +12,23 @@ const SECTIONS = [
   { kind: "employees", title: "Employees (the Name list on the forms)" },
 ];
 
-function Section({ kind, title }) {
+function MasterSection({ kind, title }) {
   const { config, toast, loadConfig } = useApp();
   const items = config.lists[kind];
   const [name, setName] = useState("");
-  const [extra, setExtra] = useState("");
+  const [extra, setExtra] = useState(""); // a publication's type, or an employee's email
+
   const add = async (e) => {
     e.preventDefault();
     try {
-      await api("POST", `/api/masters/${kind}`, { name, ...(kind === "publications" ? { publication_type: Number(extra) } : {}), ...(kind === "employees" ? { email: extra } : {}) });
+      await addMaster(kind, { name, ...(kind === "publications" ? { publication_type: Number(extra) } : {}), ...(kind === "employees" ? { email: extra } : {}) });
       toast("ok", "Added");
-      setName(""); setExtra("");
+      setName("");
+      setExtra("");
       await loadConfig();
     } catch (ex) { toast("error", ex.message); }
   };
+
   return (
     <section className="rounded border border-gray-200 p-4">
       <h2 className="mb-3 text-base font-bold">{title} <span className="font-normal text-gray-500">({items.length})</span></h2>
@@ -47,11 +50,12 @@ function Section({ kind, title }) {
   );
 }
 
-export default function MastersPage() {
+/** The lists behind the dropdowns. Adding to one makes it appear on the forms straight away. */
+export default function Masters() {
   return (
     <>
       <PageTitle title="Masters" intro="The lists behind the dropdowns. Add a branch, a category or a publication here and it appears on the forms straight away." />
-      <div className="grid gap-5 lg:grid-cols-2">{SECTIONS.map((s) => <Section key={s.kind} {...s} />)}</div>
+      <div className="grid gap-5 lg:grid-cols-2">{SECTIONS.map((s) => <MasterSection key={s.kind} {...s} />)}</div>
     </>
   );
 }

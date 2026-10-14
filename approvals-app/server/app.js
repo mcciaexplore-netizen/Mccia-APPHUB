@@ -411,7 +411,6 @@ export function createApp() {
   }
 
   app.use("/api", (_req, _res, next) => next(bad("Not found.", 404)));
-  // eslint-disable-next-line no-unused-vars
   app.use((err, _req, res, _next) => {
     if (err instanceof multer.MulterError) return res.status(400).json({ error: err.code === "LIMIT_FILE_SIZE" ? "Files can be at most 10 MB." : err.message });
     if (err instanceof HttpError) return res.status(err.status).json({ error: err.message, errors: err.errors });

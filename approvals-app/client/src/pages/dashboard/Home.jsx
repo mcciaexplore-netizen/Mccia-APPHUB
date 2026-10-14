@@ -1,14 +1,14 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useApp } from "../App.jsx";
-import { api } from "../api.js";
-import { PageTitle } from "../components/ui.jsx";
+import PageTitle from "../../components/common/PageTitle.jsx";
+import { ROUTES } from "../../constants/routes.js";
+import { useApp } from "../../context/AppContext.jsx";
+import { useCounts } from "../../hooks/useCounts.js";
 
+/** The landing page. Staff see the five forms to start; approvers see what is waiting for them. */
 export default function Home() {
   const { user, config } = useApp();
-  const [counts, setCounts] = useState({ pending: {}, info: 0 });
-  useEffect(() => { api("GET", "/api/counts").then(setCounts).catch(() => {}); }, []);
-  const mods = Object.values(config.modules);
+  const counts = useCounts();
+  const modules = Object.values(config.modules);
   const pending = Object.entries(counts.pending);
 
   return (
@@ -17,14 +17,14 @@ export default function Home() {
       {user.role === "staff" ? (
         <>
           {counts.info > 0 && (
-            <Link to="/list?view=mine" className="mb-6 block max-w-2xl rounded border border-blue-300 bg-blue-50 px-4 py-3 text-blue-900">
+            <Link to={ROUTES.list("mine")} className="mb-6 block max-w-2xl rounded border border-blue-300 bg-blue-50 px-4 py-3 text-blue-900">
               <b>{counts.info}</b> of your requests need more information. Open them to answer.
             </Link>
           )}
           <h2 className="mb-3 text-base font-bold">Submit a request</h2>
           <div className="grid max-w-3xl gap-3 sm:grid-cols-2">
-            {mods.map((m) => (
-              <Link key={m.key} to={`/new/${m.key}`} className="rounded border border-gray-200 p-4 hover:border-brand hover:bg-teal-50">
+            {modules.map((m) => (
+              <Link key={m.key} to={ROUTES.newRequest(m.key)} className="rounded border border-gray-200 p-4 hover:border-brand hover:bg-teal-50">
                 <div className="font-bold">{m.label}</div>
                 <div className="text-xs text-gray-500">Open the form</div>
               </Link>
@@ -40,7 +40,7 @@ export default function Home() {
             <ul className="max-w-xl divide-y rounded border border-gray-200">
               {pending.map(([k, n]) => (
                 <li key={k}>
-                  <Link to={`/list?view=pending&modules=${k}`} className="flex items-center justify-between px-4 py-3 hover:bg-teal-50">
+                  <Link to={ROUTES.list("pending", k)} className="flex items-center justify-between px-4 py-3 hover:bg-teal-50">
                     <span>{config.modules[k].label}</span>
                     <span className="rounded-full bg-yellow-400 px-2 text-xs font-bold">{n}</span>
                   </Link>

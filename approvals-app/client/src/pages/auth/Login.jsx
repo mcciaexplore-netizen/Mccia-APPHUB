@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useApp } from "../../context/AppContext.jsx";
 
-export default function Login({ onSignIn }) {
+export default function Login() {
+  const { signIn } = useApp();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -10,7 +12,7 @@ export default function Login({ onSignIn }) {
     e.preventDefault();
     setBusy(true);
     setError("");
-    try { await onSignIn(username, password); } catch (err) { setError(err.message); setBusy(false); }
+    try { await signIn(username, password); } catch (err) { setError(err.message); setBusy(false); }
   };
 
   return (
