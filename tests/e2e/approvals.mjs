@@ -123,19 +123,24 @@ try {
   await signIn(A, ADMIN_EMAIL, ADMIN_PW);
   check("/approvals opens for the head admin", (await status(A, "/approvals")) === 200);
   const menu = await nav(A);
-  for (const label of ["Expenses", "Approvals", "Hr", "Expenditures", "All_Budgets", "Administration", "Event Approvals", "DG APPROVALS"]) {
-    if (label === "DG APPROVALS") { check("DG APPROVALS (approver inbox) is hidden from someone who is not a named approver", !menu.includes(label)); continue; }
-    check(`menu shows ${label}`, menu.includes(label));
-  }
-  check("Event Approvals is greyed out with a Coming soon tag", /Event Approvals[\s\S]*Coming soon/i.test(menu) && (await A.locator("aside:visible [aria-disabled=true]").count()) >= 1);
+  // The sidebar has two parts, DG Approval and Expenditure; the admin starts on DG Approval.
+  for (const label of ["Hr", "Expenditures", "All_Budgets", "Administration"]) check(`DG Approval part shows ${label}`, menu.includes(label));
+  check("DG APPROVALS (approver inbox) is hidden from someone who is not a named approver", !menu.includes("DG APPROVALS"));
+  check("there is no Event Approvals entry (out of scope)", !menu.includes("Event Approvals"));
+  check("the switcher offers both parts", (await A.locator("aside:visible .zs-switch button").allInnerTexts()).join("|") === "DG Approval|Expenditure");
+  await A.locator("aside:visible .zs-switch button", { hasText: "Expenditure" }).click();
+  const expMenu = await nav(A);
+  check("switching to Expenditure shows Expenses and Approvals", expMenu.includes("Expenses") && expMenu.includes("Approvals") && expMenu.includes("My Requests"), expMenu.replace(/\s+/g, " ").slice(0, 120));
+  await A.locator("aside:visible .zs-switch button", { hasText: "DG Approval" }).click();
   const home = await A.locator("main").first().innerText();
   check("home greets the person and shows the setup checklist", /Welcome/.test(home) && /Setup/.test(home) && /Expense categories/.test(home));
   check("setup checklist counts the 40 seeded categories", /40 active/.test(home), home.match(/\d+ active/)?.[0]);
-  check("setup checklist flags the routing rules that still have no approver", /0 of 5 steps have an approver/.test(home) || /of 5 steps have an approver/.test(home), home.match(/\d+ of \d+ steps[^\n]*/)?.[0]);
+  check("setup checklist flags the kinds of request that still have no approver", /of 3 kinds of request have an approver/.test(home), home.match(/\d+ of \d+ kinds[^\n]*/)?.[0]);
 
-  section("3. Placeholders and unknown pages");
+  section("3. The HR form opens, and unknown pages");
   await A.goto(BASE + "/approvals/hr/new");
-  check("a screen that is not built yet says so and names its phase", /not built yet/.test(await A.locator("main").first().innerText()) && /phase 2/.test(await A.locator("main").first().innerText()));
+  const hrMain = await A.locator("main").first().innerText();
+  check("the HR form shows the Zoho fields in order", ["Name", "Email", "Category", "Date of Request", "Amount", "Description", "File upload"].every((l, i, a) => hrMain.includes(l) && (i === 0 || hrMain.indexOf(l) > hrMain.indexOf(a[i - 1]))), hrMain.replace(/\s+/g, " ").slice(0, 160));
   check("the sidebar highlights the page you are on", (await A.locator("aside:visible a[aria-current=page]").first().innerText()).trim() === "HR");
   check("a path that is not in the menu is a 404", (await status(A, "/approvals/definitely/not/here")) === 404);
 
@@ -210,8 +215,8 @@ try {
   await signIn(M, MEMBER.email, MEMBER.pw);
   check("a person given the card can open /approvals", (await status(M, "/approvals")) === 200);
   const mMenu = await nav(M);
-  check("they see the request groups but no Administration group", mMenu.includes("Expenses") && mMenu.includes("Hr") && !mMenu.includes("Administration"), mMenu.replace(/\s+/g, " ").slice(0, 120));
-  check("they do not see the oversight items (All Hr, Budgets)", !/All Hr|All_Budgets/.test(mMenu));
+  check("they see the request groups but no Administration group", mMenu.includes("Expenditures") && mMenu.includes("Hr") && !mMenu.includes("Administration"), mMenu.replace(/\s+/g, " ").slice(0, 120));
+  check("they do not see the oversight items (budgets, reports)", !/All_Budgets|HR Report|Approval Time/.test(mMenu));
   check("admin pages are a 404 for them", (await status(M, "/approvals/admin/categories")) === 404 && (await status(M, "/approvals/admin/access")) === 404);
   check("the budgets page is a 404 for them (viewers only)", (await status(M, "/approvals/budgets")) === 404);
   const read = await M.request.get(`${BASE}/api/approvals/masters/categories`);

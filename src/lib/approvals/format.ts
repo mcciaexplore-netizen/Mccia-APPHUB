@@ -61,3 +61,54 @@ export function recentFinancialYears(count = 4, from: Date = new Date()): string
   const start = Number(financialYearOf(from).slice(0, 4)) + 1; // include next year, so budgets can be set ahead
   return Array.from({ length: count }, (_, i) => `${start - i}-${String((start - i + 1) % 100).padStart(2, "0")}`);
 }
+
+/** Today's date in IST as "2026-10-14", the format a date input uses. */
+export function todayIST(d: Date = new Date()): string {
+  const p = parts(d);
+  return `${p.y}-${String(p.m).padStart(2, "0")}-${p.d}`;
+}
+
+/* ---------------------------------------------------------------- reading dates typed or picked on the forms */
+
+const MONTH_INDEX = Object.fromEntries(MONTHS.map((m, i) => [m.toLowerCase(), i + 1]));
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** True when year, month and day make a real calendar date (no 31-Feb). */
+const isRealDate = (y: number, m: number, d: number) => {
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+};
+
+/** "2026-10-14" -> "14-Oct-2026". Anything else comes back empty. */
+export function isoToDisplay(iso: string | null | undefined): string {
+  const m = iso ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso) : null;
+  return m && isRealDate(+m[1], +m[2], +m[3]) ? `${m[3]}-${MONTHS[+m[2] - 1]}-${m[1]}` : "";
+}
+
+/** What someone typed into a date box ("14-Oct-2026", "14/10/2026", "14-10-2026") -> "2026-10-14", or null when it is not a real date. */
+export function parseDisplayDate(text: string): string | null {
+  const m = /^(\d{1,2})[-/ ]([A-Za-z]{3}|\d{1,2})[-/ ](\d{4})$/.exec(text.trim());
+  if (!m) return null;
+  const month = /^\d+$/.test(m[2]) ? Number(m[2]) : MONTH_INDEX[m[2].toLowerCase()];
+  if (!month || !isRealDate(+m[3], month, +m[1])) return null;
+  return `${m[3]}-${pad2(month)}-${pad2(+m[1])}`;
+}
+
+/** "14-Oct-2026 10:33:55" (seconds optional), read as Indian time -> that instant, or null. */
+export function parseDisplayDateTime(text: string): Date | null {
+  const m = /^(\S+)\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(text.trim());
+  const day = m ? parseDisplayDate(m[1]) : null;
+  if (!m || !day || +m[2] > 23 || +m[3] > 59 || +(m[4] ?? 0) > 59) return null;
+  return new Date(`${day}T${pad2(+m[2])}:${m[3]}:${pad2(+(m[4] ?? 0))}+05:30`);
+}
+
+/** The value a native date-time picker wants ("2026-10-14T10:33"), for an instant in Indian time. */
+export function toDateTimeLocal(d: Date): string {
+  const p = parts(d);
+  return `${p.y}-${pad2(p.m)}-${p.d}T${p.hh}:${p.mm}`;
+}
+
+/** The reverse: what the native picker returned, read as Indian time. */
+export function fromDateTimeLocal(s: string): Date | null {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}:00+05:30`)) ? new Date(`${s}:00+05:30`) : null;
+}

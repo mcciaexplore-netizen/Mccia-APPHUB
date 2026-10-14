@@ -16,11 +16,13 @@ export async function setupChecklist(): Promise<SetupItem[]> {
     countOf(db.select({ n: sql<number>`count(*)::int` }).from(aprHrCategories).where(eq(aprHrCategories.active, true))),
     countOf(db.select({ n: sql<number>`count(*)::int` }).from(aprBranches).where(eq(aprBranches.active, true))),
     countOf(db.select({ n: sql<number>`count(*)::int` }).from(aprBudgets).where(eq(aprBudgets.financialYear, fy))),
+    // A kind of request can be routed once at least one of its steps has a person named (an empty Reviewer step is simply skipped).
     db
-      .select({ total: sql<number>`count(*)::int`, staffed: sql<number>`(count(*) filter (where cardinality(${aprApproverRules.approverUserIds}) > 0))::int` })
+      .select({ type: aprApproverRules.requestType, staffed: sql<number>`(count(*) filter (where cardinality(${aprApproverRules.approverUserIds}) > 0))::int` })
       .from(aprApproverRules)
       .where(eq(aprApproverRules.active, true))
-      .then((r) => r[0] ?? { total: 0, staffed: 0 }),
+      .groupBy(aprApproverRules.requestType)
+      .then((rows) => ({ total: rows.length, staffed: rows.filter((r) => r.staffed > 0).length })),
   ]);
   return [
     { label: "Expense categories", detail: `${categories} active`, done: categories > 0, href: "/approvals/admin/categories" },
@@ -29,7 +31,7 @@ export async function setupChecklist(): Promise<SetupItem[]> {
     { label: `Budgets for ${fy}`, detail: budgets ? `${budgets} set` : "None yet: requests will show a no-budget warning", done: budgets > 0, href: "/approvals/budgets" },
     {
       label: "Approvers on the routing rules",
-      detail: steps.total === 0 ? "No routing rules yet (run the approvals seed)" : `${steps.staffed} of ${steps.total} steps have an approver`,
+      detail: steps.total === 0 ? "No routing rules yet (run the approvals seed)" : `${steps.staffed} of ${steps.total} kinds of request have an approver`,
       done: steps.total > 0 && steps.staffed === steps.total,
       href: "/approvals/admin/rules",
     },

@@ -12,7 +12,7 @@ const filters = z.object({
 });
 
 /** The budget table. Read only for viewers; admins can also change it. */
-export const GET = route({ roles: ["viewer"] }, async ({ req }) => {
+export const GET = route({ roles: ["viewer", "dg"] }, async ({ req }) => {
   const q = req.nextUrl.searchParams;
   const f = filters.parse({ fy: q.get("fy") ?? undefined, branchId: q.get("branchId") ?? undefined, categoryId: q.get("categoryId") ?? undefined });
   return ok({ items: await listBudgets({ financialYear: f.fy, branchId: f.branchId, categoryId: f.categoryId }) });

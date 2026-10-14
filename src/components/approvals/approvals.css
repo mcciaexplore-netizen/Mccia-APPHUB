@@ -1,39 +1,195 @@
 /*
- * Approvals module theme. Everything is scoped to .apr-root, so nothing here reaches the rest of the hub.
- * Colours come from the hub's own tokens (globals.css); amber is the only value the hub does not have.
+ * Approvals module theme: it follows the Zoho Creator apps it replaces (dark charcoal sidebar, teal accent, Lato, label and input in two
+ * columns). Everything is scoped to .apr-root, so nothing here reaches the rest of the hub. The hub's shared classes (.input, .btn,
+ * .badge, .table-wrap) are restyled inside the module so the older admin screens match the new forms.
  */
 .apr-root {
-  --apr-side: color-mix(in srgb, var(--c-primary) 48%, var(--c-dark));
-  --apr-side-hover: color-mix(in srgb, white 9%, var(--apr-side));
-  --apr-side-line: color-mix(in srgb, white 11%, transparent);
-  --apr-amber: #e8a33d;
-  --apr-amber-tint: color-mix(in srgb, var(--apr-amber) 16%, white);
-  --apr-amber-line: color-mix(in srgb, var(--apr-amber) 40%, white);
-}
+  --z-side: #2e3036;
+  --z-side-2: #34363c;
+  --z-side-line: rgba(255, 255, 255, 0.09);
+  --z-side-hover: rgba(255, 255, 255, 0.07);
+  --z-teal: #1abc9c;
+  --z-teal-dark: #16a085;
+  --z-teal-tint: rgba(26, 188, 156, 0.1);
+  --z-label: #333;
+  --z-text: #222;
+  --z-muted: #6b7280;
+  --z-border: #ccc;
+  --z-line: #e3e5e8;
+  --z-addon: #f1f2f4;
+  --z-red: #d9534f;
+  --z-red-tint: #fdf0ef;
+  --z-green: #2e9e5b;
+  --z-green-tint: #eaf7ef;
+  --z-amber: #d68910;
+  --z-amber-tint: #fff6e5;
+  --z-amber-line: #f2d28a;
 
-/* Green primary buttons, like the Zoho forms. */
-.apr-root .btn-primary {
-  background: linear-gradient(135deg, var(--c-green-text), var(--c-green));
-  box-shadow: 0 4px 15px color-mix(in srgb, var(--c-green) 28%, transparent);
-}
-.apr-root .btn-primary:hover:not(:disabled) {
-  box-shadow: 0 8px 25px color-mix(in srgb, var(--c-green) 38%, transparent);
-}
+  --apr-amber: var(--z-amber);
+  --apr-amber-tint: var(--z-amber-tint);
+  --apr-amber-line: var(--z-amber-line);
 
-.apr-root .badge-amber {
-  background: var(--apr-amber-tint);
-  border-color: var(--apr-amber-line);
-  color: color-mix(in srgb, var(--apr-amber) 55%, black);
+  font-family: var(--font-lato), "Lato", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--z-text);
+  font-size: 14px;
+  line-height: 1.5;
 }
+.apr-root.apr-large { font-size: 16px; }
+.apr-root input, .apr-root select, .apr-root textarea, .apr-root button { font-family: inherit; }
 
-.apr-root .apr-scroll { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, white 25%, transparent) transparent; }
+/* Headings: plain and regular, like the Zoho page titles. */
+.apr-root h1, .apr-root h2, .apr-root h3 { font-family: inherit; letter-spacing: 0; color: var(--z-text); }
+.apr-root h1 { font-size: 1.43rem; font-weight: 400; line-height: 1.3; }
+.apr-root h2 { font-size: 1.1rem; font-weight: 700; }
+.apr-root h3 { font-size: 1rem; font-weight: 700; }
 
-/* A gentle heads-up box (warnings that are not errors). */
+/* ------------------------------------------------------------------ shared hub classes, restyled */
+.apr-root .input {
+  background: #fff; border: 1px solid var(--z-border); border-radius: 2px; padding: 0.3rem 0.6rem; min-height: 32px;
+  font-size: 0.93rem; color: var(--z-text); box-shadow: none;
+}
+.apr-root .input::placeholder { color: #a3a8af; }
+.apr-root .input:focus { border-color: var(--z-teal); box-shadow: none; outline: none; }
+.apr-root select.input { padding-right: 1.6rem; }
+.apr-root textarea.input { padding: 0.45rem 0.6rem; }
+
+.apr-root .btn { border-radius: 3px; padding: 0.45rem 1.2rem; font-size: 0.93rem; font-weight: 600; box-shadow: none; }
+.apr-root .btn-sm { padding: 0.32rem 0.8rem; font-size: 0.86rem; }
+.apr-root .btn-primary { background: var(--z-teal); border-color: var(--z-teal); color: #fff; box-shadow: none; }
+.apr-root .btn-primary:hover:not(:disabled) { background: var(--z-teal-dark); border-color: var(--z-teal-dark); transform: none; box-shadow: none; }
+.apr-root .btn-ghost { background: #fff; border: 1px solid var(--z-border); color: #555; backdrop-filter: none; }
+.apr-root .btn-ghost:hover:not(:disabled) { border-color: #999; color: #222; transform: none; }
+.apr-root .btn-danger { background: #fff; border: 1px solid var(--z-red); color: var(--z-red); }
+.apr-root .btn-danger:hover:not(:disabled) { background: var(--z-red-tint); transform: none; border-color: var(--z-red); }
+
+.apr-root .badge { border-radius: 3px; text-transform: none; letter-spacing: 0; font-size: 0.78rem; font-weight: 700; padding: 0.12rem 0.55rem; background: var(--z-teal-tint); border-color: rgba(26, 188, 156, 0.3); color: var(--z-teal-dark); }
+.apr-root .badge-green { background: var(--z-green-tint); border-color: #bfe3cc; color: var(--z-green); }
+.apr-root .badge-red { background: var(--z-red-tint); border-color: #f1c4c2; color: var(--z-red); }
+.apr-root .badge-neutral { background: #f4f5f6; border-color: var(--z-line); color: var(--z-muted); }
+.apr-root .badge-amber { background: var(--z-amber-tint); border-color: var(--z-amber-line); color: #9a6408; }
+.apr-root .badge-over { background: #fff; border: 1px solid var(--z-red); color: var(--z-red); }
+
+.apr-root .label-xs { font-size: 0.8rem; font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--z-label); }
+
+.apr-root .glass { background: #fff; backdrop-filter: none; border: 1px solid var(--z-line); border-radius: 3px; box-shadow: none; }
+.apr-root .glass-hover:hover { transform: none; border-color: var(--z-teal); box-shadow: none; background: #fff; }
+.apr-root .icon-tile { background: var(--z-teal-tint); border: 1px solid rgba(26, 188, 156, 0.25); color: var(--z-teal-dark); border-radius: 3px; }
+
+.apr-root .table-wrap { background: #fff; border: 1px solid var(--z-line); border-radius: 2px; }
+.apr-root .table-wrap table { font-size: 0.93rem; }
+.apr-root .table-wrap th { background: #f6f7f8; color: #555; font-size: 0.8rem; font-weight: 700; text-transform: none; letter-spacing: 0; padding: 0.55rem 0.8rem; }
+.apr-root .table-wrap td { padding: 0.55rem 0.8rem; border-top: 1px solid var(--z-line); }
+.apr-root .table-wrap tbody tr:hover { background: #fafbfb; }
+
+.apr-root .alert { border-radius: 3px; background: var(--z-teal-tint); border-color: rgba(26, 188, 156, 0.3); color: #1c6f60; }
+.apr-root .alert-red { background: var(--z-red-tint); border-color: #f1c4c2; color: #a3342f; }
+.apr-root .alert-green { background: var(--z-green-tint); border-color: #bfe3cc; color: #236f43; }
+
+.apr-root .apr-scroll { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.25) transparent; }
 .apr-root .apr-notice {
-  padding: 0.8rem 1.1rem;
-  border-radius: var(--radius-md);
-  font-size: 0.88rem;
-  background: var(--apr-amber-tint);
-  border: 1px solid var(--apr-amber-line);
-  color: var(--c-text);
+  padding: 0.65rem 0.9rem; border-radius: 3px; font-size: 0.9rem;
+  background: var(--z-amber-tint); border: 1px solid var(--z-amber-line); color: #6b4a07;
 }
+.apr-root .apr-notice-red { background: var(--z-red-tint); border-color: #f1c4c2; color: #8f2a26; }
+.apr-root .apr-link { color: var(--z-teal-dark); text-decoration: underline; text-underline-offset: 2px; font-weight: 700; }
+
+/* ------------------------------------------------------------------ page */
+.apr-root .apr-page-head { border-bottom: 1px solid var(--z-line); padding-bottom: 0.6rem; margin-bottom: 1.4rem; }
+.apr-root .apr-page-intro { margin-top: 0.2rem; color: var(--z-muted); font-size: 0.9rem; max-width: 46rem; }
+
+/* ------------------------------------------------------------------ sidebar */
+.apr-root .zs { background: var(--z-side); color: #fff; width: 15rem; }
+.apr-root .zs-head { border-bottom: 1px solid var(--z-side-line); background: var(--z-side-2); }
+.apr-root .zs-title { text-align: center; font-weight: 800; font-size: 1.12rem; letter-spacing: 0.01em; color: #fff; }
+.apr-root .zs-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; background: rgba(0, 0, 0, 0.25); border-radius: 3px; }
+.apr-root .zs-switch button { padding: 0.28rem 0.2rem; font-size: 0.75rem; font-weight: 700; border-radius: 2px; color: rgba(255, 255, 255, 0.7); transition: background 0.15s; }
+.apr-root .zs-switch button:hover { color: #fff; }
+.apr-root .zs-switch button[aria-pressed="true"] { background: var(--z-teal); color: #fff; }
+.apr-root .zs-row { display: flex; align-items: center; gap: 0.7rem; min-height: 2.6rem; padding: 0 1rem; font-size: 0.9rem; color: rgba(255, 255, 255, 0.86); transition: background 0.12s; }
+.apr-root .zs-row:hover { background: var(--z-side-hover); color: #fff; }
+.apr-root .zs-sub { padding-left: 2.7rem; font-size: 0.86rem; min-height: 2.3rem; color: rgba(255, 255, 255, 0.78); }
+.apr-root .zs-active, .apr-root .zs-active:hover { background: var(--z-teal); color: #fff; font-weight: 700; }
+.apr-root .zs-foot { border-top: 1px solid var(--z-side-line); background: var(--z-side-2); }
+.apr-root .zs-icon-btn { position: relative; padding: 0.4rem; border-radius: 3px; color: rgba(255, 255, 255, 0.75); transition: background 0.12s, color 0.12s; }
+.apr-root .zs-icon-btn:hover { background: var(--z-side-hover); color: #fff; }
+.apr-root .zs-dot { position: absolute; top: 1px; right: 0; min-width: 1rem; height: 1rem; padding: 0 0.2rem; border-radius: 999px; background: var(--z-red); color: #fff; font-size: 0.65rem; font-weight: 700; line-height: 1rem; text-align: center; }
+
+/* notifications panel */
+.apr-root .zn-panel { background: #fff; color: var(--z-text); border: 1px solid var(--z-line); border-radius: 3px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22); }
+.apr-root .zn-item { display: block; width: 100%; text-align: left; padding: 0.6rem 0.8rem; border-top: 1px solid var(--z-line); font-size: 0.86rem; }
+.apr-root .zn-item:hover { background: #f7f8f9; }
+.apr-root .zn-unread { background: var(--z-teal-tint); }
+
+/* ------------------------------------------------------------------ forms: label column, input column */
+.apr-root .zf { max-width: 52rem; }
+.apr-root .zf-row { display: flex; gap: 1.2rem; align-items: flex-start; margin-bottom: 1.25rem; }
+.apr-root .zf-label { flex: 0 0 11.9rem; padding-top: 0.32rem; font-weight: 700; font-size: 0.93rem; color: var(--z-label); }
+.apr-root .zf-req { color: var(--z-red); margin-left: 0.15rem; }
+.apr-root .zf-field { flex: 1 1 auto; min-width: 0; max-width: 20rem; }
+.apr-root .zf-field-wide { max-width: 28rem; }
+.apr-root .zf-control { display: flex; align-items: stretch; width: 100%; }
+.apr-root .zf-control > .zf-addon { flex: 0 0 auto; display: grid; place-items: center; min-width: 2.1rem; padding: 0 0.5rem; border: 1px solid var(--z-border); border-left: 0; background: var(--z-addon); color: #666; font-size: 0.93rem; border-radius: 0 2px 2px 0; }
+.apr-root .zf-control > .zf-addon:is(button):hover { background: #e6e8ea; color: #222; }
+.apr-root .zf-control > .input:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.apr-root .zf-ro { background: #f6f7f8; color: #555; }
+.apr-root .zf-neg { color: var(--z-red); font-weight: 700; }
+.apr-root .zf-hint { margin-top: 0.25rem; font-size: 0.78rem; color: var(--z-muted); }
+.apr-root .zf-error { margin-top: 0.25rem; font-size: 0.82rem; color: var(--z-red); }
+.apr-root .zf-names { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.apr-root .zf-sub { display: block; margin-top: 0.15rem; font-size: 0.74rem; color: var(--z-muted); }
+.apr-root .zf-actions { display: flex; gap: 0.7rem; margin-top: 1.6rem; padding-top: 1.1rem; border-top: 1px solid var(--z-line); padding-left: 13.1rem; }
+.apr-root .zf-invalid { border-color: var(--z-red) !important; }
+
+@media (max-width: 640px) {
+  .apr-root .zf-row { flex-direction: column; gap: 0.3rem; }
+  .apr-root .zf-label { flex: none; padding-top: 0; }
+  .apr-root .zf-field, .apr-root .zf-field-wide { max-width: none; width: 100%; }
+  .apr-root .zf-actions { padding-left: 0; }
+}
+
+/* searchable dropdown */
+.apr-root .zd { position: relative; }
+.apr-root .zd-btn { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; width: 100%; text-align: left; }
+.apr-root .zd-btn .zd-ph { color: #8a9099; }
+.apr-root .zd-pop { position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 2px); min-width: 14rem; background: #fff; border: 1px solid var(--z-border); border-radius: 2px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15); }
+.apr-root .zd-search { display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.55rem; border-bottom: 1px solid var(--z-line); color: #888; }
+.apr-root .zd-search input { flex: 1; min-width: 0; border: 0; outline: 0; font-size: 0.93rem; color: var(--z-text); background: transparent; }
+.apr-root .zd-list { max-height: 14rem; overflow-y: auto; }
+.apr-root .zd-opt { display: block; width: 100%; text-align: left; padding: 0.4rem 0.7rem; font-size: 0.93rem; cursor: pointer; }
+.apr-root .zd-opt[data-hot="true"] { background: var(--z-teal); color: #fff; }
+.apr-root .zd-opt[aria-selected="true"]:not([data-hot="true"]) { background: var(--z-teal-tint); font-weight: 700; }
+.apr-root .zd-empty { padding: 0.6rem 0.7rem; color: var(--z-muted); font-size: 0.88rem; }
+.apr-root .zd-foot { border-top: 1px solid var(--z-line); background: #fafbfb; }
+.apr-root .zd-add { display: flex; align-items: center; gap: 0.4rem; width: 100%; padding: 0.5rem 0.7rem; font-size: 0.9rem; font-weight: 700; color: var(--z-teal-dark); }
+.apr-root .zd-add:hover { background: var(--z-teal-tint); }
+
+/* file input */
+.apr-root .zfile-name { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.3rem; font-size: 0.86rem; color: #333; }
+.apr-root .zfile-bar { height: 4px; background: var(--z-line); border-radius: 2px; overflow: hidden; margin-top: 0.3rem; }
+.apr-root .zfile-bar > span { display: block; height: 100%; background: var(--z-teal); transition: width 0.15s; }
+
+/* ------------------------------------------------------------------ detail, timeline, lists */
+.apr-root .zdl { display: grid; grid-template-columns: 12rem 1fr; gap: 0.5rem 1.2rem; }
+.apr-root .zdl dt { font-weight: 700; color: var(--z-label); }
+.apr-root .zdl dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .apr-root .zdl { grid-template-columns: 1fr; gap: 0.1rem; } .apr-root .zdl dd { margin-bottom: 0.7rem; } }
+
+.apr-root .zt { position: relative; padding-left: 1.6rem; }
+.apr-root .zt::before { content: ""; position: absolute; left: 0.43rem; top: 0.4rem; bottom: 0.4rem; width: 2px; background: var(--z-line); }
+.apr-root .zt-item { position: relative; padding-bottom: 1.1rem; }
+.apr-root .zt-dot { position: absolute; left: -1.6rem; top: 0.25rem; width: 0.9rem; height: 0.9rem; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--z-line); background: #aab0b8; }
+.apr-root .zt-dot[data-kind="submitted"] { background: var(--z-teal); }
+.apr-root .zt-dot[data-kind="approved"] { background: var(--z-green); }
+.apr-root .zt-dot[data-kind="rejected"] { background: var(--z-red); }
+.apr-root .zt-dot[data-kind="withdrawn"] { background: #8a9099; }
+.apr-root .zt-dot[data-kind="assigned"] { background: #7f8fa4; }
+
+.apr-root .zbar { height: 0.55rem; background: #eef0f2; border-radius: 2px; overflow: hidden; min-width: 5rem; }
+.apr-root .zbar > span { display: block; height: 100%; background: var(--z-teal); }
+.apr-root .zbar[data-level="warn"] > span { background: var(--z-amber); }
+.apr-root .zbar[data-level="over"] > span { background: var(--z-red); }
+.apr-root tr[data-level="warn"] { background: var(--z-amber-tint); }
+.apr-root tr[data-level="over"] { background: var(--z-red-tint); }
+
+.apr-root .zth-sort { display: inline-flex; align-items: center; gap: 0.2rem; font-weight: 700; color: inherit; }
+.apr-root .zth-sort:hover { color: var(--z-teal-dark); }

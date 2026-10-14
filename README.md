@@ -71,26 +71,39 @@ node scripts/cleanup.mjs --caches          # delete build caches
 
 ## Approvals module (`/approvals`)
 
-HR and expenditure approvals (a replica of the Zoho "DG Approval" and "Expenditure" apps), mounted inside the hub as one app card. It lives in `src/lib/approvals/`, `src/components/approvals/`, `src/app/approvals/` and `src/app/api/approvals/`, and its tables are all prefixed `apr_` (schema in `src/db/approvals-schema.ts`, migration `drizzle/0006_approvals_foundation.sql`, additive only). Built in phases; the screens that are not built yet show a placeholder that says which phase brings them.
+HR and expenditure approvals (a replica of the Zoho "DG Approval" and "Expenditure" apps), mounted inside the hub as one app card. It lives in `src/lib/approvals/`, `src/components/approvals/`, `src/app/approvals/` and `src/app/api/approvals/`, and its tables are all prefixed `apr_` (schema in `src/db/approvals-schema.ts`; migrations `0006_approvals_foundation.sql` and `0007_approvals_requests.sql`, both additive only). It is separate from the hub's own parameters and functions: it reads the hub's session and user list only through `src/lib/approvals/host-adapter.ts`.
+
+**What it does**
+
+- Three request forms: **HR**, **Expenditure** (₹10,000 and above, approved by the DG) and **Expenses** (below ₹10,000). Amounts typed into the wrong form are stopped with a link to the right one, with the details carried over. The limit is a setting.
+- Budgets per branch, category and financial year (April to March). A request shows the budget live; going over (or having no budget) never blocks submission but flags the request "Over budget", and the approver must write a comment to approve it. Only **approved** requests use up budget.
+- Approval: a request goes to the approvers named in **Approver Rules**, in order. A step with nobody named is skipped, so leaving "Reviewer" empty makes the DG the only approver. Nobody can approve their own request, and if two people click at once only the first decision counts. Everything that happens is recorded in the request's timeline.
+- Lists (search, date range, category, branch, status, sorting, paging, CSV export), the DG's inbox with quick Approve/Reject, reports (HR report, approval time, budget utilisation) and a notification bell. Each person only ever sees their own requests and the ones routed to them; viewers, admins and the DG see everything.
+- Attachments (PDF, JPG, PNG, Word, Excel, up to 10 MB each) are stored in Postgres and only served through a route that checks who may see the request.
+- Two sidebar parts, **DG Approval** and **Expenditure**, switched at the top of the sidebar.
 
 **Turn it on (PowerShell):**
 
 ```powershell
-# 1. In .env.local (see .env.example): APPROVALS_ENABLED=true, and the three routing emails below
-npx drizzle-kit migrate               # adds the apr_ tables; nothing existing is touched
+# 1. In .env.local (see .env.example): APPROVALS_ENABLED=true
+npx drizzle-kit migrate               # adds the apr_ tables (0006 and 0007); nothing existing is touched
 npm run db:seed:approvals             # 40 expense categories, 6 HR categories, settings, 5 routing rules (safe to re-run)
 npm run dev
 ```
 
-`APPROVALS_HR_APPROVER_EMAIL`, `APPROVALS_EXPENDITURE_APPROVER_EMAIL` and `APPROVALS_DG_EMAIL` name the people on the routing rules. They must already be users in the hub. Set them and run the seed again; a rule that already has an approver is never overwritten.
+**Add the card:** Administrator → a department → Add application, name `Approvals`, icon `ClipboardList`, URL `/approvals` (or `https://<your-domain>/approvals`). Then tick it for each person in Administrator → Access. Without a grant, a person gets a 404 inside `/approvals`, exactly as for any other app. The head admin can open `/approvals` directly without the card.
 
-**Add the card:** Administrator → a department → Add application, name `Approvals`, icon `ClipboardList`, URL `/approvals` (or `https://<your-domain>/approvals`). Then tick it for each person in Administrator → Access. Without a grant, a person gets a 404 inside `/approvals`, exactly as for any other app.
+**Who approves.** In Approvals → Approver Rules, name one person per step: the DG for HR and for expenditure of ₹10,000 and above, and the below-₹10,000 approver for Expenses. Those people become approvers automatically. (`APPROVALS_HR_APPROVER_EMAIL`, `APPROVALS_EXPENDITURE_APPROVER_EMAIL` and `APPROVALS_DG_EMAIL` only pre-fill the rules when the seed runs; the people must already be users in the hub.) Branches and budgets are entered by an Approvals admin; the Name lists on the forms come from the hub's users.
 
-**Who can do what.** Everyone with the card is a requester. The hub's head admin is an Approvals admin automatically, and an Approvals admin can make others Approvals admins or viewers (Approvals → Roles and Access). Approvers and the DG are not granted: a person is an approver when named on step 1 of a routing rule, and a DG when named on a later step. The module reads the hub's session and user list only through `src/lib/approvals/host-adapter.ts`.
+**Who can do what.** Everyone with the card is a requester. The hub's head admin is an Approvals admin automatically, and an Approvals admin can make others Approvals admins or viewers (Approvals → Roles and Access). Approvers and the DG are not granted: a person is an approver when named on step 1 of a routing rule, and the DG when named on a later step.
+
+**Email.** Set `SMTP_HOST`, `SMTP_FROM` (and `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `APP_BASE_URL`) to send email as well as the in-app notifications. Without them nothing is emailed and nothing breaks. Email can be turned off per kind in Approvals → Settings.
 
 **Switching it off.** `APPROVALS_ENABLED` unset or not `true`: every `/approvals` page and `/api/approvals` route returns 404, and the hub hides the Approvals card.
 
-**Money and dates.** Money is stored as integer paise and shown with Indian grouping (12,34,567.00). Dates are stored in UTC and shown as dd-MMM-yyyy in Asia/Kolkata. The financial year runs April to March, judged in IST.
+**Money and dates.** Money is stored as integer paise and shown with Indian grouping (12,34,567.00). Dates are stored in UTC and shown as dd-MMM-yyyy in Asia/Kolkata. The financial year runs April to March, judged in IST. Request numbers restart each financial year: `HR-2026-27-0001`, `EXP-2026-27-0001` (₹10,000 and above), `EXB-2026-27-0001` (below).
+
+**Tests.** `npm run test:unit` covers the rules (budget maths, routing, validation, dates). `npm run test:e2e:approvals` (module set-up and admin screens) and `npm run test:e2e:approvals:flow` (submit, approve, reject, budgets, files) drive a real browser against a running server; see the header of each file.
 
 ## Database portability
 

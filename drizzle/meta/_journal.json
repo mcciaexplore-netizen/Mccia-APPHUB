@@ -50,6 +50,13 @@
       "when": 1791886823458,
       "tag": "0006_approvals_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791970126198,
+      "tag": "0007_approvals_requests",
+      "breakpoints": true
     }
   ]
 }

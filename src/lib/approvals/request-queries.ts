@@ -1,0 +1,278 @@
+import "server-only";
+import { and, asc, desc, eq, gte, ilike, inArray, lt, ne, or, sql, type SQL } from "drizzle-orm";
+import { db } from "@/db";
+import {
+  aprApprovalEvents, aprAttachments, aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprPublicationTypes,
+  aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType,
+} from "@/db/approvals-schema";
+import { assessBudget, type BudgetAssessment } from "./calc";
+import { budgetPosition } from "./budget-position";
+import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
+import type { SortKey } from "./list-params";
+
+/** Who may see every request: viewers, Approvals admins and the DG. (An admin can also change masters, but never decides.) */
+const sees = {
+  all: (u: ApprovalsUser) => hasAnyRole(u, ["viewer", "approvals_admin", "dg"]),
+};
+
+/**
+ * Who may see a request: the people who oversee everything, the person who raised it, and anyone who is (or was) one of its
+ * approvers. Everyone else gets nothing back, as if it did not exist. Drafts are never visible.
+ */
+function visibility(user: ApprovalsUser): SQL | undefined {
+  const notDraft = ne(aprRequests.status, "draft");
+  if (sees.all(user)) return notDraft;
+  return and(
+    notDraft,
+    or(
+      eq(aprRequests.requesterUserId, user.id),
+      sql`exists (select 1 from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id})`,
+    ),
+  );
+}
+
+/* ---------------------------------------------------------------- lists */
+
+export type ListFilter = {
+  types?: AprRequestType[];
+  statuses?: AprRequestStatus[];
+  q?: string;
+  /** Inclusive dates, "2026-10-14", read as Indian time. */
+  from?: string;
+  to?: string;
+  categoryId?: string;
+  branchId?: string;
+  /** Only requests this person raised. */
+  mine?: boolean;
+  /** Only requests currently waiting for this person. */
+  waitingForMe?: boolean;
+  /** Only requests this person has already approved or rejected. */
+  decidedByMe?: boolean;
+  sort?: SortKey;
+  dir?: "asc" | "desc";
+  page?: number;
+  pageSize?: number;
+};
+
+export type RequestRow = {
+  id: string;
+  requestNo: string | null;
+  type: AprRequestType;
+  status: AprRequestStatus;
+  name: string;
+  categoryName: string | null;
+  branchName: string | null;
+  amountPaise: number | null;
+  requestedAt: Date;
+  decidedAt: Date | null;
+  approverName: string | null;
+  overBudget: boolean;
+  vendorName: string | null;
+  taxInvoiceDate: string | null;
+};
+
+const categoryName = sql<string | null>`coalesce(${aprHrCategories.name}, ${aprCategories.name})`;
+/** The person who decided, or while it is pending the one it is waiting for. */
+const approverName = sql<string | null>`coalesce(
+  (select s.approver_name from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.status in ('approved', 'rejected') order by s.step_no desc limit 1),
+  (select s.approver_name from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.status = 'pending' limit 1))`;
+
+const SORT_SQL: Record<SortKey, SQL> = {
+  requestNo: sql`${aprRequests.requestNo}`,
+  name: sql`lower(${aprRequests.requesterName})`,
+  category: sql`lower(${categoryName})`,
+  branch: sql`lower(${aprBranches.name})`,
+  amount: sql`${aprRequests.amountPaise}`,
+  requestedAt: sql`${aprRequests.requestedAt}`,
+  status: sql`${aprRequests.status}`,
+  approver: sql`lower(${approverName})`,
+  decidedAt: sql`${aprRequests.decidedAt}`,
+};
+
+const istStart = (d: string) => new Date(`${d}T00:00:00+05:30`);
+const likeEscape = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+function conditions(user: ApprovalsUser, f: ListFilter): SQL | undefined {
+  const needle = f.q?.trim();
+  const toExclusive = f.to && /^\d{4}-\d{2}-\d{2}$/.test(f.to) ? new Date(istStart(f.to).getTime() + 86400000) : undefined;
+  return and(
+    visibility(user),
+    f.types?.length ? inArray(aprRequests.type, f.types) : undefined,
+    f.statuses?.length ? inArray(aprRequests.status, f.statuses) : undefined,
+    f.from && /^\d{4}-\d{2}-\d{2}$/.test(f.from) ? gte(aprRequests.requestedAt, istStart(f.from)) : undefined,
+    toExclusive ? lt(aprRequests.requestedAt, toExclusive) : undefined,
+    f.categoryId ? or(eq(aprExpenditureDetails.categoryId, f.categoryId), eq(aprHrDetails.hrCategoryId, f.categoryId)) : undefined,
+    f.branchId ? eq(aprExpenditureDetails.branchId, f.branchId) : undefined,
+    f.mine ? eq(aprRequests.requesterUserId, user.id) : undefined,
+    f.waitingForMe ? and(eq(aprRequests.status, "pending"), eq(aprRequests.currentApproverUserId, user.id)) : undefined,
+    f.decidedByMe
+      ? sql`exists (select 1 from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id} and s.status in ('approved', 'rejected'))`
+      : undefined,
+    needle
+      ? or(
+          ilike(aprRequests.requestNo, `%${likeEscape(needle)}%`),
+          ilike(aprRequests.requesterName, `%${likeEscape(needle)}%`),
+          ilike(aprExpenditureDetails.vendorName, `%${likeEscape(needle)}%`),
+          ilike(aprCategories.name, `%${likeEscape(needle)}%`),
+          ilike(aprHrCategories.name, `%${likeEscape(needle)}%`),
+          ilike(aprBranches.name, `%${likeEscape(needle)}%`),
+        )
+      : undefined,
+  );
+}
+
+/** One request-sized page of the list, plus the total for the pager. All filtering, sorting and paging happens in the database. */
+export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Promise<{ rows: RequestRow[]; total: number; page: number; pageSize: number }> {
+  const pageSize = Math.min(Math.max(f.pageSize ?? 25, 1), 200);
+  const page = Math.max(f.page ?? 1, 1);
+  const where = conditions(user, f);
+  const order = SORT_SQL[f.sort ?? "requestedAt"];
+  const direction = (f.dir ?? "desc") === "asc" ? asc : desc;
+
+  const [rows, [{ n: total }]] = await Promise.all([
+    db
+      .select({
+        id: aprRequests.id, requestNo: aprRequests.requestNo, type: aprRequests.type, status: aprRequests.status, name: aprRequests.requesterName,
+        categoryName, branchName: aprBranches.name, amountPaise: aprRequests.amountPaise, requestedAt: aprRequests.requestedAt, decidedAt: aprRequests.decidedAt,
+        approverName, overBudget: aprRequests.overBudget, vendorName: aprExpenditureDetails.vendorName, taxInvoiceDate: aprExpenditureDetails.taxInvoiceDate,
+      })
+      .from(aprRequests)
+      .leftJoin(aprHrDetails, eq(aprHrDetails.requestId, aprRequests.id))
+      .leftJoin(aprHrCategories, eq(aprHrCategories.id, aprHrDetails.hrCategoryId))
+      .leftJoin(aprExpenditureDetails, eq(aprExpenditureDetails.requestId, aprRequests.id))
+      .leftJoin(aprCategories, eq(aprCategories.id, aprExpenditureDetails.categoryId))
+      .leftJoin(aprBranches, eq(aprBranches.id, aprExpenditureDetails.branchId))
+      .where(where)
+      .orderBy(direction(order), desc(aprRequests.id))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(aprRequests)
+      .leftJoin(aprHrDetails, eq(aprHrDetails.requestId, aprRequests.id))
+      .leftJoin(aprHrCategories, eq(aprHrCategories.id, aprHrDetails.hrCategoryId))
+      .leftJoin(aprExpenditureDetails, eq(aprExpenditureDetails.requestId, aprRequests.id))
+      .leftJoin(aprCategories, eq(aprCategories.id, aprExpenditureDetails.categoryId))
+      .leftJoin(aprBranches, eq(aprBranches.id, aprExpenditureDetails.branchId))
+      .where(where),
+  ]);
+  return { rows, total, page, pageSize };
+}
+
+/** How many requests are waiting for this person; for the badge on the inbox link. */
+export async function waitingCount(user: ApprovalsUser): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(aprRequests)
+    .where(and(eq(aprRequests.status, "pending"), eq(aprRequests.currentApproverUserId, user.id)));
+  return row?.n ?? 0;
+}
+
+/* ---------------------------------------------------------------- one request */
+
+export type StepRow = { stepNo: number; stepLabel: string; approverName: string; status: "waiting" | "pending" | "approved" | "rejected" | "skipped"; comment: string | null; decidedAt: Date | null };
+export type EventRow = { id: number; action: string; stepNo: number | null; actorName: string; comment: string | null; fromStatus: string | null; toStatus: string | null; createdAt: Date };
+export type AttachmentRow = { id: string; slot: string; fileName: string; size: number; mime: string };
+
+export type RequestDetail = {
+  id: string;
+  requestNo: string | null;
+  type: AprRequestType;
+  status: AprRequestStatus;
+  requesterUserId: string;
+  requesterName: string;
+  requesterEmail: string;
+  requestedAt: Date;
+  financialYear: string | null;
+  amountPaise: number | null;
+  overBudget: boolean;
+  decidedAt: Date | null;
+  decisionComment: string | null;
+  currentApproverUserId: string | null;
+  hr: { firstName: string; lastName: string; categoryName: string; description: string | null } | null;
+  expenditure: {
+    categoryName: string;
+    branchName: string;
+    nature: string | null;
+    vendorName: string | null;
+    expenseDate: string | null;
+    taxInvoiceDate: string | null;
+    publicationType: string | null;
+    publication: string | null;
+    /** What the budget looked like when the request was submitted. */
+    snapshot: { allocatedPaise: number | null; availablePaise: number | null; afterPaise: number | null };
+    /** What it looks like now. */
+    now: BudgetAssessment & { spentPaise: number; pendingPaise: number };
+  } | null;
+  steps: StepRow[];
+  events: EventRow[];
+  attachments: AttachmentRow[];
+  can: {
+    decide: boolean;
+    withdraw: boolean;
+    /** The approver must write a comment before approving: the request is over budget. */
+    commentToApprove: boolean;
+  };
+};
+
+export const canSeeRequest = async (user: ApprovalsUser, requestId: string): Promise<boolean> => {
+  const [row] = await db.select({ id: aprRequests.id }).from(aprRequests).where(and(eq(aprRequests.id, requestId), visibility(user))).limit(1);
+  return !!row;
+};
+
+/** Everything the detail page shows, or null when the request does not exist or this person may not see it. */
+export async function getRequestDetail(requestId: string, user: ApprovalsUser): Promise<RequestDetail | null> {
+  const [req] = await db.select().from(aprRequests).where(and(eq(aprRequests.id, requestId), visibility(user)));
+  if (!req) return null;
+
+  const [hr, exp, steps, events, attachments] = await Promise.all([
+    db
+      .select({ firstName: aprHrDetails.firstName, lastName: aprHrDetails.lastName, description: aprHrDetails.description, categoryName: aprHrCategories.name })
+      .from(aprHrDetails).innerJoin(aprHrCategories, eq(aprHrCategories.id, aprHrDetails.hrCategoryId)).where(eq(aprHrDetails.requestId, requestId)).then((r) => r[0] ?? null),
+    db
+      .select({ d: aprExpenditureDetails, categoryName: aprCategories.name, branchName: aprBranches.name })
+      .from(aprExpenditureDetails)
+      .innerJoin(aprCategories, eq(aprCategories.id, aprExpenditureDetails.categoryId))
+      .innerJoin(aprBranches, eq(aprBranches.id, aprExpenditureDetails.branchId))
+      .where(eq(aprExpenditureDetails.requestId, requestId)).then((r) => r[0] ?? null),
+    db.select().from(aprRequestSteps).where(eq(aprRequestSteps.requestId, requestId)).orderBy(asc(aprRequestSteps.stepNo)),
+    db.select().from(aprApprovalEvents).where(eq(aprApprovalEvents.requestId, requestId)).orderBy(asc(aprApprovalEvents.createdAt), asc(aprApprovalEvents.id)),
+    db.select().from(aprAttachments).where(eq(aprAttachments.requestId, requestId)).orderBy(asc(aprAttachments.uploadedAt)),
+  ]);
+
+  let expenditure: RequestDetail["expenditure"] = null;
+  let liveOver = false;
+  if (exp) {
+    const [type, pub, position] = await Promise.all([
+      exp.d.publicationTypeId ? db.select({ name: aprPublicationTypes.name }).from(aprPublicationTypes).where(eq(aprPublicationTypes.id, exp.d.publicationTypeId)).then((r) => r[0]?.name ?? null) : null,
+      exp.d.publicationId ? db.select({ name: aprPublications.name }).from(aprPublications).where(eq(aprPublications.id, exp.d.publicationId)).then((r) => r[0]?.name ?? null) : null,
+      req.financialYear ? budgetPosition(req.financialYear, exp.d.branchId, exp.d.categoryId) : { allocatedPaise: null, spentPaise: 0, pendingPaise: 0 },
+    ]);
+    const now = assessBudget(position, req.amountPaise ?? 0);
+    // While the request is pending it is not in "spent" yet, so this comparison is the real one; after a decision it is only a picture of now.
+    liveOver = req.status === "pending" && now.overBudget;
+    expenditure = {
+      categoryName: exp.categoryName, branchName: exp.branchName, nature: exp.d.natureOfExpenditure, vendorName: exp.d.vendorName,
+      expenseDate: exp.d.expenseDate, taxInvoiceDate: exp.d.taxInvoiceDate, publicationType: type, publication: pub,
+      snapshot: { allocatedPaise: exp.d.budgetAllocatedPaise, availablePaise: exp.d.budgetAvailablePaise, afterPaise: exp.d.budgetRemainingPaise },
+      now: { ...now, spentPaise: position.spentPaise, pendingPaise: position.pendingPaise },
+    };
+  }
+
+  const pending = req.status === "pending";
+  const mine = pending && req.currentApproverUserId === user.id && req.requesterUserId !== user.id;
+  return {
+    id: req.id, requestNo: req.requestNo, type: req.type, status: req.status, requesterUserId: req.requesterUserId, requesterName: req.requesterName,
+    requesterEmail: req.requesterEmail, requestedAt: req.requestedAt, financialYear: req.financialYear, amountPaise: req.amountPaise, overBudget: req.overBudget,
+    decidedAt: req.decidedAt, decisionComment: req.decisionComment, currentApproverUserId: req.currentApproverUserId,
+    hr, expenditure, steps, events, attachments,
+    can: { decide: mine, withdraw: pending && req.requesterUserId === user.id, commentToApprove: mine && (req.overBudget || liveOver) },
+  };
+}
+
+/** Who may download an attachment: the same people who may see its request. Returns the stored file's id, or null. */
+export async function attachmentForDownload(user: ApprovalsUser, attachmentId: string): Promise<{ storageKey: string; fileName: string; mime: string } | null> {
+  const [a] = await db.select().from(aprAttachments).where(eq(aprAttachments.id, attachmentId));
+  if (!a || !(await canSeeRequest(user, a.requestId))) return null;
+  return { storageKey: a.storageKey, fileName: a.fileName, mime: a.mime };
+}

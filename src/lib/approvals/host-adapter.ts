@@ -1,6 +1,6 @@
 import "server-only";
 import { cache } from "react";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, departments, userAppAccess, users } from "@/db/schema";
 import { aprApproverRules, aprUserRoles } from "@/db/approvals-schema";
@@ -15,7 +15,7 @@ import { ALL_ROLES, APPROVALS_URL_PATTERN, type ApprovalsRole } from "./approval
 
 export type { ApprovalsRole };
 export type ApprovalsUser = { id: string; name: string; email: string; roles: ApprovalsRole[] };
-export type DirectoryUser = { id: string; name: string; email: string; headAdmin: boolean };
+export type DirectoryUser = { id: string; name: string; email: string; headAdmin: boolean; active: boolean };
 
 export type Access =
   | { status: "anonymous" } // not signed in
@@ -85,7 +85,17 @@ export async function listUsers(): Promise<DirectoryUser[]> {
     .from(users)
     .where(and(eq(users.isActive, true), eq(users.status, "approved")))
     .orderBy(asc(users.name))
-    .then((rows) => rows.map((u) => ({ id: u.id, name: u.name, email: u.email, headAdmin: u.role === "head_admin" })));
+    .then((rows) => rows.map((u) => ({ id: u.id, name: u.name, email: u.email, headAdmin: u.role === "head_admin", active: true })));
+}
+
+/** A few people by id, active or not, for naming approvers and notifying them. Missing ids are simply absent from the result. */
+export async function getDirectoryUsers(ids: string[]): Promise<DirectoryUser[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({ id: users.id, name: users.name, email: users.email, role: users.role, active: users.isActive })
+    .from(users)
+    .where(inArray(users.id, [...new Set(ids)]));
+  return rows.map((u) => ({ id: u.id, name: u.name, email: u.email, headAdmin: u.role === "head_admin", active: u.active }));
 }
 
 export const hasRole = (user: Pick<ApprovalsUser, "roles"> | null | undefined, role: ApprovalsRole) => !!user && user.roles.includes(role);

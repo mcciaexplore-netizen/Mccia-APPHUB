@@ -3,26 +3,23 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Bell, ChevronDown, LogOut, X } from "lucide-react";
+import { ArrowLeft, Accessibility, ChevronDown, LogOut, X } from "lucide-react";
 import { Icon } from "@/components/Icon";
+import { NotificationBell } from "@/components/approvals/NotificationBell";
 import {
-  allNavItems, approvalsManifest, canSee, isGroup, type ApprovalsRole, type NavEntry, type NavGroup, type NavItem,
+  allNavItems, appOwning, approvalsApps, canSee, isGroup, type AppKey, type ApprovalsRole, type NavEntry, type NavGroup, type NavItem,
 } from "@/lib/approvals/approvals.manifest";
-
-const ROLE_LABEL: Record<ApprovalsRole, string> = {
-  requester: "Requester", approver: "Approver", dg: "Director General", viewer: "Viewer", approvals_admin: "Approvals admin",
-};
-/** The most senior role shown under the person's name. */
-const TOP_ROLE: ApprovalsRole[] = ["approvals_admin", "dg", "approver", "viewer", "requester"];
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") || "?";
 
-const ROW = "flex min-h-11 items-center gap-3 px-4 text-[0.82rem] font-medium transition-colors duration-150";
-
 export function Sidebar({
-  user, signOut, onNavigate, onClose,
+  user, unread, waiting, large, onToggleLarge, signOut, onNavigate, onClose,
 }: {
   user: { name: string; roles: ApprovalsRole[] };
+  unread: number;
+  waiting: number;
+  large: boolean;
+  onToggleLarge: () => void;
   signOut: () => Promise<void>;
   onNavigate: () => void;
   onClose: () => void;
@@ -35,100 +32,93 @@ export function Sidebar({
     .filter((h) => pathname === h || pathname.startsWith(`${h}/`))
     .sort((a, b) => b.length - a.length)[0];
 
-  const entries = approvalsManifest.nav
+  // Which of the two parts is showing: the one the page belongs to, unless the person just switched on this page. A page in neither
+  // (the home screen, a request) shows the DG part, or the Expenditure part for someone who is only an approver of small expenses.
+  const [pick, setPick] = useState<{ app: AppKey; path: string } | null>(null);
+  const fallback: AppKey = user.roles.some((r) => r === "approvals_admin" || r === "dg" || r === "viewer") ? "dg" : user.roles.includes("approver") ? "exp" : "dg";
+  const appKey: AppKey = pick && pick.path === pathname ? pick.app : appOwning(pathname) ?? fallback;
+  const app = approvalsApps.find((a) => a.key === appKey)!;
+
+  const entries = app.nav
     .map((e): NavEntry | null => {
-      if (!isGroup(e)) return canSee(e, user.roles) ? e : null;
+      if (!canSee(e, user.roles)) return null;
+      if (!isGroup(e)) return e;
       const items = e.items.filter((i) => canSee(i, user.roles));
       return items.length ? { ...e, items } : null;
     })
     .filter((e): e is NavEntry => !!e);
 
   const holdsActive = (g: NavGroup) => g.items.some((i) => i.href === activeHref);
-  const [open, setOpen] = useState<Set<string>>(() => {
-    const first = entries.find(isGroup);
-    return new Set(entries.filter(isGroup).filter(holdsActive).map((g) => g.label).concat(first && !activeHref ? [first.label] : []));
-  });
-  const toggle = (label: string) => setOpen((s) => { const n = new Set(s); if (n.has(label)) n.delete(label); else n.add(label); return n; });
+  // A group is open when the person opened it, or (until they touch it) when it holds the current page, or is the first on the home screen.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const firstGroup = entries.find(isGroup);
 
-  const link = (i: NavItem, indent: boolean) => {
+  const badge = (label: string) => (label === "DG APPROVALS" && waiting > 0 ? (
+    <span className="rounded-full bg-[var(--z-red)] px-1.5 text-[0.68rem] font-bold leading-5 text-white">{waiting > 99 ? "99+" : waiting}</span>
+  ) : null);
+
+  const link = (i: NavItem) => {
     const active = i.href === activeHref;
     return (
-      <Link
-        key={i.href} href={i.href!} onClick={onNavigate} aria-current={active ? "page" : undefined}
-        className={`${ROW} ${indent ? "pl-11 text-[0.8rem]" : ""} ${active ? "bg-brand-green-text text-white" : "text-white/80 hover:bg-(--apr-side-hover) hover:text-white"}`}
-      >
-        <span className="flex-1 py-1.5">{i.label}</span>
+      <Link key={i.href} href={i.href!} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`zs-row zs-sub ${active ? "zs-active" : ""}`}>
+        <span className="flex-1 py-1">{i.label}</span>
       </Link>
     );
   };
 
-  const top = TOP_ROLE.find((r) => user.roles.includes(r)) ?? "requester";
-
   return (
-    <aside className="flex h-full w-64 flex-col bg-(--apr-side) text-white">
-      <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-(--apr-side-line) px-4">
-        <Link href={approvalsManifest.basePath} onClick={onNavigate} className="block leading-tight">
-          <span className="block font-heading text-lg font-extrabold tracking-tight">MCCIA</span>
-          <span className="block text-[0.62rem] font-bold uppercase tracking-widest text-white/60">{approvalsManifest.name}</span>
-        </Link>
-        <button className="text-white/80 lg:hidden" aria-label="Close menu" onClick={onClose}><X size={20} /></button>
+    <aside className="zs flex h-full flex-col">
+      <div className="zs-head shrink-0 space-y-2.5 px-3 pb-3 pt-3.5">
+        <div className="flex items-center justify-between gap-2">
+          <Link href="/approvals" onClick={onNavigate} className="zs-title min-w-0 flex-1 truncate">{app.title}</Link>
+          <button className="text-white/80 lg:hidden" aria-label="Close menu" onClick={onClose}><X size={20} /></button>
+        </div>
+        <div className="zs-switch" role="group" aria-label="Switch between the two parts of Approvals">
+          {approvalsApps.map((a) => (
+            <button key={a.key} type="button" aria-pressed={a.key === appKey} onClick={() => setPick({ app: a.key, path: pathname })}>{a.title}</button>
+          ))}
+        </div>
       </div>
 
-      <Link href="/" className="flex h-10 shrink-0 items-center gap-2 border-b border-(--apr-side-line) px-4 text-xs text-white/70 transition-colors hover:text-white">
+      <Link href="/" className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--z-side-line)] px-4 text-xs text-white/65 transition-colors hover:text-white">
         <ArrowLeft size={14} /> Back to App Hub
       </Link>
 
-      <nav className="apr-scroll flex-1 overflow-y-auto py-1" aria-label="Approvals">
+      <nav className="apr-scroll flex-1 overflow-y-auto py-1" aria-label={app.title}>
         {entries.map((e) => {
           if (!isGroup(e)) {
             const withIcon = e as NavItem & { icon: string };
-            if (e.disabled) {
-              return (
-                <div key={e.label} className={`${ROW} cursor-not-allowed text-white/40`} aria-disabled="true">
-                  <Icon name={withIcon.icon} size={18} />
-                  <span className="flex-1 whitespace-nowrap py-1.5">{e.label}</span>
-                  <span className="shrink-0 whitespace-nowrap rounded-pill bg-(--apr-amber) px-1.5 py-0.5 text-[0.55rem] font-bold uppercase tracking-wide text-black/70">Coming soon</span>
-                </div>
-              );
-            }
             const active = e.href === activeHref;
             return (
-              <Link key={e.label} href={e.href!} onClick={onNavigate} aria-current={active ? "page" : undefined}
-                className={`${ROW} ${active ? "bg-brand-green-text text-white" : "text-white/90 hover:bg-(--apr-side-hover)"}`}>
-                <Icon name={withIcon.icon} size={18} /> <span className="flex-1 py-1.5">{e.label}</span>
+              <Link key={e.label} href={e.href!} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`zs-row ${active ? "zs-active" : ""}`}>
+                <Icon name={withIcon.icon} size={18} /> <span className="flex-1 py-1.5">{e.label}</span> {badge(e.label)}
               </Link>
             );
           }
-          const isOpen = open.has(e.label) || holdsActive(e);
+          const id = `${app.key}:${e.label}`;
+          const isOpen = expanded[id] ?? (holdsActive(e) || (!activeHref && e === firstGroup));
           return (
-            <div key={e.label}>
-              <button
-                type="button" onClick={() => toggle(e.label)} aria-expanded={isOpen}
-                className={`${ROW} w-full text-left text-white/90 hover:bg-(--apr-side-hover)`}
-              >
+            <div key={id}>
+              <button type="button" aria-expanded={isOpen} onClick={() => setExpanded((s) => ({ ...s, [id]: !isOpen }))} className="zs-row w-full text-left">
                 <Icon name={e.icon} size={18} /> <span className="flex-1 py-1.5">{e.label}</span>
-                <ChevronDown size={15} className={`transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+                <ChevronDown size={15} className={`transition-transform duration-200 ${isOpen ? "rotate-180" : "-rotate-90"}`} />
               </button>
-              {isOpen && <div className="bg-black/15">{e.items.map((i) => link(i, true))}</div>}
+              {isOpen && <div className="bg-black/15">{e.items.map(link)}</div>}
             </div>
           );
         })}
       </nav>
 
-      <div className="shrink-0 border-t border-(--apr-side-line) p-3">
-        <div className="flex items-center gap-3">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-green-text text-xs font-bold" aria-hidden>{initials(user.name)}</span>
-          <div className="min-w-0 flex-1 leading-tight">
-            <p className="truncate text-sm font-semibold">{user.name}</p>
-            <p className="truncate text-[0.7rem] text-white/60">{ROLE_LABEL[top]}</p>
-          </div>
-          <button type="button" aria-label="Notifications" title="Notifications" className="rounded-md p-2 text-white/70 transition-colors hover:bg-(--apr-side-hover) hover:text-white">
-            <Bell size={17} />
-          </button>
-          <form action={signOut}>
-            <button aria-label="Sign out" title="Sign out" className="rounded-md p-2 text-white/70 transition-colors hover:bg-(--apr-side-hover) hover:text-white"><LogOut size={17} /></button>
-          </form>
-        </div>
+      <div className="zs-foot flex shrink-0 items-center gap-1 px-3 py-2.5">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--z-teal)] text-xs font-bold" aria-hidden>{initials(user.name)}</span>
+        <span className="min-w-0 flex-1 truncate px-1.5 text-sm font-bold" title={user.name}>{user.name}</span>
+        <button type="button" onClick={onToggleLarge} aria-pressed={large} aria-label="Larger text" title={large ? "Normal text size" : "Larger text"} className="zs-icon-btn">
+          <Accessibility size={18} />
+        </button>
+        <NotificationBell initialUnread={unread} />
+        <form action={signOut}>
+          <button aria-label="Sign out" title="Sign out" className="zs-icon-btn"><LogOut size={17} /></button>
+        </form>
       </div>
     </aside>
   );

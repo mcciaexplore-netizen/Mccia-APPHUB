@@ -2,6 +2,7 @@ import {
   bigint,
   bigserial,
   boolean,
+  customType,
   date,
   index,
   integer,
@@ -30,7 +31,7 @@ export const aprRequestStatus = pgEnum("apr_request_status", ["draft", "pending"
 export const aprStepStatus = pgEnum("apr_step_status", ["waiting", "pending", "approved", "rejected", "skipped"]);
 export const aprAttachmentSlot = pgEnum("apr_attachment_slot", ["file_upload", "file_upload_2", "tax_invoice", "quotation", "supporting"]);
 export const aprEventAction = pgEnum("apr_event_action", [
-  "submitted", "assigned", "approved", "rejected", "withdrawn", "resubmitted", "reassigned", "comment",
+  "submitted", "assigned", "approved", "rejected", "withdrawn", "resubmitted", "reassigned", "comment", "viewed",
 ]);
 
 const id = () => uuid("id").primaryKey().default(sql`gen_random_uuid()`);
@@ -182,6 +183,8 @@ export const aprRequests = pgTable(
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     decisionComment: text("decision_comment"),
     amountPaise: paise("amount_paise"),
+    // Expenditure only: the amount was more than the budget left, or no budget exists for the branch, category and year.
+    overBudget: boolean("over_budget").notNull().default(false),
     // Resubmit clones a rejected request into a new draft and links back to the original.
     resubmittedFromId: uuid("resubmitted_from_id"),
     // Reserved for a later import of old Zoho records.
@@ -240,6 +243,40 @@ export const aprAttachments = pgTable(
     uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("apr_attachments_request_idx").on(t.requestId)],
+);
+
+/**
+ * Uploaded files live in Postgres, in chunks small enough for one request each (the host caps a request body at about 4.5 MB, the
+ * module allows 10 MB per file). A file is "attached" once a submitted request points at it; unattached ones are leftovers that a
+ * cleanup can drop. The bytes are only ever served through an authorised route, so a file is private by construction.
+ */
+export const aprFiles = pgTable(
+  "apr_files",
+  {
+    id: id(),
+    uploadedBy: uuid("uploaded_by").notNull(),
+    fileName: text("file_name").notNull(),
+    mime: text("mime").notNull(),
+    size: integer("size").notNull(),
+    chunkCount: integer("chunk_count").notNull(),
+    attached: boolean("attached").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [index("apr_files_uploader_idx").on(t.uploadedBy, t.createdAt)],
+);
+
+/** A bytea column. Never read or written as a bare value: use decode(..., 'base64') to write and encode(..., 'base64') to read, so both drivers see text. */
+const bytea = customType<{ data: string; driverData: string }>({ dataType: () => "bytea" });
+
+/** One slice of a file, 3 MB at most. */
+export const aprFileChunks = pgTable(
+  "apr_file_chunks",
+  {
+    fileId: uuid("file_id").notNull().references(() => aprFiles.id, { onDelete: "cascade" }),
+    idx: integer("idx").notNull(),
+    data: bytea("data").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.fileId, t.idx] })],
 );
 
 /** Created at submit from the routing rules, so later rule changes never alter requests already in flight. */
