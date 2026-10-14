@@ -129,6 +129,12 @@ export const approvalsManifest = {
   apps: approvalsApps,
 };
 
+/**
+ * Whether Approvals is on, from the APPROVALS_ENABLED setting. It is ON unless the setting says otherwise ("false", "0", "off" or "no"):
+ * an unset or empty value means on, so the feature is there as soon as it is deployed and nobody has to remember to switch it on.
+ */
+export const isModuleEnabled = (setting: string | undefined): boolean => !["false", "0", "off", "no"].includes((setting ?? "").trim().toLowerCase());
+
 /** A hub app card is the Approvals card when its URL is /approvals, with or without the domain in front. */
 export const APPROVALS_URL_PATTERN = "^(https?://[^/?#]+)?/approvals/?$";
 export const isApprovalsUrl = (url: string) => new RegExp(APPROVALS_URL_PATTERN).test(url.trim());

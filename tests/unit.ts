@@ -1,7 +1,7 @@
 /** Fast checks for the pure helpers: CSV parsing/exporting, the email-domain rule and the Approvals money, date and menu rules. Run: npm run test:unit */
 import { parseCsv, toCsv } from "../src/lib/csv";
 import { isEmailAllowed } from "../src/lib/domains";
-import { canSee, isApprovalsUrl } from "../src/lib/approvals/approvals.manifest";
+import { canSee, isApprovalsUrl, isModuleEnabled } from "../src/lib/approvals/approvals.manifest";
 import {
   assessBudget, budgetWarning, commentRequired, formFor, formatRequestNo, percentUsed, planSteps, utilisationLevel, wrongFormMessage,
   type RuleLike,
@@ -140,6 +140,10 @@ eq("dates: the request date cannot be in the future, an ordinary past one is fin
   largeExpenditureInput.safeParse({ ...lg, requestedAt: new Date(Date.now() - 86400000).toISOString() }).success,
 ], [false, true]);
 eq("decision: only approve or reject", [decisionInput.safeParse({ action: "approve" }).success, decisionInput.safeParse({ action: "maybe" }).success], [true, false]);
+
+// Approvals is on unless it is switched off on purpose.
+eq("module setting: unset, empty and true all mean on", [isModuleEnabled(undefined), isModuleEnabled(""), isModuleEnabled("  "), isModuleEnabled("true"), isModuleEnabled("TRUE"), isModuleEnabled("1")], [true, true, true, true, true, true]);
+eq("module setting: false, 0, off and no switch it off (any case, spaces ignored)", [isModuleEnabled("false"), isModuleEnabled(" False "), isModuleEnabled("0"), isModuleEnabled("off"), isModuleEnabled("NO")], [false, false, false, false, false]);
 
 console.log(`\n${ok}/${ok + bad} unit checks passed`);
 process.exit(bad ? 1 : 0);

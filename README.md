@@ -87,13 +87,13 @@ HR and expenditure approvals (a replica of the Zoho "DG Approval" and "Expenditu
 **Turn it on (PowerShell):**
 
 ```powershell
-# 1. In .env.local (see .env.example): APPROVALS_ENABLED=true
+# 1. Nothing to switch on: Approvals is on by default (APPROVALS_ENABLED=false turns it off)
 npx drizzle-kit migrate               # adds the apr_ tables (0006 and 0007); nothing existing is touched
 npm run db:seed:approvals             # 40 expense categories, 6 HR categories, settings, 5 routing rules (safe to re-run)
 npm run dev
 ```
 
-**Where it is in the hub.** Approvals is a feature of the hub, not an application in a department. It is a built-in **Approval System** item in the hub's sidebar (next to Administrator); one click opens it, with the login the person is already using. There is no separate sign-in, no card to click and nothing to tick for each person: everyone who can sign in to the hub can open it, and what they can do inside comes from their roles (below). Turning the module off (`APPROVALS_ENABLED`) removes the item. If you added an "Approvals" application (URL `/approvals`) in a department earlier, it is no longer listed or launchable, and a department that holds nothing else disappears from the sidebar; you can delete both under Administrator → Departments.
+**Where it is in the hub.** Approvals is a feature of the hub, not an application in a department. It is a built-in **Approval System** item in the hub's sidebar (next to Administrator); one click opens it, with the login the person is already using. There is no separate sign-in, no card to click and nothing to tick for each person: everyone who can sign in to the hub can open it, and what they can do inside comes from their roles (below). Approvals is on by default; `APPROVALS_ENABLED=false` turns it off and removes the item. If you added an "Approvals" application (URL `/approvals`) in a department earlier, it is no longer listed or launchable, and a department that holds nothing else disappears from the sidebar; you can delete both under Administrator → Departments.
 
 **Who approves.** In Approvals → Approver Rules, name one person per step: the DG for HR and for expenditure of ₹10,000 and above, and the below-₹10,000 approver for Expenses. Those people become approvers automatically. (`APPROVALS_HR_APPROVER_EMAIL`, `APPROVALS_EXPENDITURE_APPROVER_EMAIL` and `APPROVALS_DG_EMAIL` only pre-fill the rules when the seed runs; the people must already be users in the hub.) Branches and budgets are entered by an Approvals admin; the Name lists on the forms come from the hub's users.
 
@@ -101,7 +101,7 @@ npm run dev
 
 **Email.** Set `SMTP_HOST`, `SMTP_FROM` (and `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `APP_BASE_URL`) to send email as well as the in-app notifications. Without them nothing is emailed and nothing breaks. Email can be turned off per kind in Approvals → Settings.
 
-**Switching it off.** `APPROVALS_ENABLED` unset or not `true`: every `/approvals` page and `/api/approvals` route returns 404, and the hub hides the Approval System item.
+**Switching it off.** `APPROVALS_ENABLED=false` (also `0`, `off`, `no`): every `/approvals` page and `/api/approvals` route returns 404, and the hub hides the Approval System item. Unset, empty or anything else means on.
 
 **Money and dates.** Money is stored as integer paise and shown with Indian grouping (12,34,567.00). Dates are stored in UTC and shown as dd-MMM-yyyy in Asia/Kolkata. The financial year runs April to March, judged in IST. Request numbers restart each financial year: `HR-2026-27-0001`, `EXP-2026-27-0001` (₹10,000 and above), `EXB-2026-27-0001` (below).
 
