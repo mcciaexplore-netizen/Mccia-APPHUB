@@ -135,12 +135,9 @@ const common = (branchId, categoryId) => ({ categoryId, branchId });
 
 try {
   section("0. Setup: people, rules, a branch, categories and a budget");
-  const [dept] = await sql`insert into departments (name, icon, sort_order) values ('ZZ Flow Dept', 'Building2', 9999) returning id`;
-  const [card] = await sql`insert into apps (department_id, name, url, icon) values (${dept.id}, 'ZZ Flow Card', '/approvals', 'ClipboardList') returning id`;
   const ids = {};
   for (const [k, p] of Object.entries(PEOPLE)) {
     const [u] = await sql`insert into users (name, email, password_hash, status) values (${p.name}, ${p.email}, ${hash(PW)}, 'approved') returning id`;
-    await sql`insert into user_app_access (user_id, app_id) values (${u.id}, ${card.id})`;
     ids[k] = u.id;
   }
   // HR and expenditure of 10,000 and above: the DG only (the Reviewer step is left empty). Expenses below 10,000: the small approver.

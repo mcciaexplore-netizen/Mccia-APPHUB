@@ -6,15 +6,15 @@ import { Sidebar, type SidebarDept, type SidebarUser } from "@/components/Sideba
 import { UserMenu } from "@/components/UserMenu";
 
 export function HubShell({
-  user, departments, children,
+  user, departments, showApprovals, children,
 }: {
-  user: SidebarUser | null; departments: SidebarDept[]; children: React.ReactNode;
+  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
   const sidebar = (
     <Suspense fallback={<div className="h-full w-48 bg-primary-2" />}>
-      <Sidebar user={user} departments={departments} onNavigate={close} onClose={close} />
+      <Sidebar user={user} departments={departments} showApprovals={showApprovals} onNavigate={close} onClose={close} />
     </Suspense>
   );
 

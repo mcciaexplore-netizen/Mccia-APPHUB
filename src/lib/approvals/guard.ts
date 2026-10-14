@@ -7,12 +7,11 @@ import { approvalsEnabled } from "./flags";
 import { hasAnyRole, resolveAccess, type ApprovalsRole, type ApprovalsUser } from "./host-adapter";
 import { idSchema, kindSchema } from "./validation";
 
-/** For pages and layouts. Off or not allowed looks like a page that does not exist; not signed in goes to the hub's sign-in. */
+/** For pages and layouts. Off, or not allowed for this role, looks like a page that does not exist; not signed in goes to the hub's sign-in. */
 export async function requirePage(...anyOf: ApprovalsRole[]): Promise<ApprovalsUser> {
   if (!approvalsEnabled()) notFound();
   const a = await resolveAccess();
   if (a.status === "anonymous") redirect("/login");
-  if (a.status === "forbidden") notFound();
   if (anyOf.length && !hasAnyRole(a.user, anyOf)) notFound();
   return a.user;
 }
@@ -49,7 +48,6 @@ export function route<P extends Record<string, string> = Record<never, never>>(
     try {
       const a = await resolveAccess();
       if (a.status === "anonymous") return fail("Please sign in.", 401);
-      if (a.status === "forbidden") return fail("Not allowed.", 403);
       if (opts.roles?.length && !hasAnyRole(a.user, opts.roles)) return fail("Not allowed.", 403);
       if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !sameOrigin(req)) return fail("Not allowed.", 403);
       return await fn({ req, user: a.user, params: await ctx.params });

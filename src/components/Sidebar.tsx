@@ -3,12 +3,11 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { Activity, Bell, Building2, ChevronDown, ChevronRight, ShieldCheck, Users, X } from "lucide-react";
+import { Activity, Bell, Building2, ChevronDown, ChevronRight, ClipboardList, ShieldCheck, Users, X } from "lucide-react";
 import { lockAdmin } from "@/actions/auth";
 import { Icon } from "@/components/Icon";
 
-/** `href` is set for a department that opens a module directly (Approvals) instead of a department page. */
-export type SidebarDept = { id: string; name: string; icon: string; href?: string };
+export type SidebarDept = { id: string; name: string; icon: string };
 export type SidebarUser = { name: string; role: "head_admin" | "dept_lead" | "member" };
 
 function Item({ href, active, onNavigate, children }: { href: string; active: boolean; onNavigate: () => void; children: React.ReactNode }) {
@@ -33,9 +32,9 @@ const ADMIN_LINKS = [
 ] as const;
 
 export function Sidebar({
-  user, departments, onNavigate, onClose,
+  user, departments, showApprovals, onNavigate, onClose,
 }: {
-  user: SidebarUser | null; departments: SidebarDept[]; onNavigate: () => void; onClose: () => void;
+  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; onNavigate: () => void; onClose: () => void;
 }) {
   const pathname = usePathname();
   const d = useSearchParams().get("d");
@@ -49,8 +48,7 @@ export function Sidebar({
     wasInAdmin.current = inAdmin;
   }, [inAdmin]);
   const submenuId = useId(); // the sidebar is rendered twice (desktop and mobile), so ids must be unique
-  const browsable = departments.filter((x) => !x.href);
-  const selected = d && browsable.some((x) => x.id === d) ? d : browsable[0]?.id;
+  const selected = d && departments.some((x) => x.id === d) ? d : departments[0]?.id;
 
   return (
     <aside className="flex h-full w-48 flex-col bg-[image:var(--grad-side)] text-white">
@@ -65,15 +63,21 @@ export function Sidebar({
       <nav className="flex-1 overflow-y-auto" aria-label="Departments">
         {departments.length === 0 && <p className="px-4 py-3 text-xs text-white/70">No departments yet</p>}
         {departments.map((dep) => {
-          const active = !dep.href && onHome && selected === dep.id;
+          const active = onHome && selected === dep.id;
           return (
-            <Item key={dep.id} href={dep.href ?? `/?d=${dep.id}`} active={active} onNavigate={onNavigate}>
+            <Item key={dep.id} href={`/?d=${dep.id}`} active={active} onNavigate={onNavigate}>
               <Icon name={dep.icon} size={20} />
               <span className="flex-1 py-2">{dep.name}</span>
               {active && <ChevronRight size={16} />}
             </Item>
           );
         })}
+        {/* Approvals is a feature of the hub, not an application in a department: it opens straight away, with the login already in use. */}
+        {showApprovals && (
+          <Item href="/approvals" active={false} onNavigate={onNavigate}>
+            <ClipboardList size={20} /> <span className="flex-1 py-2">Approval System</span>
+          </Item>
+        )}
         {user?.role === "dept_lead" && (
           <Item href="/activity" active={pathname === "/activity"} onNavigate={onNavigate}>
             <Activity size={20} /> <span className="flex-1 py-2">Activity</span>

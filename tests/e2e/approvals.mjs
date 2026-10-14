@@ -1,8 +1,8 @@
 /**
  * End-to-end test of the Approvals module in a real browser. Run: E2E_BASE_URL=http://localhost:3000 npm run test:e2e:approvals
  *
- * It WRITES to the database the site uses, but only rows whose names start with "ZZ"/"zz-": a test department, an app card pointing at
- * /approvals, two test people, a test branch, categories and budgets. Everything is removed when it finishes (and at the start, in case
+ * It WRITES to the database the site uses, but only rows whose names start with "ZZ"/"zz-": a test department holding an old-style app card
+ * pointing at /approvals (to check it is hidden), two test people, a test branch, categories and budgets. Everything is removed when it finishes (and at the start, in case
  * an earlier run was interrupted), and the seeded masters are checked to be unchanged.
  * Optional: E2E_OFF_URL = a second server started with APPROVALS_ENABLED=false, to check that the module disappears.
  * Env: E2E_BROWSER = chromium (default) | firefox | webkit, E2E_CHROME_CHANNEL (default "chrome").
@@ -103,13 +103,12 @@ const toast = (page, t) => page.getByText(t).first().waitFor({ timeout: 20000 })
 const status = async (page, p, opts) => (await page.goto(BASE + p, opts)).status();
 
 try {
-  section("0. Setup: a test card pointing at /approvals, one person with it, one without");
+  section("0. Setup: an old-style card pointing at /approvals, and two ordinary people (neither is given anything)");
   const [dept] = await sql`insert into departments (name, icon, sort_order) values ('ZZ Apr Dept', 'Building2', 9999) returning id`;
   const [card] = await sql`insert into apps (department_id, name, url, icon) values (${dept.id}, 'ZZ Apr Card', '/approvals', 'ClipboardList') returning id`;
   const [member] = await sql`insert into users (name, email, password_hash, status) values ('ZZ Apr Member', ${MEMBER.email}, ${hash(MEMBER.pw)}, 'approved') returning id`;
   await sql`insert into users (name, email, password_hash, status) values ('ZZ Apr Outsider', ${OUTSIDER.email}, ${hash(OUTSIDER.pw)}, 'approved')`;
-  await sql`insert into user_app_access (user_id, app_id) values (${member.id}, ${card.id})`;
-  check("test card, department and people created", true);
+  check("test card, department and people created", true && !!member);
 
   section("1. Signed out");
   {
@@ -148,9 +147,15 @@ try {
   check("the sidebar highlights the page you are on", (await A.locator("aside:visible a[aria-current=page]").first().innerText()).trim() === "HR");
   check("a path that is not in the menu is a 404", (await status(A, "/approvals/definitely/not/here")) === 404);
 
-  section("4. Launching the card from the hub");
-  const go = await A.request.get(`${BASE}/go/${card.id}`, { maxRedirects: 0 });
-  check("/go/<card> redirects to /approvals even though the card URL is only a path", go.status() === 302 && new URL(go.headers().location).pathname === "/approvals", go.headers().location);
+  section("4. Approvals in the hub: a sidebar item, not an application");
+  await A.goto(BASE + "/");
+  const hubMenu = await A.locator("aside:visible nav").first().innerText();
+  check("the hub sidebar has an Approval System item that opens /approvals directly", /Approval System/.test(hubMenu) && (await A.locator("aside:visible nav a", { hasText: "Approval System" }).first().getAttribute("href")) === "/approvals");
+  check("a department holding only an old Approvals card is not listed", !hubMenu.includes("ZZ Apr Dept"), hubMenu.replace(/\s+/g, " ").slice(0, 120));
+  check("an old Approvals card cannot be launched", (await A.request.get(`${BASE}/go/${card.id}`, { maxRedirects: 0 })).status() === 404);
+  await A.locator("aside:visible nav a", { hasText: "Approval System" }).first().click();
+  await A.waitForURL(/\/approvals$/);
+  check("clicking it opens the module in the same tab", new URL(A.url()).pathname === "/approvals" && (await A.locator("main").first().innerText()).includes("Welcome"));
 
   section("5. Branches: add, reject duplicates and blanks, deactivate, audit");
   await A.goto(BASE + "/approvals/admin/branches");
@@ -213,11 +218,14 @@ try {
   const stillThere = async () => (await sql`select count(*)::int n from apr_budgets where branch_id = ${branch.id}`)[0].n;
   check("removing a budget asks first, then removes it", await poll(async () => (await stillThere()) === 0));
 
-  section("8. A person with the card but no module role");
+  section("8. An ordinary person with a hub login and no module role");
   const mem = await newSession();
   const M = mem.page;
   await signIn(M, MEMBER.email, MEMBER.pw);
-  check("a person given the card can open /approvals", (await status(M, "/approvals")) === 200);
+  check("they can open /approvals with no card and no grant", (await status(M, "/approvals")) === 200);
+  await M.goto(BASE + "/");
+  check("and the hub shows them the Approval System item", (await M.locator("aside:visible nav").first().innerText()).includes("Approval System"));
+  await M.goto(BASE + "/approvals");
   const mMenu = await nav(M);
   check("they see the request groups but no Administration group", mMenu.includes("Expenditures") && mMenu.includes("Hr") && !mMenu.includes("Administration"), mMenu.replace(/\s+/g, " ").slice(0, 120));
   check("they do not see the oversight items (budgets, reports)", !/All_Budgets|HR Report|\bApproval Time\b/.test(mMenu));
@@ -246,11 +254,12 @@ try {
   await poll(async () => (await sql`select count(*)::int n from apr_user_roles where user_id = ${member.id} and role = 'viewer'`)[0].n === 0);
   check("taking it away closes the page again", (await status(M, "/approvals/budgets")) === 404);
 
-  section("10. Someone without the card");
+  section("10. Anyone signed in to the hub can open Approvals");
   const out = await newSession();
   await signIn(out.page, OUTSIDER.email, OUTSIDER.pw);
-  check("/approvals is a 404 (the card was never given to them)", (await status(out.page, "/approvals")) === 404);
-  check("the API refuses them (403)", (await out.page.request.get(`${BASE}/api/approvals/masters/categories`)).status() === 403);
+  check("a second ordinary person can open /approvals too (nothing has to be ticked for them)", (await status(out.page, "/approvals")) === 200);
+  check("the API answers them (they read the dropdown lists)", (await out.page.request.get(`${BASE}/api/approvals/masters/categories`)).status() === 200);
+  check("but the admin pages stay closed to them", (await status(out.page, "/approvals/admin/categories")) === 404);
 
   section("11. Writes from another site are refused");
   const evil = await A.request.post(`${BASE}/api/approvals/masters/branches`, { data: { name: "ZZ Cross Site" }, headers: { Origin: "https://evil.example" } });
@@ -284,6 +293,7 @@ try {
     check("and the hub no longer launches the card", (await off.page.request.get(`${OFF}/go/${card.id}`, { maxRedirects: 0 })).status() === 404);
     await off.page.goto(OFF + "/");
     check("and the hub no longer lists it", !(await off.page.locator("main").first().innerText()).includes("ZZ Apr Card"));
+    check("and the sidebar has no Approval System item", !(await off.page.locator("aside:visible nav").first().innerText()).includes("Approval System"));
   } else console.log("(skipped: set E2E_OFF_URL to a server started with APPROVALS_ENABLED=false to check the switch)");
 } catch (e) {
   check("the suite ran to the end without an unexpected error", false, e.stack || e);

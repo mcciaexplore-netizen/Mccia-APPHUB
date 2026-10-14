@@ -47,7 +47,7 @@ const RULES = [
 async function main() {
   // Import after env is loaded so src/db/index.ts sees DATABASE_URL.
   const { db } = await import("../src/db");
-  const { apps, departments, users } = await import("../src/db/schema");
+  const { users } = await import("../src/db/schema");
   const { aprApproverRules, aprCategories, aprHrCategories, aprSettings } = await import("../src/db/approvals-schema");
 
   const added = await db
@@ -102,24 +102,6 @@ async function main() {
     if (fill) filled++;
   }
   console.log(`Routing rules: ${created} created, ${filled} given an approver, ${RULES.length - created - filled} left as they were`);
-
-  // The hub card, so the "Approval System" department is not empty: one "Approvals" app that opens /approvals. Safe to re-run: if a card
-  // for /approvals exists anywhere it is left alone. People other than the head admin still need it ticked under Administrator > Access.
-  const { isApprovalsUrl } = await import("../src/lib/approvals/approvals.manifest");
-  const { slugify } = await import("../src/lib/validation");
-  if ((await db.select({ url: apps.url }).from(apps)).some((a) => isApprovalsUrl(a.url))) {
-    console.log("Hub card: an Approvals card already exists, left as it is");
-  } else {
-    const DEPARTMENT = "Approval System";
-    let [dept] = await db.select().from(departments).where(eq(departments.name, DEPARTMENT));
-    if (!dept) {
-      const [{ top }] = await db.select({ top: sql<number>`coalesce(max(${departments.sortOrder}), 0)::int` }).from(departments);
-      [dept] = await db.insert(departments).values({ name: DEPARTMENT, slug: slugify(DEPARTMENT), icon: "ClipboardList", sortOrder: top + 1 }).returning();
-      console.log(`Hub card: created the "${DEPARTMENT}" department`);
-    }
-    await db.insert(apps).values({ departmentId: dept.id, name: "Approvals", description: "HR and expenditure approvals with a full audit trail.", url: "/approvals", icon: "ClipboardList" });
-    console.log(`Hub card: added "Approvals" to the "${DEPARTMENT}" department`);
-  }
 
   console.log("Approvals seed complete");
   process.exit(0);

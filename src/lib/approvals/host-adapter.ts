@@ -2,14 +2,14 @@ import "server-only";
 import { cache } from "react";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { apps, departments, userAppAccess, users } from "@/db/schema";
+import { users } from "@/db/schema";
 import { aprApproverRules, aprUserRoles } from "@/db/approvals-schema";
 import { logout as hostLogout } from "@/actions/auth";
 import { getCurrentUser as hostCurrentUser } from "@/lib/permissions";
-import { ALL_ROLES, APPROVALS_URL_PATTERN, type ApprovalsRole } from "./approvals.manifest";
+import { ALL_ROLES, type ApprovalsRole } from "./approvals.manifest";
 
 /**
- * The only file in the module that knows about the host: its session, its user table and its app access.
+ * The only file in the module that knows about the host: its session and its user table.
  * Everything else asks for these functions, so the module can be mounted in another host by rewriting this one file.
  */
 
@@ -19,27 +19,9 @@ export type DirectoryUser = { id: string; name: string; email: string; headAdmin
 
 export type Access =
   | { status: "anonymous" } // not signed in
-  | { status: "forbidden" } // signed in, but the Approvals card has not been given to this person
   | { status: "ok"; user: ApprovalsUser };
 
 const isRole = (r: string): r is ApprovalsRole => (ALL_ROLES as readonly string[]).includes(r);
-
-/** The hub grants apps one by one (user_app_access); the Approvals card is the active app whose URL is /approvals. */
-async function hasCardGrant(userId: string): Promise<boolean> {
-  const rows = await db
-    .select({ id: userAppAccess.id })
-    .from(userAppAccess)
-    .innerJoin(apps, eq(apps.id, userAppAccess.appId))
-    .innerJoin(departments, eq(departments.id, apps.departmentId))
-    .where(and(
-      eq(userAppAccess.userId, userId),
-      eq(apps.isActive, true),
-      eq(departments.isActive, true),
-      sql`${apps.url} ~ ${APPROVALS_URL_PATTERN}`,
-    ))
-    .limit(1);
-  return rows.length > 0;
-}
 
 /**
  * Module roles. requester: everyone. approvals_admin: the hub's head admin, or granted in the module. viewer: granted, and implied for
@@ -62,12 +44,11 @@ async function rolesFor(userId: string, isHeadAdmin: boolean): Promise<Approvals
   return [...roles];
 }
 
-/** Who is asking, and whether they may use the module at all. */
+/** Who is asking. Approvals is part of the hub, so anyone signed in to the hub may open it: they are a requester, and what else they can do comes from their roles. */
 export const resolveAccess = cache(async (): Promise<Access> => {
   const host = await hostCurrentUser();
   if (!host) return { status: "anonymous" };
   const isHeadAdmin = host.role === "head_admin";
-  if (!isHeadAdmin && !(await hasCardGrant(host.id))) return { status: "forbidden" };
   return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles: await rolesFor(host.id, isHeadAdmin) } };
 });
 
