@@ -48,9 +48,9 @@ export function HomeClient({ departments, apps, isAdmin }: { departments: Dept[]
   const title = searching ? "Search results" : deptName.get(selected!) ?? "";
   return (
     <div>
-      <header className="mb-6 flex flex-col gap-4 border-b border-line pb-4 sm:flex-row sm:items-end sm:justify-between">
+      <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl text-primary sm:text-2xl">{title}</h1>
+          <h1 className="text-2xl text-ink sm:text-3xl">{title}</h1>
           <p className="mt-1 text-sm text-subtle">{shown.length} {shown.length === 1 ? "application" : "applications"} {searching ? "found" : "available"}</p>
         </div>
         <label className="relative block w-full sm:w-72">
@@ -64,9 +64,9 @@ export function HomeClient({ departments, apps, isAdmin }: { departments: Dept[]
         <div className="alert"><Inbox size={18} className="mt-0.5 shrink-0" />
           <span>{searching ? "No applications match your search." : "No applications here yet."}</span></div>
       ) : (
-        <div key={searching ? `s-${q}` : selected} className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-4">
+        <div key={searching ? `s-${q}` : selected} className="grid grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] gap-6">
           {shown.map((a, i) => (
-            <AppCard key={a.id} app={a} index={i} deptName={searching ? deptName.get(a.departmentId) : undefined} />
+            <AppCard key={a.id} app={a} index={i} deptName={deptName.get(a.departmentId)} />
           ))}
         </div>
       )}

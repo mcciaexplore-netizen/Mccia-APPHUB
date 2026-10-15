@@ -50,7 +50,7 @@ export function ModuleMenu({
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="text-2xl text-primary sm:text-3xl">{app.title}</h1>
+        <h1 className="text-2xl text-ink sm:text-3xl">{app.title}</h1>
         <NotificationBell initialUnread={unread} />
       </div>
 

@@ -2,8 +2,8 @@
 
 /* MCCIA Applied AI Studio tokens. Components use these utilities only, never raw hex. */
 :root {
-  --c-primary: #003f8a;
-  --c-primary-2: #0056b3;
+  --c-primary: #2a6b7c;
+  --c-primary-2: #348095;
   --c-green: #10b981;
   --c-green-text: #059669;
   --c-red: #ef4444;
@@ -17,9 +17,10 @@
   --c-card: rgba(255, 255, 255, 0.7);
   --c-card-hover: rgba(255, 255, 255, 0.95);
   --c-border: rgba(226, 232, 240, 0.85);
-  --c-border-hover: rgba(0, 63, 138, 0.25);
-  --c-blue-tint: rgba(0, 63, 138, 0.06);
-  --c-blue-tint-border: rgba(0, 63, 138, 0.14);
+  --c-border-hover: rgba(42, 107, 124, 0.3);
+  --c-blue-tint: rgba(42, 107, 124, 0.08);
+  --c-blue-tint-border: rgba(42, 107, 124, 0.16);
+  --c-nav-active: #dbebf0;
   --c-green-tint: rgba(16, 185, 129, 0.07);
   --c-green-tint-border: rgba(16, 185, 129, 0.14);
   --c-red-tint: rgba(239, 68, 68, 0.07);
@@ -27,11 +28,9 @@
   --c-purple-tint: rgba(139, 92, 246, 0.07);
   --c-purple-tint-border: rgba(139, 92, 246, 0.16);
   --c-overlay: rgba(15, 23, 42, 0.4);
-  --grad-primary: linear-gradient(135deg, #003f8a 0%, #0056b3 100%);
-  --grad-page: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  --grad-side: linear-gradient(165deg, #0056b3 0%, #0056b3 30%, #10b981 100%);
-  --grad-icon: linear-gradient(135deg, #0056b3 0%, #10b981 100%);
-  --c-canvas: #e9eef4;
+  --grad-primary: linear-gradient(135deg, #2a6b7c 0%, #348095 100%);
+  --grad-page: #ffffff;
+  --c-canvas: #ffffff;
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -61,6 +60,7 @@
   --color-purple-tint-line: var(--c-purple-tint-border);
   --color-overlay: var(--c-overlay);
   --color-canvas: var(--c-canvas);
+  --color-nav-active: var(--c-nav-active);
 
   --radius-sm: 8px;
   --radius-btn: 10px;
@@ -68,14 +68,14 @@
   --radius-lg: 20px;
   --radius-pill: 99px;
 
-  --shadow-card: 0 15px 40px -10px rgba(0, 63, 138, 0.04);
-  --shadow-card-hover: 0 20px 40px rgba(0, 63, 138, 0.08);
-  --shadow-btn: 0 4px 15px rgba(0, 63, 138, 0.15);
-  --shadow-btn-hover: 0 8px 25px rgba(0, 63, 138, 0.25);
-  --shadow-ring: 0 0 0 3px rgba(0, 63, 138, 0.1);
+  --shadow-card: 0 6px 24px rgba(15, 23, 42, 0.08);
+  --shadow-card-hover: 0 14px 34px rgba(15, 23, 42, 0.13);
+  --shadow-btn: 0 4px 14px rgba(42, 107, 124, 0.22);
+  --shadow-btn-hover: 0 8px 22px rgba(42, 107, 124, 0.3);
+  --shadow-ring: 0 0 0 3px rgba(42, 107, 124, 0.14);
 
-  --font-heading: var(--font-bricolage), system-ui, sans-serif;
-  --font-sans: var(--font-outfit), Inter, system-ui, sans-serif;
+  --font-heading: var(--font-inter), system-ui, sans-serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
 
   --animate-rise: rise 0.6s var(--ease) both;
   --animate-shimmer: shimmer 1.4s linear infinite;
@@ -98,7 +98,6 @@
 html { background: var(--c-white); }
 body {
   background: var(--grad-page);
-  background-attachment: fixed;
   color: var(--c-text);
   font-family: var(--font-sans);
   line-height: 1.65;
@@ -114,20 +113,26 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
 
 @layer components {
   .glass {
-    background: var(--c-card);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: var(--c-white);
     border: 1px solid var(--c-border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-card);
     transition: all 0.3s var(--ease);
   }
   .glass-hover:hover {
-    transform: translateY(-5px);
-    background: var(--c-card-hover);
+    transform: translateY(-4px);
     border-color: var(--c-border-hover);
     box-shadow: var(--shadow-card-hover);
   }
+
+  /* An application card's coloured corner and its icon: six pastel palettes, picked from the application so it always keeps its own. */
+  .tile-0 { --tile-a: #a98be8; --tile-b: #dccdf7; --tile-ink: #8b5cf6; }
+  .tile-1 { --tile-a: #7fd3ac; --tile-b: #d2f4e2; --tile-ink: #2f9c72; }
+  .tile-2 { --tile-a: #67aee0; --tile-b: #bfe0f6; --tile-ink: #348ccf; }
+  .tile-3 { --tile-a: #e4806a; --tile-b: #f3bdb0; --tile-ink: #d4533a; }
+  .tile-4 { --tile-a: #98a3ee; --tile-b: #d0d6f9; --tile-ink: #5f6bdc; }
+  .tile-5 { --tile-a: #e4b562; --tile-b: #f6deb0; --tile-ink: #c9922a; }
+  .tile-blob { background: linear-gradient(180deg, var(--tile-a) 0%, var(--tile-b) 100%); }
   .label-xs {
     font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.1em; color: var(--c-subtle);
@@ -190,7 +195,7 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
     font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap;
   }
   .table-wrap td { padding: 0.7rem 1rem; border-top: 1px solid var(--c-border); }
-  .table-wrap tbody tr:hover { background: rgba(0, 63, 138, 0.02); }
+  .table-wrap tbody tr:hover { background: rgba(42, 107, 124, 0.04); }
 
   .icon-tile {
     width: 44px; height: 44px; border-radius: var(--radius-btn); display: grid; place-items: center;

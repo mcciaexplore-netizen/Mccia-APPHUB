@@ -1,13 +1,9 @@
 import type { Metadata } from "next";
-import { Bricolage_Grotesque, Outfit } from "next/font/google";
+import { Inter } from "next/font/google";
 import { Toaster } from "@/components/Toast";
 import "./globals.css";
 
-const bricolage = Bricolage_Grotesque({
-  subsets: ["latin"],
-  variable: "--font-bricolage",
-});
-const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
   title: "MCCIA App Hub",
@@ -16,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${bricolage.variable} ${outfit.variable}`}>
+    <html lang="en" className={inter.variable}>
       <body className="min-h-screen font-sans">
         <Toaster>{children}</Toaster>
       </body>

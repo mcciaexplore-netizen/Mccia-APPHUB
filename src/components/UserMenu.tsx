@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, KeyRound, LogOut } from "lucide-react";
+import { ChevronDown, KeyRound, LogOut, UserRound } from "lucide-react";
 import { logout } from "@/actions/auth";
 import { roleLabel } from "@/lib/format";
 
@@ -17,8 +17,9 @@ export function UserMenu({ name, role }: { name: string; role: keyof typeof role
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu"
-        className="flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-primary">
-        <span className="max-w-40 truncate">{name}</span><ChevronDown size={14} />
+        className="flex items-center gap-2 text-sm font-medium text-ink transition-colors hover:text-primary">
+        <span aria-hidden className="grid h-9 w-9 place-items-center rounded-full border border-line text-ink"><UserRound size={18} /></span>
+        <span className="max-w-28 truncate sm:max-w-40">{name}</span><ChevronDown size={14} className="text-subtle" />
       </button>
       {open && (
         <div role="menu" className="glass absolute right-0 top-full z-50 mt-3 w-52 animate-pop !rounded-md !bg-white p-2">
