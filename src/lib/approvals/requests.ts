@@ -6,6 +6,7 @@ import {
   aprHrCategories, aprHrDetails, aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType,
 } from "@/db/approvals-schema";
 import { ApprovalsError } from "./errors";
+import { appForType } from "./approvals.manifest";
 import { assessBudget, commentRequired, formatRequestNo, planProblemMessage, planSteps, REQUEST_PREFIX, TYPE_LABEL, wrongFormMessage, type ExpenditureForm } from "./calc";
 import { budgetPosition } from "./budget-position";
 import { attachFiles, checkFilesReady } from "./files";
@@ -37,7 +38,7 @@ type Prepared = {
   insertDetails: (requestId: string) => Promise<void>;
 };
 
-const link = (id: string) => `/approvals/requests/${id}`;
+const link = (id: string, type: AprRequestType) => `/approvals/requests/${id}?app=${appForType(type)}`;
 const moneyOf = (paise: number | null) => (paise == null ? "" : ` (${formatINR(paise, { symbol: true })})`);
 
 async function addEvent(e: typeof aprApprovalEvents.$inferInsert) {
@@ -111,7 +112,7 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
   await addEvent({ requestId: draft.id, action: "submitted", actorUserId: actor.id, actorName: actor.name, fromStatus: null, toStatus: "pending" });
   await addEvent({ requestId: draft.id, action: "assigned", stepNo: 1, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "pending", comment: `Sent to ${firstName} (${first.stepLabel})` });
   await notify({
-    userId: first.approverUserId, requestId: draft.id, link: link(draft.id), email: settings.notifyApproverOnAssignment,
+    userId: first.approverUserId, requestId: draft.id, link: link(draft.id, p.type), email: settings.notifyApproverOnAssignment,
     title: `${TYPE_LABEL[p.type]} ${requestNo} is waiting for your approval`,
     body: `${p.requesterName}${moneyOf(p.amountPaise)}${p.overBudget ? " · over budget" : ""}`,
   });
@@ -228,7 +229,7 @@ export async function decideRequest(requestId: string, input: { action: "approve
   const settings = await getSettings();
   const now = new Date();
   const tell = (userId: string, title: string, body?: string) =>
-    notify({ userId, requestId, link: link(requestId), title, body, email: settings.notifyRequesterOnOutcome });
+    notify({ userId, requestId, link: link(requestId, req.type), title, body, email: settings.notifyRequesterOnOutcome });
   const no = req.requestNo ?? "";
 
   if (decision === "rejected") {
@@ -246,7 +247,7 @@ export async function decideRequest(requestId: string, input: { action: "approve
     await addEvent({ requestId, action: "approved", stepNo: step.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "pending", comment: input.comment });
     await addEvent({ requestId, action: "assigned", stepNo: next.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "pending", comment: `Sent to ${next.approverName} (${next.stepLabel})` });
     await notify({
-      userId: next.approverUserId, requestId, link: link(requestId), email: settings.notifyApproverOnAssignment,
+      userId: next.approverUserId, requestId, link: link(requestId, req.type), email: settings.notifyApproverOnAssignment,
       title: `${TYPE_LABEL[req.type]} ${no} is waiting for your approval`, body: `${req.requesterName}${moneyOf(req.amountPaise)}${overBudget ? " · over budget" : ""}`,
     });
     return { status: "pending" };
@@ -274,7 +275,7 @@ export async function withdrawRequest(requestId: string, comment: string | null,
   await db.update(aprRequestSteps).set({ status: "skipped" }).where(and(eq(aprRequestSteps.requestId, requestId), inArray(aprRequestSteps.status, ["pending", "waiting"])));
   await addEvent({ requestId, action: "withdrawn", actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "withdrawn", comment });
   if (req.currentApproverUserId) {
-    await notify({ userId: req.currentApproverUserId, requestId, link: link(requestId), title: `${TYPE_LABEL[req.type]} ${req.requestNo ?? ""} was withdrawn`, body: `${req.requesterName} took it back.` });
+    await notify({ userId: req.currentApproverUserId, requestId, link: link(requestId, req.type), title: `${TYPE_LABEL[req.type]} ${req.requestNo ?? ""} was withdrawn`, body: `${req.requesterName} took it back.` });
   }
 }
 

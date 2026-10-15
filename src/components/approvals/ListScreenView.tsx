@@ -5,6 +5,7 @@ import { OverBudgetBadge, StatusBadge } from "@/components/approvals/Badges";
 import { ListFilters } from "@/components/approvals/ListFilters";
 import { PageHeader } from "@/components/approvals/PageHeader";
 import { QuickDecide } from "@/components/approvals/QuickDecide";
+import { appForType } from "@/lib/approvals/approvals.manifest";
 import { formatDate, formatDateTime, formatINR, isoToDisplay } from "@/lib/approvals/format";
 import { toQueryString, type ListParams, type SortKey } from "@/lib/approvals/list-params";
 import { listMaster } from "@/lib/approvals/masters";
@@ -81,7 +82,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
               </td></tr>
             )}
             {rows.map((r) => {
-              const href = `/approvals/requests/${r.id}`;
+              const href = `/approvals/requests/${r.id}?app=${appForType(r.type)}`;
               return (
                 <ClickableRow key={r.id} href={href}>
                   <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-teal-dark)] hover:underline">{r.requestNo ?? "—"}</Link></td>

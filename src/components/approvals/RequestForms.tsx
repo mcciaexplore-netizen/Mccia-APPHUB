@@ -14,7 +14,7 @@ const ref = (f: UploadedFile | null) => (f ? { fileId: f.fileId } : null);
 type Errors = Record<string, string>;
 
 /** Shared by both forms: sends the request, then shows its number and opens it. */
-function useSubmitRequest() {
+function useSubmitRequest(app: "hr" | "exp") {
   const router = useRouter();
   const toast = useToast();
   const [submitting, setSubmitting] = useState(false);
@@ -25,7 +25,7 @@ function useSubmitRequest() {
     const r = await api<{ id: string; requestNo: string }>("POST", "/api/approvals/requests", body);
     if (!r.ok) { setSubmitting(false); setFormError(r.error); toast.error(r.error); return; }
     toast.success(`Request submitted: ${r.data.requestNo}`);
-    router.push(`/approvals/requests/${r.data.id}`);
+    router.push(`/approvals/requests/${r.data.id}?app=${app}`);
   };
   return { submitting, formError, submit, setFormError };
 }
@@ -55,7 +55,7 @@ export function HrForm({ me, categories: initialCategories, canAdd, now }: HrFor
   const [file2, setFile2] = useState<UploadedFile | null>(null);
   const [uploads, setUploads] = useState(0);
   const [errors, setErrors] = useState<Errors>({});
-  const { submitting, formError, submit, setFormError } = useSubmitRequest();
+  const { submitting, formError, submit, setFormError } = useSubmitRequest("hr");
   const busy = (b: boolean) => setUploads((n) => Math.max(0, n + (b ? 1 : -1)));
 
   const reset = () => {
@@ -159,7 +159,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   const [pubId, setPubId] = useState("");
   const [uploads, setUploads] = useState(0);
   const [errors, setErrors] = useState<Errors>({});
-  const { submitting, formError, submit, setFormError } = useSubmitRequest();
+  const { submitting, formError, submit, setFormError } = useSubmitRequest(large ? "hr" : "exp");
   const busy = (b: boolean) => setUploads((n) => Math.max(0, n + (b ? 1 : -1)));
 
   const reset = () => {

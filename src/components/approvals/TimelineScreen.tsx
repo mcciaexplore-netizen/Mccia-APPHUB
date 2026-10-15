@@ -3,6 +3,7 @@ import { OverBudgetBadge, StatusBadge } from "@/components/approvals/Badges";
 import { PageHeader } from "@/components/approvals/PageHeader";
 import { Timeline } from "@/components/approvals/Timeline";
 import type { AprRequestType } from "@/db/approvals-schema";
+import { appForType } from "@/lib/approvals/approvals.manifest";
 import { formatDate } from "@/lib/approvals/format";
 import type { ApprovalsUser } from "@/lib/approvals/host-adapter";
 import { getRequestDetail, listRequests } from "@/lib/approvals/request-queries";
@@ -47,7 +48,7 @@ export async function TimelineScreen({
             <>
               <div className="mb-4 flex flex-wrap items-center gap-3">
                 <h2 className="!text-lg">{picked.requestNo}</h2><StatusBadge status={picked.status} />{picked.overBudget && <OverBudgetBadge />}
-                <Link href={`/approvals/requests/${picked.id}`} className="apr-link ml-auto text-sm">Open the request</Link>
+                <Link href={`/approvals/requests/${picked.id}?app=${appForType(picked.type)}`} className="apr-link ml-auto text-sm">Open the request</Link>
               </div>
               <Timeline events={picked.events} />
             </>

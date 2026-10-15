@@ -1,12 +1,10 @@
 /**
- * What the Approvals module is, for the host: its name, icon, where it is mounted, who may open it and what its sidebar holds.
- * Pure data (no server code), so the client sidebar can import it too.
+ * What the Approvals module is, for the host: its name, where it is mounted, who may open it and what its menus hold.
+ * Pure data (no server code), so the client menus can import it too.
  *
- * Registering the module in the hub: Administrator > a department > Add application, with the name and icon below and the URL
- * https://<your-domain>/approvals (a plain /approvals path is accepted as well).
- *
- * The sidebar has two parts, like the two Zoho apps it replaces: "DG Approval" (HR requests, expenditure of the threshold and above,
- * budgets, the DG's inbox) and "Expenditure" (expenses below the threshold). A switcher at the top of the sidebar moves between them.
+ * Approval System is a built-in item in the hub's sidebar with two applications under it, like the two Zoho apps it replaces:
+ * "HR Approval" (HR requests, expenditure of the threshold and above, budgets, the DG's inbox) and "Expenditure" (expenses below the
+ * threshold). Each application's menu is a row of section tabs with the pages of the chosen section under it.
  */
 
 export type ApprovalsRole = "requester" | "approver" | "dg" | "viewer" | "approvals_admin";
@@ -20,10 +18,10 @@ export type NavItem = {
   /** Shown greyed out with a "Coming soon" tag, and not a link. */
   disabled?: boolean;
 };
-export type NavGroup = { label: string; icon: string; items: NavItem[]; roles?: readonly ApprovalsRole[] };
-export type NavEntry = NavGroup | (NavItem & { icon: string });
+export type NavGroup = { label: string; items: NavItem[]; roles?: readonly ApprovalsRole[] };
+export type NavEntry = NavGroup | NavItem;
 
-export type AppKey = "dg" | "exp";
+export type AppKey = "hr" | "exp";
 export type NavApp = { key: AppKey; title: string; nav: NavEntry[] };
 
 const HANDLERS = ["approver", "dg"] as const; // people who are asked to decide requests
@@ -36,11 +34,11 @@ const ADMIN = ["approvals_admin"] as const;
  */
 export const approvalsApps: NavApp[] = [
   {
-    key: "dg",
-    title: "DG Approval",
+    key: "hr",
+    title: "HR Approval",
     nav: [
       {
-        label: "Hr", icon: "Briefcase",
+        label: "Hr",
         items: [
           { label: "HR", href: "/approvals/hr/new" },
           { label: "All Hr", href: "/approvals/hr/all" },
@@ -55,7 +53,7 @@ export const approvalsApps: NavApp[] = [
         ],
       },
       {
-        label: "Expenditures", icon: "Landmark",
+        label: "Expenditures",
         items: [
           { label: "Expenditure", href: "/approvals/expenditures/new" },
           { label: "All Expenditures", href: "/approvals/expenditures/all" },
@@ -65,23 +63,23 @@ export const approvalsApps: NavApp[] = [
         ],
       },
       {
-        label: "All_Budgets", icon: "PieChart",
+        label: "All_Budgets",
         items: [
           { label: "Budgets", href: "/approvals/budgets", roles: OVERSIGHT },
           { label: "Budget Utilisation", href: "/approvals/budgets/utilisation", roles: OVERSIGHT },
         ],
       },
-      { label: "Event Approvals", icon: "Calendar", disabled: true },
-      { label: "DG APPROVALS", icon: "Inbox", href: "/approvals/inbox", roles: HANDLERS },
+      { label: "Event Approvals", disabled: true },
+      { label: "DG APPROVALS", href: "/approvals/inbox", roles: HANDLERS },
       {
-        label: "Approvals", icon: "UserCheck", roles: HANDLERS,
+        label: "Approvals", roles: HANDLERS,
         items: [
           { label: "Waiting for my approval", href: "/approvals/my/pending", roles: HANDLERS },
           { label: "Completed by me", href: "/approvals/my/completed", roles: HANDLERS },
         ],
       },
       {
-        label: "Administration", icon: "Settings",
+        label: "Administration",
         items: [
           { label: "Setup", href: "/approvals/admin/setup", roles: ADMIN },
           { label: "Expense Categories", href: "/approvals/admin/categories", roles: ADMIN },
@@ -100,14 +98,14 @@ export const approvalsApps: NavApp[] = [
     title: "Expenditure",
     nav: [
       {
-        label: "Expenses", icon: "DollarSign",
+        label: "Expenses",
         items: [
           { label: "Expenses", href: "/approvals/expenses/new" },
           { label: "Approved Expenses", href: "/approvals/expenses/approved" },
         ],
       },
       {
-        label: "Approvals", icon: "Hourglass",
+        label: "Approvals",
         items: [
           { label: "Pending", href: "/approvals/expenses/pending" },
           { label: "My Requests", href: "/approvals/expenses/mine" },
@@ -121,10 +119,9 @@ export const approvalsApps: NavApp[] = [
 export const approvalsManifest = {
   name: "Approvals",
   description: "HR and expenditure approvals with a full audit trail.",
-  icon: "ClipboardList", // from the host icon list (src/lib/icons.ts)
   basePath: "/approvals",
   apiBasePath: "/api/approvals",
-  /** Every signed-in person with access to the app card is a requester. */
+  /** Every signed-in hub user is a requester. */
   requiredRoles: ["requester"] as readonly ApprovalsRole[],
   apps: approvalsApps,
 };
@@ -148,7 +145,7 @@ export const canSee = (item: { roles?: readonly ApprovalsRole[] }, mine: readonl
 export const allNavItems = (): NavItem[] =>
   approvalsApps.flatMap((a) => a.nav).flatMap((e) => (isGroup(e) ? e.items : [e])).filter((i) => i.href);
 
-/** Which of the two sidebar parts owns a page: the one holding its longest matching link, or null for pages in neither (home, a request). */
+/** Which of the two applications owns a page: the one holding its longest matching link, or null for pages in neither (a request). */
 export function appOwning(pathname: string): AppKey | null {
   let best: { key: AppKey; len: number } | null = null;
   for (const app of approvalsApps) {
@@ -160,4 +157,20 @@ export function appOwning(pathname: string): AppKey | null {
     }
   }
   return best?.key ?? null;
+}
+
+/** The page each application opens on when it is chosen in the hub's sidebar. */
+export const APP_ENTRY: Record<AppKey, string> = { hr: "/approvals/hr/new", exp: "/approvals/expenses/new" };
+
+/** Which application a request belongs to: HR requests and expenditure of the threshold and above are HR Approval; expenses below it are Expenditure. */
+export const appForType = (type: "hr" | "expenditure_large" | "expenditure_small"): AppKey => (type === "expenditure_small" ? "exp" : "hr");
+
+export const parseApp = (v: string | null | undefined): AppKey | null => (v === "hr" || v === "exp" ? v : null);
+
+/**
+ * Which application a page is showing. A page in a menu belongs to its application; a request page says which with ?app= (the links to it
+ * all carry it); anything else falls back to the application this person most likely works in.
+ */
+export function resolveApp(pathname: string, appParam: string | null, roles: readonly ApprovalsRole[]): AppKey {
+  return appOwning(pathname) ?? parseApp(appParam) ?? (roles.some((r) => r === "approvals_admin" || r === "dg" || r === "viewer") ? "hr" : roles.includes("approver") ? "exp" : "hr");
 }
