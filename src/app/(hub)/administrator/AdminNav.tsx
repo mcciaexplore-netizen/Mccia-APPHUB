@@ -4,10 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const tabs = [
+  { href: "/administrator", label: "Dashboard", exact: true },
   { href: "/administrator/departments", label: "Departments" },
-  { href: "/administrator/users", label: "Users" },
+  { href: "/administrator/users", label: "Users & Access" },
+  { href: "/administrator/inventory", label: "Applications" },
   { href: "/administrator/notifications", label: "Notifications Panel" },
-  { href: "/administrator/access", label: "Access" },
   { href: "/administrator/activity", label: "Activity log" },
 ];
 
@@ -18,7 +19,7 @@ export function AdminNav() {
       {tabs.map((t) => (
         <Link key={t.href} href={t.href}
           className={`whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition-all duration-200 ${
-            p.startsWith(t.href) ? "bg-blue-tint text-primary" : "text-muted hover:bg-blue-tint hover:text-primary"}`}>
+            (t.exact ? p === t.href : p.startsWith(t.href) || (t.href === "/administrator/users" && p.startsWith("/administrator/access"))) ? "bg-blue-tint text-primary" : "text-muted hover:bg-blue-tint hover:text-primary"}`}>
           {t.label}
         </Link>
       ))}

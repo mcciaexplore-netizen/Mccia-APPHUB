@@ -1,96 +1,32 @@
 "use server";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { accessTemplateApps, accessTemplates, apps, userAppAccess, users } from "@/db/schema";
+import { accessTemplateApps, accessTemplates, apps } from "@/db/schema";
+import { applyAppUserChange } from "@/lib/access-ops";
 import { adminAction, UserError } from "@/lib/action";
+import { writeAudit } from "@/lib/audit";
 import { uuid, uuidList } from "@/lib/validation";
 
-type Admin = { id: string };
-
-async function currentApps(userId: string) {
-  const rows = await db.select({ appId: userAppAccess.appId }).from(userAppAccess).where(eq(userAppAccess.userId, userId));
-  return new Set(rows.map((r) => r.appId));
-}
-
-async function grant(admin: Admin, userId: string, appIds: string[]) {
-  if (appIds.length === 0) return;
-  await db
-    .insert(userAppAccess)
-    .values(appIds.map((appId) => ({ userId, appId, grantedById: admin.id })))
-    .onConflictDoNothing();
-}
-
-async function revoke(userId: string, appIds: string[]) {
-  if (appIds.length === 0) return;
-  await db.delete(userAppAccess).where(and(eq(userAppAccess.userId, userId), inArray(userAppAccess.appId, appIds)));
-}
-
-/** Makes the user's access exactly `want` (ids that do not exist are rejected). */
-async function setExactly(admin: Admin, userId: string, want: string[]) {
-  const have = await currentApps(userId);
-  const wantSet = new Set(want);
-  await revoke(userId, [...have].filter((id) => !wantSet.has(id)));
-  await grant(admin, userId, want.filter((id) => !have.has(id)));
-}
+/**
+ * The per-application screen and the access templates. Changing a person's access (one person, many people, a team) lives in
+ * people.ts; everything here goes through src/lib/access-ops.ts too, so it is atomic, scoped and audited.
+ */
 
 async function assertAppsExist(ids: string[]) {
   if (ids.length === 0) return;
   const rows = await db.select({ id: apps.id }).from(apps).where(inArray(apps.id, ids));
   if (rows.length !== new Set(ids).size) throw new UserError("One or more applications no longer exist. Reload and try again.");
 }
+const appNames = async (ids: string[]) => (ids.length ? (await db.select({ name: apps.name }).from(apps).where(inArray(apps.id, ids))).map((a) => a.name).sort() : []);
 
-async function assertUsersExist(ids: string[]) {
-  if (ids.length === 0) return;
-  const rows = await db.select({ id: users.id }).from(users).where(inArray(users.id, ids));
-  if (rows.length !== new Set(ids).size) throw new UserError("One or more users no longer exist. Reload and try again.");
-}
-
-/** Per-user screen: replace this user's access with the ticked apps. */
-export async function setUserAccess(userId: string, appIds: unknown) {
-  return adminAction(async (admin) => {
-    const id = uuid.parse(userId);
-    const want = [...new Set(uuidList.parse(appIds))];
-    await assertUsersExist([id]);
-    await assertAppsExist(want);
-    await setExactly(admin, id, want);
-  });
-}
-
-const bulkInput = z.object({
-  userIds: uuidList.min(1, "Select at least one user"),
-  appIds: uuidList,
-  mode: z.enum(["add", "remove", "replace"]),
-});
-
-/** Apply an access set to several users at once: add to, remove from, or replace what they have. */
-export async function bulkAssign(input: unknown) {
-  return adminAction(async (admin) => {
-    const v = bulkInput.parse(input);
-    const userIds = [...new Set(v.userIds)];
-    const appIds = [...new Set(v.appIds)];
-    if (appIds.length === 0 && v.mode !== "replace") throw new UserError("Select at least one application");
-    await assertUsersExist(userIds);
-    await assertAppsExist(appIds);
-    for (const uid of userIds) {
-      if (v.mode === "add") await grant(admin, uid, appIds);
-      else if (v.mode === "remove") await revoke(uid, appIds);
-      else await setExactly(admin, uid, appIds);
-    }
-    return { users: userIds.length };
-  });
-}
-
-/** Per-app screen: add and remove users in bulk. */
+/** Per-app screen: add and remove users in bulk, all in one statement. */
 export async function changeAppUsers(appId: string, input: unknown) {
   return adminAction(async (admin) => {
     const id = uuid.parse(appId);
     const v = z.object({ add: uuidList, remove: uuidList }).parse(input);
-    await assertAppsExist([id]);
-    await assertUsersExist([...v.add, ...v.remove]);
-    for (const uid of new Set(v.add)) await grant(admin, uid, [id]);
-    for (const uid of new Set(v.remove)) await revoke(uid, [id]);
+    return applyAppUserChange(admin, { appId: id, add: v.add, remove: v.remove, source: "application" });
   });
 }
 
@@ -100,46 +36,35 @@ const templateInput = z.object({
 });
 
 export async function createTemplate(input: unknown) {
-  return adminAction(async () => {
+  return adminAction(async (admin) => {
     const v = templateInput.parse(input);
     const appIds = [...new Set(v.appIds)];
     await assertAppsExist(appIds);
     const [t] = await db.insert(accessTemplates).values({ name: v.name }).returning({ id: accessTemplates.id });
     if (appIds.length) await db.insert(accessTemplateApps).values(appIds.map((appId) => ({ templateId: t.id, appId })));
+    await writeAudit(admin, [{ action: "template.create", targetType: "template", targetId: t.id, targetLabel: v.name, details: { applications: await appNames(appIds) } }]);
   });
 }
 
 export async function updateTemplate(id: string, input: unknown) {
-  return adminAction(async () => {
+  return adminAction(async (admin) => {
     const tid = uuid.parse(id);
     const v = templateInput.parse(input);
     const appIds = [...new Set(v.appIds)];
     await assertAppsExist(appIds);
+    const before = await db.select({ appId: accessTemplateApps.appId }).from(accessTemplateApps).where(eq(accessTemplateApps.templateId, tid));
     await db.update(accessTemplates).set({ name: v.name }).where(eq(accessTemplates.id, tid));
     await db.delete(accessTemplateApps).where(eq(accessTemplateApps.templateId, tid));
     if (appIds.length) await db.insert(accessTemplateApps).values(appIds.map((appId) => ({ templateId: tid, appId })));
+    await writeAudit(admin, [{ action: "template.update", targetType: "template", targetId: tid, targetLabel: v.name, details: { before: await appNames(before.map((b) => b.appId)), after: await appNames(appIds) } }]);
   });
 }
 
 export async function deleteTemplate(id: string) {
-  return adminAction(async () => {
-    await db.delete(accessTemplates).where(eq(accessTemplates.id, uuid.parse(id)));
-  });
-}
-
-/** Copies a template onto users. They can be customised afterwards on the per-user screen. */
-export async function applyTemplate(input: unknown) {
   return adminAction(async (admin) => {
-    const v = z
-      .object({ templateId: uuid, userIds: uuidList.min(1, "Select at least one user"), mode: z.enum(["add", "replace"]) })
-      .parse(input);
-    const rows = await db.select({ appId: accessTemplateApps.appId }).from(accessTemplateApps).where(eq(accessTemplateApps.templateId, v.templateId));
-    const appIds = rows.map((r) => r.appId);
-    await assertUsersExist(v.userIds);
-    for (const uid of new Set(v.userIds)) {
-      if (v.mode === "add") await grant(admin, uid, appIds);
-      else await setExactly(admin, uid, appIds);
-    }
-    return { users: new Set(v.userIds).size };
+    const tid = uuid.parse(id);
+    const [t] = await db.select({ name: accessTemplates.name }).from(accessTemplates).where(eq(accessTemplates.id, tid));
+    await db.delete(accessTemplates).where(eq(accessTemplates.id, tid));
+    await writeAudit(admin, [{ action: "template.delete", targetType: "template", targetId: tid, targetLabel: t?.name ?? "" }]);
   });
 }

@@ -60,7 +60,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       {active === "apps" ? (
         <DepartmentApps
           department={{ id: dept.id, name: dept.name }}
-          apps={deptApps.map((a) => ({ id: a.id, name: a.name, description: a.description, url: a.url, icon: a.icon, appToken: a.appToken, isActive: a.isActive }))}
+          apps={deptApps.map((a) => ({ id: a.id, name: a.name, description: a.description, url: a.url, icon: a.icon, appToken: a.appToken, isActive: a.isActive, status: a.status }))}
         />
       ) : (
         <div className="space-y-4">

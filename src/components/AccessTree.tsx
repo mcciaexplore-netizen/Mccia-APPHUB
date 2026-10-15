@@ -19,8 +19,10 @@ function DeptCheckbox({ checked, indeterminate, onChange, disabled, label }: {
  * Departments with their apps as a checklist. Ticking a department ticks all of its apps; individual apps
  * can then be unticked. `value` is the list of ticked app ids.
  */
-export function AccessTree({ departments, apps, value, onChange, disabled }: {
+export function AccessTree({ departments, apps, value, onChange, disabled, note }: {
   departments: CatalogDept[]; apps: CatalogApp[]; value: string[]; onChange: (ids: string[]) => void; disabled?: boolean;
+  /** A short remark shown next to an application, for example "3 of 5 have it". */
+  note?: (appId: string) => string | null;
 }) {
   const on = new Set(value);
   const set = (ids: string[], tick: boolean) => {
@@ -55,6 +57,7 @@ export function AccessTree({ departments, apps, value, onChange, disabled }: {
                     <input type="checkbox" className="h-4 w-4 accent-[var(--c-primary)]" checked={on.has(a.id)} disabled={disabled}
                       onChange={(e) => set([a.id], e.target.checked)} />
                     <span className="flex-1">{a.name}</span>
+                    {note?.(a.id) && <span className="text-xs text-subtle">{note(a.id)}</span>}
                     {!a.isActive && <span className="badge badge-red">Inactive</span>}
                   </label>
                 </li>

@@ -1,5 +1,16 @@
 /** Fast checks for the pure helpers: CSV parsing/exporting, the email-domain rule and the Approvals money, date and menu rules. Run: npm run test:unit */
+import { readdirSync, readFileSync } from "node:fs";
+import { strToU8, zipSync } from "fflate";
 import { parseCsv, toCsv } from "../src/lib/csv";
+import { accountStatus } from "../src/lib/account-status";
+import { COLUMNS, MAX_IMPORT_ROWS, TEMPLATE_CSV, tableToRows } from "../src/lib/import-parse";
+import {
+  ASSIGNABLE_ROLES, canChangeRole, canDeactivate, canManageAccess, canViewPerson, capabilities, firstUngrantable, grantableApps, isStaff, wouldCreateCycle,
+  type Actor, type Target,
+} from "../src/lib/rbac";
+import { isPublicAddress } from "../src/lib/net-guard";
+import { scrub } from "../src/lib/scrub";
+import { xlsxToTable } from "../src/lib/xlsx-read";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
   FULL_ACCESS_ROLES, approvalsApps, canSee, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, type ApprovalsRole,
@@ -153,6 +164,116 @@ eq("decision: only approve or reject", [decisionInput.safeParse({ action: "appro
 // Approvals is on unless it is switched off on purpose.
 eq("module setting: unset, empty and true all mean on", [isModuleEnabled(undefined), isModuleEnabled(""), isModuleEnabled("  "), isModuleEnabled("true"), isModuleEnabled("TRUE"), isModuleEnabled("1")], [true, true, true, true, true, true]);
 eq("module setting: false, 0, off and no switch it off (any case, spaces ignored)", [isModuleEnabled("false"), isModuleEnabled(" False "), isModuleEnabled("0"), isModuleEnabled("off"), isModuleEnabled("NO")], [false, false, false, false, false]);
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Users & Access: who may do what (src/lib/rbac.ts is the single source of truth)
+const ADMIN: Actor = { id: "a", role: "head_admin", teamId: null };
+const TM: Actor = { id: "m", role: "dept_lead", teamId: "t1" };
+const TM_NOTEAM: Actor = { id: "m2", role: "dept_lead", teamId: null };
+const USER: Actor = { id: "u", role: "member", teamId: "t1" };
+const person = (o: Partial<Target> & { id: string }): Target => ({ role: "member", teamId: null, reportingManagerId: null, ...o });
+eq("rbac: the super administrator may manage anyone", [canManageAccess(ADMIN, person({ id: "x" })), canManageAccess(ADMIN, person({ id: "y", role: "dept_lead" }))], [true, true]);
+eq("rbac: a plain user may manage no one, not even in their own team", [canManageAccess(USER, person({ id: "x", teamId: "t1" })), isStaff(USER)], [false, false]);
+eq("rbac: a team manager reaches people in their team and people reporting to them", [
+  canManageAccess(TM, person({ id: "x", teamId: "t1" })), canManageAccess(TM, person({ id: "y", reportingManagerId: "m" })),
+], [true, true]);
+eq("rbac: a team manager does not reach other teams, themselves, other managers or administrators", [
+  canManageAccess(TM, person({ id: "x", teamId: "t2" })), canManageAccess(TM, person({ id: "m", teamId: "t1" })),
+  canManageAccess(TM, person({ id: "y", teamId: "t1", role: "dept_lead" })), canManageAccess(TM, person({ id: "z", teamId: "t1", role: "head_admin" })),
+], [false, false, false, false]);
+eq("rbac: a team manager with no team reaches only their direct reports (a missing team never matches everyone)", [
+  canManageAccess(TM_NOTEAM, person({ id: "x", teamId: null })), canManageAccess(TM_NOTEAM, person({ id: "y", reportingManagerId: "m2" })),
+], [false, true]);
+eq("rbac: viewing a profile is managing, plus your own", [canViewPerson(USER, person({ id: "u" })), canViewPerson(USER, person({ id: "x" })), canViewPerson(TM, person({ id: "x", teamId: "t1" }))], [true, false, true]);
+eq("rbac: only the super administrator changes roles, never their own and never a head admin's", [
+  canChangeRole(ADMIN, { id: "x", role: "member" }), canChangeRole(ADMIN, { id: "a", role: "head_admin" }), canChangeRole(ADMIN, { id: "h", role: "head_admin" }), canChangeRole(TM, { id: "x", role: "member" }),
+], [true, false, false, false]);
+eq("rbac: only the super administrator deactivates, and not themselves", [canDeactivate(ADMIN, { id: "x", role: "member" }), canDeactivate(ADMIN, { id: "a", role: "head_admin" }), canDeactivate(TM, { id: "x", role: "member" })], [true, false, false]);
+eq("rbac: head_admin can never be assigned through the screens", [...ASSIGNABLE_ROLES], ["member", "dept_lead"]);
+eq("rbac: the screens show buttons from one capabilities() answer: everything for the super administrator, only assigning for a team manager, nothing for a user", [
+  Object.values(capabilities(ADMIN)).every(Boolean), Object.entries(capabilities(TM)).filter(([, v]) => v).map(([k]) => k), Object.values(capabilities(USER)).some(Boolean),
+], [true, ["assign"], false]);
+const own = new Set(["app1", "app2"]);
+eq("rbac: a team manager can hand out only the applications they hold", [
+  grantableApps(ADMIN, own), firstUngrantable(grantableApps(TM, own), ["app1", "app2"]), firstUngrantable(grantableApps(TM, own), ["app1", "app9"]), firstUngrantable(grantableApps(USER, own), ["app1"]),
+], [null, null, "app9", "app1"]);
+const mgr: Record<string, string | null> = { b: "a", c: "b", d: "c" }; // a <- b <- c <- d (d reports to c, ...)
+eq("rbac: a reporting line may not loop", [
+  wouldCreateCycle("a", "d", (id) => mgr[id]), wouldCreateCycle("a", "a", (id) => mgr[id]), wouldCreateCycle("d", "a", (id) => mgr[id]), wouldCreateCycle("x", null, (id) => mgr[id]),
+], [true, true, false, false]);
+eq("rbac: a loop that already exists above is refused rather than extended", wouldCreateCycle("z", "p", (id) => ({ p: "q", q: "p" })[id]), true);
+
+// Account status shown in the directory
+eq("status: inactive wins, no password means pending, the environment admin is active without one", [
+  accountStatus({ isActive: false, hasPassword: true, mainAdmin: false }), accountStatus({ isActive: true, hasPassword: false, mainAdmin: false }),
+  accountStatus({ isActive: true, hasPassword: true, mainAdmin: false }), accountStatus({ isActive: true, hasPassword: false, mainAdmin: true }),
+], ["inactive", "pending", "active", "active"]);
+
+// The audit log never keeps a secret
+eq("audit: keys that look like secrets are dropped at any depth", scrub({ a: 1, password: "x", nested: { token: "t", ok: "y", list: [{ passwordHash: "h", n: 1 }] }, setupLink: "https://x/set-password?token=abc" }), { a: 1, nested: { ok: "y", list: [{ n: 1 }] } });
+
+// Bulk import: reading the table
+const T = (rows: string[][]) => tableToRows(rows);
+eq("import: columns are found by their usual names, in any order, and rows are numbered from 1", (() => {
+  const r = T([["E-mail Address", "Full Name", "Dept", "Manager"], ["a@x.org", "Asha", "Finance", "m@x.org"]]);
+  return r.rows.length === 0 ? r.problem : [r.rows[0].row, r.rows[0].name, r.rows[0].email, r.rows[0].department, r.rows[0].manager];
+})(), [1, "Asha", "a@x.org", "Finance", "m@x.org"]);
+eq("import: a password column is refused outright, whatever it is called", ["password", "Initial Password", "pwd"].map((h) => !!T([["name", "email", h], ["A", "a@x.org", "secret-1"]]).problem), [true, true, true]);
+eq("import: name and email columns are required", [!!T([["name"], ["A"]]).problem, !!T([["email"], ["a@x.org"]]).problem, !!T([["name", "email"]]).problem], [true, true, true]);
+eq("import: notes starting with # and blank rows are skipped, emails are lower-cased and cells trimmed", (() => {
+  const r = T([["# a note"], ["name", "email"], ["", ""], ["  Asha ", " A@X.ORG "]]);
+  return r.rows.map((x) => [x.row, x.name, x.email]);
+})(), [[1, "Asha", "a@x.org"]]);
+eq("import: unknown columns are reported as ignored, not silently used", T([["name", "email", "favourite colour"], ["A", "a@x.org", "red"]]).ignoredColumns, ["favourite colour"]);
+eq("import: more than the limit is refused", !!T([["name", "email"], ...Array.from({ length: MAX_IMPORT_ROWS + 1 }, (_, i) => [`P${i}`, `p${i}@x.org`])]).problem, true);
+eq("import: the template parses to the header only (its notes and example are comments), so uploading it unchanged adds no one", (() => {
+  const t = tableToRows(parseCsv(TEMPLATE_CSV));
+  return [t.rows.length, t.problem?.startsWith("The file needs") ?? false];
+})(), [0, true]);
+eq("import: the template lists every column and warns against passwords", [COLUMNS.every((c) => TEMPLATE_CSV.includes(c)), /Do NOT add a password column/.test(TEMPLATE_CSV)], [true, true]);
+
+// Bulk import: a real Excel file (written by openpyxl), including a note row, an empty row, a symbol-laden name and a number cell
+const people = tableToRows(xlsxToTable(new Uint8Array(readFileSync(new URL("./fixtures/people.xlsx", import.meta.url)))));
+eq("xlsx: the first sheet is read, in order, with notes and empty rows skipped", people.rows.map((r) => [r.row, r.name, r.email]), [[1, "Asha Patil", "asha@example.com"], [2, "Ravi & Sons <Test>", "ravi@example.com"], [3, "Meera Joshi", "meera@example.com"]]);
+eq("xlsx: columns by their friendly names, empty cells empty, numbers kept as text", [people.rows[0].branch, people.rows[0].manager, people.rows[0].applications, people.rows[1].role, people.rows[1].branch, people.rows[2].designation], ["Pune", "boss@example.com", "Tally, CRM", "Team manager", "", "12345"]);
+eq("xlsx: a password column in a spreadsheet is refused just the same", !!tableToRows(xlsxToTable(new Uint8Array(readFileSync(new URL("./fixtures/with-password.xlsx", import.meta.url))))).problem, true);
+const bomb = zipSync({ "xl/worksheets/sheet1.xml": new Uint8Array(40_000_000) }); // 40 MB of zeros squeezes to a few kilobytes
+const bombStarted = Date.now();
+eq("xlsx: a part that would unpack to more than the limit is skipped, not inflated (a zip bomb costs nothing)", [(() => { try { xlsxToTable(bomb); return "no error"; } catch (e) { return (e as Error).message; } })(), Date.now() - bombStarted < 3000], ["That Excel file has no readable sheet.", true]);
+eq("xlsx: entities, inline strings, shared strings with formatting runs, and sparse cells are read correctly", xlsxToTable(zipSync({
+  "xl/worksheets/sheet1.xml": strToU8('<worksheet><sheetData><row r="2"><c r="A2" t="inlineStr"><is><t>a &amp; b</t></is></c><c r="C2" t="s"><v>0</v></c></row></sheetData></worksheet>'),
+  "xl/sharedStrings.xml": strToU8('<sst><si><r><t>x</t></r><r><t> y</t></r></si></sst>'),
+})), [[], ["a & b", "", "x y"]]);
+eq("xlsx: a file that is not a spreadsheet gives a plain-language error", (() => { try { xlsxToTable(new Uint8Array([1, 2, 3, 4])); return "no error"; } catch (e) { return (e as Error).message; } })(), "That does not look like a valid Excel (.xlsx) file.");
+
+// Every server action must prove who is asking. This reads the source of src/actions/*.ts, so an action added later without a guard fails here.
+const SELF_CHECKING = new Set(["login", "logout", "unlockAdmin", "lockAdmin", "changePassword", "finishSetup"]); // sign-in itself, the person's own password, and the one-time link page
+const actionsDir = new URL("../src/actions/", import.meta.url);
+const unguarded: string[] = [];
+let actionCount = 0;
+for (const file of readdirSync(actionsDir).filter((f) => f.endsWith(".ts"))) {
+  const parts = readFileSync(new URL(file, actionsDir), "utf8").split(/^export async function /m).slice(1);
+  for (const part of parts) {
+    actionCount++;
+    const name = /^(\w+)/.exec(part)?.[1] ?? "?";
+    if (!/\b(adminAction|staffAction)\(/.test(part) && !SELF_CHECKING.has(name)) unguarded.push(`${file}:${name}`);
+  }
+}
+eq(`guards: every one of the ${actionCount} server actions goes through adminAction or staffAction (or is on the short, reviewed list that checks for itself)`, unguarded, []);
+eq("guards: the reviewed list holds only actions that really exist", [...SELF_CHECKING].filter((n) => !readdirSync(actionsDir).some((f) => readFileSync(new URL(f, actionsDir), "utf8").includes(`export async function ${n}(`))), []);
+
+// The same for plain route handlers (downloads, the launch route): each must check the session or the administrator itself. The Approval System's
+// routes go through its own route() wrapper, which does it centrally, so they are covered by its own tests.
+const appDir = new URL("../src/app/", import.meta.url);
+const routeFiles = (readdirSync(appDir, { recursive: true }) as string[]).filter((f) => /(^|\/)route\.ts$/.test(f) && !/^(api\/approvals|approvals)\//.test(f));
+const openRoutes = routeFiles.filter((f) => !/\b(assertHeadAdmin|getCurrentUser|requireUser|requireHeadAdmin)\(/.test(readFileSync(new URL(f, appDir), "utf8")));
+eq(`guards: all ${routeFiles.length} route handlers outside the Approval System check who is asking`, openRoutes, []);
+
+// The application check must never be steered at an internal network
+eq("net guard: private, loopback, metadata and reserved IPv4 are refused", ["127.0.0.1", "10.0.0.5", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255"].map(isPublicAddress), Array(10).fill(false));
+eq("net guard: ordinary public IPv4 is allowed, including just outside the private ranges", ["8.8.8.8", "1.1.1.1", "172.15.0.1", "172.32.0.1", "192.169.0.1", "100.63.0.1"].map(isPublicAddress), Array(6).fill(true));
+eq("net guard: IPv6 loopback, unique-local, link-local, multicast and mapped private addresses are refused", ["::1", "::", "fd00::1", "fc00::1", "fe80::1", "ff02::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1", "::ffff:7f00:1"].map(isPublicAddress), Array(9).fill(false));
+eq("net guard: public IPv6 and a mapped public IPv4 are allowed, and anything that is not an address is refused", [isPublicAddress("2606:4700:4700::1111"), isPublicAddress("::ffff:8.8.8.8"), isPublicAddress("localhost"), isPublicAddress("evil.example.com"), isPublicAddress("")], [true, true, false, false, false]);
 
 console.log(`\n${ok}/${ok + bad} unit checks passed`);
 process.exit(bad ? 1 : 0);

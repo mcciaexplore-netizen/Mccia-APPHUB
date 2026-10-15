@@ -15,7 +15,8 @@ export function proxy(req: NextRequest) {
   const to = (path: string) => NextResponse.redirect(new URL(path, req.url));
   const here = encodeURIComponent(pathname + search);
 
-  if (pathname === "/login") return NextResponse.next(); // the page itself sends signed-in people on
+  // The sign-in page sends signed-in people on by itself. /set-password is where a new person opens their one-time link, before they have a password.
+  if (pathname === "/login" || pathname === "/set-password") return NextResponse.next();
 
   const session = verify(req.cookies.get(SESSION_COOKIE)?.value, "session");
   if (!session) return to(`/login?next=${here}`);

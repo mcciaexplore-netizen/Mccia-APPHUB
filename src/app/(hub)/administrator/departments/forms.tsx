@@ -44,7 +44,7 @@ export function DepartmentForm({ initial, submitLabel, onSubmit, pending }: {
   );
 }
 
-export type AppVals = { departmentId: string; name: string; description: string; url: string; icon: string; appToken: string; isActive: boolean };
+export type AppVals = { departmentId: string; name: string; description: string; url: string; icon: string; appToken: string; isActive: boolean; status: "active" | "testing" | "unavailable" };
 
 /** An application always belongs to one department. With a single department given, it is fixed and shown as text. */
 export function AppForm({ departments, initial, submitLabel, onSubmit, pending }: {
@@ -52,7 +52,7 @@ export function AppForm({ departments, initial, submitLabel, onSubmit, pending }
 }) {
   const [v, setV] = useState<AppVals>({
     departmentId: initial?.departmentId ?? departments[0]?.id ?? "", name: initial?.name ?? "",
-    description: initial?.description ?? "", url: initial?.url ?? "https://", icon: initial?.icon ?? DEFAULT_ICON, appToken: initial?.appToken ?? "", isActive: initial?.isActive ?? true,
+    description: initial?.description ?? "", url: initial?.url ?? "https://", icon: initial?.icon ?? DEFAULT_ICON, appToken: initial?.appToken ?? "", isActive: initial?.isActive ?? true, status: initial?.status ?? "active",
   });
   const set = <K extends keyof AppVals>(k: K, val: AppVals[K]) => setV((s) => ({ ...s, [k]: val }));
   const urlBad = v.url.length > 8 && !/^(https:\/\/\S+|\/(?!\/)\S*)$/.test(v.url);
@@ -78,6 +78,11 @@ export function AppForm({ departments, initial, submitLabel, onSubmit, pending }
         <Field label="App token (optional, for future single sign-on)">
           <input className="input" value={v.appToken} onChange={(e) => set("appToken", e.target.value)} maxLength={500} autoComplete="off" />
         </Field>
+        <Field label="Availability label">
+          <select className="input" value={v.status} onChange={(e) => set("status", e.target.value as AppVals["status"])}>
+            <option value="active">Active (working)</option><option value="testing">Under testing (shown with a label)</option><option value="unavailable">Unavailable (shown, cannot be opened)</option>
+          </select>
+        </Field>
         <label className="flex cursor-pointer items-start gap-2.5">
           <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={v.isActive} onChange={(e) => set("isActive", e.target.checked)} />
           <span className="text-sm"><b>Active</b><span className="block text-xs text-muted">Only active applications are shown in the hub. Untick to hide it without deleting.</span></span>
@@ -86,7 +91,7 @@ export function AppForm({ departments, initial, submitLabel, onSubmit, pending }
       </form>
       <div className="hidden md:block">
         <p className="label-xs mb-1.5">Preview</p>
-        <div className="pointer-events-none"><AppCard app={{ id: "preview", name: v.name || "App name", description: v.description || null, icon: v.icon }} /></div>
+        <div className="pointer-events-none"><AppCard app={{ id: "preview", name: v.name || "App name", description: v.description || null, icon: v.icon, status: v.status }} /></div>
       </div>
     </div>
   );

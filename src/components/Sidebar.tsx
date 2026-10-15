@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { Activity, Bell, Building2, ChevronDown, ClipboardList, ShieldCheck, Users, Wallet, UserCheck, X } from "lucide-react";
+import { Activity, AppWindow, Bell, Building2, ChevronDown, ClipboardList, LayoutDashboard, ShieldCheck, UsersRound, Users, Wallet, UserCheck, X } from "lucide-react";
 import { lockAdmin } from "@/actions/auth";
 import { Icon } from "@/components/Icon";
 import { APP_ENTRY, appOwning, approvalsApps, parseApp, type AppKey } from "@/lib/approvals/approvals.manifest";
@@ -30,8 +30,10 @@ function Item({ href, active, onNavigate, children }: { href: string; active: bo
 const APPROVAL_APPS: { key: AppKey; Icon: typeof Wallet }[] = [{ key: "hr", Icon: UserCheck }, { key: "exp", Icon: Wallet }];
 
 const ADMIN_LINKS = [
+  { href: "/administrator", label: "Dashboard", Icon: LayoutDashboard, exact: true },
   { href: "/administrator/departments", label: "Departments", Icon: Building2 },
-  { href: "/administrator/users", label: "Users", Icon: Users },
+  { href: "/administrator/users", label: "Users & Access", Icon: Users },
+  { href: "/administrator/inventory", label: "Applications", Icon: AppWindow },
   { href: "/administrator/notifications", label: "Notifications Panel", Icon: Bell },
 ] as const;
 
@@ -107,9 +109,14 @@ export function Sidebar({
           </div>
         )}
         {user?.role === "dept_lead" && (
-          <Item href="/activity" active={pathname === "/activity"} onNavigate={onNavigate}>
-            <Activity size={20} /> <span className="flex-1 py-2">Activity</span>
-          </Item>
+          <>
+            <Item href="/team" active={pathname === "/team" || pathname.startsWith("/team/")} onNavigate={onNavigate}>
+              <UsersRound size={20} /> <span className="flex-1 py-2">My team</span>
+            </Item>
+            <Item href="/activity" active={pathname === "/activity"} onNavigate={onNavigate}>
+              <Activity size={20} /> <span className="flex-1 py-2">Activity</span>
+            </Item>
+          </>
         )}
         {user?.role === "head_admin" && (
           <div>
@@ -125,8 +132,8 @@ export function Sidebar({
             </button>
             {(adminOpen || inAdmin) && (
               <div id={submenuId} className="ml-8 mr-3 mt-0.5 space-y-0.5 border-l border-line pl-2">
-                {ADMIN_LINKS.map(({ href, label, Icon: LinkIcon }) => {
-                  const active = pathname.startsWith(href);
+                {ADMIN_LINKS.map(({ href, label, Icon: LinkIcon, ...rest }) => {
+                  const active = "exact" in rest ? pathname === href : pathname.startsWith(href) || (href === "/administrator/users" && pathname.startsWith("/administrator/access"));
                   return (
                     <Link key={href} href={href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`${SUB} ${subTone(active)}`}>
                       <LinkIcon size={15} className="shrink-0" /> <span className="flex-1 whitespace-nowrap py-2">{label}</span>

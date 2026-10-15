@@ -57,6 +57,13 @@
       "when": 1791970126198,
       "tag": "0007_approvals_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792055408744,
+      "tag": "0008_hub_org_audit_invites",
+      "breakpoints": true
     }
   ]
 }

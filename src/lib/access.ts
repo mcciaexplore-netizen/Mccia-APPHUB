@@ -7,7 +7,7 @@ import { isApprovalsUrl } from "@/lib/approvals/approvals.manifest";
 import { hideApprovalsCard } from "@/lib/approvals/flags";
 
 /** What the hub is allowed to know about an app. The URL is deliberately absent. */
-export type HubApp = { id: string; name: string; description: string | null; icon: string; departmentId: string };
+export type HubApp = { id: string; name: string; description: string | null; icon: string; departmentId: string; status: "active" | "testing" | "unavailable" };
 export type HubDepartment = { id: string; name: string; icon: string };
 
 /**
@@ -15,7 +15,7 @@ export type HubDepartment = { id: string; name: string; icon: string };
  * only the apps an admin has ticked for them. This is the single source of truth for hub visibility.
  */
 export const getAccessibleApps = cache(async (user: Pick<User, "id" | "role">): Promise<HubApp[]> => {
-  const cols = { id: apps.id, name: apps.name, description: apps.description, icon: apps.icon, departmentId: apps.departmentId };
+  const cols = { id: apps.id, name: apps.name, description: apps.description, icon: apps.icon, departmentId: apps.departmentId, status: apps.status };
   const live = and(eq(apps.isActive, true), eq(departments.isActive, true), hideApprovalsCard());
   const base = db.select(cols).from(apps).innerJoin(departments, eq(departments.id, apps.departmentId));
   if (user.role === "head_admin") return base.where(live).orderBy(asc(apps.sortOrder), asc(apps.name));
@@ -59,18 +59,21 @@ export const getVisibleDepartments = cache(async (user: Pick<User, "id" | "role"
   return deps.filter((d) => withApps.has(d.id));
 });
 
-/** Resolves an app for launching, or null when it does not exist, is inactive, or the user lacks access. */
+/**
+ * Resolves an app for launching, or null when it does not exist, is inactive, or the user lacks access. One query: for everyone but a head
+ * admin the grant is part of the join, so a person without it gets exactly the same answer as for an application that does not exist.
+ */
 export async function getLaunchTarget(user: Pick<User, "id" | "role">, appId: string) {
-  const [row] = await db
-    .select({ id: apps.id, url: apps.url, departmentId: apps.departmentId })
-    .from(apps)
-    .innerJoin(departments, eq(departments.id, apps.departmentId))
-    .where(and(eq(apps.id, appId), eq(apps.isActive, true), eq(departments.isActive, true), hideApprovalsCard()));
-  if (!row) return null;
-  if (user.role === "head_admin") return row;
-  const [grant] = await db
-    .select({ id: userAppAccess.id })
-    .from(userAppAccess)
-    .where(and(eq(userAppAccess.userId, user.id), eq(userAppAccess.appId, appId)));
-  return grant ? row : null;
+  const cols = { id: apps.id, url: apps.url, departmentId: apps.departmentId, status: apps.status };
+  const live = and(eq(apps.id, appId), eq(apps.isActive, true), eq(departments.isActive, true), hideApprovalsCard());
+  const base = db.select(cols).from(apps).innerJoin(departments, eq(departments.id, apps.departmentId));
+  const [row] = user.role === "head_admin"
+    ? await base.where(live)
+    : await db
+        .select(cols)
+        .from(apps)
+        .innerJoin(departments, eq(departments.id, apps.departmentId))
+        .innerJoin(userAppAccess, and(eq(userAppAccess.appId, apps.id), eq(userAppAccess.userId, user.id)))
+        .where(live);
+  return row ?? null;
 }

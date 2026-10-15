@@ -26,6 +26,8 @@ export const appInput = z.object({
   appToken: z.string().trim().max(500).nullish().transform((v) => v || null),
   icon,
   isActive: z.boolean().optional(), // shown in the hub; omitted means unchanged (new apps start active)
+  // What the administrator says it is: working, still being tested, or down. Omitted means unchanged (new apps start active).
+  status: z.enum(["active", "testing", "unavailable"]).optional(),
 });
 
 export const emailSchema = z.string().trim().toLowerCase().email("Enter a valid email");

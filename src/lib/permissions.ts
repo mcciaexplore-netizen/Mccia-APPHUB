@@ -54,3 +54,22 @@ export async function assertHeadAdmin(): Promise<User> {
   if (!u || u.role !== "head_admin" || !(await adminUnlocked(u))) throw new Error("Not allowed");
   return u;
 }
+
+/** For actions open to team managers as well as the head admin: a head admin must have unlocked Administrator; a team manager needs nothing more. */
+export async function assertStaff(): Promise<User> {
+  const u = await getCurrentUser();
+  if (!u) throw new Error("Not allowed");
+  if (u.role === "head_admin") {
+    if (!(await adminUnlocked(u))) throw new Error("Not allowed");
+    return u;
+  }
+  if (u.role === "dept_lead") return u;
+  throw new Error("Not allowed");
+}
+
+/** Pages for team managers (the head admin uses Administrator instead). */
+export async function requireTeamManager(): Promise<User> {
+  const u = await requireUser();
+  if (u.role !== "dept_lead") redirect("/");
+  return u;
+}

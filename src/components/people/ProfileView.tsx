@@ -1,0 +1,194 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { ArrowLeft, KeyRound, Mail, Power, Trash2 } from "lucide-react";
+import { AccessTree } from "@/components/AccessTree";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { LinksDialog, ResetDialog, type Catalog, type Manager, type Option, type Template } from "@/components/people/PeopleDialogs";
+import { useToast } from "@/components/Toast";
+import { deletePerson, sendSetupLink, setPersonAccess, setPersonActive, updatePerson, type LinkResult } from "@/actions/people";
+import { STATUS_BADGE, STATUS_LABEL } from "@/lib/account-status";
+import { formatIST, roleBadge, roleLabel } from "@/lib/format";
+import type { PersonDetail } from "@/lib/people";
+
+export type ProfileCaps = { editPerson: boolean; changeRole: boolean; toggleActive: boolean; remove: boolean; invite: boolean };
+export type AuditLine = { id: number; at: Date; actorName: string; action: string; details: unknown };
+
+const Field = ({ label, children }: { label: string; children: React.ReactNode }) => <label className="block"><span className="label-xs mb-1.5 block">{label}</span>{children}</label>;
+const Fact = ({ label, children }: { label: string; children: React.ReactNode }) => <div className="flex justify-between gap-4 border-b border-line py-2 text-sm last:border-0"><dt className="text-muted">{label}</dt><dd className="text-right">{children}</dd></div>;
+
+/** Describes an audit entry in a sentence: who did what, with the apps or fields involved. */
+function describe(a: AuditLine): string {
+  const d = (a.details ?? {}) as { added?: string[]; removed?: string[]; changes?: Record<string, { from: unknown; to: unknown }>; delivery?: string };
+  if (a.action === "access.change") return [d.added?.length ? `added ${d.added.join(", ")}` : "", d.removed?.length ? `removed ${d.removed.join(", ")}` : ""].filter(Boolean).join("; ") || "changed access";
+  if (a.action === "user.update" && d.changes) return `changed ${Object.keys(d.changes).join(", ")}`;
+  if (a.action === "user.invite") return `sent a setup link (${d.delivery ?? "created"})`;
+  return a.action.replace(/^user\./, "").replace(/_/g, " ");
+}
+
+/** One person, everything about them on one screen: who they are, where they sit, what they can open, and what changed recently. */
+export function ProfileView({ base, person, caps, options, catalog, templates, otherApps, audit, meId, accessEditable, appNames }: {
+  base: string; person: PersonDetail; caps: ProfileCaps; options: { branches: Option[]; departments: Option[]; teams: Option[]; managers: Manager[] };
+  catalog: Catalog; templates: Template[]; otherApps: number; audit: AuditLine[] | null; meId: string;
+  /** Whether the viewer may change this person's access; when not (for example their own profile), it is shown read only. */
+  accessEditable: boolean; appNames: string[];
+}) {
+  const router = useRouter();
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [pending, start] = useTransition();
+  const [links, setLinks] = useState<LinkResult[] | null>(null);
+  const [resetting, setResetting] = useState(false);
+
+  const [f, setF] = useState({
+    name: person.name, designation: person.designation ?? "", departmentId: person.departmentId ?? "", branchId: person.branchId ?? "",
+    teamId: person.teamId ?? "", managerId: person.managerId ?? "", role: person.role === "dept_lead" ? "dept_lead" : "member",
+  });
+  const set = (k: keyof typeof f, v: string) => setF((s) => ({ ...s, [k]: v }));
+  const inCatalog = new Set(catalog.apps.map((a) => a.id));
+  const initialApps = person.appIds.filter((id) => inCatalog.has(id));
+  const [saved, setSaved] = useState(initialApps);
+  const [apps, setApps] = useState(initialApps);
+  const [tpl, setTpl] = useState("");
+  const dirtyApps = apps.length !== saved.length || apps.some((id) => !saved.includes(id));
+  const refresh = () => router.refresh();
+  const isHeadAdmin = person.role === "head_admin";
+  const self = person.id === meId;
+  const template = templates.find((t) => t.id === tpl);
+
+  const saveDetails = (e: React.FormEvent) => {
+    e.preventDefault();
+    start(async () => {
+      const r = await updatePerson(person.id, {
+        name: f.name, designation: f.designation, departmentId: f.departmentId || null, branchId: f.branchId || null, teamId: f.teamId || null, managerId: f.managerId || null,
+        role: caps.changeRole && !isHeadAdmin ? f.role : undefined,
+      });
+      if (r.ok) { toast.success("Details saved"); refresh(); } else toast.error(r.error);
+    });
+  };
+  const saveAccess = () => start(async () => {
+    const r = await setPersonAccess(person.id, apps);
+    if (r.ok) { setSaved(apps); toast.success(r.data.changed.length ? "Access saved and recorded in the audit log" : "Nothing to change"); refresh(); } else toast.error(r.error);
+  });
+  const setupLink = () => start(async () => {
+    const r = await sendSetupLink(person.id);
+    if (!r.ok) return toast.error(r.error);
+    if (r.data.ok && r.data.delivery === "sent") toast.success(`Setup link emailed to ${person.email}.`); else setLinks([r.data]);
+    refresh();
+  });
+
+  return (
+    <div className="space-y-6">
+      <Link href={base} className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-primary"><ArrowLeft size={14} /> Back to people</Link>
+
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="text-2xl">{person.name}</h2>
+          <p className="text-sm text-muted">{person.email}</p>
+          <p className="mt-2 flex flex-wrap items-center gap-2"><span className={roleBadge[person.role]}>{roleLabel[person.role]}</span><span className={STATUS_BADGE[person.status]}>{STATUS_LABEL[person.status]}</span>
+            {person.mainAdmin && <span className="badge badge-neutral">Main admin · password in settings</span>}</p>
+        </div>
+        {(caps.invite || caps.toggleActive || caps.remove) && !person.mainAdmin && (
+          <div className="flex flex-wrap gap-2">
+            {caps.invite && <button className="btn btn-ghost btn-sm" disabled={pending || !person.isActive} onClick={setupLink}><Mail size={14} /> Send setup link</button>}
+            {caps.invite && <button className="btn btn-ghost btn-sm" aria-label={`Reset password for ${person.name}`} onClick={() => setResetting(true)}><KeyRound size={14} /> Reset password</button>}
+            {caps.toggleActive && !self && (
+              <button className="btn btn-ghost btn-sm" disabled={pending} onClick={async () => {
+                if (person.isActive && !(await confirm({ title: "Deactivate this user?", confirmLabel: "Deactivate", danger: true, message: `${person.name} will be signed out at once and cannot open anything until you activate them again. Their access settings are kept.` }))) return;
+                start(async () => { const r = await setPersonActive(person.id, !person.isActive); if (r.ok) { toast.success(person.isActive ? "User deactivated and signed out" : "User activated"); refresh(); } else toast.error(r.error); });
+              }}><Power size={14} /> {person.isActive ? "Deactivate" : "Activate"}</button>
+            )}
+            {caps.remove && !self && (
+              <button className="btn btn-danger btn-sm" disabled={pending} onClick={async () => {
+                if (!(await confirm({ title: "Delete this user?", confirmLabel: "Delete", danger: true, message: `${person.name} (${person.email}) will be removed for good, with their password and their access to applications. Their past activity stays in the log as an unknown user. To stop someone signing in but keep the account, deactivate them instead.` }))) return;
+                start(async () => { const r = await deletePerson(person.id); if (r.ok) { toast.success("User deleted"); router.push(base); router.refresh(); } else toast.error(r.error); });
+              }}><Trash2 size={14} /> Delete</button>
+            )}
+          </div>
+        )}
+      </header>
+
+      <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+        <form className="glass !rounded-md space-y-4 p-5 sm:p-6" onSubmit={saveDetails} aria-label="Details and organisation">
+          <h3 className="text-lg">Details and where they sit</h3>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Name"><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} required maxLength={120} disabled={!caps.editPerson} /></Field>
+            <Field label="Designation"><input className="input" value={f.designation} onChange={(e) => set("designation", e.target.value)} maxLength={120} disabled={!caps.editPerson} /></Field>
+            <Field label="Department"><select className="input" value={f.departmentId} onChange={(e) => set("departmentId", e.target.value)} disabled={!caps.editPerson}><option value="">None</option>{options.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+            <Field label="Branch"><select className="input" value={f.branchId} onChange={(e) => set("branchId", e.target.value)} disabled={!caps.editPerson}><option value="">None</option>{options.branches.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+            <Field label="Team"><select className="input" value={f.teamId} onChange={(e) => set("teamId", e.target.value)} disabled={!caps.editPerson}><option value="">None</option>{options.teams.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+            <Field label="Reporting manager"><select className="input" value={f.managerId} onChange={(e) => set("managerId", e.target.value)} disabled={!caps.editPerson}><option value="">None</option>{options.managers.filter((m) => m.id !== person.id).map((d) => <option key={d.id} value={d.id}>{d.name} ({d.email})</option>)}</select></Field>
+            <Field label="Role">
+              {isHeadAdmin ? <input className="input" value={roleLabel[person.role]} disabled aria-label="Role" /> : (
+                <select className="input" value={f.role} onChange={(e) => set("role", e.target.value)} disabled={!caps.changeRole || self} aria-label="Role"><option value="member">User</option><option value="dept_lead">Team manager</option></select>
+              )}
+            </Field>
+          </div>
+          {!caps.editPerson && <p className="text-xs text-subtle">Only the head admin can change these details.</p>}
+          {caps.editPerson && <button className="btn btn-primary btn-sm" disabled={pending}>Save details</button>}
+        </form>
+
+        <aside className="space-y-6">
+          <section className="glass !rounded-md p-5" aria-label="Account">
+            <h3 className="mb-2 text-lg">Account</h3>
+            <dl>
+              <Fact label="Status"><span className={STATUS_BADGE[person.status]}>{STATUS_LABEL[person.status]}</span></Fact>
+              <Fact label="Last sign-in">{formatIST(person.lastLoginAt)}</Fact>
+              <Fact label="Created">{formatIST(person.createdAt)}</Fact>
+              <Fact label="Setup link">{person.invite ? (person.invite.state === "used" ? "Used" : person.invite.state === "expired" ? "Expired" : `Open until ${formatIST(person.invite.expiresAt)}`) : <span className="text-subtle">None</span>}</Fact>
+            </dl>
+          </section>
+          <section className="glass !rounded-md p-5" aria-label="Recent applications opened">
+            <h3 className="mb-2 text-lg">Recently opened</h3>
+            {person.launches.length === 0 ? <p className="text-sm text-subtle">Nothing yet.</p> : (
+              <ul className="space-y-1.5 text-sm">{person.launches.map((l, i) => <li key={i} className="flex justify-between gap-3"><span>{l.app ?? "Deleted application"}</span><span className="text-xs text-muted">{formatIST(l.at)}</span></li>)}</ul>
+            )}
+          </section>
+        </aside>
+      </div>
+
+      <section className="glass !rounded-md space-y-4 p-5 sm:p-6" aria-label="Application access">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-lg">Application access</h3>
+          {templates.length > 0 && !isHeadAdmin && accessEditable && (
+            <div className="flex flex-wrap items-center gap-2">
+              <select className="input !w-auto min-w-44 !py-1.5" value={tpl} onChange={(e) => setTpl(e.target.value)} aria-label="Start from a template"><option value="">Start from a template…</option>{templates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.appIds.length} apps)</option>)}</select>
+              <button className="btn btn-ghost btn-sm" disabled={!template} onClick={() => template && setApps([...new Set([...apps, ...template.appIds])])}>Add its apps</button>
+              <button className="btn btn-ghost btn-sm" disabled={!template} onClick={() => template && setApps([...template.appIds])}>Replace with its apps</button>
+            </div>
+          )}
+        </div>
+        {isHeadAdmin ? <p className="text-sm text-muted">Head admins can open every application, so there is nothing to assign.</p>
+        : !accessEditable ? (
+          appNames.length === 0 ? <p className="text-sm text-subtle">No applications assigned.</p>
+          : <p className="flex flex-wrap gap-1.5">{appNames.map((n) => <span key={n} className="badge">{n}</span>)}</p>
+        ) : (
+          <>
+            {otherApps > 0 && <p className="text-xs text-muted">{person.name} also has {otherApps} application{otherApps === 1 ? "" : "s"} that only someone with wider access can change.</p>}
+            <AccessTree departments={catalog.departments} apps={catalog.apps} value={apps} onChange={setApps} disabled={pending} />
+            <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 rounded-md border border-line bg-white p-3 shadow-card">
+              <button className="btn btn-primary btn-sm" disabled={pending || !dirtyApps} onClick={saveAccess}>Save access</button>
+              <button className="btn btn-ghost btn-sm" disabled={pending || apps.length === 0} onClick={() => setApps([])}>Untick all</button>
+              <button className="btn btn-ghost btn-sm" disabled={pending || !dirtyApps} onClick={() => setApps(saved)}>Discard changes</button>
+              <span className="ml-auto text-sm text-muted">{apps.length} application{apps.length === 1 ? "" : "s"} ticked{dirtyApps ? " · unsaved changes" : ""}</span>
+            </div>
+          </>
+        )}
+      </section>
+
+      {audit && (
+        <section className="glass !rounded-md p-5 sm:p-6" aria-label="Recent changes">
+          <h3 className="mb-3 text-lg">Recent changes</h3>
+          {audit.length === 0 ? <p className="text-sm text-subtle">No changes recorded yet.</p> : (
+            <ul className="divide-y divide-line text-sm">{audit.map((a) => <li key={a.id} className="flex flex-wrap justify-between gap-2 py-2"><span><b>{a.actorName}</b> {describe(a)}</span><span className="text-xs text-muted">{formatIST(a.at)}</span></li>)}</ul>
+          )}
+        </section>
+      )}
+
+      {resetting && <ResetDialog person={{ id: person.id, name: person.name }} onClose={() => { setResetting(false); refresh(); }} onLinks={setLinks} />}
+      {links && <LinksDialog results={links} onClose={() => setLinks(null)} />}
+    </div>
+  );
+}

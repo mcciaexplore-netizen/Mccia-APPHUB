@@ -35,7 +35,8 @@ function createDb() {
   if ((process.env.DB_DRIVER ?? "neon") === "pg") {
     const pool = new Pool({
       connectionString: url,
-      max: 5,
+      // 5 by default. With many people using the site at once, raise it with DB_POOL_MAX (stay under the database's own connection limit).
+      max: Math.max(1, Math.min(100, Number(process.env.DB_POOL_MAX) || 5)),
       ssl:
         process.env.DATABASE_SSL === "true"
           ? { rejectUnauthorized: false }

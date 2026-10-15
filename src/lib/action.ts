@@ -1,24 +1,23 @@
 import "server-only";
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
-import { assertHeadAdmin } from "@/lib/permissions";
+import { assertHeadAdmin, assertStaff } from "@/lib/permissions";
+import { UserError } from "@/lib/user-error";
 import type { User } from "@/db/schema";
 
 export type Result<T = undefined> = { ok: true; data: T } | { ok: false; error: string };
 
-/** Expected, user-facing failure. Anything else is logged and shown generically. */
-export class UserError extends Error {}
+export { UserError };
 
 function pgCode(e: unknown): string | undefined {
   const x = e as { code?: string; cause?: { code?: string } };
   return x?.code ?? x?.cause?.code;
 }
 
-/** Runs a head-admin-only mutation with uniform auth, validation and error handling. */
-export async function adminAction<T = undefined>(fn: (admin: User) => Promise<T>): Promise<Result<T>> {
+async function guarded<T>(who: () => Promise<User>, fn: (actor: User) => Promise<T>): Promise<Result<T>> {
   try {
-    const admin = await assertHeadAdmin();
-    const data = await fn(admin);
+    const actor = await who();
+    const data = await fn(actor);
     revalidatePath("/", "layout");
     return { ok: true, data };
   } catch (e) {
@@ -32,3 +31,11 @@ export async function adminAction<T = undefined>(fn: (admin: User) => Promise<T>
   }
 }
 
+/** Runs a head-admin-only mutation with uniform auth, validation and error handling. */
+export const adminAction = <T = undefined>(fn: (admin: User) => Promise<T>) => guarded(assertHeadAdmin, fn);
+
+/**
+ * Runs a mutation that team managers may also use (the head admin, unlocked, or a team manager). It only proves who is asking:
+ * what that person may touch is decided by the functions it calls, using src/lib/rbac.ts.
+ */
+export const staffAction = <T = undefined>(fn: (actor: User) => Promise<T>) => guarded(assertStaff, fn);

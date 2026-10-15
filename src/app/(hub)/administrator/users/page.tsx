@@ -1,43 +1,12 @@
-import { asc, eq } from "drizzle-orm";
-import { db } from "@/db";
-import { apps, departments, userAppAccess, users } from "@/db/schema";
-import { isEnvAdmin } from "@/lib/auth";
-import { domainsLabel } from "@/lib/domains";
+import { PeopleDirectory } from "@/components/people/PeopleDirectory";
+import { loadDirectory } from "@/lib/people-page";
 import { requireHeadAdmin } from "@/lib/permissions";
-import { UsersOverview } from "./UsersOverview";
 
-export const metadata = { title: "Users · MCCIA App Hub" };
-// A bulk import hashes one password per row; give each batch room.
+export const metadata = { title: "Users & Access · MCCIA App Hub" };
+// A change that touches hundreds of people, or a setup-link batch, is given room to finish.
 export const maxDuration = 60;
 
-export default async function Page() {
+export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const me = await requireHeadAdmin();
-  const [list, deps, grants] = await Promise.all([
-    db.select().from(users).orderBy(asc(users.name)),
-    db.select({ id: departments.id, name: departments.name }).from(departments).orderBy(asc(departments.sortOrder), asc(departments.name)),
-    db
-      .select({ userId: userAppAccess.userId, app: apps.name, dept: departments.name, active: apps.isActive })
-      .from(userAppAccess)
-      .innerJoin(apps, eq(apps.id, userAppAccess.appId))
-      .innerJoin(departments, eq(departments.id, apps.departmentId))
-      .orderBy(asc(departments.name), asc(apps.name)),
-  ]);
-  const deptName = new Map(deps.map((d) => [d.id, d.name]));
-  const byUser = new Map<string, { app: string; dept: string; active: boolean }[]>();
-  for (const g of grants) byUser.set(g.userId, [...(byUser.get(g.userId) ?? []), { app: g.app, dept: g.dept, active: g.active }]);
-
-  return (
-    <UsersOverview
-      meId={me.id}
-      domains={domainsLabel()}
-      departments={deps}
-      users={list.map((u) => ({
-        id: u.id, name: u.name, email: u.email, designation: u.designation, role: u.role, isActive: u.isActive,
-        department: u.homeDepartmentId ? (deptName.get(u.homeDepartmentId) ?? null) : null,
-        mainAdmin: isEnvAdmin(u.email),
-        hasPassword: !!u.passwordHash,
-        applications: byUser.get(u.id) ?? [],
-      }))}
-    />
-  );
+  return <PeopleDirectory {...await loadDirectory(me, await searchParams, "/administrator/users")} />;
 }

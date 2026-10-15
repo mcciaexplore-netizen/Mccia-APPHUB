@@ -6,8 +6,8 @@ import { safeNext } from "@/lib/session";
 
 export const metadata = { title: "Sign in · MCCIA App Hub" };
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; next?: string }> }) {
-  const { error, next } = await searchParams;
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; next?: string; set?: string }> }) {
+  const { error, next, set } = await searchParams;
   const dest = safeNext(next);
   if (await getCurrentUser()) redirect(dest);
 
@@ -17,6 +17,12 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <div className="icon-tile mx-auto mb-5"><LayoutGrid size={18} /></div>
         <h1 className="section-title">MCCIA App Hub</h1>
         <p className="mt-2 text-sm text-muted">Sign in to open your applications.</p>
+
+        {set && !error && (
+          <div role="status" className="alert alert-green mt-6 text-left">
+            <span>Your password is saved. Sign in with it below.</span>
+          </div>
+        )}
 
         {error && (
           <div role="alert" className="alert alert-red mt-6 text-left">

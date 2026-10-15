@@ -1,0 +1,277 @@
+"use server";
+
+import { randomBytes } from "node:crypto";
+import { and, count, eq, inArray, ne } from "drizzle-orm";
+import { z } from "zod";
+import { db } from "@/db";
+import { apps, branches, departments, teams, userAppAccess, users, type User } from "@/db/schema";
+import { applyAccess, previewAccess, type AccessMode, MAX_PEOPLE } from "@/lib/access-ops";
+import { createAccount } from "@/lib/accounts";
+import { adminAction, staffAction, UserError } from "@/lib/action";
+import { writeAudit } from "@/lib/audit";
+import { isEnvAdmin } from "@/lib/auth";
+import { domainsLabel, isEmailAllowed } from "@/lib/domains";
+import { BATCH_ROWS, checkImport, commitBatch, type ImportPolicy } from "@/lib/import";
+import { deliverInvite, hashToken, sendInvite } from "@/lib/invites";
+import { checkOrg } from "@/lib/org";
+import { hashPassword, passwordSchema } from "@/lib/passwords";
+import { parsePeopleFilters, peopleIds } from "@/lib/people";
+import { ASSIGNABLE_ROLES, canChangeRole, canDeactivate, canManageAccess } from "@/lib/rbac";
+import { emailSchema, uuid, uuidList } from "@/lib/validation";
+
+/**
+ * Everything an administrator does to people. Each action proves who is asking, then asks src/lib/rbac.ts whether that person may do
+ * it to that target, then does it, then records it in the audit log (never a password, token or link).
+ */
+
+const optionalText = (max: number) => z.string().trim().max(max).nullish().transform((v) => v || null);
+const optionalId = uuid.nullish().transform((v) => v ?? null);
+const role = z.enum(ASSIGNABLE_ROLES);
+
+function checkDomain(email: string) {
+  if (!isEmailAllowed(email)) throw new UserError(`Email must end with ${domainsLabel()}`);
+}
+
+/** Readable names for the audit record, so it still makes sense after a branch or manager is renamed or removed. */
+async function orgNames(f: { departmentId: string | null; branchId: string | null; teamId: string | null; managerId: string | null }) {
+  const one = async <T extends { name: string }>(id: string | null, q: (i: string) => Promise<T[]>) => (id ? ((await q(id))[0]?.name ?? null) : null);
+  const [department, branch, team, manager] = await Promise.all([
+    one(f.departmentId, (i) => db.select({ name: departments.name }).from(departments).where(eq(departments.id, i))),
+    one(f.branchId, (i) => db.select({ name: branches.name }).from(branches).where(eq(branches.id, i))),
+    one(f.teamId, (i) => db.select({ name: teams.name }).from(teams).where(eq(teams.id, i))),
+    one(f.managerId, (i) => db.select({ name: users.name }).from(users).where(eq(users.id, i))),
+  ]);
+  return { department, branch, team, manager };
+}
+
+// ------------------------------------------------------------------------------------------------ adding and editing people
+
+const newPerson = z.object({
+  name: z.string().trim().min(1, "Name is required").max(120),
+  email: emailSchema,
+  designation: optionalText(120),
+  role: role.default("member"),
+  departmentId: optionalId, branchId: optionalId, teamId: optionalId, managerId: optionalId,
+  appIds: uuidList.default([]),
+  /** Leave empty to send a setup link. Only for someone who cannot receive email. */
+  password: z.string().max(200).optional().default(""),
+  /** When no password is chosen: create the invitation now (true), or create the account without one (false). */
+  invite: z.boolean().default(true),
+});
+
+export type AddResult = { id: string; delivery: "sent" | "failed" | "manual" | "none"; link: string | null };
+
+/** One person. They choose their own password from a one-time link, unless the administrator deliberately sets one. */
+export async function addPerson(input: unknown) {
+  return adminAction(async (admin): Promise<AddResult> => {
+    const v = newPerson.parse(input);
+    checkDomain(v.email);
+    if (isEnvAdmin(v.email)) throw new UserError("That address is the main admin, which is set in the environment settings.");
+    const org = await checkOrg({ departmentId: v.departmentId, branchId: v.branchId, teamId: v.teamId, managerId: v.managerId }, null);
+    const appIds = [...new Set(v.appIds)];
+    if (appIds.length) {
+      const found = await db.select({ id: apps.id }).from(apps).where(inArray(apps.id, appIds));
+      if (found.length !== appIds.length) throw new UserError("One or more applications no longer exist. Reload and try again.");
+    }
+    const password = v.password.trim();
+    const passwordHash = password ? await hashPassword(passwordSchema.parse(password)) : null;
+    const token = !passwordHash && v.invite ? randomBytes(32).toString("base64url") : null;
+    const id = await createAccount(admin, {
+      name: v.name, email: v.email, role: v.role, departmentId: org.departmentId, branchId: org.branchId, teamId: org.teamId, managerId: org.managerId,
+      designation: v.designation, appIds, passwordHash, inviteTokenHash: token ? hashToken(token) : null, source: "admin",
+    });
+    if (!id) throw new UserError("That email already has an account.");
+
+    const names = await orgNames(org);
+    const appNames = appIds.length ? (await db.select({ name: apps.name }).from(apps).where(inArray(apps.id, appIds))).map((a) => a.name).sort() : [];
+    await writeAudit(admin, [
+      { action: "user.create", targetType: "user", targetId: id, targetLabel: v.name, details: { source: "admin", role: v.role, ...names, credential: passwordHash ? "password set by administrator" : token ? "setup link" : "none yet" } },
+      ...(appNames.length ? [{ action: "access.change", targetType: "user" as const, targetId: id, targetLabel: v.name, details: { source: "create", mode: "add", added: appNames, removed: [], before: [], after: appNames } }] : []),
+    ]);
+    if (!token) return { id, delivery: "none", link: null };
+    const { delivery, link } = await deliverInvite({ name: v.name, email: v.email }, token);
+    return { id, delivery, link };
+  });
+}
+
+const personEdit = z.object({
+  name: z.string().trim().min(1, "Name is required").max(120),
+  designation: optionalText(120),
+  departmentId: optionalId, branchId: optionalId, teamId: optionalId, managerId: optionalId,
+  role: role.optional(),
+});
+
+/** Name, designation, department, branch, team, reporting manager and (for the super administrator) role. Email never changes. */
+export async function updatePerson(id: string, input: unknown) {
+  return adminAction(async (admin) => {
+    uuid.parse(id);
+    const v = personEdit.parse(input);
+    const [cur] = await db.select().from(users).where(eq(users.id, id));
+    if (!cur) throw new UserError("User not found.");
+    const org = await checkOrg(
+      { departmentId: v.departmentId, branchId: v.branchId, teamId: v.teamId, managerId: v.managerId }, id,
+      { departmentId: cur.homeDepartmentId, branchId: cur.branchId, teamId: cur.teamId, managerId: cur.reportingManagerId },
+    );
+    const newRole = v.role ?? (cur.role === "head_admin" ? "head_admin" : cur.role);
+    if (newRole !== cur.role && !canChangeRole(admin, cur)) throw new UserError("That person's role cannot be changed here.");
+    const before = await orgNames({ departmentId: cur.homeDepartmentId, branchId: cur.branchId, teamId: cur.teamId, managerId: cur.reportingManagerId });
+    const after = await orgNames(org);
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    const note = (k: string, from: unknown, to: unknown) => { if ((from ?? null) !== (to ?? null)) changes[k] = { from: from ?? null, to: to ?? null }; };
+    note("name", cur.name, v.name); note("designation", cur.designation, v.designation); note("role", cur.role, newRole);
+    for (const k of ["department", "branch", "team", "manager"] as const) note(k, before[k], after[k]);
+    if (Object.keys(changes).length === 0) return;
+    await db.update(users).set({ name: v.name, designation: v.designation, homeDepartmentId: org.departmentId, branchId: org.branchId, teamId: org.teamId, reportingManagerId: org.managerId, role: newRole }).where(eq(users.id, id));
+    await writeAudit(admin, [{ action: "user.update", targetType: "user", targetId: id, targetLabel: v.name, details: { changes } }]);
+  });
+}
+
+/** A deactivated person is signed out at once and can be activated again. */
+export async function setPersonActive(id: string, active: boolean) {
+  return adminAction(async (admin) => {
+    uuid.parse(id);
+    const [u] = await db.select({ name: users.name, email: users.email, role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, id));
+    if (!u) throw new UserError("User not found.");
+    if (!active && (isEnvAdmin(u.email) || !canDeactivate(admin, { id, role: u.role }))) throw new UserError("The main admin cannot be deactivated.");
+    if (u.isActive === !!active) return;
+    await db.update(users).set({ isActive: !!active }).where(eq(users.id, id));
+    await writeAudit(admin, [{ action: active ? "user.activate" : "user.deactivate", targetType: "user", targetId: id, targetLabel: u.name }]);
+  });
+}
+
+/**
+ * Permanently removes a person: their account, password and access. Their activity stays in the history as an unknown user.
+ * The main admin, yourself and the last head admin cannot be deleted. Deactivating is the reversible alternative.
+ */
+export async function deletePerson(id: string) {
+  return adminAction(async (admin) => {
+    uuid.parse(id);
+    const [u] = await db.select({ name: users.name, email: users.email, role: users.role }).from(users).where(eq(users.id, id));
+    if (!u) throw new UserError("User not found.");
+    if (id === admin.id) throw new UserError("You cannot delete your own account.");
+    if (isEnvAdmin(u.email)) throw new UserError("The main admin is set in the environment settings and cannot be deleted.");
+    if (u.role === "head_admin") {
+      const [{ n }] = await db.select({ n: count() }).from(users).where(and(eq(users.role, "head_admin"), eq(users.isActive, true), ne(users.id, id)));
+      if (n === 0) throw new UserError("There must always be at least one active head admin.");
+    }
+    await db.delete(users).where(eq(users.id, id));
+    await writeAudit(admin, [{ action: "user.delete", targetType: "user", targetId: id, targetLabel: u.name, details: { email: u.email, role: u.role } }]);
+  });
+}
+
+/** For someone who cannot receive email: the administrator types a password. It is hashed at once and never recorded anywhere. */
+export async function setPersonPassword(id: string, password: unknown) {
+  return adminAction(async (admin) => {
+    uuid.parse(id);
+    const pw = passwordSchema.parse(password);
+    const [u] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, id));
+    if (!u) throw new UserError("User not found.");
+    if (isEnvAdmin(u.email)) throw new UserError("The main admin's password is set in the environment settings (HEAD_ADMIN_PASSWORD).");
+    await db.update(users).set({ passwordHash: await hashPassword(pw) }).where(eq(users.id, id)); // also signs them out everywhere
+    await writeAudit(admin, [{ action: "user.password_set", targetType: "user", targetId: id, targetLabel: u.name }]);
+  });
+}
+
+export type LinkResult = { id: string; name: string; email: string; ok: boolean; delivery: "sent" | "failed" | "manual" | null; link: string | null; message: string };
+
+async function inviteOne(admin: User, id: string): Promise<LinkResult> {
+  const [u] = await db.select({ id: users.id, name: users.name, email: users.email, isActive: users.isActive }).from(users).where(eq(users.id, id));
+  if (!u) return { id, name: "", email: "", ok: false, delivery: null, link: null, message: "User not found." };
+  try {
+    const r = await sendInvite(u, admin.id);
+    await writeAudit(admin, [{ action: "user.invite", targetType: "user", targetId: id, targetLabel: u.name, details: { delivery: r.delivery } }]);
+    return { id, name: u.name, email: u.email, ok: true, delivery: r.delivery, link: r.link, message: r.delivery === "sent" ? "Email sent." : r.delivery === "failed" ? "The email could not be sent. Pass the link on yourself." : "No email is set up. Pass the link on yourself." };
+  } catch (e) {
+    return { id, name: u.name, email: u.email, ok: false, delivery: null, link: null, message: e instanceof UserError ? e.message : "Could not create a link." };
+  }
+}
+
+/** A fresh one-time link for one person (new account, or a forgotten password). Any older link stops working. */
+export async function sendSetupLink(id: string) {
+  return adminAction(async (admin) => inviteOne(admin, uuid.parse(id)));
+}
+
+/** The same for several people at once: the directory's bulk action for people still pending. */
+export async function sendSetupLinks(ids: unknown) {
+  return adminAction(async (admin): Promise<LinkResult[]> => {
+    const list = [...new Set(uuidList.min(1, "Select at least one person").max(200, "Choose at most 200 people at a time").parse(ids))];
+    const out: LinkResult[] = [];
+    for (let i = 0; i < list.length; i += 5) out.push(...(await Promise.all(list.slice(i, i + 5).map((id) => inviteOne(admin, id)))));
+    return out;
+  });
+}
+
+// ------------------------------------------------------------------------------------------------ assigning applications
+
+const target = z.object({
+  ids: uuidList.default([]), teamId: uuid.optional(), departmentId: uuid.optional(), branchId: uuid.optional(), managerId: uuid.optional(),
+  /** The directory's current filters as a query string, to mean "everyone matching these". */
+  filterQuery: z.string().max(2000).optional(),
+});
+const assignment = target.extend({ appIds: uuidList.default([]), mode: z.enum(["add", "remove", "replace"]) });
+export type AssignTarget = z.input<typeof target>;
+
+/** Resolves who a request means and makes sure every one of them is someone the actor may manage. */
+async function resolveTarget(actor: User, t: z.infer<typeof target>): Promise<string[]> {
+  const filters = t.filterQuery ? parsePeopleFilters(Object.fromEntries(new URLSearchParams(t.filterQuery))) : undefined;
+  const ids = await peopleIds(actor, { ids: t.ids, teamId: t.teamId, departmentId: t.departmentId, branchId: t.branchId, managerId: t.managerId, filters });
+  if (ids.length === 0) throw new UserError("No one matches that selection.");
+  if (ids.length > MAX_PEOPLE) throw new UserError(`That is more than ${MAX_PEOPLE} people. Narrow the selection.`);
+  return ids;
+}
+
+export type SelectionStatus = { people: number; names: string[]; perApp: Record<string, number> };
+
+/** For the first step: how many of the chosen people already have each application. */
+export async function selectionStatus(input: unknown) {
+  return staffAction(async (actor): Promise<SelectionStatus> => {
+    const ids = await resolveTarget(actor, target.parse(input));
+    const targets = await db.select({ id: users.id, name: users.name, role: users.role, teamId: users.teamId, reportingManagerId: users.reportingManagerId }).from(users).where(inArray(users.id, ids));
+    if (targets.some((t) => !canManageAccess(actor, t))) throw new UserError("You are not allowed to change access for everyone in that selection.");
+    const rows = await db.select({ appId: userAppAccess.appId, n: count() }).from(userAppAccess).where(inArray(userAppAccess.userId, ids)).groupBy(userAppAccess.appId);
+    return { people: ids.length, names: targets.map((t) => t.name).sort().slice(0, 8), perApp: Object.fromEntries(rows.map((r) => [r.appId, r.n])) };
+  });
+}
+
+/** The review step: exactly who would get and lose what. Writes nothing. */
+export async function previewAssignment(input: unknown) {
+  return staffAction(async (actor) => {
+    const v = assignment.parse(input);
+    return previewAccess(actor, { userIds: await resolveTarget(actor, v), appIds: v.appIds, mode: v.mode as AccessMode, source: "directory" });
+  });
+}
+
+/** Saves the change, all of it or none of it, and says who changed. */
+export async function assignApps(input: unknown) {
+  return staffAction(async (actor) => {
+    const v = assignment.parse(input);
+    return applyAccess(actor, { userIds: await resolveTarget(actor, v), appIds: v.appIds, mode: v.mode as AccessMode, source: "directory" });
+  });
+}
+
+/** The profile page: make one person's access exactly the ticked applications. */
+export async function setPersonAccess(userId: string, appIds: unknown) {
+  return staffAction(async (actor) => applyAccess(actor, { userIds: [uuid.parse(userId)], appIds: uuidList.parse(appIds), mode: "replace", source: "profile" }));
+}
+
+// ------------------------------------------------------------------------------------------------ bulk add
+
+const importRows = z.array(z.object({
+  row: z.number().int().min(1).max(100000),
+  name: z.string().max(300), email: z.string().max(300), branch: z.string().max(200), department: z.string().max(200), team: z.string().max(200),
+  manager: z.string().max(300), role: z.string().max(100), applications: z.string().max(2000), designation: z.string().max(300),
+})).min(1).max(2000);
+const policy = z.object({ existing: z.enum(["skip", "update"]) });
+
+/** Reads every row and reports what is wrong or what would happen. Writes nothing. */
+export async function checkImportAction(rows: unknown, existing: unknown) {
+  return adminAction(async (admin) => checkImport(admin, importRows.parse(rows), policy.parse({ existing }) as ImportPolicy));
+}
+
+/** Creates the accounts for some of the rows (the caller sends the whole file each time, plus the row numbers to do now). */
+export async function commitImportAction(rows: unknown, existing: unknown, only: unknown, invite: unknown) {
+  return adminAction(async (admin) => commitBatch(
+    admin, importRows.parse(rows), policy.parse({ existing }) as ImportPolicy,
+    z.array(z.number().int()).min(1).max(BATCH_ROWS).parse(only), { invite: z.boolean().parse(invite) },
+  ));
+}

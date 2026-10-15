@@ -8,7 +8,7 @@ import { Modal } from "@/components/Modal";
 import { createApp, deleteApp, moveApp, setAppActive, updateApp } from "@/actions/apps";
 import { ActiveToggle, AppForm, IconBtn, useRun } from "../forms";
 
-type AppRow = { id: string; name: string; description: string | null; url: string; icon: string; appToken: string | null; isActive: boolean };
+type AppRow = { id: string; name: string; description: string | null; url: string; icon: string; appToken: string | null; isActive: boolean; status: "active" | "testing" | "unavailable" };
 
 /** Applications of one department. Everything added here belongs to this department only. */
 export function DepartmentApps({ department, apps }: { department: { id: string; name: string }; apps: AppRow[] }) {
@@ -39,7 +39,7 @@ export function DepartmentApps({ department, apps }: { department: { id: string;
             {apps.map((a, i) => (
               <tr key={a.id} className={a.isActive ? "" : "opacity-60"}>
                 <td><span className="flex items-center gap-3"><span className="icon-tile !h-9 !w-9"><Icon name={a.icon} size={16} /></span>
-                  <span><b>{a.name}</b>{a.description && <span className="block text-xs text-muted">{a.description}</span>}</span></span></td>
+                  <span><b>{a.name}</b>{a.status !== "active" && <span className={`badge ml-2 ${a.status === "testing" ? "badge-purple" : "badge-red"}`}>{a.status === "testing" ? "Under testing" : "Unavailable"}</span>}{a.description && <span className="block text-xs text-muted">{a.description}</span>}</span></span></td>
                 <td className="max-w-[14rem] truncate text-xs text-muted" title={a.url}>{a.url}</td>
                 <td><ActiveToggle active={a.isActive} disabled={pending} onToggle={() => run(() => setAppActive(a.id, !a.isActive), a.isActive ? "Application deactivated" : "Application activated")} /></td>
                 <td>
@@ -65,7 +65,7 @@ export function DepartmentApps({ department, apps }: { department: { id: string;
       {edit && (
         <Modal title="Edit application" onClose={() => setEdit(null)}>
           <AppForm departments={dept} submitLabel="Save" pending={pending}
-            initial={{ departmentId: department.id, name: edit.name, description: edit.description ?? "", url: edit.url, icon: edit.icon, appToken: edit.appToken ?? "", isActive: edit.isActive }}
+            initial={{ departmentId: department.id, name: edit.name, description: edit.description ?? "", url: edit.url, icon: edit.icon, appToken: edit.appToken ?? "", isActive: edit.isActive, status: edit.status }}
             onSubmit={(v) => run(() => updateApp(edit.id, { ...v, departmentId: department.id }), "Application saved", () => setEdit(null))} />
         </Modal>
       )}

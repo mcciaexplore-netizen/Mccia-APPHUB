@@ -18,6 +18,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ appI
 
   const target = await getLaunchTarget(user, appId);
   if (!target) return new NextResponse("Not found", { status: 404 });
+  // An application marked unavailable cannot be opened (the head admin still can, to test it). Nothing is logged: nothing was opened.
+  if (target.status === "unavailable" && user.role !== "head_admin") {
+    return new NextResponse("This application is unavailable right now. Please try again later or ask your administrator.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "600" } });
+  }
 
   await db.insert(activityLog).values({
     userId: user.id,

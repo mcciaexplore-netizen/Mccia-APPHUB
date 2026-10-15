@@ -66,7 +66,7 @@ export function HomeClient({ departments, apps, isAdmin }: { departments: Dept[]
       ) : (
         <div key={searching ? `s-${q}` : selected} className="grid grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] gap-6">
           {shown.map((a, i) => (
-            <AppCard key={a.id} app={a} index={i} deptName={deptName.get(a.departmentId)} />
+            <AppCard key={a.id} app={a} index={i} deptName={deptName.get(a.departmentId)} canOpenUnavailable={isAdmin} />
           ))}
         </div>
       )}
