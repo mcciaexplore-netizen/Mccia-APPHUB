@@ -6,6 +6,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Activity, AppWindow, Bell, Building2, ChevronDown, ClipboardList, LayoutDashboard, ShieldCheck, UsersRound, Users, Wallet, UserCheck, X } from "lucide-react";
 import { lockAdmin } from "@/actions/auth";
 import { Icon } from "@/components/Icon";
+import { isSafetyWeek, playSafetyMascot } from "@/components/SafetyMascot";
 import { APP_ENTRY, appOwning, approvalsApps, parseApp, type AppKey } from "@/lib/approvals/approvals.manifest";
 
 export type SidebarDept = { id: string; name: string; icon: string };
@@ -75,7 +76,7 @@ export function Sidebar({
       <nav className="flex-1 overflow-y-auto pb-6 pt-3" aria-label="Departments">
         {departments.length === 0 && <p className="px-6 py-3 text-xs text-subtle">No departments yet</p>}
         {departments.map((dep) => (
-          <Item key={dep.id} href={`/?d=${dep.id}`} active={onHome && selected === dep.id} onNavigate={onNavigate}>
+          <Item key={dep.id} href={`/?d=${dep.id}`} active={onHome && selected === dep.id} onNavigate={isSafetyWeek(dep.name) ? () => { onNavigate(); playSafetyMascot(); } : onNavigate}>
             <Icon name={dep.icon} size={20} />
             <span className="flex-1 py-2">{dep.name}</span>
           </Item>

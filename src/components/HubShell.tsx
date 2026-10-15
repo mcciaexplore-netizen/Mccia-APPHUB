@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { Menu } from "lucide-react";
+import { SafetyMascot } from "@/components/SafetyMascot";
 import { Sidebar, type SidebarDept, type SidebarUser } from "@/components/Sidebar";
 import { UserMenu } from "@/components/UserMenu";
 
@@ -36,6 +37,7 @@ export function HubShell({
         </header>
         <main className="p-4 pt-2 sm:p-8 sm:pt-4">{children}</main>
       </div>
+      <SafetyMascot />
     </div>
   );
 }
