@@ -116,16 +116,6 @@ export const approvalsApps: NavApp[] = [
   },
 ];
 
-export const approvalsManifest = {
-  name: "Approvals",
-  description: "HR and expenditure approvals with a full audit trail.",
-  basePath: "/approvals",
-  apiBasePath: "/api/approvals",
-  /** Every signed-in hub user is a requester. */
-  requiredRoles: ["requester"] as readonly ApprovalsRole[],
-  apps: approvalsApps,
-};
-
 /**
  * Whether Approvals is on, from the APPROVALS_ENABLED setting. It is ON unless the setting says otherwise ("false", "0", "off" or "no"):
  * an unset or empty value means on, so the feature is there as soon as it is deployed and nobody has to remember to switch it on.

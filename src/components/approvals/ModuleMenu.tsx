@@ -12,12 +12,13 @@ const on = "bg-blue-tint text-primary";
 const off = "text-muted hover:bg-blue-tint hover:text-primary";
 
 /**
- * The frame around every Approval System page, inside the hub's own layout: the application's name, the bell, a row of section tabs
- * (the same look as the Administrator tabs) and, under it, the pages of the chosen section. Which application it shows follows the page.
+ * The top of every Approval System page: the application's name, the bell, a row of section tabs (the same look as the Administrator
+ * tabs) and, under it, the pages of the chosen section. Which application it shows follows the page. The page itself is drawn by the
+ * layout, outside this component, so a page that is not found or redirects still answers with a real 404 or redirect.
  */
-export function ModuleFrame({
-  roles, unread, waiting, children,
-}: { roles: ApprovalsRole[]; unread: number; waiting: number; children: React.ReactNode }) {
+export function ModuleMenu({
+  roles, unread, waiting,
+}: { roles: ApprovalsRole[]; unread: number; waiting: number }) {
   const pathname = usePathname();
   const appParam = useSearchParams().get("app");
   const app = approvalsApps.find((a) => a.key === resolveApp(pathname, appParam, roles))!;
@@ -45,7 +46,7 @@ export function ModuleFrame({
   ) : null);
 
   return (
-    <div className="apr-root">
+    <>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <h1 className="text-2xl text-primary sm:text-3xl">{app.title}</h1>
         <NotificationBell initialUnread={unread} />
@@ -62,7 +63,7 @@ export function ModuleFrame({
           if (item.disabled) {
             return (
               <span key={item.label} aria-disabled="true" className={`${TAB} cursor-not-allowed text-subtle opacity-70`}>
-                {item.label} <span className="ml-1 rounded-pill bg-[var(--apr-amber-tint)] px-1.5 py-0.5 text-[0.6rem] font-bold uppercase text-[var(--z-amber)]">Coming soon</span>
+                {item.label} <span className="ml-1 rounded-pill bg-[var(--z-amber-tint)] px-1.5 py-0.5 text-[0.6rem] font-bold uppercase text-[var(--z-amber)]">Coming soon</span>
               </span>
             );
           }
@@ -75,7 +76,7 @@ export function ModuleFrame({
       </nav>
 
       {activeGroup && (
-        <nav className="flex gap-1.5 overflow-x-auto border-b border-line py-2.5" aria-label={`${activeGroup.label} pages`}>
+        <nav className="flex gap-1.5 overflow-x-auto border-b border-line py-2.5 sm:flex-wrap sm:overflow-visible" aria-label={`${activeGroup.label} pages`}>
           {activeGroup.items.map((i) => (
             <Link
               key={i.href} href={i.href!} aria-current={i.href === activeHref ? "page" : undefined}
@@ -87,7 +88,6 @@ export function ModuleFrame({
         </nav>
       )}
 
-      <div className="mt-6">{children}</div>
-    </div>
+    </>
   );
 }

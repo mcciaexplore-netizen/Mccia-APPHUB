@@ -73,7 +73,7 @@ node scripts/cleanup.mjs --caches          # delete build caches
 
 ## Approvals module (`/approvals`)
 
-HR and expenditure approvals (a replica of the Zoho "DG Approval" and "Expenditure" apps), built into the hub (a sidebar item, not an application card). It lives in `src/lib/approvals/`, `src/components/approvals/`, `src/app/approvals/` and `src/app/api/approvals/`, and its tables are all prefixed `apr_` (schema in `src/db/approvals-schema.ts`; migrations `0006_approvals_foundation.sql` and `0007_approvals_requests.sql`, both additive only). It is separate from the hub's own parameters and functions: it reads the hub's session and user list only through `src/lib/approvals/host-adapter.ts`.
+HR and expenditure approvals (a replica of the two Zoho apps, now called **HR Approval** and **Expenditure**), built into the hub (a sidebar dropdown, not an application card), in the hub's own theme. It lives in `src/lib/approvals/`, `src/components/approvals/`, `src/app/approvals/` and `src/app/api/approvals/`, and its tables are all prefixed `apr_` (schema in `src/db/approvals-schema.ts`; migrations `0006_approvals_foundation.sql` and `0007_approvals_requests.sql`, both additive only). It is separate from the hub's own parameters and functions: it reads the hub's session and user list only through `src/lib/approvals/host-adapter.ts`.
 
 **What it does**
 
@@ -82,7 +82,7 @@ HR and expenditure approvals (a replica of the Zoho "DG Approval" and "Expenditu
 - Approval: a request goes to the approvers named in **Approver Rules**, in order. A step with nobody named is skipped, so leaving "Reviewer" empty makes the DG the only approver. Nobody can approve their own request, and if two people click at once only the first decision counts. Everything that happens is recorded in the request's timeline.
 - Lists (search, date range, category, branch, status, sorting, paging, CSV export), the DG's inbox with quick Approve/Reject, reports (HR report, approval time, budget utilisation) and a notification bell. Each person only ever sees their own requests and the ones routed to them; viewers, admins and the DG see everything.
 - Attachments (PDF, JPG, PNG, Word, Excel, up to 10 MB each) are stored in Postgres and only served through a route that checks who may see the request.
-- Two sidebar parts, **DG Approval** and **Expenditure**, switched at the top of the sidebar.
+- Two applications under the **Approval System** dropdown in the hub sidebar: **HR Approval** (HR requests, expenditure of ₹10,000 and above, budgets, the DG's inbox, administration) and **Expenditure** (expenses below ₹10,000 and their approvals). Each opens in the main panel, beside the hub sidebar, with its own title, a bell, a row of section tabs and the pages of the chosen section underneath (the same pattern as the Administrator tabs).
 
 **Turn it on (PowerShell):**
 
@@ -93,7 +93,7 @@ npm run db:seed:approvals             # 40 expense categories, 6 HR categories, 
 npm run dev
 ```
 
-**Where it is in the hub.** Approvals is a feature of the hub, not an application in a department. It is a built-in **Approval System** item in the hub's sidebar (next to Administrator); one click opens it, with the login the person is already using. There is no separate sign-in, no card to click and nothing to tick for each person: everyone who can sign in to the hub can open it, and what they can do inside comes from their roles (below). Approvals is on by default; `APPROVALS_ENABLED=false` turns it off and removes the item. If you added an "Approvals" application (URL `/approvals`) in a department earlier, it is no longer listed or launchable, and a department that holds nothing else disappears from the sidebar; you can delete both under Administrator → Departments.
+**Where it is in the hub.** Approvals is a feature of the hub, not an application in a department. It is a built-in **Approval System** item in the hub's sidebar (next to Administrator). Clicking it drops down **HR Approval** and **Expenditure**; choosing one opens that application in the main panel, with the login the person is already using. (Opening the bare address `/approvals` goes to the Expenses form, or to the inbox for an approver with something waiting.) There is no separate sign-in, no card to click and nothing to tick for each person: everyone who can sign in to the hub can open it, and what they can do inside comes from their roles (below). Approvals is on by default; `APPROVALS_ENABLED=false` turns it off and removes the item. If you added an "Approvals" application (URL `/approvals`) in a department earlier, it is no longer listed or launchable, and a department that holds nothing else disappears from the sidebar; you can delete both under Administrator → Departments.
 
 **Who approves.** In Approvals → Approver Rules, name one person per step: the DG for HR and for expenditure of ₹10,000 and above, and the below-₹10,000 approver for Expenses. Those people become approvers automatically. (`APPROVALS_HR_APPROVER_EMAIL`, `APPROVALS_EXPENDITURE_APPROVER_EMAIL` and `APPROVALS_DG_EMAIL` only pre-fill the rules when the seed runs; the people must already be users in the hub.) Branches and budgets are entered by an Approvals admin; the Name lists on the forms come from the hub's users.
 

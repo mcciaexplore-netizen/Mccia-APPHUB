@@ -85,7 +85,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
               const href = `/approvals/requests/${r.id}?app=${appForType(r.type)}`;
               return (
                 <ClickableRow key={r.id} href={href}>
-                  <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-teal-dark)] hover:underline">{r.requestNo ?? "—"}</Link></td>
+                  <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{r.requestNo ?? "—"}</Link></td>
                   {mixed && <td>{TYPE_SHORT[r.type]}</td>}
                   <td>{r.name}</td>
                   <td>{r.categoryName ?? ""}</td>

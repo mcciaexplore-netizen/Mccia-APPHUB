@@ -4,7 +4,6 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { aprApproverRules, aprUserRoles } from "@/db/approvals-schema";
-import { logout as hostLogout } from "@/actions/auth";
 import { getCurrentUser as hostCurrentUser } from "@/lib/permissions";
 import { ALL_ROLES, type ApprovalsRole } from "./approvals.manifest";
 
@@ -74,6 +73,3 @@ export async function getDirectoryUsers(ids: string[]): Promise<DirectoryUser[]>
 
 export const hasRole = (user: Pick<ApprovalsUser, "roles"> | null | undefined, role: ApprovalsRole) => !!user && user.roles.includes(role);
 export const hasAnyRole = (user: Pick<ApprovalsUser, "roles"> | null | undefined, roles: readonly ApprovalsRole[]) => !!user && roles.some((r) => user.roles.includes(r));
-
-/** Signing out is the host's job; the sidebar passes this to a form. */
-export const logout = hostLogout;

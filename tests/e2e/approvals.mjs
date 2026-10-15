@@ -93,12 +93,22 @@ const signIn = async (page, email, password) => {
   await page.waitForFunction(() => location.pathname !== "/login" || location.search.includes("error"), null, { timeout: 25000 }).catch(() => {});
   await page.waitForLoadState("networkidle").catch(() => {});
 };
-// Opens every collapsed group first, so what the person is NOT shown is checked against a fully expanded menu.
-const nav = async (page) => {
-  const closed = page.locator("aside:visible nav button[aria-expanded=false]");
-  for (let n = await closed.count(); n > 0; n = await closed.count()) await closed.first().click();
-  return page.locator("aside:visible nav").first().innerText();
+// An application's own menu is in the page: a row of section tabs, and under it the pages of the chosen section.
+const tabs = (page) => page.locator('main nav[aria-label$=" sections"]');
+const pagesRow = (page) => page.locator('main nav[aria-label$=" pages"]');
+// Everything the person can reach in the open application, found by opening each section in turn.
+const fullMenu = async (page) => {
+  await tabs(page).waitFor();
+  const out = [await tabs(page).innerText()];
+  const hrefs = await tabs(page).locator("a").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+  for (const h of hrefs) {
+    await page.goto(BASE + h);
+    await tabs(page).waitFor();
+    if (await pagesRow(page).count()) out.push(await pagesRow(page).innerText());
+  }
+  return out.join("\n");
 };
+const hubApps = (page) => page.locator("aside:visible nav a[href^='/approvals/']");
 const toast = (page, t) => page.getByText(t).first().waitFor({ timeout: 20000 }).then(() => true).catch(() => false);
 const status = async (page, p, opts) => (await page.goto(BASE + p, opts)).status();
 
@@ -125,18 +135,20 @@ try {
   const A = admin.page;
   await signIn(A, ADMIN_EMAIL, ADMIN_PW);
   check("/approvals opens for the head admin", (await status(A, "/approvals")) === 200);
-  check("opening /approvals lands straight on the Expenses form (no landing page)", new URL(A.url()).pathname === "/approvals/expenses/new" && (await A.locator("main h1").first().innerText()) === "Expenses", A.url());
-  check("the sidebar opens on the Expenditure part, titled Expenditure", (await A.locator("aside:visible .zs-title").first().innerText()) === "Expenditure");
-  await A.locator("aside:visible .zs-switch button", { hasText: "DG Approval" }).click();
-  const menu = await nav(A);
-  // The sidebar has two parts, DG Approval and Expenditure.
-  for (const label of ["Hr", "Expenditures", "All_Budgets", "Administration"]) check(`DG Approval part shows ${label}`, menu.includes(label));
+  check("opening /approvals lands straight on the Expenses form (no landing page)", new URL(A.url()).pathname === "/approvals/expenses/new" && (await A.locator("main h2").first().innerText()) === "Expenses", A.url());
+  check("it opens inside the hub: the hub sidebar is still there and the application is titled Expenditure", (await A.locator("main h1").first().innerText()) === "Expenditure" && (await A.locator("aside:visible nav", { hasText: "Administrator" }).count()) >= 1);
+  check("the hub sidebar's Approval System dropdown lists HR Approval and Expenditure, and marks the one you are in", (await hubApps(A).allInnerTexts()).map((t) => t.trim()).join("|") === "HR Approval|Expenditure" && (await hubApps(A).nth(1).getAttribute("aria-current")) === "page");
+  const expMenu = await fullMenu(A);
+  check("Expenditure shows Expenses and Approvals (with Pending, My Requests, Rejected Expenses)", ["Expenses", "Approvals", "Approved Expenses", "Pending", "My Requests", "Rejected Expenses"].every((t) => expMenu.includes(t)), expMenu.replace(/\s+/g, " ").slice(0, 160));
+  await hubApps(A).nth(0).click();
+  await A.waitForURL(/\/approvals\/hr\/new$/);
+  check("clicking HR Approval in the dropdown opens it beside the sidebar, titled HR Approval (not DG Approval)", (await A.locator("main h1").first().innerText()) === "HR Approval" && (await hubApps(A).nth(0).getAttribute("aria-current")) === "page");
+  const menu = await fullMenu(A);
+  for (const label of ["Hr", "Expenditures", "All_Budgets", "Administration"]) check(`HR Approval shows ${label}`, menu.includes(label));
+  check("nothing in the application is still called DG Approval", !/DG Approval/.test(menu));
   check("DG APPROVALS (approver inbox) is hidden from someone who is not a named approver", !menu.includes("DG APPROVALS"));
-  check("Event Approvals is in the menu, greyed out with a Coming soon tag", /Event Approvals[\s\S]*Coming soon/i.test(menu) && (await A.locator("aside:visible [aria-disabled=true]").count()) >= 1);
-  check("the switcher offers both parts", (await A.locator("aside:visible .zs-switch button").allInnerTexts()).join("|") === "DG Approval|Expenditure");
-  await A.locator("aside:visible .zs-switch button", { hasText: "Expenditure" }).click();
-  const expMenu = await nav(A);
-  check("switching to Expenditure shows Expenses and Approvals", expMenu.includes("Expenses") && expMenu.includes("Approvals") && expMenu.includes("My Requests"), expMenu.replace(/\s+/g, " ").slice(0, 120));
+  await A.goto(BASE + "/approvals/hr/new");
+  check("Event Approvals is in the menu, greyed out with a Coming soon tag", /Event Approvals/.test(await tabs(A).innerText()) && /Coming soon/i.test(await tabs(A).innerText()) && (await A.locator("main [aria-disabled=true]").count()) >= 1);
   await A.goto(BASE + "/approvals/admin/setup");
   const home = await A.locator("main").first().innerText();
   check("the admin's Setup page shows the checklist", /Setup/.test(home) && /Expense categories/.test(home));
@@ -147,18 +159,20 @@ try {
   await A.goto(BASE + "/approvals/hr/new");
   const hrMain = await A.locator("main").first().innerText();
   check("the HR form shows the Zoho fields in order", ["Name", "Email", "Category", "Date of Request", "Amount", "Description", "File upload"].every((l, i, a) => hrMain.includes(l) && (i === 0 || hrMain.indexOf(l) > hrMain.indexOf(a[i - 1]))), hrMain.replace(/\s+/g, " ").slice(0, 160));
-  check("the sidebar highlights the page you are on", (await A.locator("aside:visible a[aria-current=page]").first().innerText()).trim() === "HR");
+  check("the menu marks the page you are on", (await pagesRow(A).locator("a[aria-current=page]").first().innerText()).trim() === "HR");
   check("a path that is not in the menu is a 404", (await status(A, "/approvals/definitely/not/here")) === 404);
 
   section("4. Approvals in the hub: a sidebar item, not an application");
   await A.goto(BASE + "/");
   const hubMenu = await A.locator("aside:visible nav").first().innerText();
-  check("the hub sidebar has an Approval System item that opens /approvals directly", /Approval System/.test(hubMenu) && (await A.locator("aside:visible nav a", { hasText: "Approval System" }).first().getAttribute("href")) === "/approvals");
+  check("the hub sidebar has an Approval System dropdown, not a link", /Approval System/.test(hubMenu) && (await A.locator("aside:visible nav button", { hasText: "Approval System" }).count()) === 1 && (await A.locator("aside:visible nav a", { hasText: "Approval System" }).count()) === 0);
   check("a department holding only an old Approvals card is not listed", !hubMenu.includes("ZZ Apr Dept"), hubMenu.replace(/\s+/g, " ").slice(0, 120));
   check("an old Approvals card cannot be launched", (await A.request.get(`${BASE}/go/${card.id}`, { maxRedirects: 0 })).status() === 404);
-  await A.locator("aside:visible nav a", { hasText: "Approval System" }).first().click();
+  await A.locator("aside:visible nav button", { hasText: "Approval System" }).click();
+  check("clicking it drops down HR Approval and Expenditure", (await hubApps(A).allInnerTexts()).map((t) => t.trim()).join("|") === "HR Approval|Expenditure");
+  await hubApps(A).nth(1).click();
   await A.waitForURL(/\/approvals\/expenses\/new$/);
-  check("clicking it opens the application in the same tab, on the Expenses form", await poll(async () => new URL(A.url()).pathname === "/approvals/expenses/new" && (await A.locator("main h1").first().innerText()) === "Expenses"), A.url());
+  check("choosing Expenditure opens the application in the same tab, on the Expenses form", await poll(async () => new URL(A.url()).pathname === "/approvals/expenses/new" && (await A.locator("main h2").first().innerText()) === "Expenses"), A.url());
 
   section("5. Branches: add, reject duplicates and blanks, deactivate, audit");
   await A.goto(BASE + "/approvals/admin/branches");
@@ -229,11 +243,11 @@ try {
   await M.goto(BASE + "/");
   check("and the hub shows them the Approval System item", (await M.locator("aside:visible nav").first().innerText()).includes("Approval System"));
   await M.goto(BASE + "/approvals");
-  const mExp = await nav(M);
-  check("they land on the Expenditure part: Expenses and Approvals, no Administration", mExp.includes("Expenses") && mExp.includes("Approvals") && !mExp.includes("Administration"), mExp.replace(/\s+/g, " ").slice(0, 120));
-  await M.locator("aside:visible .zs-switch button", { hasText: "DG Approval" }).click();
-  const mMenu = await nav(M);
-  check("the DG Approval part shows them the request groups but no Administration group", mMenu.includes("Expenditures") && mMenu.includes("Hr") && !mMenu.includes("Administration"), mMenu.replace(/\s+/g, " ").slice(0, 120));
+  const mExp = await fullMenu(M);
+  check("they land in Expenditure: Expenses and Approvals, no Administration", mExp.includes("Expenses") && mExp.includes("Approvals") && !mExp.includes("Administration"), mExp.replace(/\s+/g, " ").slice(0, 120));
+  await M.goto(BASE + "/approvals/hr/new");
+  const mMenu = await fullMenu(M);
+  check("HR Approval shows them the request groups but no Administration group", mMenu.includes("Expenditures") && mMenu.includes("Hr") && !mMenu.includes("Administration"), mMenu.replace(/\s+/g, " ").slice(0, 120));
   check("they do not see the oversight items (budgets, reports)", !/All_Budgets|HR Report|\bApproval Time\b/.test(mMenu));
   check("admin pages are a 404 for them", (await status(M, "/approvals/admin/categories")) === 404 && (await status(M, "/approvals/admin/access")) === 404);
   check("the budgets page is a 404 for them (viewers only)", (await status(M, "/approvals/budgets")) === 404);

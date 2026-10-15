@@ -49,7 +49,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
             {t.rows.length === 0 && <tr><td colSpan={6} className="!py-6 text-center text-[var(--z-muted)]">Nothing decided in this period.</td></tr>}
             {t.rows.slice(0, 50).map((r) => (
               <tr key={r.id}>
-                <td className="font-bold"><Link className="text-[var(--z-teal-dark)] hover:underline" href={`/approvals/requests/${r.id}`}>{r.requestNo}</Link></td>
+                <td className="font-bold"><Link className="text-[var(--z-accent)] hover:underline" href={`/approvals/requests/${r.id}`}>{r.requestNo}</Link></td>
                 <td>{TYPE_LABEL[r.type]}</td><td>{r.categoryName}</td><td>{r.approverName}</td>
                 <td>{r.status === "approved" ? "Approved" : "Rejected"}</td><td className="text-right">{formatDuration(r.hours)}</td>
               </tr>

@@ -192,7 +192,7 @@ try {
   check("the chosen file is shown by name", await rp.getByText("zz-note.pdf").first().waitFor({ timeout: 20000 }).then(() => true).catch(() => false));
   await rp.getByRole("button", { name: "Submit" }).click();
   await rp.waitForURL(/\/approvals\/requests\/[0-9a-f-]{36}/, { timeout: 30000 }).catch(() => {});
-  const hrId = rp.url().split("/").pop();
+  const hrId = new URL(rp.url()).pathname.split("/").pop();
   const [hrReq] = await sql`select * from apr_requests where id = ${hrId}`;
   check("submitting saved a pending request with an HR number", hrReq?.status === "pending" && /^HR-\d{4}-\d{2}-\d{4}$/.test(hrReq.request_no), hrReq?.request_no);
   check("it went to the DG, in one step", hrReq?.current_approver_user_id === ids.dg && hrReq.total_steps === 1);
@@ -202,7 +202,7 @@ try {
   const dp = D.page;
   await dp.goto(BASE + "/approvals/inbox");
   check("the request is in the DG's inbox", (await dp.locator("main").first().innerText()).includes(hrReq.request_no));
-  check("the DG's menu shows DG APPROVALS with a count", (await dp.locator("aside:visible").first().innerText()).includes("DG APPROVALS"));
+  check("the DG's application menu shows DG APPROVALS", (await dp.locator("main nav").first().innerText()).includes("DG APPROVALS"));
   await dp.goto(BASE + `/approvals/requests/${hrId}`);
   check("the DG sees the Approve and Reject buttons", (await dp.getByRole("button", { name: "Approve", exact: true }).count()) === 1 && (await dp.getByRole("button", { name: "Reject", exact: true }).count()) === 1);
   await dp.getByRole("button", { name: "Approve", exact: true }).click();
@@ -267,7 +267,7 @@ try {
   check("a 40,000 request (35,000 left) is still accepted", over.status === 201, over.json.error);
   check("it is flagged over budget", (await sql`select over_budget from apr_requests where id = ${over.json.id}`)[0].over_budget === true);
   await D.page.goto(BASE + `/approvals/requests/${over.json.id}`);
-  check("the approver sees the Over budget badge and a warning", (await D.page.locator("main").first().innerText()).includes("Over budget") && (await D.page.locator("main").first().innerText()).includes("exceeds the remaining budget by ₹5,000.00"));
+  check("the approver sees the Over budget badge and a warning", /over budget/i.test(await D.page.locator("main").first().innerText()) && (await D.page.locator("main").first().innerText()).includes("exceeds the remaining budget by ₹5,000.00"));
   const noComment = await post(D.page, `/api/approvals/requests/${over.json.id}/decision`, { action: "approve" });
   check("approving without a comment is refused", noComment.status() === 422 && /over budget/.test((await body(noComment)).error));
   check("approving with a comment works", (await post(D.page, `/api/approvals/requests/${over.json.id}/decision`, { action: "approve", comment: "Approved, one-off" })).status() === 200);

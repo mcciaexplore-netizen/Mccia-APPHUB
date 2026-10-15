@@ -33,7 +33,7 @@ export async function TimelineScreen({
             {rows.length === 0 && <li className="px-3 py-4 text-[var(--z-muted)]">No requests found.</li>}
             {rows.map((r) => (
               <li key={r.id}>
-                <Link href={href(r.id)} aria-current={r.id === id ? "true" : undefined} className={`block px-3 py-2 hover:bg-[#f7f8f9] ${r.id === id ? "bg-[var(--z-teal-tint)]" : ""}`}>
+                <Link href={href(r.id)} aria-current={r.id === id ? "true" : undefined} className={`block px-3 py-2 hover:bg-[#f7f8f9] ${r.id === id ? "bg-[var(--z-tint)]" : ""}`}>
                   <span className="flex items-center justify-between gap-2"><b>{r.requestNo}</b><span className="flex gap-1"><StatusBadge status={r.status} />{r.overBudget && <OverBudgetBadge />}</span></span>
                   <span className="block truncate text-sm text-[var(--z-muted)]">{r.name} · {r.categoryName} · {formatDate(r.requestedAt)}</span>
                 </Link>
