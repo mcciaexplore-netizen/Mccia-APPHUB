@@ -3,9 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Download, RefreshCw, ShieldCheck } from "lucide-react";
+import { Download, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
-import { checkApp, checkAllApps, setAppStatus } from "@/actions/apps";
+import { checkApp, checkAllApps, createApp, deleteApp, setAppStatus } from "@/actions/apps";
+import { AppForm } from "../departments/forms";
 import { toCsv } from "@/lib/csv";
 import { formatIST } from "@/lib/format";
 
@@ -22,9 +25,11 @@ function verification(r: Row): { label: string; cls: string } {
 }
 
 /** Every application the hub lists: what it is, where it points, who can open it, and the result of the last real check. */
-export function InventoryView({ rows }: { rows: Row[] }) {
+export function InventoryView({ rows, departments }: { rows: Row[]; departments: { id: string; name: string }[] }) {
   const router = useRouter();
   const toast = useToast();
+  const confirm = useConfirm();
+  const [adding, setAdding] = useState(false);
   const [pending, start] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -64,8 +69,9 @@ export function InventoryView({ rows }: { rows: Row[] }) {
           Every application in the hub. <b>Link verified</b> means its address answered over a secure connection in the last 30 days. It does not mean the application&apos;s own features were tested:
           the hub controls who can launch an application, while the application itself controls what happens after.
         </p>
-        <div className="flex gap-2">
-          <button className="btn btn-primary btn-sm" disabled={pending} onClick={all}><RefreshCw size={14} className={pending && !busyId ? "animate-spin" : ""} /> Check all</button>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn btn-primary btn-sm" disabled={pending} onClick={() => setAdding(true)}><Plus size={14} /> Add application</button>
+          <button className="btn btn-ghost btn-sm" disabled={pending} onClick={all}><RefreshCw size={14} className={pending && !busyId ? "animate-spin" : ""} /> Check all</button>
           <button className="btn btn-ghost btn-sm" onClick={exportCsv}><Download size={14} /> Export CSV</button>
         </div>
       </div>
@@ -96,6 +102,12 @@ export function InventoryView({ rows }: { rows: Row[] }) {
                 <td><div className="flex justify-end gap-1.5">
                   {!r.builtIn && <button className="chip !p-1.5 text-muted" aria-label={`Check ${r.name}`} title="Check the address now" disabled={pending} onClick={() => one(r.id)}><RefreshCw size={14} className={busyId === r.id ? "animate-spin" : ""} /></button>}
                   <Link className="chip !p-1.5 text-muted" aria-label={`Who can open ${r.name}`} title="Who can open it" href={`/administrator/access/app/${r.id}`}><ShieldCheck size={14} /></Link>
+                  <button className="chip !p-1.5 text-brand-red" aria-label={`Delete ${r.name}`} title="Delete" disabled={pending}
+                    onClick={async () => {
+                      if (!(await confirm({ title: "Delete this application?", confirmLabel: "Delete", danger: true,
+                        message: `“${r.name}” will be removed for good. Everyone loses access to it and any template drops it. Launches already logged stay in the activity log as a deleted application. To keep it but stop people opening it, set its label to Unavailable instead.` }))) return;
+                      start(async () => { const x = await deleteApp(r.id); if (x.ok) { toast.success("Application deleted"); router.refresh(); } else toast.error(x.error); });
+                    }}><Trash2 size={14} /></button>
                 </div></td>
               </tr>
             );
@@ -103,6 +115,12 @@ export function InventoryView({ rows }: { rows: Row[] }) {
           {rows.length === 0 && <tr><td colSpan={7} className="text-subtle">No applications yet. Add some under Departments.</td></tr>}
         </tbody>
       </table></div>
+      {adding && (
+        <Modal title="Add application" onClose={() => setAdding(false)}>
+          <AppForm departments={departments} initial={{ departmentId: departments[0]?.id }} submitLabel="Add application" pending={pending}
+            onSubmit={(v) => start(async () => { const x = await createApp(v); if (x.ok) { toast.success("Application added"); setAdding(false); router.refresh(); } else toast.error(x.error); })} />
+        </Modal>
+      )}
     </div>
   );
 }

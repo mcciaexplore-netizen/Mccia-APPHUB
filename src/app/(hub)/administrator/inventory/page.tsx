@@ -11,7 +11,7 @@ export const maxDuration = 60;
 
 export default async function Page() {
   await requireHeadAdmin();
-  const [list, latest, access] = await Promise.all([
+  const [list, latest, access, deps] = await Promise.all([
     db.select({
       id: apps.id, name: apps.name, description: apps.description, url: apps.url, icon: apps.icon, status: apps.status, isActive: apps.isActive,
       department: departments.name, departmentActive: departments.isActive,
@@ -19,11 +19,13 @@ export default async function Page() {
     db.selectDistinctOn([appChecks.appId], { appId: appChecks.appId, ok: appChecks.ok, detail: appChecks.detail, httpStatus: appChecks.httpStatus, durationMs: appChecks.durationMs, checkedAt: appChecks.checkedAt })
       .from(appChecks).orderBy(appChecks.appId, desc(appChecks.checkedAt)),
     db.select({ appId: userAppAccess.appId, n: count() }).from(userAppAccess).groupBy(userAppAccess.appId),
+    db.select({ id: departments.id, name: departments.name }).from(departments).orderBy(asc(departments.sortOrder), asc(departments.name)),
   ]);
   const check = new Map(latest.map((c) => [c.appId, c]));
   const people = new Map(access.map((a) => [a.appId, a.n]));
   return (
     <InventoryView
+      departments={deps}
       rows={list.filter((a) => !isApprovalsUrl(a.url)).map((a) => {
         const c = check.get(a.id);
         return {
