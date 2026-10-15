@@ -198,6 +198,7 @@ try {
   check("it went to the DG, in one step", hrReq?.current_approver_user_id === ids.dg && hrReq.total_steps === 1);
   check("the file is stored and attached", (await sql`select count(*)::int n from apr_attachments where request_id = ${hrId}`)[0].n === 1 && (await sql`select count(*)::int n from apr_file_chunks c join apr_attachments a on a.storage_key = c.file_id::text where a.request_id = ${hrId}`)[0].n === 1);
   check("the DG was notified", (await sql`select count(*)::int n from apr_notifications where user_id = ${ids.dg} and request_id = ${hrId}`)[0].n === 1);
+  check("right after submitting, the requester sees a confirmation with the request number, on the request page", await rp.locator("main [role=status]", { hasText: `Request submitted: ${hrReq.request_no}` }).first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false), rp.url());
 
   const dp = D.page;
   await dp.goto(BASE + "/approvals/inbox");
@@ -255,7 +256,7 @@ try {
   check("it went to the DG", bigRow.current_approver_user_id === ids.dg);
   check("pending does not reduce the budget", (await live(R.page)).spentPaise === 0 && (await live(R.page)).pendingPaise === 1500000);
   check("the requester cannot decide their own request", (await post(R.page, `/api/approvals/requests/${big.json.id}/decision`, { action: "approve" })).status() === 403);
-  check("someone who is not the approver cannot decide it", (await post(S.page, `/api/approvals/requests/${big.json.id}/decision`, { action: "approve" })).status() === 403);
+  check("someone who has nothing to do with it cannot decide it (and is told it does not exist)", (await post(S.page, `/api/approvals/requests/${big.json.id}/decision`, { action: "approve" })).status() === 404);
   check("rejecting needs a comment", (await post(D.page, `/api/approvals/requests/${big.json.id}/decision`, { action: "reject" })).status() === 422);
   const okDecision = await post(D.page, `/api/approvals/requests/${big.json.id}/decision`, { action: "approve" });
   check("the DG approves without a comment (it is within budget)", okDecision.status() === 200);
@@ -311,24 +312,42 @@ try {
   check("the budget is untouched by withdrawn requests", (await live(R.page)).spentPaise === 5500000 + 500000);
 
   section("13. Who sees what in the lists");
-  await R.page.goto(BASE + "/approvals/hr/all");
-  const mine = await R.page.locator("main").first().innerText();
-  check("the requester's own HR requests are listed", mine.includes(hrReq.request_no));
-  await O.page.goto(BASE + "/approvals/hr/all");
-  check("someone not involved sees none of them", !(await O.page.locator("main").first().innerText()).includes(hrReq.request_no));
+  // A plain requester holds no role that gives full access: they get the forms, the confirmation and their own request page, nothing else.
+  const tabsOf = (p) => p.locator('main nav[aria-label$=" sections"] a').allInnerTexts();
+  await R.page.goto(BASE + "/approvals/hr/new");
+  check("a plain requester's HR Approval menu is just the HR and Expenditure forms", JSON.stringify(await tabsOf(R.page)) === JSON.stringify(["HR", "Expenditure"]) && (await R.page.locator('main nav[aria-label$=" pages"]').count()) === 0, (await tabsOf(R.page)).join("|"));
+  await R.page.goto(BASE + "/approvals/expenses/new");
+  check("and their Expenditure menu is just the Expenses form", JSON.stringify(await tabsOf(R.page)) === JSON.stringify(["Expenses"]), (await tabsOf(R.page)).join("|"));
+  const closed = ["/approvals/hr/all", "/approvals/hr/pending", "/approvals/hr/approved", "/approvals/expenses/mine", "/approvals/expenses/approved", "/approvals/expenditures/all", "/approvals/inbox", "/approvals/my/pending", "/approvals/my/completed", "/approvals/timeline", "/approvals/hr/timeline"];
+  const closedStatuses = []; for (const p of closed) closedStatuses.push(await status(R.page, p));
+  check("every list, the inbox and both timelines are a 404 for them", closedStatuses.every((s) => s === 404), closedStatuses.join(","));
+  check("the CSV export is closed to them too (403)", (await R.page.request.get(`${BASE}/api/approvals/requests/export?screen=hr/all`)).status() === 403);
+  check("the three forms still open", (await status(R.page, "/approvals/hr/new")) === 200 && (await status(R.page, "/approvals/expenditures/new")) === 200 && (await status(R.page, "/approvals/expenses/new")) === 200);
+  await R.page.goto(BASE + `/approvals/requests/${small.json.id}?app=exp`);
+  const ownPage = await R.page.locator("main").first().innerText();
+  check("their own request page opens, with its number and where it stands", ownPage.includes(small.json.requestNo) && /approved/i.test(ownPage), ownPage.replace(/\s+/g, " ").slice(0, 120));
+  const banner = (p) => p.locator("main [role=status]", { hasText: "Keep this number" }).count();
+  check("the confirmation is not there on a later visit", (await banner(R.page)) === 0);
+  await R.page.goto(BASE + `/approvals/requests/${small.json.id}?app=exp&submitted=1`);
+  const raisedBanner = await banner(R.page);
+  await D.page.goto(BASE + `/approvals/requests/${hrId}?submitted=1`);
+  check("it shows for the person who raised the request and not for anyone else opening the same link", raisedBanner === 1 && (await banner(D.page)) === 0, `${raisedBanner} / ${await banner(D.page)}`);
+  await S.page.goto(BASE + "/approvals/hr/all");
+  check("someone with full access who is not involved sees none of them", !(await S.page.locator("main").first().innerText()).includes(hrReq.request_no));
   await D.page.goto(BASE + "/approvals/hr/approved");
   check("the DG sees the approved HR request", (await D.page.locator("main").first().innerText()).includes(hrReq.request_no));
   await D.page.goto(BASE + "/approvals/my/completed");
   check("'Completed by me' lists what the DG decided", (await D.page.locator("main").first().innerText()).includes(hrReq.request_no));
-  await R.page.goto(BASE + "/approvals/expenses/mine");
-  check("My Requests shows the requester's expense with its status", (await R.page.locator("main").first().innerText()).includes(small.json.requestNo));
+  await S.page.goto(BASE + "/approvals/expenses/approved");
+  check("the below-10k approver sees the approved expense in their list", (await S.page.locator("main").first().innerText()).includes(small.json.requestNo));
   await D.page.goto(BASE + "/approvals/expenditures/all?q=" + encodeURIComponent(big.json.requestNo));
   const searched = await D.page.locator("tbody tr").allInnerTexts();
   check("search narrows the list to the matching request", searched.length === 1 && searched[0].includes(big.json.requestNo), searched.length);
   const csv = await D.page.request.get(`${BASE}/api/approvals/requests/export?screen=expenditures/all`);
   const csvText = await csv.text();
   check("export gives a CSV with a header and the requests", csv.status() === 200 && /text\/csv/.test(csv.headers()["content-type"]) && csvText.includes("Request No.") && csvText.includes(big.json.requestNo));
-  check("export only holds what the person may see", !(await (await O.page.request.get(`${BASE}/api/approvals/requests/export?screen=hr/all`)).text()).includes(hrReq.request_no));
+  const sExport = await S.page.request.get(`${BASE}/api/approvals/requests/export?screen=hr/all`);
+  check("export only holds what the person may see", sExport.status() === 200 && !(await sExport.text()).includes(hrReq.request_no));
 
   section("14. Reports and budgets are for the DG, viewers and admins");
   await D.page.goto(BASE + "/approvals/budgets/utilisation");
@@ -343,6 +362,8 @@ try {
   section("15. Notifications");
   const notes = await body(await R.page.request.get(`${BASE}/api/approvals/notifications`));
   check("the requester has unread notifications about their requests", notes.unread >= 3 && notes.items.some((n) => /approved/.test(n.title)) && notes.items.some((n) => /rejected/.test(n.title)), `${notes.unread} unread`);
+  const linked = notes.items.find((n) => /approved/.test(n.title) && n.link);
+  check("a notification opens the request page, which is how a plain requester follows a decision", !!linked && (await status(R.page, linked.link)) === 200 && (await R.page.locator("main").first().innerText()).includes("Request"), linked?.link);
   check("marking all read clears the count", (await post(R.page, "/api/approvals/notifications", {})).status() === 200 && (await body(await R.page.request.get(`${BASE}/api/approvals/notifications`))).unread === 0);
   check("one person's notifications never show another's requests", (await body(await O.page.request.get(`${BASE}/api/approvals/notifications`))).items.every((n) => !n.title.includes(hrReq.request_no) && !n.title.includes(big.json.requestNo)));
 

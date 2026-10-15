@@ -23,12 +23,14 @@ export function ModuleMenu({
   const appParam = useSearchParams().get("app");
   const app = approvalsApps.find((a) => a.key === resolveApp(pathname, appParam, roles))!;
 
-  // Only what this person's roles allow, and no section left empty.
+  // Only what this person's roles allow, and no section left empty. A section left with a single page (a plain requester's one form)
+  // becomes that page's own tab, so there is no row of pages with one link in it.
   const entries = app.nav
     .map((e): NavEntry | null => {
       if (!canSee(e, roles)) return null;
       if (!isGroup(e)) return e;
       const items = e.items.filter((i) => canSee(i, roles));
+      if (items.length === 1) return items[0];
       return items.length ? { ...e, items } : null;
     })
     .filter((e): e is NavEntry => !!e);

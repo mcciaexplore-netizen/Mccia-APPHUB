@@ -1,7 +1,9 @@
 /** Fast checks for the pure helpers: CSV parsing/exporting, the email-domain rule and the Approvals money, date and menu rules. Run: npm run test:unit */
 import { parseCsv, toCsv } from "../src/lib/csv";
 import { isEmailAllowed } from "../src/lib/domains";
-import { canSee, isApprovalsUrl, isModuleEnabled } from "../src/lib/approvals/approvals.manifest";
+import {
+  FULL_ACCESS_ROLES, approvalsApps, canSee, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, type ApprovalsRole,
+} from "../src/lib/approvals/approvals.manifest";
 import {
   assessBudget, budgetWarning, commentRequired, formFor, formatRequestNo, percentUsed, planSteps, utilisationLevel, wrongFormMessage,
   type RuleLike,
@@ -77,8 +79,15 @@ eq("today in IST: late evening UTC is already tomorrow", [todayIST(new Date("202
 // Approvals: which hub card is the module, and who sees which menu item.
 eq("card url: path, full address and trailing slash match", [isApprovalsUrl("/approvals"), isApprovalsUrl("https://hub.mccia.org/approvals"), isApprovalsUrl("https://hub.mccia.org/approvals/")], [true, true, true]);
 eq("card url: other paths do not", [isApprovalsUrl("https://x.org/approvals/admin"), isApprovalsUrl("https://x.org/other"), isApprovalsUrl("/approvals-old")], [false, false, false]);
-eq("menu: no role list means everyone", canSee({}, ["requester"]), true);
-eq("menu: admin-only item is hidden from a requester and shown to an admin", [canSee({ roles: ["approvals_admin"] }, ["requester"]), canSee({ roles: ["approvals_admin"] }, ["requester", "approvals_admin"])], [false, true]);
+eq("menu: a form is for everyone", canSee({ label: "F", href: "/f", form: true }, ["requester"]), true);
+eq("menu: any other page without a role list needs full access", [canSee({ label: "L", href: "/l" }, ["requester"]), ...FULL_ACCESS_ROLES.map((r) => canSee({ label: "L", href: "/l" }, ["requester", r]))], [false, true, true, true, true]);
+eq("menu: a section is kept for everyone (its pages decide what is left in it)", canSee({ label: "S", items: [] }, ["requester"]), true);
+eq("menu: admin-only item is hidden from a requester and shown to an admin", [canSee({ label: "A", href: "/a", roles: ["approvals_admin"] }, ["requester"]), canSee({ label: "A", href: "/a", roles: ["approvals_admin"] }, ["requester", "approvals_admin"])], [false, true]);
+eq("full access: a plain requester has none, each of the four roles has it", [hasFullAccess(["requester"]), ...FULL_ACCESS_ROLES.map((r) => hasFullAccess(["requester", r]))], [false, true, true, true, true]);
+const pagesOf = (roles: ApprovalsRole[], app: "hr" | "exp") =>
+  approvalsApps.find((a) => a.key === app)!.nav.flatMap((e) => (isGroup(e) ? e.items : [e])).filter((i) => canSee(i, roles)).map((i) => i.label);
+eq("a plain requester sees the forms only: HR and Expenditure in HR Approval, Expenses in Expenditure", [pagesOf(["requester"], "hr"), pagesOf(["requester"], "exp")], [["HR", "Expenditure"], ["Expenses"]]);
+eq("full access still has the forms, and more", [FULL_ACCESS_ROLES.every((r) => pagesOf(["requester", r], "hr").includes("HR") && pagesOf(["requester", r], "exp").includes("Expenses")), pagesOf(["requester", "viewer"], "hr").length > 2], [true, true]);
 
 // Approvals: budget maths. Only approved spend counts; pending is shown, never subtracted.
 const pos = (allocated: number | null, spent = 0, pending = 0) => ({ allocatedPaise: allocated, spentPaise: spent, pendingPaise: pending });

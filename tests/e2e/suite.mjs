@@ -14,12 +14,17 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const req = createRequire(ROOT + "/package.json");
-req("dotenv").config({ path: ROOT + "/.env" });
+req("dotenv").config({ path: ROOT + "/.env.local", quiet: true });
+req("dotenv").config({ path: ROOT + "/.env", quiet: true });
 const BASE = (process.env.E2E_BASE_URL || "").replace(/\/$/, "");
 if (!BASE) { console.error("Set E2E_BASE_URL, for example: E2E_BASE_URL=http://localhost:3000 npm run test:e2e"); process.exit(2); }
 const BROWSER = process.env.E2E_BROWSER || "chromium";
-const { neon } = req("@neondatabase/serverless");
-const rawSql = neon(process.env.DATABASE_URL);
+// The same query helper for both database drivers the app supports (DB_DRIVER=neon, the default, or DB_DRIVER=pg for a local Postgres).
+const rawSql = (() => {
+  if ((process.env.DB_DRIVER ?? "neon") !== "pg") return req("@neondatabase/serverless").neon(process.env.DATABASE_URL);
+  const pool = new (req("pg").Pool)({ connectionString: process.env.DATABASE_URL, max: 4, ssl: process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : false });
+  return async (strings, ...values) => (await pool.query(strings.reduce((q, t, i) => q + (i ? `$${i}` : "") + t, ""), values)).rows;
+})();
 // Every query is retried a few times: a flaky connection from the test machine must not fail the run or leave data behind.
 const sql = (...args) => retry(() => rawSql(...args), 10, 4000);
 const playwright = req("playwright-core");
@@ -48,7 +53,7 @@ const removeTestData = async () => {
 };
 const snap = async () => ({
   departments: (await sql`select name,is_active from departments where name not like 'ZZ%' order by sort_order,name`),
-  apps: await sql`select a.name,a.is_active,d.name dept from apps a join departments d on d.id=a.department_id where a.name not like 'ZZ%' order by a.name`,
+  apps: await sql`select a.name,a.url,a.is_active,d.name dept from apps a join departments d on d.id=a.department_id where a.name not like 'ZZ%' order by a.name`,
   users: await sql`select email,role,is_active from users where email not like 'zz-%' and email <> ${ADMIN_EMAIL} order by email`,
 });
 await retry(removeTestData); // clears leftovers of any earlier interrupted run
@@ -105,7 +110,10 @@ try {
   section("1. Hub: first load, navigation, search");
   const r0 = await page.goto(BASE + "/"); await page.waitForLoadState("networkidle").catch(() => {});
   check("home opens after signing in", r0.status() === 200 && page.url() === BASE + "/", r0.status());
-  const realDeps = before.departments.filter((d) => d.is_active).map((d) => d.name);
+  // Approval System is a sidebar item of its own now, so a department that holds nothing but an old Approvals card (URL /approvals) is not listed.
+  const isApprovalsCard = (a) => /^(https?:\/\/[^/?#]+)?\/approvals\/?$/.test(a.url.trim());
+  const approvalsOnly = (name) => { const mine = before.apps.filter((a) => a.dept === name); return mine.length > 0 && mine.every(isApprovalsCard); };
+  const realDeps = before.departments.filter((d) => d.is_active && !approvalsOnly(d.name)).map((d) => d.name);
   const links = await page.locator("aside:visible nav a").allInnerTexts();
   check("sidebar lists every active department", realDeps.every((n) => links.some((l) => l.trim() === n)), links.map((s) => s.trim()).join(" | "));
   check("the header shows who is signed in", (await page.locator("header").first().innerText()).includes(process.env.HEAD_ADMIN_NAME || ADMIN_EMAIL), (await page.locator("header").first().innerText()).trim());
@@ -121,9 +129,13 @@ try {
   await page.getByPlaceholder("Search applications").fill("");
 
   section("2. Launch redirect and bad ids");
-  const firstApp = before.apps.find((a) => a.is_active); const firstRow = (await sql`select id,url from apps where name=${firstApp.name}`)[0];
-  const lr = await page.request.get(BASE + "/go/" + firstRow.id, { maxRedirects: 0 });
-  check("/go/<app> redirects to the app's URL", lr.status() === 302 && lr.headers().location === firstRow.url, lr.headers().location);
+  // The old Approvals card (URL /approvals) is hidden from the hub and has no launch route, and a path URL redirects to an absolute address, so use a real https app.
+  const firstApp = before.apps.find((a) => a.is_active && !isApprovalsCard(a) && a.url.startsWith("https://"));
+  if (firstApp) {
+    const firstRow = (await sql`select id,url from apps where name=${firstApp.name}`)[0];
+    const lr = await page.request.get(BASE + "/go/" + firstRow.id, { maxRedirects: 0 });
+    check("/go/<app> redirects to the app's URL", lr.status() === 302 && lr.headers().location === firstRow.url, lr.headers().location);
+  } else console.log("NOTE  no real https application here to launch; the redirect target is checked on a test app in section 4");
   check("/go/not-a-uuid is 404", (await page.request.get(BASE + "/go/not-a-uuid", { maxRedirects: 0 })).status() === 404);
   check("/go/<unknown uuid> is 404", (await page.request.get(BASE + "/go/00000000-0000-4000-8000-000000000000", { maxRedirects: 0 })).status() === 404);
   const nf = await page.goto(BASE + "/this-page-does-not-exist"); check("unknown page is a branded 404", nf.status() === 404 && (await page.content()).includes("Page not found"));
@@ -157,7 +169,7 @@ try {
 
   section("4. Applications: validation, XSS, scoping, active flag");
   await go("/administrator/departments"); await page.locator("main").getByRole("link", { name: "ZZ Dept A2" }).click(); await page.waitForURL(/departments\/[0-9a-f-]{36}/); const deptUrl = page.url();
-  const addApp = async (name, url, opts = {}) => { await page.getByRole("button", { name: /^Add application/ }).first().click(); const f = page.locator("form").filter({ has: page.getByRole("button", { name: "Add application" }) }); await f.locator("input").nth(0).fill(name); if (opts.desc) await f.locator("input").nth(1).fill(opts.desc); await f.locator("input[type=url]").fill(url); if (opts.inactive) await f.getByRole("checkbox").uncheck(); await f.getByRole("button", { name: "Add application" }).click(); };
+  const addApp = async (name, url, opts = {}) => { await page.getByRole("button", { name: /^Add application/ }).first().click(); const f = page.locator("form").filter({ has: page.getByRole("button", { name: "Add application" }) }); await f.locator("input").nth(0).fill(name); if (opts.desc) await f.locator("input").nth(1).fill(opts.desc); await f.locator("input[inputmode=url]").fill(url); if (opts.inactive) await f.getByRole("checkbox").uncheck(); await f.getByRole("button", { name: "Add application" }).click(); };
   await addApp("ZZ App One", "https://example.com/one", { desc: "first" }); check("add application succeeds", await toast("Application added")); await page.waitForTimeout(1500);
   const a1 = await app("ZZ App One"); check("saved under the right department, active, ordered", a1 && a1.department_id === dA.id && a1.is_active && a1.sort_order > 0);
   await page.reload(); await page.waitForLoadState("networkidle"); await addApp("ZZ Plain Http", "http://example.com/x"); check("http:// URL is refused", await toast("must start with https://")); await page.waitForTimeout(500);
@@ -184,7 +196,7 @@ try {
   check("hub shows active apps of the department, not the inactive one", hubTxt.includes("ZZ App Uno") && !hubTxt.includes("ZZ Hidden App"));
   check("hub card shows the XSS-looking name as plain text", hubTxt.includes("<img src=x") && dialogs.length === 0);
   const hid = await app("ZZ Hidden App"); check("/go for an inactive app is 404", (await page.request.get(BASE + "/go/" + hid.id, { maxRedirects: 0 })).status() === 404);
-  const l1 = await page.request.get(BASE + "/go/" + (await app("ZZ App Uno")).id, { maxRedirects: 0 }); check("launching an app logs the launch", l1.status() === 302 && (await sql`select count(*)::int n from activity_log where app_id=${(await app("ZZ App Uno")).id} and action='launch'`)[0].n === 1);
+  const l1 = await page.request.get(BASE + "/go/" + (await app("ZZ App Uno")).id, { maxRedirects: 0 }); check("launching an app redirects to its URL", l1.status() === 302 && l1.headers().location === "https://example.com/one", l1.headers().location); check("launching an app logs the launch",l1.status() === 302 && (await sql`select count(*)::int n from activity_log where app_id=${(await app("ZZ App Uno")).id} and action='launch'`)[0].n === 1);
   const fRow = await sql`select id from apps where name like '=HYPERLINK%'`; await page.request.get(BASE + "/go/" + fRow[0].id, { maxRedirects: 0 });
 
   section("5. Users: read-only overview and CSV import edge cases");

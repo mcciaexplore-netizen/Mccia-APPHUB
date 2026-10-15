@@ -4,7 +4,7 @@
  *
  * It WRITES to the database, so point it at a scratch database, never the live one:
  *   INTEGRATION_DB_CONFIRM=yes INTEGRATION_DATABASE_URL=postgres://postgres@127.0.0.1:5432/scratch npm run test:integration
- * The scratch database needs every migration applied first (npx drizzle-kit migrate, with DATABASE_URL pointing at it). A Neon branch of
+ * It puts the routing rules and request counters back as they were. The scratch database needs every migration applied first (npx drizzle-kit migrate, with DATABASE_URL pointing at it). A Neon branch of
  * the real database also works. Everything it creates is named "ZZ"/"zz-int-" and is removed when it finishes. The project's own .env
  * is NOT read, so it cannot reach the live database by accident.
  */
@@ -49,6 +49,9 @@ const refused = async (fn: () => Promise<unknown>): Promise<{ status: number; me
 };
 
 const FY = financialYearOf();
+// The test replaces the routing rules and the request counters with its own; the real ones are put back at the end.
+const savedRules = await db.select().from(T.aprApproverRules);
+const savedCounters = await db.select().from(T.aprCounters);
 const cleanup = async () => {
   const people = await db.select({ id: users.id }).from(users).where(like(users.email, "zz-int-%"));
   for (const p of people) {
@@ -122,7 +125,7 @@ try {
   check("the requester is the signed-in person, the name is what was typed", hrRow.requesterUserId === req.id && hrRow.requesterName === "Asha Patil" && hrRow.requesterEmail === req.email);
   const [hrDetails] = await db.select().from(T.aprHrDetails).where(eq(T.aprHrDetails.requestId, hrMade.id));
   check("the description is trimmed and stored", hrDetails.description === "needs a certificate");
-  check("the DG has a notification", (await N.recentNotifications(dg.id)).some((n) => n.link === `/approvals/requests/${hrMade.id}`));
+  check("the DG has a notification", (await N.recentNotifications(dg.id)).some((n) => n.link === `/approvals/requests/${hrMade.id}?app=hr`));
   check("the DG's unread count is 1", (await N.unreadCount(dg.id)) === 1);
   const detail0 = await Q.getRequestDetail(hrMade.id, dg);
   check("the DG can open it and may decide", !!detail0 && detail0.can.decide && !detail0.can.withdraw && detail0.attachments.length === 1);
@@ -140,7 +143,7 @@ try {
   check("opening is recorded once", (await db.select().from(T.aprApprovalEvents).where(and(eq(T.aprApprovalEvents.requestId, hrMade.id), eq(T.aprApprovalEvents.action, "viewed")))).length === 1);
 
   check("the requester cannot decide their own request", (await refused(() => R.decideRequest(hrMade.id, { action: "approve", comment: null }, req)))?.status === 403);
-  check("someone who is not the approver cannot decide it", (await refused(() => R.decideRequest(hrMade.id, { action: "approve", comment: null }, small)))?.status === 403);
+  check("someone who has nothing to do with the request cannot decide it, and is told it does not exist", (await refused(() => R.decideRequest(hrMade.id, { action: "approve", comment: null }, small)))?.status === 404);
   check("rejecting needs a comment", (await refused(() => R.decideRequest(hrMade.id, { action: "reject", comment: null }, dg)))?.status === 422);
   check("the DG approves", (await R.decideRequest(hrMade.id, { action: "approve", comment: null }, dg)).status === "approved");
   const hrDone = await row(hrMade.id);
@@ -236,6 +239,39 @@ try {
   check("a withdrawn request cannot be decided", (await refused(() => R.decideRequest(wd.id, { action: "approve", comment: null }, dg)))?.status === 409);
   check("withdrawn requests use no budget", (await position()).spentPaise === 6_000_000);
 
+  /* ------------------------------------------------------------------ hardening: who may even ask, and races */
+  const hidden = await R.submitHrRequest(hr({ lastName: "Hidden" }), req);
+  check("someone not involved who tries to decide gets a plain 404, not a message about the request", (await refused(() => R.decideRequest(hidden.id, { action: "approve", comment: null }, other)))?.status === 404);
+  await R.withdrawRequest(hidden.id, null, req);
+  check("even after it is withdrawn, they learn nothing about it", (await refused(() => R.decideRequest(hidden.id, { action: "approve", comment: null }, other)))?.status === 404);
+
+  let tornApart = 0;
+  for (let i = 0; i < 6; i++) {
+    const t = await R.submitHrRequest(hr({ lastName: `Tug${i}` }), req);
+    await Promise.allSettled([R.withdrawRequest(t.id, null, req), R.decideRequest(t.id, { action: "approve", comment: null }, dg)]);
+    const final = await row(t.id);
+    const steps = await db.select().from(T.aprRequestSteps).where(eq(T.aprRequestSteps.requestId, t.id));
+    const evs = (await db.select().from(T.aprApprovalEvents).where(eq(T.aprApprovalEvents.requestId, t.id))).map((e) => e.action);
+    const consistent =
+      (final.status === "withdrawn" && steps.every((x) => x.status === "skipped") && !evs.includes("approved")) ||
+      (final.status === "approved" && steps.every((x) => x.status === "approved") && !evs.includes("withdrawn"));
+    if (!consistent) tornApart++;
+  }
+  check("a request withdrawn and approved at the same moment ends as one or the other, never both (6 tries)", tornApart === 0, tornApart);
+
+  const shared = await F.startUpload(req, { fileName: "zz-shared.pdf", size: 4 });
+  await F.putChunk(req, shared.fileId, 0, Buffer.from("data"));
+  const both = await Promise.allSettled([R.submitHrRequest(hr({ lastName: "ShareA", fileUpload: { fileId: shared.fileId } }), req), R.submitHrRequest(hr({ lastName: "ShareB", fileUpload: { fileId: shared.fileId } }), req)]);
+  check("one uploaded file cannot end up on two requests submitted at the same moment", both.filter((x) => x.status === "fulfilled").length === 1 && (await db.select().from(T.aprAttachments).where(eq(T.aprAttachments.storageKey, shared.fileId))).length === 1, both.map((x) => x.status).join());
+  const lost = both.find((x) => x.status === "rejected") as PromiseRejectedResult | undefined;
+  check("the loser is told to attach the file again (409), and no half-saved request is left", lost?.reason instanceof ApprovalsError && lost.reason.status === 409 && (await db.select().from(T.aprRequests).where(eq(T.aprRequests.status, "draft"))).length === 0);
+  const retry = await F.startUpload(req, { fileName: "zz-retry.pdf", size: 4 });
+  await F.putChunk(req, retry.fileId, 0, Buffer.from("data"));
+  await db.update(T.aprApproverRules).set({ approverUserIds: [] }).where(eq(T.aprApproverRules.requestType, "hr"));
+  check("a submission that fails (no approver) gives its file back", (await refused(() => R.submitHrRequest(hr({ fileUpload: { fileId: retry.fileId } }), req)))?.status === 409 && (await db.select().from(T.aprFiles).where(eq(T.aprFiles.id, retry.fileId)))[0].attached === false);
+  await db.update(T.aprApproverRules).set({ approverUserIds: [dg.id] }).where(and(eq(T.aprApproverRules.requestType, "hr"), eq(T.aprApproverRules.stepNo, 2)));
+  check("and the same file can then be used once the problem is fixed", (await R.submitHrRequest(hr({ lastName: "Retry", fileUpload: { fileId: retry.fileId } }), req)).requestNo.startsWith("HR-"));
+
   /* ------------------------------------------------------------------ files */
   const half = await F.startUpload(req, { fileName: "zz-half.pdf", size: 5 });
   check("a request pointing at a file that never finished uploading is refused", (await refused(() => R.submitHrRequest(hr({ fileUpload: { fileId: half.fileId } }), req)))?.status === 400);
@@ -289,7 +325,7 @@ try {
   check("a category with a waiting request but no budget still appears, with no percent", utilNo?.allocatedPaise === null && utilNo.percent === null && utilNo.pendingPaise === 1_100_000 && utilNo.remainingPaise === null, JSON.stringify(utilNo));
   const hrr = await Rep.hrReport({});
   const zz = hrr.byCategory.find((c) => c.name === "ZZ Int HR");
-  check("HR report counts by category and outcome (5 requests: 3 decided, 1 waiting, 1 withdrawn)", !!zz && zz.total === 5 && zz.approved >= 2 && zz.approved + zz.rejected === 3 && zz.pending === 1, JSON.stringify(zz));
+  check("HR report counts by category and outcome", !!zz && zz.total >= 5 && zz.approved >= 2 && zz.approved + zz.rejected >= 3 && zz.pending >= 1 && zz.approved + zz.rejected + zz.pending <= zz.total, JSON.stringify(zz));
   check("HR report groups by month", hrr.byMonth.length >= 1 && /^\d{4}-\d{2}$/.test(hrr.byMonth[0].month));
   const ta = await Rep.turnaround({});
   check("approval time lists decided requests with a duration, by approver and category", ta.rows.length >= 6 && ta.byApprover.some((g) => g.name === dg.name) && ta.byCategory.length >= 2 && ta.avgHours !== null && ta.rows.every((r) => r.hours >= 0));
@@ -318,6 +354,8 @@ try {
   console.log("FAIL the suite ran to the end without an unexpected error\n", e);
 } finally {
   await cleanup().catch((e) => console.error("CLEANUP FAILED:", e));
+  if (savedRules.length) await db.insert(T.aprApproverRules).values(savedRules).catch((e) => console.error("COULD NOT RESTORE THE ROUTING RULES:", e));
+  if (savedCounters.length) await db.insert(T.aprCounters).values(savedCounters).catch((e) => console.error("COULD NOT RESTORE THE COUNTERS:", e));
   console.log(`\n${ok}/${ok + bad} integration checks passed`);
   process.exit(bad ? 1 : 0);
 }

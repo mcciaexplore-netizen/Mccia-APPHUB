@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { FULL_ACCESS_ROLES } from "@/lib/approvals/approvals.manifest";
 import { route } from "@/lib/approvals/guard";
 import { toCsv } from "@/lib/csv";
 import { formatDateTime, formatINR } from "@/lib/approvals/format";
@@ -16,8 +17,11 @@ const line = (r: RequestRow) => [
   r.approverName ?? "", formatDateTime(r.decidedAt),
 ];
 
-/** The list as a CSV file (opens in Excel): the same screen and filters as on the page, every page of it, up to 5,000 rows. */
-export const GET = route({}, async ({ req, user }) => {
+/**
+ * The list as a CSV file (opens in Excel): the same screen and filters as on the page, every page of it, up to 5,000 rows. Only for people
+ * with full access, like the lists it comes from.
+ */
+export const GET = route({ roles: [...FULL_ACCESS_ROLES] }, async ({ req, user }) => {
   const q = req.nextUrl.searchParams;
   const screen = screenFor((q.get("screen") ?? "").split("/").filter(Boolean));
   if (!screen) return NextResponse.json({ error: "Unknown list." }, { status: 404 });

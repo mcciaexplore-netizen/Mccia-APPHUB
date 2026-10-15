@@ -23,7 +23,9 @@ export function QuickDecide({ id, label, overBudget }: { id: string; label: stri
         <button type="button" className="btn btn-primary btn-sm" onClick={() => setMode("approve")}>Approve</button>
         <button type="button" className="btn btn-danger btn-sm" onClick={() => setMode("reject")}>Reject</button>
       </span>
+      {/* The dialog sits inside a clickable table row; clicks inside it must not reach the row (which would open the request). */}
       {mode && (
+        <div onClick={(e) => e.stopPropagation()}>
         <Modal title={`${mode === "approve" ? "Approve" : "Reject"} ${label}`} onClose={() => setMode(null)}>
           <form onSubmit={submit} className="space-y-4">
             {mode === "approve" && overBudget && <p className="apr-notice">This request is over budget, so a comment is required to approve it.</p>}
@@ -39,6 +41,7 @@ export function QuickDecide({ id, label, overBudget }: { id: string; label: stri
             </div>
           </form>
         </Modal>
+        </div>
       )}
     </>
   );

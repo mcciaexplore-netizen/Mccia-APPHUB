@@ -144,6 +144,7 @@ export function SearchSelect({
   const [adding, setAdding] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const list = `${useId()}-list`;
 
   const needle = q.trim().toLowerCase();
@@ -159,18 +160,18 @@ export function SearchSelect({
   useEffect(() => { if (open) search.current?.focus(); }, [open]);
 
   const openBox = () => { if (disabled) return; setQ(""); setHot(Math.max(0, options.findIndex((o) => o.value === value))); setOpen(true); };
-  const pick = (o: Option) => { onChange(o.value); setOpen(false); };
+  const pick = (o: Option) => { onChange(o.value); setOpen(false); trigger.current?.focus(); };
   const key = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") { e.preventDefault(); setHot((h) => Math.min(h + 1, shown.length - 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setHot((h) => Math.max(h - 1, 0)); }
     else if (e.key === "Enter") { e.preventDefault(); if (shown[hot]) pick(shown[hot]); }
-    else if (e.key === "Escape") { e.preventDefault(); setOpen(false); }
+    else if (e.key === "Escape") { e.preventDefault(); setOpen(false); trigger.current?.focus(); }
   };
 
   return (
     <div className="zd" ref={box}>
       <button
-        type="button" id={id} disabled={disabled} onClick={() => (open ? setOpen(false) : openBox())} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? list : undefined}
+        type="button" id={id} ref={trigger} disabled={disabled} onClick={() => (open ? setOpen(false) : openBox())} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? list : undefined}
         className={inputClass(invalid, "zd-btn cursor-pointer text-left disabled:cursor-not-allowed disabled:opacity-60")}
       >
         <span className={`truncate ${current ? "" : "zd-ph"}`}>{current?.label ?? placeholder}</span>

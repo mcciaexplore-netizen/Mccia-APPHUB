@@ -43,7 +43,7 @@ export function parseListParams(sp: Record<string, string | string[] | undefined
     branchId: uuid.safeParse(first(sp.branchId)).success ? first(sp.branchId) : "",
     sort: (SORT_KEYS as readonly string[]).includes(sort) ? (sort as SortKey) : DEFAULT_PARAMS.sort,
     dir: first(sp.dir) === "asc" ? "asc" : "desc",
-    page: Number.isInteger(page) && page > 0 ? page : 1,
+    page: Number.isInteger(page) && page > 0 ? Math.min(page, 100_000) : 1, // a huge page number would overflow the database offset
   };
 }
 

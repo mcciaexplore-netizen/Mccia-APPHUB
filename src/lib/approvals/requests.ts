@@ -9,10 +9,11 @@ import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
 import { assessBudget, commentRequired, formatRequestNo, planProblemMessage, planSteps, REQUEST_PREFIX, TYPE_LABEL, wrongFormMessage, type ExpenditureForm } from "./calc";
 import { budgetPosition } from "./budget-position";
-import { attachFiles, checkFilesReady } from "./files";
+import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { financialYearOf, formatINR, todayIST } from "./format";
 import { getDirectoryUsers, listUsers, type ApprovalsUser } from "./host-adapter";
 import { notify } from "./notify";
+import { canSeeRequest } from "./request-queries";
 import type { HrRequestInput, LargeExpenditureInput, SmallExpenditureInput } from "./request-schemas";
 import { getSettings } from "./settings";
 
@@ -71,14 +72,23 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
     if (!a?.active) throw new ApprovalsError(`${s.stepLabel} is not an active user any more. Ask an Approvals admin to update the Approver Rules.`, 409);
   }
 
+  // From here the files are this request's. If it cannot be saved they are given back, so the person can simply try again.
+  if (!(await claimFiles(fileIds))) throw new ApprovalsError("One of the attached files was already used on another request. Please attach it again.", 409);
+
   const fy = financialYearOf(p.requestedAt);
-  const [draft] = await db
+  let draft: { id: string };
+  try {
+    [draft] = await db
     .insert(aprRequests)
     .values({
       type: p.type, status: "draft", requesterUserId: actor.id, requesterName: p.requesterName, requesterEmail: p.requesterEmail,
       requestedAt: p.requestedAt, financialYear: fy, currentStep: 0, totalSteps: plan.steps.length, amountPaise: p.amountPaise, overBudget: p.overBudget,
     })
     .returning({ id: aprRequests.id });
+  } catch (e) {
+    await releaseFiles(fileIds).catch(() => {});
+    throw e;
+  }
 
   const first = plan.steps[0];
   let requestNo: string;
@@ -104,13 +114,19 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
     if (flipped.length === 0) throw new ApprovalsError("Something went wrong while saving the request. Please try again.", 500);
   } catch (e) {
     await db.delete(aprRequests).where(and(eq(aprRequests.id, draft.id), eq(aprRequests.status, "draft"))).catch(() => {});
+    await releaseFiles(fileIds).catch(() => {});
     throw e;
   }
 
-  await attachFiles(fileIds);
+  // The request now exists and is waiting for its approver. The history rows are bookkeeping: if one cannot be written the person must
+  // still be told it worked (a failure here would make them submit it a second time), so it is logged instead.
   const firstName = approvers.get(first.approverUserId)!.name;
-  await addEvent({ requestId: draft.id, action: "submitted", actorUserId: actor.id, actorName: actor.name, fromStatus: null, toStatus: "pending" });
-  await addEvent({ requestId: draft.id, action: "assigned", stepNo: 1, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "pending", comment: `Sent to ${firstName} (${first.stepLabel})` });
+  try {
+    await addEvent({ requestId: draft.id, action: "submitted", actorUserId: actor.id, actorName: actor.name, fromStatus: null, toStatus: "pending" });
+    await addEvent({ requestId: draft.id, action: "assigned", stepNo: 1, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "pending", comment: `Sent to ${firstName} (${first.stepLabel})` });
+  } catch (e) {
+    console.error("[approvals] could not write the history of a new request", draft.id, e);
+  }
   await notify({
     userId: first.approverUserId, requestId: draft.id, link: link(draft.id, p.type), email: settings.notifyApproverOnAssignment,
     title: `${TYPE_LABEL[p.type]} ${requestNo} is waiting for your approval`,
@@ -198,7 +214,8 @@ const outcomeLabel = { approved: "approved", rejected: "rejected", withdrawn: "w
 
 export async function decideRequest(requestId: string, input: { action: "approve" | "reject"; comment: string | null }, actor: ApprovalsUser): Promise<{ status: AprRequestStatus }> {
   const [req] = await db.select().from(aprRequests).where(eq(aprRequests.id, requestId));
-  if (!req || req.status === "draft") throw new ApprovalsError("That request does not exist.", 404);
+  // Someone who may not see the request is told it does not exist, whatever state it is in: no status leaks to people not involved.
+  if (!req || req.status === "draft" || !(await canSeeRequest(actor, requestId))) throw new ApprovalsError("That request does not exist.", 404);
   if (req.status !== "pending") throw new ApprovalsError(`This request has already been ${outcomeLabel[req.status as keyof typeof outcomeLabel] ?? req.status}, so it cannot be decided again.`, 409);
   if (req.requesterUserId === actor.id) throw new ApprovalsError("You cannot approve or reject your own request.", 403);
 
@@ -217,8 +234,10 @@ export async function decideRequest(requestId: string, input: { action: "approve
     throw new ApprovalsError(input.action === "reject" ? "Please write a comment explaining why you are rejecting this request." : "This request is over budget, so a comment is required to approve it.", 422);
   }
 
-  // The claim: only one caller can move the step out of "pending".
+  const settings = await getSettings();
   const decision = input.action === "approve" ? ("approved" as const) : ("rejected" as const);
+
+  // The claim: only one caller can move the step out of "pending".
   const claimed = await db
     .update(aprRequestSteps)
     .set({ status: decision, comment: input.comment, decidedAt: new Date() })
@@ -226,37 +245,68 @@ export async function decideRequest(requestId: string, input: { action: "approve
     .returning({ id: aprRequestSteps.id });
   if (claimed.length === 0) throw new ApprovalsError("Someone has already decided this request.", 409);
 
-  const settings = await getSettings();
+  // From here the step is decided. The request is moved on with writes that only apply while it is still pending, so a request withdrawn
+  // at the same moment is not turned into "approved". If any write fails, the ones already made are undone in reverse order and the step
+  // goes back to waiting, so the request is never left pending with its step already decided and the approver can simply try again.
   const now = new Date();
-  const tell = (userId: string, title: string, body?: string) =>
-    notify({ userId, requestId, link: link(requestId, req.type), title, body, email: settings.notifyRequesterOnOutcome });
-  const no = req.requestNo ?? "";
-
-  if (decision === "rejected") {
-    await db.update(aprRequestSteps).set({ status: "skipped" }).where(and(eq(aprRequestSteps.requestId, requestId), eq(aprRequestSteps.status, "waiting")));
-    await db.update(aprRequests).set({ status: "rejected", decidedAt: now, decisionComment: input.comment, currentApproverUserId: null, updatedAt: now }).where(eq(aprRequests.id, requestId));
-    await addEvent({ requestId, action: "rejected", stepNo: step.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "rejected", comment: input.comment });
-    await tell(req.requesterUserId, `Your ${TYPE_LABEL[req.type]} ${no} was rejected`, input.comment ?? undefined);
-    return { status: "rejected" };
+  let gone = false; // the request was withdrawn in the meantime: its step is then "not needed", not "waiting"
+  const undo: (() => Promise<unknown>)[] = [
+    () => db.update(aprRequestSteps).set({ status: gone ? "skipped" : "pending", comment: null, decidedAt: null }).where(eq(aprRequestSteps.id, step.id)),
+  ];
+  const stillPending = and(eq(aprRequests.id, requestId), eq(aprRequests.status, "pending"), eq(aprRequests.currentStep, step.stepNo));
+  const withdrawn = () => { gone = true; return new ApprovalsError("This request was withdrawn while you were deciding, so nothing was changed.", 409); };
+  let status: AprRequestStatus;
+  let next: typeof aprRequestSteps.$inferSelect | undefined;
+  try {
+    if (decision === "rejected") {
+      const moved = await db.update(aprRequests).set({ status: "rejected", decidedAt: now, decisionComment: input.comment, currentApproverUserId: null, updatedAt: now }).where(stillPending).returning({ id: aprRequests.id });
+      if (moved.length === 0) throw withdrawn();
+      undo.unshift(() => db.update(aprRequests).set({ status: "pending", decidedAt: null, decisionComment: null, currentApproverUserId: actor.id }).where(eq(aprRequests.id, requestId)));
+      const skipped = await db.update(aprRequestSteps).set({ status: "skipped" }).where(and(eq(aprRequestSteps.requestId, requestId), eq(aprRequestSteps.status, "waiting"))).returning({ id: aprRequestSteps.id });
+      undo.unshift(() => (skipped.length ? db.update(aprRequestSteps).set({ status: "waiting" }).where(inArray(aprRequestSteps.id, skipped.map((r) => r.id))) : Promise.resolve()));
+      status = "rejected";
+    } else {
+      [next] = await db.select().from(aprRequestSteps).where(and(eq(aprRequestSteps.requestId, requestId), eq(aprRequestSteps.stepNo, step.stepNo + 1)));
+      if (next) {
+        const moved = await db.update(aprRequests).set({ currentStep: next.stepNo, currentApproverUserId: next.approverUserId, updatedAt: now }).where(stillPending).returning({ id: aprRequests.id });
+        if (moved.length === 0) throw withdrawn();
+        undo.unshift(() => db.update(aprRequests).set({ currentStep: step.stepNo, currentApproverUserId: actor.id }).where(eq(aprRequests.id, requestId)));
+        await db.update(aprRequestSteps).set({ status: "pending", assignedAt: now }).where(and(eq(aprRequestSteps.id, next.id), eq(aprRequestSteps.status, "waiting")));
+        status = "pending";
+      } else {
+        const moved = await db.update(aprRequests).set({ status: "approved", decidedAt: now, decisionComment: input.comment, currentApproverUserId: null, updatedAt: now }).where(stillPending).returning({ id: aprRequests.id });
+        if (moved.length === 0) throw withdrawn();
+        status = "approved";
+      }
+    }
+  } catch (e) {
+    for (const back of undo) await back().catch((err) => console.error("[approvals] could not undo part of a failed decision", requestId, err));
+    throw e;
   }
 
-  const [next] = await db.select().from(aprRequestSteps).where(and(eq(aprRequestSteps.requestId, requestId), eq(aprRequestSteps.stepNo, step.stepNo + 1)));
+  // The decision is made. What follows is history and messages: if one of them cannot be written the decision still stands and the
+  // approver is told it worked (a failure here must not invite a second click), so it is logged.
+  const no = req.requestNo ?? "";
+  try {
+    await addEvent({ requestId, action: decision === "approved" ? "approved" : "rejected", stepNo: step.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: status, comment: input.comment });
+    if (next) {
+      await addEvent({ requestId, action: "assigned", stepNo: next.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "pending", comment: `Sent to ${next.approverName} (${next.stepLabel})` });
+    }
+  } catch (e) {
+    console.error("[approvals] could not write the history of a decision", requestId, e);
+  }
   if (next) {
-    await db.update(aprRequestSteps).set({ status: "pending", assignedAt: now }).where(and(eq(aprRequestSteps.id, next.id), eq(aprRequestSteps.status, "waiting")));
-    await db.update(aprRequests).set({ currentStep: next.stepNo, currentApproverUserId: next.approverUserId, updatedAt: now }).where(eq(aprRequests.id, requestId));
-    await addEvent({ requestId, action: "approved", stepNo: step.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "pending", comment: input.comment });
-    await addEvent({ requestId, action: "assigned", stepNo: next.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "pending", comment: `Sent to ${next.approverName} (${next.stepLabel})` });
     await notify({
       userId: next.approverUserId, requestId, link: link(requestId, req.type), email: settings.notifyApproverOnAssignment,
       title: `${TYPE_LABEL[req.type]} ${no} is waiting for your approval`, body: `${req.requesterName}${moneyOf(req.amountPaise)}${overBudget ? " · over budget" : ""}`,
     });
-    return { status: "pending" };
+  } else {
+    await notify({
+      userId: req.requesterUserId, requestId, link: link(requestId, req.type), email: settings.notifyRequesterOnOutcome,
+      title: `Your ${TYPE_LABEL[req.type]} ${no} was ${decision}`, body: input.comment ?? undefined,
+    });
   }
-
-  await db.update(aprRequests).set({ status: "approved", decidedAt: now, decisionComment: input.comment, currentApproverUserId: null, updatedAt: now }).where(eq(aprRequests.id, requestId));
-  await addEvent({ requestId, action: "approved", stepNo: step.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "approved", comment: input.comment });
-  await tell(req.requesterUserId, `Your ${TYPE_LABEL[req.type]} ${no} was approved`, input.comment ?? undefined);
-  return { status: "approved" };
+  return { status };
 }
 
 /* ---------------------------------------------------------------- withdraw, view */

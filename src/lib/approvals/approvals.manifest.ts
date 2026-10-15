@@ -10,11 +10,21 @@
 export type ApprovalsRole = "requester" | "approver" | "dg" | "viewer" | "approvals_admin";
 export const ALL_ROLES: readonly ApprovalsRole[] = ["requester", "approver", "dg", "viewer", "approvals_admin"];
 
+/**
+ * Full access to the Approval System: every page the person's roles allow (lists, timelines, reports, budgets, the inbox, setup).
+ * Everyone else who signs in to the hub holds none of these roles and gets the forms only: they fill in a request and follow their own.
+ * This is the one place that decides it; the menus, the pages and the export all ask here.
+ */
+export const FULL_ACCESS_ROLES: readonly ApprovalsRole[] = ["approver", "dg", "viewer", "approvals_admin"];
+export const hasFullAccess = (roles: readonly ApprovalsRole[]) => roles.some((r) => FULL_ACCESS_ROLES.includes(r));
+
 export type NavItem = {
   label: string;
   href?: string;
-  /** Visible to anyone holding at least one of these roles. Omitted means everyone. */
+  /** Visible to anyone holding at least one of these roles. Omitted: the forms (see `form`) are for everyone, anything else for full access. */
   roles?: readonly ApprovalsRole[];
+  /** A form for raising a request. Only these are open to everyone; a page that is not marked is for people with full access. */
+  form?: boolean;
   /** Shown greyed out with a "Coming soon" tag, and not a link. */
   disabled?: boolean;
 };
@@ -29,8 +39,9 @@ const OVERSIGHT = ["viewer", "dg", "approvals_admin"] as const; // see every req
 const ADMIN = ["approvals_admin"] as const;
 
 /**
- * Lists such as "Pending HR Request" are open to everyone: a person only ever sees the rows they are allowed to (their own, or the ones
- * routed to them), so a requester can follow their own requests there.
+ * Everyone sees the forms (marked `form`). Everything else, lists such as "Pending HR Request" included, is for people with full access
+ * (see FULL_ACCESS_ROLES), and even there a person only sees the rows they may open. A plain requester follows their own request from the
+ * confirmation after submitting, and from the notification that opens it.
  */
 export const approvalsApps: NavApp[] = [
   {
@@ -40,7 +51,7 @@ export const approvalsApps: NavApp[] = [
       {
         label: "Hr",
         items: [
-          { label: "HR", href: "/approvals/hr/new" },
+          { label: "HR", href: "/approvals/hr/new", form: true },
           { label: "All Hr", href: "/approvals/hr/all" },
           { label: "HR Approval Categories", href: "/approvals/admin/hr-categories", roles: ADMIN },
           { label: "HR Approval Timeline", href: "/approvals/hr/timeline" },
@@ -55,7 +66,7 @@ export const approvalsApps: NavApp[] = [
       {
         label: "Expenditures",
         items: [
-          { label: "Expenditure", href: "/approvals/expenditures/new" },
+          { label: "Expenditure", href: "/approvals/expenditures/new", form: true },
           { label: "All Expenditures", href: "/approvals/expenditures/all" },
           { label: "Approved Expenditure Requests", href: "/approvals/expenditures/approved" },
           { label: "Pending Expenditure Requests", href: "/approvals/expenditures/pending" },
@@ -100,7 +111,7 @@ export const approvalsApps: NavApp[] = [
       {
         label: "Expenses",
         items: [
-          { label: "Expenses", href: "/approvals/expenses/new" },
+          { label: "Expenses", href: "/approvals/expenses/new", form: true },
           { label: "Approved Expenses", href: "/approvals/expenses/approved" },
         ],
       },
@@ -128,8 +139,16 @@ export const isApprovalsUrl = (url: string) => new RegExp(APPROVALS_URL_PATTERN)
 
 export const isGroup = (e: NavEntry): e is NavGroup => "items" in e;
 
-export const canSee = (item: { roles?: readonly ApprovalsRole[] }, mine: readonly ApprovalsRole[]) =>
-  !item.roles || item.roles.some((r) => mine.includes(r));
+/**
+ * Whether a menu entry is for this person. With roles listed, one of them is enough. Without: a section is shown (its pages decide what is
+ * left in it), a form is shown to everyone, and any other page needs full access. Closed unless marked open, so a page added later is
+ * never shown to everybody by accident.
+ */
+export const canSee = (entry: NavEntry, mine: readonly ApprovalsRole[]): boolean => {
+  if (entry.roles) return entry.roles.some((r) => mine.includes(r));
+  if (isGroup(entry)) return true;
+  return !!entry.form || hasFullAccess(mine);
+};
 
 /** Every entry with a link, flattened across both apps. The catch-all route looks screens up here. */
 export const allNavItems = (): NavItem[] =>

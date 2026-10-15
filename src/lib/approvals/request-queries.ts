@@ -215,7 +215,7 @@ export type RequestDetail = {
   };
 };
 
-const canSeeRequest = async (user: ApprovalsUser, requestId: string): Promise<boolean> => {
+export const canSeeRequest = async (user: ApprovalsUser, requestId: string): Promise<boolean> => {
   const [row] = await db.select({ id: aprRequests.id }).from(aprRequests).where(and(eq(aprRequests.id, requestId), visibility(user))).limit(1);
   return !!row;
 };

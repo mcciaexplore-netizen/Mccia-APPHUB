@@ -65,10 +65,21 @@ export async function checkFilesReady(actor: Pick<ApprovalsUser, "id">, fileIds:
   return found;
 }
 
-/** Claims the files for a request. Only files not yet claimed are touched, so two requests can never share one upload. */
-export async function attachFiles(fileIds: string[]): Promise<void> {
-  if (fileIds.length === 0) return;
-  await db.update(aprFiles).set({ attached: true }).where(and(inArray(aprFiles.id, fileIds), eq(aprFiles.attached, false)));
+/**
+ * Claims the files for a request, all or none. Only files not yet claimed are touched, and the claim is one statement, so two requests
+ * submitted at the same moment can never share one upload: the second finds it already claimed and gets false.
+ */
+export async function claimFiles(fileIds: string[]): Promise<boolean> {
+  if (fileIds.length === 0) return true;
+  const got = await db.update(aprFiles).set({ attached: true }).where(and(inArray(aprFiles.id, fileIds), eq(aprFiles.attached, false))).returning({ id: aprFiles.id });
+  if (got.length === fileIds.length) return true;
+  await releaseFiles(got.map((r) => r.id));
+  return false;
+}
+
+/** Gives claimed files back, when the request they were claimed for could not be saved. */
+export async function releaseFiles(fileIds: string[]): Promise<void> {
+  if (fileIds.length > 0) await db.update(aprFiles).set({ attached: false }).where(inArray(aprFiles.id, fileIds));
 }
 
 export async function getStoredFile(fileId: string): Promise<StoredFile | null> {

@@ -25,7 +25,7 @@ function useSubmitRequest(app: "hr" | "exp") {
     const r = await api<{ id: string; requestNo: string }>("POST", "/api/approvals/requests", body);
     if (!r.ok) { setSubmitting(false); setFormError(r.error); toast.error(r.error); return; }
     toast.success(`Request submitted: ${r.data.requestNo}`);
-    router.push(`/approvals/requests/${r.data.id}?app=${app}`);
+    router.push(`/approvals/requests/${r.data.id}?app=${app}&submitted=1`);
   };
   return { submitting, formError, submit, setFormError };
 }
