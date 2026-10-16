@@ -5,30 +5,44 @@ import { db } from "@/db";
 import { activityLog, users, type User } from "@/db/schema";
 import { burnPasswordCheck, verifyPassword } from "@/lib/passwords";
 
-const adminEmail = () => process.env.HEAD_ADMIN_EMAIL?.trim().toLowerCase() || null;
 const digest = (v: string) => createHash("sha256").update(v).digest();
 const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
 
-/** The main admin (HEAD_ADMIN_EMAIL) signs in with HEAD_ADMIN_PASSWORD from the environment, not a stored password. */
-export const isEnvAdmin = (email: string) => !!adminEmail() && email.trim().toLowerCase() === adminEmail();
+/**
+ * The accounts whose email and password live in the environment settings, not in the database: the Support Admin (HEAD_ADMIN_*) and,
+ * when set, the Super Admin (SUPER_ADMIN_*). They sign in with the password from the settings, so changing it there (and redeploying)
+ * changes it, and neither can be locked out from the screens. One address cannot be both: the Support Admin wins.
+ */
+type EnvAccount = { role: "head_admin" | "super_admin"; email: string; password: string | undefined; name: string };
+const lower = (v: string | undefined) => v?.trim().toLowerCase() || "";
+
+function envAccounts(): EnvAccount[] {
+  const head: EnvAccount = { role: "head_admin", email: lower(process.env.HEAD_ADMIN_EMAIL), password: process.env.HEAD_ADMIN_PASSWORD, name: process.env.HEAD_ADMIN_NAME?.trim() || "Admin" };
+  const sup: EnvAccount = { role: "super_admin", email: lower(process.env.SUPER_ADMIN_EMAIL), password: process.env.SUPER_ADMIN_PASSWORD, name: process.env.SUPER_ADMIN_NAME?.trim() || "Super Admin" };
+  return [head, sup].filter((a, i, all) => a.email && all.findIndex((b) => b.email === a.email) === i);
+}
+const envAccount = (email: string): EnvAccount | null => envAccounts().find((a) => a.email === email.trim().toLowerCase()) ?? null;
+
+/** True for an account that signs in with a password from the environment (the Support Admin, and the Super Admin when SUPER_ADMIN_EMAIL is set). */
+export const isEnvAdmin = (email: string) => !!envAccount(email);
 
 /** Changes whenever the person's password changes, so older sign-ins stop working. */
 export const userFingerprint = (u: Pick<User, "email" | "passwordHash">) =>
-  createHash("sha256").update(isEnvAdmin(u.email) ? `env:${process.env.HEAD_ADMIN_PASSWORD ?? ""}` : (u.passwordHash ?? "")).digest("base64url").slice(0, 12);
+  createHash("sha256").update(isEnvAdmin(u.email) ? `env:${envAccount(u.email)?.password ?? ""}` : (u.passwordHash ?? "")).digest("base64url").slice(0, 12);
 
-/** Makes sure the main admin has a row (the first sign-in creates it) and is an active head admin. */
-async function ensureEnvAdmin(email: string): Promise<User> {
-  const [u] = await db.select().from(users).where(eq(users.email, email));
+/** Makes sure an environment account has a row (the first sign-in creates it), holds its role, and is active. */
+async function ensureEnvAdmin(acc: EnvAccount): Promise<User> {
+  const [u] = await db.select().from(users).where(eq(users.email, acc.email));
   if (!u) {
     await db
       .insert(users)
-      .values({ name: process.env.HEAD_ADMIN_NAME?.trim() || "Admin", email, role: "head_admin", status: "approved", signupSource: "env" })
+      .values({ name: acc.name, email: acc.email, role: acc.role, status: "approved", signupSource: "env" })
       .onConflictDoNothing();
-    const [created] = await db.select().from(users).where(eq(users.email, email));
+    const [created] = await db.select().from(users).where(eq(users.email, acc.email));
     return created;
   }
-  if (u.role !== "head_admin" || !u.isActive || u.status !== "approved") {
-    const [fixed] = await db.update(users).set({ role: "head_admin", isActive: true, status: "approved" }).where(eq(users.id, u.id)).returning();
+  if (u.role !== acc.role || !u.isActive || u.status !== "approved") {
+    const [fixed] = await db.update(users).set({ role: acc.role, isActive: true, status: "approved" }).where(eq(users.id, u.id)).returning();
     return fixed;
   }
   return u;
@@ -39,10 +53,10 @@ export async function authenticate(emailRaw: string, password: string): Promise<
   const email = emailRaw.trim().toLowerCase();
   if (!email || !password) return null;
 
-  if (isEnvAdmin(email)) {
-    const envPassword = process.env.HEAD_ADMIN_PASSWORD;
-    if (!envPassword || !same(password, envPassword)) return null;
-    return ensureEnvAdmin(email);
+  const env = envAccount(email);
+  if (env) {
+    if (!env.password || !same(password, env.password)) return null;
+    return ensureEnvAdmin(env);
   }
 
   const [u] = await db.select().from(users).where(eq(users.email, email));
@@ -55,10 +69,8 @@ export async function authenticate(emailRaw: string, password: string): Promise<
 
 /** Checks a password for someone who is already signed in (unlocking Administrator, changing a password). */
 export async function checkPassword(u: User, password: string): Promise<boolean> {
-  if (isEnvAdmin(u.email)) {
-    const envPassword = process.env.HEAD_ADMIN_PASSWORD;
-    return !!envPassword && same(password, envPassword);
-  }
+  const env = envAccount(u.email);
+  if (env) return !!env.password && same(password, env.password);
   return !!u.passwordHash && verifyPassword(password, u.passwordHash);
 }
 

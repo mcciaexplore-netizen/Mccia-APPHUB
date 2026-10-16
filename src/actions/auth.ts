@@ -57,7 +57,7 @@ export async function changePassword(input: unknown): Promise<Result> {
   try {
     const me = await getCurrentUser();
     if (!me) return { ok: false, error: "Please sign in again." };
-    if (isEnvAdmin(me.email)) return { ok: false, error: "The main admin's password is set in the environment settings (HEAD_ADMIN_PASSWORD)." };
+    if (isEnvAdmin(me.email)) return { ok: false, error: "This account's password is set in the environment settings, so it cannot be changed here." };
     const v = z.object({ current: z.string().min(1, "Enter your current password"), next: passwordSchema }).parse(input);
     if (!(await checkPassword(me, v.current))) return { ok: false, error: "Current password is incorrect." };
     if (v.current === v.next) return { ok: false, error: "Choose a password different from the current one." };

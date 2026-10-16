@@ -24,6 +24,9 @@ process.env.DB_DRIVER = process.env.INTEGRATION_DB_DRIVER ?? "pg";
 process.env.APP_BASE_URL = "http://localhost:3999";
 process.env.HEAD_ADMIN_EMAIL = "zz-hub-env-admin@example.com";
 process.env.HEAD_ADMIN_PASSWORD = "Env-admin-pass-1";
+process.env.SUPER_ADMIN_EMAIL = "zz-hub-env-super@example.com";
+process.env.SUPER_ADMIN_NAME = "ZZH Env Super";
+process.env.SUPER_ADMIN_PASSWORD = "Env-super-pass-1";
 delete process.env.SMTP_HOST; // no real email from a test
 delete process.env.SMTP_FROM;
 delete process.env.ALLOWED_EMAIL_DOMAIN;
@@ -39,8 +42,8 @@ const { listPeople, getPerson, parsePeopleFilters, peopleIds, adminSummary } = a
 const { checkImport, commitBatch } = await import("../src/lib/import");
 const { sendInvite, inviteInfo, completeInvite, hashToken } = await import("../src/lib/invites");
 const { getAccessibleApps, getLaunchTarget } = await import("../src/lib/access");
-const { authenticate } = await import("../src/lib/auth");
-const { verifyPassword } = await import("../src/lib/passwords");
+const { authenticate, isEnvAdmin, userFingerprint } = await import("../src/lib/auth");
+const { hashPassword, verifyPassword } = await import("../src/lib/passwords");
 const { UserError } = await import("../src/lib/user-error");
 type User = typeof S.users.$inferSelect;
 type ImportRow = import("../src/lib/import-parse").ImportRow;
@@ -406,6 +409,36 @@ try {
   check("an account can be created as an Admin, with no areas switched on", madeAdmin.role === "admin" && madeAdmin.adminAreas.length === 0);
   const [areasSaved] = await db.update(S.users).set({ adminAreas: ["people", "audit"] }).where(eq(S.users.id, madeAdmin.id)).returning();
   check("an Admin's areas are stored as a list", JSON.stringify(areasSaved.adminAreas) === JSON.stringify(["people", "audit"]));
+
+  // ------------------------------------------------------------------------------------------------ 12. Environment accounts: Support Admin and Super Admin
+  console.log("\n== 12. Accounts whose password lives in the environment settings ==");
+  const SUPER_EMAIL = "zz-hub-env-super@example.com";
+  const supEnv = await authenticate("  ZZ-Hub-Env-Super@Example.com ", "Env-super-pass-1");
+  check("the Super Admin signs in with the password from the settings (any capitals, spaces ignored), and the account is made on the first sign-in", !!supEnv && supEnv.role === "super_admin" && supEnv.signupSource === "env" && supEnv.name === "ZZH Env Super" && supEnv.isActive);
+  check("a wrong password is refused", (await authenticate(SUPER_EMAIL, "Env-super-pass-2")) === null && (await authenticate(SUPER_EMAIL, "")) === null);
+  const headEnv = await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1");
+  check("the Support Admin still signs in with theirs, as before", !!headEnv && headEnv.role === "head_admin");
+  check("neither password opens the other account", (await authenticate(SUPER_EMAIL, "Env-admin-pass-1")) === null && (await authenticate("zz-hub-env-admin@example.com", "Env-super-pass-1")) === null);
+  check("isEnvAdmin is true for both, and false for an ordinary account", isEnvAdmin(SUPER_EMAIL) && isEnvAdmin("zz-hub-env-admin@example.com") && !isEnvAdmin(plain.email));
+  await db.update(S.users).set({ passwordHash: await hashPassword("Stored-pass-1") }).where(eq(S.users.id, supEnv!.id));
+  check("a password stored in the database for that address is ignored: only the settings count", (await authenticate(SUPER_EMAIL, "Stored-pass-1")) === null && !!(await authenticate(SUPER_EMAIL, "Env-super-pass-1")));
+  await db.update(S.users).set({ role: "member", isActive: false }).where(eq(S.users.id, supEnv!.id));
+  const restored = await authenticate(SUPER_EMAIL, "Env-super-pass-1");
+  check("it can never be locked out: signing in puts the role back and reactivates it, as for the Support Admin", restored?.role === "super_admin" && restored.isActive === true);
+  const fpBefore = userFingerprint({ email: SUPER_EMAIL, passwordHash: null });
+  process.env.SUPER_ADMIN_PASSWORD = "Env-super-pass-9";
+  check("changing the password in the settings signs out every older session (the fingerprint changes)", userFingerprint({ email: SUPER_EMAIL, passwordHash: null }) !== fpBefore && (await authenticate(SUPER_EMAIL, "Env-super-pass-1")) === null && !!(await authenticate(SUPER_EMAIL, "Env-super-pass-9")));
+  process.env.SUPER_ADMIN_PASSWORD = "Env-super-pass-1";
+  check("the two environment accounts have different fingerprints", userFingerprint({ email: SUPER_EMAIL, passwordHash: null }) !== userFingerprint({ email: "zz-hub-env-admin@example.com", passwordHash: null }));
+  const supPerson = await getPerson(admin, supEnv!.id);
+  check("the directory marks the Super Admin as a main admin whose password is in the settings", supPerson?.mainAdmin === true && supPerson.passwordInSettings === true);
+  check("no setup link can be made for them", (await refused(() => sendInvite({ id: supEnv!.id, name: supEnv!.name, email: supEnv!.email, isActive: true }, admin.id))) !== null);
+  process.env.SUPER_ADMIN_EMAIL = "zz-hub-env-admin@example.com"; // the same address in both places: the Support Admin wins
+  check("if both settings name the same address, it is the Support Admin's", (await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1"))?.role === "head_admin" && (await authenticate("zz-hub-env-admin@example.com", "Env-super-pass-1")) === null);
+  process.env.SUPER_ADMIN_EMAIL = SUPER_EMAIL;
+  delete process.env.SUPER_ADMIN_EMAIL;
+  check("with no SUPER_ADMIN_EMAIL at all, that address is an ordinary account again and the Support Admin is unaffected", !isEnvAdmin(SUPER_EMAIL) && !!(await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1")));
+  process.env.SUPER_ADMIN_EMAIL = SUPER_EMAIL;
 } finally {
   await cleanup().catch((e) => console.error("cleanup failed", e));
   const left = await db.select({ n: count() }).from(S.users).where(like(S.users.email, "zz-hub-%"));

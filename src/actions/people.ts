@@ -72,7 +72,7 @@ export async function addPerson(input: unknown) {
     const v = newPerson.parse(input);
     checkMayGiveRole(admin, v.role);
     checkDomain(v.email);
-    if (isEnvAdmin(v.email)) throw new UserError("That address is the main admin, which is set in the environment settings.");
+    if (isEnvAdmin(v.email)) throw new UserError("That address is a main admin account, which is set in the environment settings.");
     const org = await checkOrg({ departmentId: v.departmentId, branchId: v.branchId, teamId: v.teamId, managerId: v.managerId }, null);
     const appIds = [...new Set(v.appIds)];
     if (appIds.length) {
@@ -120,6 +120,7 @@ export async function updatePerson(id: string, input: unknown) {
       { departmentId: cur.homeDepartmentId, branchId: cur.branchId, teamId: cur.teamId, managerId: cur.reportingManagerId },
     );
     const newRole = v.role ?? cur.role;
+    if (newRole !== cur.role && isEnvAdmin(cur.email)) throw new UserError("This account's role is set in the environment settings and cannot be changed here.");
     if (newRole !== cur.role && !canChangeRole(admin, cur)) throw new UserError("That person's role cannot be changed here. Only the Support Admin changes roles.");
     const before = await orgNames({ departmentId: cur.homeDepartmentId, branchId: cur.branchId, teamId: cur.teamId, managerId: cur.reportingManagerId });
     const after = await orgNames(org);
@@ -199,7 +200,7 @@ export async function setPersonPassword(id: string, password: unknown) {
     const [u] = await db.select({ name: users.name, email: users.email, role: users.role }).from(users).where(eq(users.id, id));
     if (!u) throw new UserError("User not found.");
     if (!canEditPerson(admin, { id, role: u.role })) throw new UserError("You cannot change that person's password.");
-    if (isEnvAdmin(u.email)) throw new UserError("The main admin's password is set in the environment settings (HEAD_ADMIN_PASSWORD).");
+    if (isEnvAdmin(u.email)) throw new UserError("This account's password is set in the environment settings.");
     await db.update(users).set({ passwordHash: await hashPassword(pw) }).where(eq(users.id, id)); // also signs them out everywhere
     await writeAudit(admin, [{ action: "user.password_set", targetType: "user", targetId: id, targetLabel: u.name }]);
   });

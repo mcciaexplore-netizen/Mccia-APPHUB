@@ -53,7 +53,7 @@ export async function deliverInvite(target: { name: string; email: string }, tok
  * returned ONCE so the administrator can pass it on. It is never stored, logged, audited or put in a report.
  */
 export async function sendInvite(target: InviteTarget, createdById: string): Promise<{ delivery: Delivery; link: string | null; expiresAt: Date }> {
-  if (isEnvAdmin(target.email)) throw new UserError("The main admin's password is set in the environment settings.");
+  if (isEnvAdmin(target.email)) throw new UserError("This account's password is set in the environment settings.");
   if (!target.isActive) throw new UserError(`${target.name} is inactive. Activate the account first.`);
 
   const token = randomBytes(32).toString("base64url");

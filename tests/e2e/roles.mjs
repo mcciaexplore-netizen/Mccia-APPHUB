@@ -259,6 +259,30 @@ try {
   check("and is sent away from it", new URL(U.url()).pathname !== "/administrator/users", U.url());
   check("a plain user cannot open the people pages even by address", (await U.request.get(BASE + "/administrator/users/audit/export")).status() !== 200 || !/text\/csv/.test((await U.request.get(BASE + "/administrator/users/audit/export")).headers()["content-type"] ?? ""));
 
+  section("7b. The Super Admin as an environment account (when SUPER_ADMIN_* are set to a test address)");
+  const ENV_SUP_EMAIL = (process.env.SUPER_ADMIN_EMAIL || "").trim().toLowerCase();
+  const ENV_SUP_PW = process.env.SUPER_ADMIN_PASSWORD || "";
+  if (ENV_SUP_EMAIL.startsWith("zzr-") && ENV_SUP_PW) {
+    const bad = (await newSession()).page;
+    await signIn(bad, ENV_SUP_EMAIL, ENV_SUP_PW + "x");
+    check("a wrong password is refused", new URL(bad.url()).pathname === "/login");
+    const E = (await newSession()).page;
+    await signIn(E, ENV_SUP_EMAIL, ENV_SUP_PW);
+    check("the right one signs in, and the account is made as a Super Admin from the settings", new URL(E.url()).pathname === "/" && await poll(async () => { const r = (await sql`select role, signup_source from users where lower(email) = ${ENV_SUP_EMAIL}`)[0]; return r && r.role === "super_admin" && r.signup_source === "env"; }));
+    check("they open Administrator with that same password, with every tab", (await visit(E, "/administrator/users", ENV_SUP_PW)) === "/administrator/users" && JSON.stringify(await tabs(E)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Applications", "Notifications Panel", "Activity log"]));
+    const envRow = await E.locator("tr", { hasText: ENV_SUP_EMAIL }).first().innerText();
+    check("their row says Super admin and Main admin · password in settings", /super admin/i.test(envRow) && /main admin · password in settings/i.test(envRow), envRow.replace(/\s+/g, " ").slice(0, 140));
+    const envId = (await sql`select id from users where lower(email) = ${ENV_SUP_EMAIL}`)[0].id;
+    await visit(A, `/administrator/users/${envId}`, ADMIN_PW);
+    await A.getByRole("heading", { name: /./ }).first().waitFor({ timeout: 30000 }).catch(() => {});
+    check("their profile has no setup link or password reset, no Deactivate or Delete, and the Role box is fixed", (await A.getByRole("button", { name: "Send setup link" }).count()) === 0 && (await A.getByRole("button", { name: /Reset password/ }).count()) === 0
+      && (await A.getByRole("button", { name: "Deactivate" }).count()) === 0 && (await A.getByRole("button", { name: "Delete" }).count()) === 0 && (await A.getByLabel("Role").isDisabled()));
+    await E.goto(BASE + "/change-password");
+    check("they are told their password is changed in the settings", /environment settings/i.test(await E.locator("body").innerText()));
+  } else {
+    console.log("   (skipped: set SUPER_ADMIN_EMAIL to a zzr-... address and SUPER_ADMIN_PASSWORD in the environment of this test and of the site to run these)");
+  }
+
   section("8. Console and untouched data");
   check("no browser console or page errors on any screen", consoleErrors.length === 0 && pageErrors.length === 0, [...consoleErrors, ...pageErrors].join(" | "));
 } catch (e) {

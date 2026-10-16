@@ -131,7 +131,7 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
             <Field label="Reporting manager"><select className="input" value={f.managerId} onChange={(e) => set("managerId", e.target.value)} disabled={!caps.editPerson}><option value="">None</option>{options.managers.filter((m) => m.id !== person.id).map((d) => <option key={d.id} value={d.id}>{d.name} ({d.email})</option>)}</select></Field>
             <Field label="Role">
               {isHeadAdmin ? <input className="input" value={roleLabel[person.role]} disabled aria-label="Role" /> : (
-                <select className="input" value={f.role} onChange={(e) => set("role", e.target.value)} disabled={!caps.changeRole || self} aria-label="Role"><option value="member">User</option><option value="dept_lead">Team manager</option><option value="admin">Admin</option><option value="super_admin">Super admin</option></select>
+                <select className="input" value={f.role} onChange={(e) => set("role", e.target.value)} disabled={!caps.changeRole || self || person.passwordInSettings} aria-label="Role"><option value="member">User</option><option value="dept_lead">Team manager</option><option value="admin">Admin</option><option value="super_admin">Super admin</option></select>
               )}
             </Field>
           </div>
