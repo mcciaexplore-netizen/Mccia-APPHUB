@@ -25,7 +25,7 @@ export function OrgManager({ branches, teams }: { branches: Branch[]; teams: Tea
     <div className="grid gap-8 lg:grid-cols-2">
       <section className="min-w-0 space-y-3" aria-label="Branches">
         <h2 className="text-xl">Branches</h2>
-        <p className="text-sm text-muted">Office locations. A person belongs to at most one. These are separate from departments, which group applications.</p>
+        <p className="text-sm text-muted">Office locations. A person belongs to at most one. These are separate from Departments (where people sit) and from Application categories (which arrange the applications).</p>
         <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); run(() => createBranch(newBranch), "Branch added", () => setNewBranch("")); }}>
           <input className="input" placeholder="New branch name" value={newBranch} onChange={(e) => setNewBranch(e.target.value)} required maxLength={80} aria-label="New branch name" />
           <button className="btn btn-primary btn-sm shrink-0" disabled={pending}><Plus size={14} /> Add branch</button>

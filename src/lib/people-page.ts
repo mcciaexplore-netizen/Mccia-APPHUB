@@ -6,6 +6,7 @@ import type { DirectoryProps } from "@/components/people/PeopleDirectory";
 import { domainsLabel } from "@/lib/domains";
 import { getCatalog } from "@/lib/catalog";
 import { listAudit } from "@/lib/audit";
+import { responsibilitiesFor } from "@/lib/approvals/responsibilities";
 import { getPerson, listPeople, parsePeopleFilters } from "@/lib/people";
 import { canDeactivate, canEditPerson, canGrantAny, canManageAccess, capabilities, hasArea, isSuper } from "@/lib/rbac";
 
@@ -24,11 +25,11 @@ async function grantableCatalog(actor: Pick<User, "id" | "role">) {
 const loadOptions = async () => {
   const [brs, deps, tms, appList] = await Promise.all([
     db.select({ id: branches.id, name: branches.name }).from(branches).orderBy(asc(branches.name)),
-    db.select({ id: departments.id, name: departments.name }).from(departments).orderBy(asc(departments.sortOrder), asc(departments.name)),
+    db.select({ id: departments.id, name: departments.name, isActive: departments.isActive }).from(departments).where(eq(departments.kind, "organisation")).orderBy(asc(departments.sortOrder), asc(departments.name)),
     db.select({ id: teams.id, name: teams.name }).from(teams).orderBy(asc(teams.name)),
     db.select({ id: apps.id, name: apps.name }).from(apps).orderBy(asc(apps.name)),
   ]);
-  return { branches: brs, departments: deps, teams: tms, apps: appList };
+  return { branches: brs, departments: deps.map((d) => ({ id: d.id, name: d.isActive ? d.name : `${d.name} (inactive)` })), teams: tms, apps: appList };
 };
 
 /** Who can be picked as a reporting manager: every active person for the two top roles; plain users and Team managers for an Admin (who never sees the others). */
@@ -64,12 +65,13 @@ export async function loadProfile(actor: User, id: string, base: string) {
   const person = await getPerson(actor, id);
   if (!person) return null;
   const full = canGrantAny(actor);
-  const [options, managers, catalog, names, auditRows] = await Promise.all([
+  const [options, managers, catalog, names, auditRows, responsibilities] = await Promise.all([
     loadOptions(),
     full ? loadManagers(actor) : Promise.resolve([]),
     grantableCatalog(actor),
     db.select({ id: apps.id, name: apps.name }).from(apps),
     hasArea(actor, "audit") ? listAudit({ page: 1, targetId: id }, 10) : Promise.resolve(null),
+    responsibilitiesFor([id]).then((m) => m.get(id) ?? []),
   ]);
   const templates = await loadTemplates(full ? undefined : new Set(catalog.apps.map((a) => a.id)));
   const inCatalog = new Set(catalog.apps.map((a) => a.id));
@@ -82,6 +84,7 @@ export async function loadProfile(actor: User, id: string, base: string) {
     accessEditable: canManageAccess(actor, { id: person.id, role: person.role, teamId: person.teamId, reportingManagerId: person.managerId }),
     appNames: person.appIds.map((a) => nameOf.get(a) ?? "").filter(Boolean).sort(),
     otherApps: person.appIds.filter((a) => !inCatalog.has(a)).length,
+    responsibilities,
     audit: auditRows ? auditRows.rows.map((r) => ({ id: r.id, at: r.at, actorName: r.actorName, action: r.action, details: r.details })) : null,
   };
 }

@@ -1,4 +1,4 @@
-import { hasArea, type Actor } from "@/lib/rbac";
+import { hasArea, isSuper, type Actor } from "@/lib/rbac";
 
 /**
  * The sections of Administrator, and which area of access opens each. The sidebar and the Administrator tab bar both ask here, so a
@@ -8,15 +8,17 @@ export type AdminTab = { href: string; label: string; exact?: boolean };
 
 export function adminTabsFor(a: Pick<Actor, "role" | "adminAreas">): AdminTab[] {
   const tabs: AdminTab[] = [{ href: "/administrator", label: "Dashboard", exact: true }];
-  if (hasArea(a, "apps")) tabs.push({ href: "/administrator/departments", label: "Departments" });
+  // Departments are the organisation's (where people sit). Application categories arrange the applications in the hub.
+  if (hasArea(a, "org")) tabs.push({ href: "/administrator/org-departments", label: "Departments" });
   // Users & Access opens on the first page of it the person may use.
   const users = hasArea(a, "people") ? "/administrator/users"
     : hasArea(a, "import") ? "/administrator/users/import"
     : hasArea(a, "org") ? "/administrator/users/org"
     : hasArea(a, "audit") ? "/administrator/users/audit" : null;
   if (users) tabs.push({ href: users, label: "Users & Access" });
-  if (hasArea(a, "apps")) tabs.push({ href: "/administrator/inventory", label: "Applications" });
-  if (hasArea(a, "apps") || hasArea(a, "people")) tabs.push({ href: "/administrator/notifications", label: "Notifications Panel" });
+  if (hasArea(a, "apps")) tabs.push({ href: "/administrator/inventory", label: "Applications" }, { href: "/administrator/departments", label: "Application categories" });
+  if (isSuper(a)) tabs.push({ href: "/administrator/approvals", label: "Approvals" });
+  tabs.push({ href: "/administrator/notifications", label: "Notifications Panel" });
   if (hasArea(a, "activity")) tabs.push({ href: "/administrator/activity", label: "Activity log" });
   return tabs;
 }

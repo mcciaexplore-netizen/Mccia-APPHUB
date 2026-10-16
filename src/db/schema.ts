@@ -28,17 +28,26 @@ const id = () => uuid("id").primaryKey().default(sql`gen_random_uuid()`);
 const createdAt = () =>
   timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
-export const departments = pgTable("departments", {
-  id: id(),
-  name: text("name").notNull().unique(),
-  slug: text("slug").unique(),
-  icon: text("icon").notNull(),
-  sortOrder: integer("sort_order").notNull().default(0),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: createdAt(),
-});
+// "organisation": a department people belong to (Finance, IT, AI...). "application": a group of applications in the hub (Finance, CAR Booking,
+// Inventory...). Same table so nothing already stored moves; every row that existed is an application group.
+export const departmentKindEnum = pgEnum("department_kind", ["organisation", "application"]);
 
-/** An office location. People belong to at most one; separate from the hub's departments (which group applications). */
+export const departments = pgTable(
+  "departments",
+  {
+    id: id(),
+    kind: departmentKindEnum("kind").notNull().default("application"),
+    name: text("name").notNull(),
+    slug: text("slug"),
+    icon: text("icon").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [unique("departments_kind_name_uq").on(t.kind, t.name), unique("departments_kind_slug_uq").on(t.kind, t.slug)],
+);
+
+/** An office location. People belong to at most one; separate from the organisation departments and from the application groups. */
 export const branches = pgTable("branches", {
   id: id(),
   name: text("name").notNull().unique(),
@@ -203,6 +212,27 @@ export const userAppAccess = pgTable(
     grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [unique("user_app_access_user_app_uq").on(t.userId, t.appId), index("user_app_access_app_idx").on(t.appId)],
+);
+
+/**
+ * What the hub tells a person: their access to an application changed, their role changed, and so on. One row per person per event;
+ * the dedupe key makes the same event written twice a single row. (The Approval System keeps its own notifications in apr_notifications;
+ * the notifications page shows both.)
+ */
+export const hubNotifications = pgTable(
+  "hub_notifications",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    body: text("body"),
+    link: text("link"),
+    dedupeKey: text("dedupe_key").notNull(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [unique("hub_notifications_user_dedupe_uq").on(t.userId, t.dedupeKey), index("hub_notifications_user_idx").on(t.userId, t.createdAt)],
 );
 
 export const accessTemplates = pgTable("access_templates", {

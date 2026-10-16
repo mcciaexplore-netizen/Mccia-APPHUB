@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { accessAudit } from "@/db/schema";
 import { scrub } from "@/lib/scrub";
 
-type AuditTarget = "user" | "app" | "branch" | "team" | "import" | "template" | "system";
+type AuditTarget = "user" | "app" | "branch" | "team" | "department" | "import" | "template" | "system";
 export type AuditEntry = { action: string; targetType: AuditTarget; targetId?: string | null; targetLabel?: string; details?: Record<string, unknown> };
 export type AuditActor = { id: string; name: string };
 

@@ -125,7 +125,7 @@ try {
   check("the Super Admin is shown as a main admin, without the 'password in settings' note", /Main admin/i.test(superRowText) && !/password in settings/i.test(superRowText), superRowText.replace(/\s+/g, " ").slice(0, 120));
   check("while the Support Admin keeps 'Main admin · password in settings'", /Main admin · password in settings/i.test(await A.locator("tr", { hasText: envAdmin.name }).first().innerText()));
   check("a main admin's status cannot be clicked to deactivate them, and there is no Delete button on their row", (await A.locator("tr", { hasText: sup.name }).first().getByRole("button", { name: /Delete/ }).count()) === 0 && (await A.locator("tr", { hasText: sup.name }).first().getByTitle("Click to deactivate").count()) === 0);
-  check("all six tabs of Administrator, as before", JSON.stringify(await tabs(A)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Applications", "Notifications Panel", "Activity log"]), (await tabs(A)).join("|"));
+  check("all six tabs of Administrator, as before", JSON.stringify(await tabs(A)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Applications", "Application categories", "Approvals", "Notifications Panel", "Activity log"]), (await tabs(A)).join("|"));
   check("the four pages inside Users & Access, as before", JSON.stringify(await subtabs(A)) === JSON.stringify(["People", "Branches & teams", "Audit log", "By application & templates"]), (await subtabs(A)).join("|"));
   const roleOptions = await A.locator("select[aria-label], select").evaluateAll((els) => els.flatMap((e) => [...e.options].map((o) => o.textContent)));
   check("the role filter lists User, Team manager, Admin, Super admin and Support admin", ["User", "Team manager", "Admin", "Super admin", "Support admin"].every((t) => roleOptions.includes(t)), roleOptions.join(","));
@@ -174,7 +174,7 @@ try {
   section("4. The Super Admin: everything, except changing roles");
   const sp = await visit(S, "/administrator/users", PW);
   check("the Super Admin opens Users & Access after unlocking with their own password", sp === "/administrator/users");
-  check("and sees all six tabs", JSON.stringify(await tabs(S)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Applications", "Notifications Panel", "Activity log"]), (await tabs(S)).join("|"));
+  check("and sees all six tabs", JSON.stringify(await tabs(S)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Applications", "Application categories", "Approvals", "Notifications Panel", "Activity log"]), (await tabs(S)).join("|"));
   check("and the whole directory, the Support Admin included", /Support admin/.test(await main(S)) && (await main(S)).includes(adm.name));
   check("the Applications and audit pages open", (await visit(S, "/administrator/inventory", PW)) === "/administrator/inventory" && (await visit(S, "/administrator/users/audit", PW)) === "/administrator/users/audit");
   await visit(A, `/administrator/users/${sup.id}`, ADMIN_PW);
@@ -238,7 +238,7 @@ try {
   section("6. An Admin with Branches & teams and the Audit log only");
   const op = await visit(O, "/administrator/users", PW);
   check("the People address is not open to them", op === "/administrator", op);
-  check("their tabs are the Dashboard and Users & Access", JSON.stringify(await tabs(O)) === JSON.stringify(["Dashboard", "Users & Access"]), (await tabs(O)).join("|"));
+  check("their tabs are the Dashboard, Departments, Users & Access and the Notifications Panel", JSON.stringify(await tabs(O)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Notifications Panel"]), (await tabs(O)).join("|"));
   check("and Users & Access opens on the first page they may use, not People", (await O.locator('nav[aria-label="Administrator sections"] a', { hasText: "Users & Access" }).getAttribute("href")) === "/administrator/users/org");
   await visit(O, "/administrator/users/org", PW);
   check("inside Users & Access they have Branches & teams and Audit log only", JSON.stringify(await subtabs(O)) === JSON.stringify(["Branches & teams", "Audit log"]), (await subtabs(O)).join("|"));
@@ -269,7 +269,7 @@ try {
     const E = (await newSession()).page;
     await signIn(E, ENV_SUP_EMAIL, ENV_SUP_PW);
     check("the right one signs in, and the account is made as a Super Admin from the settings", new URL(E.url()).pathname === "/" && await poll(async () => { const r = (await sql`select role, signup_source from users where lower(email) = ${ENV_SUP_EMAIL}`)[0]; return r && r.role === "super_admin" && r.signup_source === "env"; }));
-    check("they open Administrator with that same password, with every tab", (await visit(E, "/administrator/users", ENV_SUP_PW)) === "/administrator/users" && JSON.stringify(await tabs(E)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Applications", "Notifications Panel", "Activity log"]));
+    check("they open Administrator with that same password, with every tab", (await visit(E, "/administrator/users", ENV_SUP_PW)) === "/administrator/users" && JSON.stringify(await tabs(E)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Applications", "Application categories", "Approvals", "Notifications Panel", "Activity log"]));
     const envRow = await E.locator("tr", { hasText: ENV_SUP_EMAIL }).first().innerText();
     check("their row says Super admin and Main admin · password in settings", /super admin/i.test(envRow) && /main admin · password in settings/i.test(envRow), envRow.replace(/\s+/g, " ").slice(0, 140));
     const envId = (await sql`select id from users where lower(email) = ${ENV_SUP_EMAIL}`)[0].id;

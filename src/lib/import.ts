@@ -74,7 +74,8 @@ async function analyse(rows: ImportRow[], policy: ImportPolicy, actor: Actor) {
   const managerNames = managerTokens.filter((t) => !t.includes("@")).map((t) => t.toLowerCase());
 
   const [deps, brs, tms, catalog, byEmail, byName] = await Promise.all([
-    db.select({ id: departments.id, name: departments.name, isActive: departments.isActive }).from(departments),
+    // Organisation departments are listed last so that, when an application group has the same name, the department wins.
+    db.select({ id: departments.id, name: departments.name, isActive: departments.isActive }).from(departments).orderBy(sql`(${departments.kind} = 'organisation')`),
     db.select({ id: branches.id, name: branches.name, isActive: branches.isActive }).from(branches),
     db.select({ id: teams.id, name: teams.name, branchId: teams.branchId, isActive: teams.isActive }).from(teams),
     db.select({ id: apps.id, name: apps.name, departmentId: apps.departmentId, dept: departments.name }).from(apps).innerJoin(departments, eq(departments.id, apps.departmentId)).where(and(eq(apps.isActive, true), eq(departments.isActive, true))),

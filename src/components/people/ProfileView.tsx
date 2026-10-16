@@ -31,11 +31,13 @@ function describe(a: AuditLine): string {
 }
 
 /** One person, everything about them on one screen: who they are, where they sit, what they can open, and what changed recently. */
-export function ProfileView({ base, person, caps, options, catalog, templates, otherApps, audit, meId, accessEditable, appNames }: {
+export function ProfileView({ base, person, caps, options, catalog, templates, otherApps, audit, meId, accessEditable, appNames, responsibilities }: {
   base: string; person: PersonDetail; caps: ProfileCaps; options: { branches: Option[]; departments: Option[]; teams: Option[]; managers: Manager[] };
   catalog: Catalog; templates: Template[]; otherApps: number; audit: AuditLine[] | null; meId: string;
   /** Whether the viewer may change this person's access; when not (for example their own profile), it is shown read only. */
   accessEditable: boolean; appNames: string[];
+  /** What this person does in the Approval System, worked out from the Approver Rules (empty for most people). */
+  responsibilities: string[];
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -149,6 +151,12 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
               <Fact label="Created">{formatIST(person.createdAt)}</Fact>
               <Fact label="Setup link">{person.invite ? (person.invite.state === "used" ? "Used" : person.invite.state === "expired" ? "Expired" : `Open until ${formatIST(person.invite.expiresAt)}`) : <span className="text-subtle">None</span>}</Fact>
             </dl>
+          </section>
+          <section className="glass !rounded-md p-5" aria-label="Approval responsibilities">
+            <h3 className="mb-2 text-lg">Approval responsibilities</h3>
+            {responsibilities.length === 0 ? <p className="text-sm text-subtle">None. They can submit requests but do not approve any.</p> : (
+              <ul className="space-y-1.5 text-sm">{responsibilities.map((r) => <li key={r} className="flex items-start gap-2"><span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden />{r}</li>)}</ul>
+            )}
           </section>
           <section className="glass !rounded-md p-5" aria-label="Recent applications opened">
             <h3 className="mb-2 text-lg">Recently opened</h3>

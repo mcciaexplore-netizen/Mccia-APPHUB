@@ -1,13 +1,17 @@
 import Link from "next/link";
 import { desc } from "drizzle-orm";
-import { Building2, ClipboardList, Network, ShieldCheck, Upload, Users } from "lucide-react";
+import { Bell, Building2, ClipboardCheck, ClipboardList, Layers, Network, ShieldCheck, Upload, Users } from "lucide-react";
 import { db } from "@/db";
 import { appChecks, apps } from "@/db/schema";
 import { CountUp } from "@/components/CountUp";
 import { listAudit } from "@/lib/audit";
 import { formatIST } from "@/lib/format";
-import { adminSummary } from "@/lib/people";
+import { approvalsEnabled } from "@/lib/approvals/flags";
+import { approvalsOverview } from "@/lib/approvals/summary";
+import { noticeFeed } from "@/lib/notice-feed";
+import { adminSummary, departmentDistribution } from "@/lib/people";
 import { requireAdministrator } from "@/lib/permissions";
+import { hasArea, isSuper } from "@/lib/rbac";
 
 export const metadata = { title: "Administrator · MCCIA App Hub" };
 
@@ -24,12 +28,17 @@ function Card({ label, value, href, tone }: { label: string; value: number; href
 
 /** The administrator's home: real counts only, what needs attention, and the latest changes. Nothing here is estimated. */
 export default async function Page() {
-  await requireAdministrator();
-  const [s, recent, latest, list] = await Promise.all([
+  const me = await requireAdministrator();
+  // Approvals cover HR and expenditure together, so only the two top roles see their numbers. The audit log needs its own area.
+  const showApprovals = isSuper(me) && approvalsEnabled();
+  const [s, recent, latest, list, depts, approvals, notices] = await Promise.all([
     adminSummary(),
-    listAudit({ page: 1 }, 8),
+    hasArea(me, "audit") ? listAudit({ page: 1 }, 8) : Promise.resolve(null),
     db.selectDistinctOn([appChecks.appId], { appId: appChecks.appId, ok: appChecks.ok }).from(appChecks).orderBy(appChecks.appId, desc(appChecks.checkedAt)),
     db.select({ id: apps.id, url: apps.url }).from(apps),
+    departmentDistribution(),
+    showApprovals ? approvalsOverview() : Promise.resolve(null),
+    noticeFeed(me.id),
   ]);
   const external = list.filter((a) => !a.url.startsWith("/"));
   const checked = new Map(latest.map((c) => [c.appId, c.ok]));
@@ -63,6 +72,31 @@ export default async function Page() {
         </div>
       </section>
 
+      {approvals && (
+        <section aria-label="Approvals" className="space-y-3">
+          <div className="flex items-center justify-between"><h2 className="text-xl">Approvals</h2><Link href="/administrator/approvals" className="text-sm text-primary hover:underline"><ClipboardCheck size={14} className="mr-1 inline" />HR and Expenditure approvals</Link></div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <Card label="Pending HR approvals" value={approvals.hr.pending} href="/approvals/hr/pending" tone="warn" />
+            <Card label="Pending expenditure approvals" value={approvals.large.pending + approvals.small.pending} href="/administrator/approvals" tone="warn" />
+            <Card label="Pending, all" value={approvals.hr.pending + approvals.large.pending + approvals.small.pending} href="/administrator/approvals" />
+            <Card label="Approved, all" value={approvals.hr.approved + approvals.large.approved + approvals.small.approved} href="/administrator/approvals" />
+            <Card label="Rejected, all" value={approvals.hr.rejected + approvals.large.rejected + approvals.small.rejected} href="/administrator/approvals" />
+          </div>
+        </section>
+      )}
+
+      <section aria-label="People by department" className="glass !rounded-md space-y-3 p-5 sm:p-6">
+        <div className="flex items-center justify-between"><h2 className="text-xl">People by department</h2><Link href="/administrator/org-departments" className="text-sm text-primary hover:underline"><Building2 size={14} className="mr-1 inline" />Departments</Link></div>
+        {depts.rows.length === 0 ? <p className="text-sm text-muted">No departments yet.</p> : (
+          <ul className="grid gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            {depts.rows.map((d) => (
+              <li key={d.id} className={`flex justify-between gap-3 ${d.isActive ? "" : "opacity-60"}`}><Link href={`/administrator/users?dept=${d.id}`} className="text-primary hover:underline">{d.name}</Link><b>{d.n}</b></li>
+            ))}
+            <li className="flex justify-between gap-3 text-muted"><Link href="/administrator/users" className="hover:underline">No department yet</Link><b>{depts.none}</b></li>
+          </ul>
+        )}
+      </section>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="glass !rounded-md space-y-3 p-5 sm:p-6" aria-label="Needs attention">
           <h2 className="text-xl">Needs attention</h2>
@@ -72,16 +106,27 @@ export default async function Page() {
           <div className="flex flex-wrap gap-2 border-t border-line pt-4">
             <Link href="/administrator/users/import" className="btn btn-primary btn-sm"><Upload size={14} /> Bulk add users</Link>
             <Link href="/administrator/users" className="btn btn-ghost btn-sm"><Users size={14} /> Users &amp; Access</Link>
-            <Link href="/administrator/departments" className="btn btn-ghost btn-sm"><Building2 size={14} /> Departments</Link>
+            <Link href="/administrator/org-departments" className="btn btn-ghost btn-sm"><Building2 size={14} /> Departments</Link>
+            <Link href="/administrator/departments" className="btn btn-ghost btn-sm"><Layers size={14} /> Application categories</Link>
             <Link href="/administrator/users/org" className="btn btn-ghost btn-sm"><Network size={14} /> Branches &amp; teams ({s.branches} · {s.teams})</Link>
             <Link href="/administrator/inventory" className="btn btn-ghost btn-sm"><ClipboardList size={14} /> Application inventory</Link>
           </div>
         </section>
-        <section className="glass !rounded-md space-y-3 p-5 sm:p-6" aria-label="Recent changes">
-          <div className="flex items-center justify-between"><h2 className="text-xl">Recent changes</h2><Link href="/administrator/users/audit" className="text-sm text-primary hover:underline"><ShieldCheck size={14} className="mr-1 inline" />Audit log</Link></div>
-          {recent.rows.length === 0 ? <p className="text-sm text-muted">No changes recorded yet.</p> : (
-            <ul className="divide-y divide-line text-sm">{recent.rows.map((r) => (
-              <li key={r.id} className="flex flex-wrap justify-between gap-2 py-2"><span><b>{r.actorName}</b> <span className="text-muted">{r.action}</span>{r.targetLabel && <> · {r.targetLabel}</>}</span><span className="text-xs text-muted">{formatIST(r.at)}</span></li>
+        {recent && (
+          <section className="glass !rounded-md space-y-3 p-5 sm:p-6" aria-label="Recent changes">
+            <div className="flex items-center justify-between"><h2 className="text-xl">Recent changes</h2><Link href="/administrator/users/audit" className="text-sm text-primary hover:underline"><ShieldCheck size={14} className="mr-1 inline" />Audit log</Link></div>
+            {recent.rows.length === 0 ? <p className="text-sm text-muted">No changes recorded yet.</p> : (
+              <ul className="divide-y divide-line text-sm">{recent.rows.map((r) => (
+                <li key={r.id} className="flex flex-wrap justify-between gap-2 py-2"><span><b>{r.actorName}</b> <span className="text-muted">{r.action}</span>{r.targetLabel && <> · {r.targetLabel}</>}</span><span className="text-xs text-muted">{formatIST(r.at)}</span></li>
+              ))}</ul>
+            )}
+          </section>
+        )}
+        <section className="glass !rounded-md space-y-3 p-5 sm:p-6" aria-label="Your notifications">
+          <div className="flex items-center justify-between"><h2 className="text-xl">Your notifications</h2><Link href="/administrator/notifications" className="text-sm text-primary hover:underline"><Bell size={14} className="mr-1 inline" />All notifications</Link></div>
+          {notices.length === 0 ? <p className="text-sm text-muted">No notifications yet.</p> : (
+            <ul className="divide-y divide-line text-sm">{notices.slice(0, 5).map((n) => (
+              <li key={n.key} className="flex flex-wrap justify-between gap-2 py-2"><span className={n.read ? "text-muted" : "font-bold"}>{n.title}</span><span className="text-xs text-muted">{formatIST(new Date(n.at))}</span></li>
             ))}</ul>
           )}
         </section>

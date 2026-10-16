@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { db } from "@/db";
@@ -11,7 +11,7 @@ import { hasArea, isSuper } from "@/lib/rbac";
 import { uuid } from "@/lib/validation";
 import { DepartmentApps } from "./DepartmentApps";
 
-export const metadata = { title: "Department · MCCIA App Hub" };
+export const metadata = { title: "Application category · MCCIA App Hub" };
 
 export default async function Page({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const me = await requireArea("apps");
@@ -21,6 +21,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
 
   const [dept] = await db.select().from(departments).where(eq(departments.id, id));
   if (!dept) notFound();
+  // An organisation department is not a group of applications: its people are listed in Users & Access.
+  if (dept.kind === "organisation") redirect(`/administrator/users?dept=${dept.id}`);
 
   const [deptApps, members, grants] = await Promise.all([
     db.select().from(apps).where(eq(apps.departmentId, id)).orderBy(asc(apps.sortOrder), asc(apps.name)),
@@ -35,15 +37,13 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const byUser = new Map<string, string[]>();
   for (const g of grants) byUser.set(g.userId, [...(byUser.get(g.userId) ?? []), g.name]);
 
-  const active = tab === "users" ? "users" : "apps";
-  const tabs = [
-    { key: "apps", label: "Applications", n: deptApps.length },
-    { key: "users", label: "Users", n: members.length },
-  ] as const;
+  void tab; void members; void byUser;
+  const active = "apps" as const;
+  const tabs = [{ key: "apps", label: "Applications", n: deptApps.length }] as const;
 
   return (
     <div className="space-y-6">
-      <Link href="/administrator/departments" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-primary"><ArrowLeft size={14} /> All departments</Link>
+      <Link href="/administrator/departments" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-primary"><ArrowLeft size={14} /> All application categories</Link>
       <div className="flex items-center gap-3">
         <span className="icon-tile"><Icon name={dept.icon} size={20} /></span>
         <div>
@@ -52,7 +52,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         </div>
       </div>
 
-      <div className="flex gap-2 border-b border-line pb-3" role="tablist" aria-label="Department sections">
+      <div className="flex gap-2 border-b border-line pb-3" role="tablist" aria-label="Application category sections">
         {tabs.map((t) => (
           <Link key={t.key} href={`/administrator/departments/${id}?tab=${t.key}`} role="tab" aria-selected={active === t.key}
             className={`rounded-md px-4 py-2 text-sm font-medium transition-all duration-200 ${active === t.key ? "bg-blue-tint text-primary" : "text-muted hover:bg-blue-tint hover:text-primary"}`}>

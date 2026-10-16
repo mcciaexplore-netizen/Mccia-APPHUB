@@ -8,7 +8,7 @@ import { departmentInput, slugify, uuid } from "@/lib/validation";
 
 /** A new department goes to the end of the list unless an explicit sort order is given. */
 async function nextOrder() {
-  const rows = await db.select({ s: departments.sortOrder }).from(departments);
+  const rows = await db.select({ s: departments.sortOrder }).from(departments).where(eq(departments.kind, "application"));
   return rows.reduce((m, r) => Math.max(m, r.s), 0) + 10;
 }
 
@@ -36,7 +36,7 @@ export async function setDepartmentActive(id: string, active: boolean) {
 export async function moveDepartment(id: string, dir: "up" | "down") {
   return adminAction("apps", async () => {
     uuid.parse(id);
-    const list = await db.select({ id: departments.id }).from(departments).orderBy(asc(departments.sortOrder), asc(departments.name));
+    const list = await db.select({ id: departments.id }).from(departments).where(eq(departments.kind, "application")).orderBy(asc(departments.sortOrder), asc(departments.name));
     const i = list.findIndex((d) => d.id === id);
     const j = dir === "up" ? i - 1 : i + 1;
     if (i < 0 || j < 0 || j >= list.length) return;

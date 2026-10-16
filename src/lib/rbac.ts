@@ -22,13 +22,11 @@ export type AdminArea = (typeof ADMIN_AREAS)[number];
 export const AREA_LABEL: Record<AdminArea, { title: string; hint: string }> = {
   people: { title: "Users & access", hint: "Add and edit people, give or take away applications, send setup links, deactivate users" },
   import: { title: "Bulk add", hint: "Import people from a CSV or Excel file" },
-  org: { title: "Branches & teams", hint: "Create and change branches and teams" },
+  org: { title: "Departments, branches & teams", hint: "Create and change the organisation's departments, branches and teams" },
   apps: { title: "Applications", hint: "Departments, the application list and the link checks" },
   audit: { title: "Audit log", hint: "See who changed what, and export it" },
   activity: { title: "Activity log", hint: "See which applications people opened, and export it" },
 };
-
-export const isAdminArea = (v: string): v is AdminArea => (ADMIN_AREAS as readonly string[]).includes(v);
 
 // adminAreas is optional so that anyone who is not an Admin (and any caller that has no need for it) can be passed as an Actor as they are.
 export type Actor = { id: string; role: Role; teamId: string | null; adminAreas?: readonly string[] };

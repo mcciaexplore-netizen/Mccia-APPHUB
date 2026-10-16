@@ -1,15 +1,16 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { Menu } from "lucide-react";
+import Link from "next/link";
+import { Bell, Menu } from "lucide-react";
 import { SafetyMascot } from "@/components/SafetyMascot";
 import { Sidebar, type SidebarDept, type SidebarUser } from "@/components/Sidebar";
 import { UserMenu } from "@/components/UserMenu";
 
 export function HubShell({
-  user, departments, showApprovals, children,
+  user, departments, showApprovals, unread, children,
 }: {
-  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; children: React.ReactNode;
+  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; /** Unread notifications; the bell is shown when this is given. */ unread?: number; children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
@@ -32,7 +33,15 @@ export function HubShell({
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 bg-white px-4 sm:px-8 lg:justify-end">
           <button aria-label="Open menu" onClick={() => setOpen(true)} className="text-muted transition-colors hover:text-primary lg:hidden"><Menu size={22} /></button>
           {user ? (
-            <UserMenu name={user.name} role={user.role} />
+            <div className="flex items-center gap-3">
+              {unread !== undefined && (
+                <Link href="/notifications" aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"} className="relative grid h-10 w-10 place-items-center rounded-md text-muted transition-colors hover:bg-alt hover:text-primary">
+                  <Bell size={20} />
+                  {unread > 0 && <span className="absolute right-1 top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-brand-red px-1 text-[0.62rem] font-bold leading-none text-white">{unread > 99 ? "99+" : unread}</span>}
+                </Link>
+              )}
+              <UserMenu name={user.name} role={user.role} />
+            </div>
           ) : null}
         </header>
         <main className="p-4 pt-2 sm:p-8 sm:pt-4">{children}</main>

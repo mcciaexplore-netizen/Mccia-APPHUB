@@ -2,6 +2,7 @@ import "server-only";
 import { eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, userAppAccess, users, type User } from "@/db/schema";
+import { notifyUsers } from "@/lib/notifications";
 import { writeAudit, type AuditEntry } from "@/lib/audit";
 import { canGrantAny, canManageAccess, firstUngrantable, grantableApps } from "@/lib/rbac";
 import { UserError } from "@/lib/user-error";
@@ -147,6 +148,15 @@ async function settle(actor: Actor, c: SettleCtx, rows: Row[], source: string, m
     console.error("audit write failed", e);
     throw new UserError("The access was changed, but the change could not be recorded in the audit log. Please tell an administrator.");
   }
+  // Tell each person whose access changed. The key makes the same change written twice (a retry) a single notification.
+  const minute = Math.floor(Date.now() / 60000);
+  await notifyUsers(changed.map((ch) => ({
+    userId: ch.userId, kind: ch.added.length && !ch.removed.length ? "access_granted" : ch.removed.length && !ch.added.length ? "access_revoked" : "access_changed",
+    title: ch.added.length && !ch.removed.length ? "You were given access to an application" : ch.removed.length && !ch.added.length ? "Your access to an application was removed" : "Your application access changed",
+    body: [ch.added.length ? `Added: ${ch.added.map((a) => a.name).join(", ")}.` : "", ch.removed.length ? `Removed: ${ch.removed.map((a) => a.name).join(", ")}.` : ""].filter(Boolean).join(" "),
+    link: "/",
+    dedupeKey: `access:${[...ch.added.map((a) => a.id)].sort().join(",")}|${[...ch.removed.map((a) => a.id)].sort().join(",")}:${minute}`,
+  })));
   return { users: c.userIds.length, changed, unchanged: c.userIds.length - changed.length };
 }
 

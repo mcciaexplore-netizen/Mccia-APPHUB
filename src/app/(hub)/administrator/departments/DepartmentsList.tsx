@@ -8,7 +8,7 @@ import { Modal } from "@/components/Modal";
 import { createDepartment, moveDepartment, setDepartmentActive, updateDepartment } from "@/actions/departments";
 import { ActiveToggle, DepartmentForm, IconBtn, useRun } from "./forms";
 
-type Row = { id: string; name: string; icon: string; sortOrder: number; isActive: boolean; apps: number; users: number };
+type Row = { id: string; name: string; icon: string; sortOrder: number; isActive: boolean; apps: number };
 
 export function DepartmentsList({ departments }: { departments: Row[] }) {
   const { run, pending } = useRun();
@@ -18,20 +18,20 @@ export function DepartmentsList({ departments }: { departments: Row[] }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">Open a department to manage its applications and see its users.</p>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowAdd((s) => !s)}><Plus size={14} /> Add department</button>
+        <p className="max-w-2xl text-sm text-muted">Application categories arrange the applications in the hub (for example Finance, CAR Booking, Inventory). They are not the organisation&apos;s departments: those are under <Link href="/administrator/org-departments" className="text-primary hover:underline">Departments</Link>. Open a category to manage its applications.</p>
+        <button className="btn btn-primary btn-sm" onClick={() => setShowAdd((s) => !s)}><Plus size={14} /> Add category</button>
       </div>
 
       {showAdd && (
         <div className="glass p-5 sm:p-6">
-          <DepartmentForm submitLabel="Create department" pending={pending}
-            onSubmit={(v) => run(() => createDepartment(v), "Department created", () => setShowAdd(false))} />
+          <DepartmentForm submitLabel="Create category" pending={pending}
+            onSubmit={(v) => run(() => createDepartment(v), "Application category created", () => setShowAdd(false))} />
         </div>
       )}
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Department</th><th>Applications</th><th>Users</th><th>Status</th><th className="text-right">Actions</th></tr></thead>
+          <thead><tr><th>Application category</th><th>Applications</th><th>Status</th><th className="text-right">Actions</th></tr></thead>
           <tbody>
             {departments.map((d, i) => (
               <tr key={d.id} className={d.isActive ? "" : "opacity-60"}>
@@ -43,8 +43,7 @@ export function DepartmentsList({ departments }: { departments: Row[] }) {
                   </Link>
                 </td>
                 <td>{d.apps}</td>
-                <td>{d.users}</td>
-                <td><ActiveToggle active={d.isActive} disabled={pending} onToggle={() => run(() => setDepartmentActive(d.id, !d.isActive), d.isActive ? "Department deactivated" : "Department activated")} /></td>
+                <td><ActiveToggle active={d.isActive} disabled={pending} onToggle={() => run(() => setDepartmentActive(d.id, !d.isActive), d.isActive ? "Category deactivated" : "Category activated")} /></td>
                 <td>
                   <div className="flex justify-end gap-1.5">
                     <IconBtn label="Move up" disabled={i === 0 || pending} onClick={() => run(() => moveDepartment(d.id, "up"), "Reordered")}><ArrowUp size={14} /></IconBtn>
@@ -54,15 +53,15 @@ export function DepartmentsList({ departments }: { departments: Row[] }) {
                 </td>
               </tr>
             ))}
-            {departments.length === 0 && <tr><td colSpan={5} className="text-subtle">No departments yet. Add the first one above.</td></tr>}
+            {departments.length === 0 && <tr><td colSpan={4} className="text-subtle">No application categories yet. Add the first one above.</td></tr>}
           </tbody>
         </table>
       </div>
 
       {edit && (
-        <Modal title="Edit department" onClose={() => setEdit(null)}>
+        <Modal title="Edit application category" onClose={() => setEdit(null)}>
           <DepartmentForm initial={{ name: edit.name, icon: edit.icon, sortOrder: edit.sortOrder }} submitLabel="Save" pending={pending}
-            onSubmit={(v) => run(() => updateDepartment(edit.id, v), "Department saved", () => setEdit(null))} />
+            onSubmit={(v) => run(() => updateDepartment(edit.id, v), "Application category saved", () => setEdit(null))} />
         </Modal>
       )}
     </div>

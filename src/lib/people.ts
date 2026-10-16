@@ -200,6 +200,17 @@ export async function getPerson(actor: User, id: string): Promise<PersonDetail |
   };
 }
 
+/** How many people sit in each organisation department (even those with nobody), and how many are in none. Real counts from the database. */
+export async function departmentDistribution(): Promise<{ rows: { id: string; name: string; isActive: boolean; n: number }[]; none: number }> {
+  const [deps, counts] = await Promise.all([
+    db.select({ id: departments.id, name: departments.name, isActive: departments.isActive }).from(departments).where(eq(departments.kind, "organisation")).orderBy(asc(departments.sortOrder), asc(departments.name)),
+    db.select({ id: users.homeDepartmentId, n: count() }).from(users).groupBy(users.homeDepartmentId),
+  ]);
+  const n = new Map(counts.map((r) => [r.id, r.n]));
+  const rows = deps.map((d) => ({ ...d, n: n.get(d.id) ?? 0 }));
+  return { rows, none: counts.reduce((s, r) => s + r.n, 0) - rows.reduce((s, r) => s + r.n, 0) };
+}
+
 /** Real counts for the administrator's dashboard. Nothing here is estimated or made up. */
 export async function adminSummary() {
   const [[u], [a], [{ branchesN }], [{ teamsN }], [{ depsN }]] = await Promise.all([

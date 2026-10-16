@@ -36,7 +36,7 @@ export async function logout() {
 /** Administrator asks for the password again; it locks again as soon as you leave it (see src/proxy.ts). */
 export async function unlockAdmin(formData: FormData) {
   const next = safeNext(formData.get("next"));
-  const target = next.startsWith("/administrator") ? next : "/administrator/departments";
+  const target = next.startsWith("/administrator") ? next : "/administrator";
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canAdminister(user)) redirect("/");

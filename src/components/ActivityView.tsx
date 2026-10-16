@@ -22,7 +22,7 @@ export async function ActivityView({ filters, basePath, scopeDeptId, isAdmin, se
   const [data, m, deps, appList] = await Promise.all([
     getActivity(filters, scopeDeptId),
     getMetrics(scopeDeptId),
-    db.select({ id: departments.id, name: departments.name }).from(departments).orderBy(asc(departments.name)),
+    db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.kind, "application")).orderBy(asc(departments.name)),
     scopeDeptId
       ? db.select({ id: apps.id, name: apps.name }).from(apps).where(eq(apps.departmentId, scopeDeptId)).orderBy(asc(apps.name))
       : db.select({ id: apps.id, name: apps.name }).from(apps).orderBy(asc(apps.name)),

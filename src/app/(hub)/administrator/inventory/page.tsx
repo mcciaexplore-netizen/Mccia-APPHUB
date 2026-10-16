@@ -19,7 +19,7 @@ export default async function Page() {
     db.selectDistinctOn([appChecks.appId], { appId: appChecks.appId, ok: appChecks.ok, detail: appChecks.detail, httpStatus: appChecks.httpStatus, durationMs: appChecks.durationMs, checkedAt: appChecks.checkedAt })
       .from(appChecks).orderBy(appChecks.appId, desc(appChecks.checkedAt)),
     db.select({ appId: userAppAccess.appId, n: count() }).from(userAppAccess).groupBy(userAppAccess.appId),
-    db.select({ id: departments.id, name: departments.name }).from(departments).orderBy(asc(departments.sortOrder), asc(departments.name)),
+    db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.kind, "application")).orderBy(asc(departments.sortOrder), asc(departments.name)),
   ]);
   const check = new Map(latest.map((c) => [c.appId, c]));
   const people = new Map(access.map((a) => [a.appId, a.n]));

@@ -13,10 +13,12 @@ import { isEnvAdmin } from "@/lib/auth";
 import { domainsLabel, isEmailAllowed } from "@/lib/domains";
 import { BATCH_ROWS, checkImport, commitBatch, type ImportPolicy } from "@/lib/import";
 import { deliverInvite, hashToken, sendInvite } from "@/lib/invites";
+import { roleLabel } from "@/lib/format";
+import { notifyUsers } from "@/lib/notifications";
 import { checkOrg } from "@/lib/org";
 import { hashPassword, passwordSchema } from "@/lib/passwords";
 import { parsePeopleFilters, peopleIds } from "@/lib/people";
-import { ADMIN_AREAS, ASSIGNABLE_ROLES, canChangeRole, canDeactivate, canEditPerson, canManageAccess, isSupport, PROMOTABLE_ROLES } from "@/lib/rbac";
+import { ADMIN_AREAS, AREA_LABEL, ASSIGNABLE_ROLES, canChangeRole, canDeactivate, canEditPerson, canManageAccess, isSupport, PROMOTABLE_ROLES } from "@/lib/rbac";
 import { emailSchema, uuid, uuidList } from "@/lib/validation";
 
 /**
@@ -131,6 +133,9 @@ export async function updatePerson(id: string, input: unknown) {
     if (Object.keys(changes).length === 0) return;
     await db.update(users).set({ name: v.name, designation: v.designation, homeDepartmentId: org.departmentId, branchId: org.branchId, teamId: org.teamId, reportingManagerId: org.managerId, role: newRole, adminAreas: newRole === "admin" ? cur.adminAreas : [] }).where(eq(users.id, id));
     await writeAudit(admin, [{ action: "user.update", targetType: "user", targetId: id, targetLabel: v.name, details: { changes } }]);
+    if (newRole !== cur.role) {
+      await notifyUsers([{ userId: id, kind: "role_changed", title: "Your role changed", body: `Your role in the App Hub is now ${roleLabel[newRole]}.`, link: "/", dedupeKey: `role:${newRole}:${Math.floor(Date.now() / 60000)}` }]);
+    }
   });
 }
 
@@ -189,6 +194,7 @@ export async function setAdminAreas(id: string, areas: unknown) {
     if (added.length === 0 && removed.length === 0) return;
     await db.update(users).set({ adminAreas: next }).where(eq(users.id, id));
     await writeAudit(admin, [{ action: "user.admin_areas", targetType: "user", targetId: id, targetLabel: u.name, details: { added, removed, before, after: next } }]);
+    await notifyUsers([{ userId: id, kind: "admin_areas_changed", title: "What you may open in Administrator changed", body: next.length ? `You can now open: ${next.map((a) => AREA_LABEL[a].title).join(", ")}.` : "Nothing is switched on for you in Administrator.", link: "/", dedupeKey: `areas:${next.join(",")}:${Math.floor(Date.now() / 60000)}` }]);
   });
 }
 

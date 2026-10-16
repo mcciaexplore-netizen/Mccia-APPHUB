@@ -248,9 +248,9 @@ eq("rbac: Admin and Super Admin can be given through the screens, only by the Su
 eq("rbac: the areas an Admin can be given", [...ADMIN_AREAS], ["people", "import", "org", "apps", "audit", "activity"]);
 eq("rbac: a plain user and a Team manager never open Administrator", [canAdminister(USER), canAdminister(TM)], [false, false]);
 eq("tabs: the Support Admin and the Super Admin see every tab, as before", [adminTabsFor(ADMIN).map((t) => t.label), adminTabsFor(SUPER).map((t) => t.label)],
-  [["Dashboard", "Departments", "Users & Access", "Applications", "Notifications Panel", "Activity log"], ["Dashboard", "Departments", "Users & Access", "Applications", "Notifications Panel", "Activity log"]]);
+  [["Dashboard", "Departments", "Users & Access", "Applications", "Application categories", "Approvals", "Notifications Panel", "Activity log"], ["Dashboard", "Departments", "Users & Access", "Applications", "Application categories", "Approvals", "Notifications Panel", "Activity log"]]);
 eq("tabs: an Admin sees the Dashboard and only the tabs of the areas switched on", [adminTabsFor(A_NONE).map((t) => t.label), adminTabsFor(adminWith("people")).map((t) => t.label), adminTabsFor(adminWith("apps", "activity")).map((t) => t.label)],
-  [["Dashboard"], ["Dashboard", "Users & Access", "Notifications Panel"], ["Dashboard", "Departments", "Applications", "Notifications Panel", "Activity log"]]);
+  [["Dashboard", "Notifications Panel"], ["Dashboard", "Users & Access", "Notifications Panel"], ["Dashboard", "Applications", "Application categories", "Notifications Panel", "Activity log"]]);
 eq("tabs: Users & Access opens on the first page of it the Admin may use", [adminTabsFor(A_IMPORT).find((t) => t.label === "Users & Access")?.href, adminTabsFor(A_AUDIT).find((t) => t.label === "Users & Access")?.href, adminTabsFor(adminWith("org")).find((t) => t.label === "Users & Access")?.href],
   ["/administrator/users/import", "/administrator/users/audit", "/administrator/users/org"]);
 eq("tabs: inside Users & Access the Support Admin sees all four pages and an Admin only their own", [peopleTabsFor(ADMIN).map((t) => t.label), peopleTabsFor(adminWith("org", "audit")).map((t) => t.label)],
@@ -309,7 +309,7 @@ eq("xlsx: entities, inline strings, shared strings with formatting runs, and spa
 eq("xlsx: a file that is not a spreadsheet gives a plain-language error", (() => { try { xlsxToTable(new Uint8Array([1, 2, 3, 4])); return "no error"; } catch (e) { return (e as Error).message; } })(), "That does not look like a valid Excel (.xlsx) file.");
 
 // Every server action must prove who is asking. This reads the source of src/actions/*.ts, so an action added later without a guard fails here.
-const SELF_CHECKING = new Set(["login", "logout", "unlockAdmin", "lockAdmin", "changePassword", "finishSetup"]); // sign-in itself, the person's own password, and the one-time link page
+const SELF_CHECKING = new Set(["login", "logout", "unlockAdmin", "lockAdmin", "changePassword", "finishSetup", "markNotificationRead", "markAllNotificationsRead"]); // sign-in itself, the person's own password, the one-time link page, and a person marking their own notifications read
 const actionsDir = new URL("../src/actions/", import.meta.url);
 const unguarded: string[] = [];
 let actionCount = 0;

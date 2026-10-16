@@ -78,6 +78,13 @@
       "when": 1792127634760,
       "tag": "0010_roles_super_admin_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792145969974,
+      "tag": "0011_departments_kind_hub_notifications",
+      "breakpoints": true
     }
   ]
 }

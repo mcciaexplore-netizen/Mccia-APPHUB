@@ -1,5 +1,5 @@
 import "server-only";
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, departments } from "@/db/schema";
 
@@ -10,7 +10,7 @@ export type CatalogApp = { id: string; name: string; departmentId: string; isAct
 export async function getCatalog(): Promise<{ departments: CatalogDept[]; apps: CatalogApp[] }> {
   const [deps, list] = await Promise.all([
     db.select({ id: departments.id, name: departments.name, icon: departments.icon, isActive: departments.isActive })
-      .from(departments).orderBy(asc(departments.sortOrder), asc(departments.name)),
+      .from(departments).where(eq(departments.kind, "application")).orderBy(asc(departments.sortOrder), asc(departments.name)),
     db.select({ id: apps.id, name: apps.name, departmentId: apps.departmentId, isActive: apps.isActive })
       .from(apps).orderBy(asc(apps.sortOrder), asc(apps.name)),
   ]);

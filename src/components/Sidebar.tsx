@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { Activity, AppWindow, Bell, Building2, ChevronDown, ClipboardList, LayoutDashboard, ShieldCheck, UsersRound, Users, Wallet, UserCheck, X } from "lucide-react";
+import { Activity, AppWindow, Bell, Building2, ChevronDown, ClipboardCheck, ClipboardList, Layers, LayoutDashboard, ShieldCheck, UsersRound, Users, Wallet, UserCheck, X } from "lucide-react";
 import { lockAdmin } from "@/actions/auth";
 import { Icon } from "@/components/Icon";
 import { isSafetyWeek, playSafetyMascot } from "@/components/SafetyMascot";
@@ -35,9 +35,11 @@ const APPROVAL_APPS: { key: AppKey; Icon: typeof Wallet }[] = [{ key: "hr", Icon
 
 const ADMIN_LINKS = [
   { href: "/administrator", label: "Dashboard", Icon: LayoutDashboard, exact: true },
-  { href: "/administrator/departments", label: "Departments", Icon: Building2 },
+  { href: "/administrator/org-departments", label: "Departments", Icon: Building2 },
   { href: "/administrator/users", label: "Users & Access", Icon: Users },
   { href: "/administrator/inventory", label: "Applications", Icon: AppWindow },
+  { href: "/administrator/departments", label: "Application categories", Icon: Layers },
+  { href: "/administrator/approvals", label: "Approvals", Icon: ClipboardCheck },
   { href: "/administrator/notifications", label: "Notifications Panel", Icon: Bell },
 ] as const;
 

@@ -48,7 +48,7 @@ export const getVisibleDepartments = cache(async (user: Pick<User, "id" | "role"
     db
       .select({ id: departments.id, name: departments.name, icon: departments.icon })
       .from(departments)
-      .where(eq(departments.isActive, true))
+      .where(and(eq(departments.isActive, true), eq(departments.kind, "application")))
       .orderBy(asc(departments.sortOrder), asc(departments.name)),
     isSuper(user) ? Promise.resolve([] as HubApp[]) : getAccessibleApps(user),
   ]);
