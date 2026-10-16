@@ -7,14 +7,14 @@ import {
 } from "@/db/approvals-schema";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
-import { assessBudget, commentRequired, formatRequestNo, planProblemMessage, planSteps, REQUEST_PREFIX, TYPE_LABEL, wrongFormMessage, type ExpenditureForm } from "./calc";
+import { assessBudget, commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, REQUEST_PREFIX, TYPE_LABEL, wrongFormMessage, type BudgetAssessment, type ExpenditureForm } from "./calc";
 import { budgetPosition } from "./budget-position";
 import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { financialYearOf, formatINR, todayIST } from "./format";
 import { getDirectoryUsers, listUsers, type ApprovalsUser } from "./host-adapter";
 import { notify } from "./notify";
 import { canSeeRequest } from "./request-queries";
-import type { HrRequestInput, LargeExpenditureInput, SmallExpenditureInput } from "./request-schemas";
+import type { HrRequestInput, LargeExpenditureInput, ResubmitInput, SmallExpenditureInput } from "./request-schemas";
 import { getSettings } from "./settings";
 
 /**
@@ -63,8 +63,9 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
   if (new Set(fileIds).size !== fileIds.length) throw new ApprovalsError("The same file cannot be attached twice. Please attach each file separately.");
   const stored = await checkFilesReady(actor, fileIds);
 
-  const rules = await db.select().from(aprApproverRules).where(eq(aprApproverRules.requestType, p.type));
-  const plan = planSteps(rules.map((r) => ({ ...r, approverUserIds: r.approverUserIds })), actor.id, p.amountPaise ?? 0);
+  const allRules = await db.select().from(aprApproverRules);
+  const rules = allRules.filter((r) => r.requestType === p.type);
+  const plan = planSteps(rules.map((r) => ({ ...r, approverUserIds: r.approverUserIds })), actor.id, p.amountPaise ?? 0, escalationApprover(allRules));
   if (plan.problem) throw new ApprovalsError(planProblemMessage(plan.problem), 409);
   const approvers = new Map((await getDirectoryUsers(plan.steps.map((s) => s.approverUserId))).map((u) => [u.id, u]));
   for (const s of plan.steps) {
@@ -137,24 +138,44 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
 
 /* ---------------------------------------------------------------- submit */
 
+/** HR requests with an amount name the budget they are spent from; this checks the choice and works out where the budget stands. */
+async function prepareHrBudget(input: { amountPaise: number | null; branchId: string | null; budgetCategoryId: string | null }, financialYear: string): Promise<{ budget: BudgetAssessment | null }> {
+  if (input.amountPaise == null) return { budget: null };
+  if (!input.branchId || !input.budgetCategoryId) throw new ApprovalsError("An amount needs a branch and a category, so the budget can be checked. Choose both.", 422);
+  const [[branch], [category]] = await Promise.all([
+    db.select().from(aprBranches).where(eq(aprBranches.id, input.branchId)),
+    db.select().from(aprCategories).where(eq(aprCategories.id, input.budgetCategoryId)),
+  ]);
+  if (!branch?.active) throw new ApprovalsError("Pick an active branch.");
+  if (!category?.active) throw new ApprovalsError("Pick an active category for the budget.");
+  return { budget: assessBudget(await budgetPosition(financialYear, input.branchId, input.budgetCategoryId), input.amountPaise) };
+}
+
+const hrDetailsValues = (input: HrRequestInput, budget: BudgetAssessment | null) => ({
+  firstName: input.firstName, lastName: input.lastName, hrCategoryId: input.hrCategoryId, description: input.description,
+  branchId: budget ? input.branchId : null, budgetCategoryId: budget ? input.budgetCategoryId : null,
+  budgetAllocatedPaise: budget?.allocatedPaise ?? null, budgetAvailablePaise: budget?.availablePaise ?? null, budgetRemainingPaise: budget?.afterPaise ?? null,
+});
+
 export async function submitHrRequest(input: HrRequestInput, actor: ApprovalsUser) {
   const [category] = await db.select().from(aprHrCategories).where(eq(aprHrCategories.id, input.hrCategoryId));
   if (!category?.active) throw new ApprovalsError("Pick an active category.");
+  const { budget } = await prepareHrBudget(input, financialYearOf(input.requestedAt));
   const name = `${input.firstName} ${input.lastName}`;
   return createRequest(actor, {
-    type: "hr", requesterName: name, requesterEmail: input.email ?? actor.email, requestedAt: input.requestedAt, amountPaise: input.amountPaise, overBudget: false,
+    type: "hr", requesterName: name, requesterEmail: input.email ?? actor.email, requestedAt: input.requestedAt, amountPaise: input.amountPaise, overBudget: budget?.overBudget ?? false,
     files: [
       ...(input.fileUpload ? [{ slot: "file_upload" as const, fileId: input.fileUpload.fileId }] : []),
       ...(input.fileUpload2 ? [{ slot: "file_upload_2" as const, fileId: input.fileUpload2.fileId }] : []),
     ],
     insertDetails: async (requestId) => {
-      await db.insert(aprHrDetails).values({ requestId, firstName: input.firstName, lastName: input.lastName, hrCategoryId: input.hrCategoryId, description: input.description });
+      await db.insert(aprHrDetails).values({ requestId, ...hrDetailsValues(input, budget) });
     },
   });
 }
 
-/** Both expenditure forms. The amount must match the form: 10,000 and above is "large" (DG), anything lower is "small". */
-export async function submitExpenditure(form: ExpenditureForm, input: LargeExpenditureInput | SmallExpenditureInput, actor: ApprovalsUser) {
+/** Everything both expenditure forms check before a request is saved or corrected: the right form, live masters, the person, the budget. */
+async function prepareExpenditure(form: ExpenditureForm, input: LargeExpenditureInput | SmallExpenditureInput, financialYear: string) {
   const settings = await getSettings();
   const wrong = wrongFormMessage(form, input.amountPaise, settings.thresholdPaise);
   if (wrong) throw new ApprovalsError(wrong, 422);
@@ -179,45 +200,63 @@ export async function submitExpenditure(form: ExpenditureForm, input: LargeExpen
     }
   }
 
-  const fy = financialYearOf(input.requestedAt);
-  const assessment = assessBudget(await budgetPosition(fy, input.branchId, input.categoryId), input.amountPaise);
-  const large = form === "large" ? (input as LargeExpenditureInput) : null;
+  const assessment = assessBudget(await budgetPosition(financialYear, input.branchId, input.categoryId), input.amountPaise);
+  return { employee, assessment, small, large: form === "large" ? (input as LargeExpenditureInput) : null };
+}
 
+const expenditureDetailsValues = (input: LargeExpenditureInput | SmallExpenditureInput, a: BudgetAssessment, small: SmallExpenditureInput | null) => ({
+  categoryId: input.categoryId, branchId: input.branchId, natureOfExpenditure: input.natureOfExpenditure, vendorName: input.vendorName,
+  budgetAllocatedPaise: a.allocatedPaise, budgetAvailablePaise: a.availablePaise, budgetRemainingPaise: a.afterPaise, differencePaise: a.afterPaise,
+  taxInvoiceDate: small?.taxInvoiceDate ?? null, expenseDate: small?.expenseDate ?? null,
+  publicationTypeId: small?.publicationTypeId ?? null, publicationId: small?.publicationId ?? null,
+});
+
+const expenditureFiles = (large: LargeExpenditureInput | null, small: SmallExpenditureInput | null): { slot: Slot; fileId: string }[] =>
+  large
+    ? [
+        ...(large.supportingDocs ? [{ slot: "supporting" as const, fileId: large.supportingDocs.fileId }] : []),
+        ...(large.quotation ? [{ slot: "quotation" as const, fileId: large.quotation.fileId }] : []),
+      ]
+    : [
+        ...(small!.fileUpload ? [{ slot: "file_upload" as const, fileId: small!.fileUpload.fileId }] : []),
+        ...(small!.taxInvoice ? [{ slot: "tax_invoice" as const, fileId: small!.taxInvoice.fileId }] : []),
+        ...(small!.quotation ? [{ slot: "quotation" as const, fileId: small!.quotation.fileId }] : []),
+      ];
+
+/** Both expenditure forms. The amount must match the form: 10,000 and above is "large" (DG), anything lower is "small". */
+export async function submitExpenditure(form: ExpenditureForm, input: LargeExpenditureInput | SmallExpenditureInput, actor: ApprovalsUser) {
+  const { employee, assessment, small, large } = await prepareExpenditure(form, input, financialYearOf(input.requestedAt));
   return createRequest(actor, {
     type: form === "large" ? "expenditure_large" : "expenditure_small",
     requesterName: employee.name, requesterEmail: input.email ?? employee.email, requestedAt: input.requestedAt,
     amountPaise: input.amountPaise, overBudget: assessment.overBudget,
-    files: form === "large"
-      ? [
-          ...(large!.supportingDocs ? [{ slot: "supporting" as const, fileId: large!.supportingDocs.fileId }] : []),
-          ...(large!.quotation ? [{ slot: "quotation" as const, fileId: large!.quotation.fileId }] : []),
-        ]
-      : [
-          ...(small!.fileUpload ? [{ slot: "file_upload" as const, fileId: small!.fileUpload.fileId }] : []),
-          ...(small!.taxInvoice ? [{ slot: "tax_invoice" as const, fileId: small!.taxInvoice.fileId }] : []),
-          ...(small!.quotation ? [{ slot: "quotation" as const, fileId: small!.quotation.fileId }] : []),
-        ],
+    files: expenditureFiles(large, small),
     insertDetails: async (requestId) => {
-      await db.insert(aprExpenditureDetails).values({
-        requestId, categoryId: input.categoryId, branchId: input.branchId, natureOfExpenditure: input.natureOfExpenditure, vendorName: input.vendorName,
-        budgetAllocatedPaise: assessment.allocatedPaise, budgetAvailablePaise: assessment.availablePaise, budgetRemainingPaise: assessment.afterPaise, differencePaise: assessment.afterPaise,
-        taxInvoiceDate: small?.taxInvoiceDate ?? null, expenseDate: small?.expenseDate ?? null,
-        publicationTypeId: small?.publicationTypeId ?? null, publicationId: small?.publicationId ?? null,
-      });
+      await db.insert(aprExpenditureDetails).values({ requestId, ...expenditureDetailsValues(input, assessment, small) });
     },
   });
 }
 
 /* ---------------------------------------------------------------- decide */
 
-const outcomeLabel = { approved: "approved", rejected: "rejected", withdrawn: "withdrawn" } as const;
+const outcomeLabel = { approved: "approved", rejected: "rejected", withdrawn: "withdrawn", returned: "returned for corrections, so it is waiting for the person who raised it" } as const;
 
-export async function decideRequest(requestId: string, input: { action: "approve" | "reject"; comment: string | null }, actor: ApprovalsUser): Promise<{ status: AprRequestStatus }> {
+/** The branch and category a request's money comes from: an expenditure always has them, an HR request only when it carries an amount. */
+async function budgetKeyOf(requestId: string, type: AprRequestType): Promise<{ branchId: string; categoryId: string } | null> {
+  if (type === "hr") {
+    const [d] = await db.select({ branchId: aprHrDetails.branchId, categoryId: aprHrDetails.budgetCategoryId }).from(aprHrDetails).where(eq(aprHrDetails.requestId, requestId));
+    return d?.branchId && d.categoryId ? { branchId: d.branchId, categoryId: d.categoryId } : null;
+  }
+  const [d] = await db.select({ branchId: aprExpenditureDetails.branchId, categoryId: aprExpenditureDetails.categoryId }).from(aprExpenditureDetails).where(eq(aprExpenditureDetails.requestId, requestId));
+  return d ?? null;
+}
+
+export async function decideRequest(requestId: string, input: { action: "approve" | "reject" | "return"; comment: string | null }, actor: ApprovalsUser): Promise<{ status: AprRequestStatus }> {
   const [req] = await db.select().from(aprRequests).where(eq(aprRequests.id, requestId));
   // Someone who may not see the request is told it does not exist, whatever state it is in: no status leaks to people not involved.
   if (!req || req.status === "draft" || !(await canSeeRequest(actor, requestId))) throw new ApprovalsError("That request does not exist.", 404);
   if (req.status !== "pending") throw new ApprovalsError(`This request has already been ${outcomeLabel[req.status as keyof typeof outcomeLabel] ?? req.status}, so it cannot be decided again.`, 409);
-  if (req.requesterUserId === actor.id) throw new ApprovalsError("You cannot approve or reject your own request.", 403);
+  if (req.requesterUserId === actor.id) throw new ApprovalsError("You cannot approve, reject or return your own request.", 403);
 
   const [step] = await db.select().from(aprRequestSteps).where(and(eq(aprRequestSteps.requestId, requestId), eq(aprRequestSteps.stepNo, req.currentStep)));
   if (!step || step.approverUserId !== actor.id) throw new ApprovalsError("This request is not waiting for you.", 403);
@@ -226,16 +265,20 @@ export async function decideRequest(requestId: string, input: { action: "approve
 
   // Over budget is judged again now, as well as when it was submitted: the budget may have changed since.
   let overBudget = req.overBudget;
-  if (req.type !== "hr" && !overBudget) {
-    const [d] = await db.select().from(aprExpenditureDetails).where(eq(aprExpenditureDetails.requestId, requestId));
-    if (d && req.financialYear && req.amountPaise != null) overBudget = assessBudget(await budgetPosition(req.financialYear, d.branchId, d.categoryId), req.amountPaise).overBudget;
+  if (!overBudget && req.financialYear && req.amountPaise != null) {
+    const key = await budgetKeyOf(requestId, req.type);
+    if (key) overBudget = assessBudget(await budgetPosition(req.financialYear, key.branchId, key.categoryId), req.amountPaise).overBudget;
   }
   if (commentRequired(input.action, overBudget) && !input.comment) {
-    throw new ApprovalsError(input.action === "reject" ? "Please write a comment explaining why you are rejecting this request." : "This request is over budget, so a comment is required to approve it.", 422);
+    throw new ApprovalsError(
+      input.action === "reject" ? "Please write a comment explaining why you are rejecting this request."
+        : input.action === "return" ? "Please write a comment saying what needs to be corrected."
+          : "This request is over budget, so a comment is required to approve it.", 422,
+    );
   }
 
   const settings = await getSettings();
-  const decision = input.action === "approve" ? ("approved" as const) : ("rejected" as const);
+  const decision = input.action === "approve" ? ("approved" as const) : input.action === "reject" ? ("rejected" as const) : ("returned" as const);
 
   // The claim: only one caller can move the step out of "pending".
   const claimed = await db
@@ -265,6 +308,13 @@ export async function decideRequest(requestId: string, input: { action: "approve
       const skipped = await db.update(aprRequestSteps).set({ status: "skipped" }).where(and(eq(aprRequestSteps.requestId, requestId), eq(aprRequestSteps.status, "waiting"))).returning({ id: aprRequestSteps.id });
       undo.unshift(() => (skipped.length ? db.update(aprRequestSteps).set({ status: "waiting" }).where(inArray(aprRequestSteps.id, skipped.map((r) => r.id))) : Promise.resolve()));
       status = "rejected";
+    } else if (decision === "returned") {
+      // Sent back to the person who raised it. The request keeps its step and its approver, so a corrected request returns to the same person,
+      // and the steps after it stay as they are.
+      const moved = await db.update(aprRequests).set({ status: "returned", updatedAt: now }).where(stillPending).returning({ id: aprRequests.id });
+      if (moved.length === 0) throw withdrawn();
+      undo.unshift(() => db.update(aprRequests).set({ status: "pending" }).where(eq(aprRequests.id, requestId)));
+      status = "returned";
     } else {
       [next] = await db.select().from(aprRequestSteps).where(and(eq(aprRequestSteps.requestId, requestId), eq(aprRequestSteps.stepNo, step.stepNo + 1)));
       if (next) {
@@ -288,7 +338,7 @@ export async function decideRequest(requestId: string, input: { action: "approve
   // approver is told it worked (a failure here must not invite a second click), so it is logged.
   const no = req.requestNo ?? "";
   try {
-    await addEvent({ requestId, action: decision === "approved" ? "approved" : "rejected", stepNo: step.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: status, comment: input.comment });
+    await addEvent({ requestId, action: decision === "approved" ? "approved" : decision === "rejected" ? "rejected" : "returned", stepNo: step.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: status, comment: input.comment });
     if (next) {
       await addEvent({ requestId, action: "assigned", stepNo: next.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "pending", comment: `Sent to ${next.approverName} (${next.stepLabel})` });
     }
@@ -300,6 +350,11 @@ export async function decideRequest(requestId: string, input: { action: "approve
       userId: next.approverUserId, requestId, link: link(requestId, req.type), email: settings.notifyApproverOnAssignment,
       title: `${TYPE_LABEL[req.type]} ${no} is waiting for your approval`, body: `${req.requesterName}${moneyOf(req.amountPaise)}${overBudget ? " · over budget" : ""}`,
     });
+  } else if (decision === "returned") {
+    await notify({
+      userId: req.requesterUserId, requestId, link: link(requestId, req.type), email: settings.notifyRequesterOnOutcome,
+      title: `Your ${TYPE_LABEL[req.type]} ${no} was returned for corrections`, body: input.comment ?? undefined,
+    });
   } else {
     await notify({
       userId: req.requesterUserId, requestId, link: link(requestId, req.type), email: settings.notifyRequesterOnOutcome,
@@ -309,9 +364,117 @@ export async function decideRequest(requestId: string, input: { action: "approve
   return { status };
 }
 
+/* ---------------------------------------------------------------- correct and resubmit */
+
+/**
+ * The person who raised a request that was returned for corrections edits it and sends it back. It goes to the approver who returned it,
+ * at the same step, with the same request number: nothing already approved is repeated and the steps after it are untouched. Only that
+ * person may do it, and only while the request is returned. The edits are written while the request is still "returned" (nobody but its
+ * approvers and the person themselves can see it then, and it is not waiting for anyone), and it only becomes pending again in the last
+ * two writes, so a failure part-way leaves it returned and the person can simply send it again.
+ */
+export async function resubmitRequest(requestId: string, input: ResubmitInput, actor: ApprovalsUser): Promise<{ id: string; requestNo: string }> {
+  const [req] = await db.select().from(aprRequests).where(eq(aprRequests.id, requestId));
+  if (!req || req.status === "draft" || req.requesterUserId !== actor.id) throw new ApprovalsError("That request does not exist.", 404);
+  if (req.status !== "returned") throw new ApprovalsError(`This request is ${req.status}, so it cannot be edited. Only a request that was returned for corrections can be.`, 409);
+  const expectedKind = req.type === "hr" ? "hr" : req.type === "expenditure_large" ? "large" : "small";
+  if (input.kind !== expectedKind) throw new ApprovalsError("That form does not match this request.", 400);
+  const [step] = await db.select().from(aprRequestSteps).where(and(eq(aprRequestSteps.requestId, requestId), eq(aprRequestSteps.stepNo, req.currentStep)));
+  if (!step || step.status !== "returned") throw new ApprovalsError("This request is not waiting for corrections any more.", 409);
+  const fy = req.financialYear ?? financialYearOf(req.requestedAt);
+
+  // What the form says, checked exactly as when a request is first raised. The date of request and the financial year stay as they were.
+  let requesterName: string;
+  let requesterEmail: string;
+  let overBudget: boolean;
+  let newFiles: { slot: Slot; fileId: string }[];
+  let writeDetails: () => Promise<unknown>;
+  if (input.kind === "hr") {
+    const [category] = await db.select().from(aprHrCategories).where(eq(aprHrCategories.id, input.hrCategoryId));
+    if (!category?.active) throw new ApprovalsError("Pick an active category.");
+    const { budget } = await prepareHrBudget(input, fy);
+    requesterName = `${input.firstName} ${input.lastName}`;
+    requesterEmail = input.email ?? actor.email;
+    overBudget = budget?.overBudget ?? false;
+    newFiles = [
+      ...(input.fileUpload ? [{ slot: "file_upload" as const, fileId: input.fileUpload.fileId }] : []),
+      ...(input.fileUpload2 ? [{ slot: "file_upload_2" as const, fileId: input.fileUpload2.fileId }] : []),
+    ];
+    writeDetails = () => db.update(aprHrDetails).set(hrDetailsValues(input, budget)).where(eq(aprHrDetails.requestId, requestId));
+  } else {
+    const { employee, assessment, small, large } = await prepareExpenditure(input.kind, input, fy);
+    requesterName = employee.name;
+    requesterEmail = input.email ?? employee.email;
+    overBudget = assessment.overBudget;
+    newFiles = expenditureFiles(large, small);
+    writeDetails = () => db.update(aprExpenditureDetails).set(expenditureDetailsValues(input, assessment, small)).where(eq(aprExpenditureDetails.requestId, requestId));
+  }
+  const amountPaise = input.amountPaise;
+
+  // Files: the ones the person kept stay, a new file in a place replaces what was there, anything else they removed is dropped.
+  const newIds = newFiles.map((f) => f.fileId);
+  if (new Set(newIds).size !== newIds.length) throw new ApprovalsError("The same file cannot be attached twice. Please attach each file separately.");
+  const stored = await checkFilesReady(actor, newIds);
+  const existing = await db.select().from(aprAttachments).where(eq(aprAttachments.requestId, requestId));
+  const keepIds = new Set(input.keepAttachmentIds);
+  for (const id of keepIds) if (!existing.some((a) => a.id === id)) throw new ApprovalsError("One of the files to keep is not on this request.", 400);
+  const replaced = new Set(newFiles.map((f) => f.slot));
+  const dropped = existing.filter((a) => !keepIds.has(a.id) || replaced.has(a.slot));
+  if (!(await claimFiles(newIds))) throw new ApprovalsError("One of the attached files was already used on another request. Please attach it again.", 409);
+
+  const settings = await getSettings();
+  const now = new Date();
+  let attachmentsWritten = false;
+  try {
+    await writeDetails();
+    if (dropped.length) await db.delete(aprAttachments).where(inArray(aprAttachments.id, dropped.map((a) => a.id)));
+    if (newFiles.length) {
+      await db.insert(aprAttachments).values(newFiles.map((f) => {
+        const meta = stored.get(f.fileId)!;
+        return { requestId, slot: f.slot, fileName: meta.fileName, mime: meta.mime, size: meta.size, storageKey: meta.id, uploadedBy: actor.id };
+      }));
+    }
+    attachmentsWritten = true;
+    await db.update(aprRequests).set({ requesterName, requesterEmail, amountPaise, overBudget, updatedAt: now }).where(and(eq(aprRequests.id, requestId), eq(aprRequests.status, "returned")));
+    // The last two writes: the request, then its step, go back to waiting for the approver who returned it.
+    const flipped = await db
+      .update(aprRequests)
+      .set({ status: "pending", decisionComment: null, updatedAt: now })
+      .where(and(eq(aprRequests.id, requestId), eq(aprRequests.status, "returned"), eq(aprRequests.currentStep, step.stepNo)))
+      .returning({ id: aprRequests.id });
+    if (flipped.length === 0) throw new ApprovalsError("This request was withdrawn while you were editing it, so nothing was sent.", 409);
+    const back = await db
+      .update(aprRequestSteps)
+      .set({ status: "pending", comment: null, decidedAt: null, assignedAt: now })
+      .where(and(eq(aprRequestSteps.id, step.id), eq(aprRequestSteps.status, "returned")))
+      .returning({ id: aprRequestSteps.id });
+    if (back.length === 0) {
+      await db.update(aprRequests).set({ status: "returned" }).where(eq(aprRequests.id, requestId));
+      throw new ApprovalsError("Something went wrong while sending the request back. Please try again.", 500);
+    }
+  } catch (e) {
+    if (!attachmentsWritten) await releaseFiles(newIds).catch(() => {});
+    throw e;
+  }
+  await releaseFiles(dropped.map((a) => a.storageKey)).catch(() => {});
+
+  const no = req.requestNo ?? "";
+  try {
+    await addEvent({ requestId, action: "resubmitted", stepNo: step.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "returned", toStatus: "pending" });
+    await addEvent({ requestId, action: "assigned", stepNo: step.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "pending", comment: `Sent back to ${step.approverName} (${step.stepLabel})` });
+  } catch (e) {
+    console.error("[approvals] could not write the history of a resubmission", requestId, e);
+  }
+  await notify({
+    userId: step.approverUserId, requestId, link: link(requestId, req.type), email: settings.notifyApproverOnAssignment,
+    title: `${TYPE_LABEL[req.type]} ${no} was corrected and is waiting for your approval`, body: `${requesterName}${moneyOf(amountPaise)}${overBudget ? " · over budget" : ""}`,
+  });
+  return { id: requestId, requestNo: no };
+}
+
 /* ---------------------------------------------------------------- withdraw, view */
 
-/** The person who raised a request may take it back while it is still pending. */
+/** The person who raised a request may take it back while it is pending, or while it is waiting for their corrections. */
 export async function withdrawRequest(requestId: string, comment: string | null, actor: ApprovalsUser): Promise<void> {
   const [req] = await db.select().from(aprRequests).where(eq(aprRequests.id, requestId));
   if (!req || req.status === "draft" || req.requesterUserId !== actor.id) throw new ApprovalsError("That request does not exist.", 404);
@@ -319,11 +482,11 @@ export async function withdrawRequest(requestId: string, comment: string | null,
   const done = await db
     .update(aprRequests)
     .set({ status: "withdrawn", decidedAt: now, currentApproverUserId: null, updatedAt: now })
-    .where(and(eq(aprRequests.id, requestId), eq(aprRequests.status, "pending")))
+    .where(and(eq(aprRequests.id, requestId), inArray(aprRequests.status, ["pending", "returned"])))
     .returning({ id: aprRequests.id });
   if (done.length === 0) throw new ApprovalsError(`This request is already ${req.status}, so it cannot be withdrawn.`, 409);
-  await db.update(aprRequestSteps).set({ status: "skipped" }).where(and(eq(aprRequestSteps.requestId, requestId), inArray(aprRequestSteps.status, ["pending", "waiting"])));
-  await addEvent({ requestId, action: "withdrawn", actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "withdrawn", comment });
+  await db.update(aprRequestSteps).set({ status: "skipped" }).where(and(eq(aprRequestSteps.requestId, requestId), inArray(aprRequestSteps.status, ["pending", "waiting", "returned"])));
+  await addEvent({ requestId, action: "withdrawn", actorUserId: actor.id, actorName: actor.name, fromStatus: req.status, toStatus: "withdrawn", comment });
   if (req.currentApproverUserId) {
     await notify({ userId: req.currentApproverUserId, requestId, link: link(requestId, req.type), title: `${TYPE_LABEL[req.type]} ${req.requestNo ?? ""} was withdrawn`, body: `${req.requesterName} took it back.` });
   }

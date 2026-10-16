@@ -27,11 +27,12 @@ import { sql } from "drizzle-orm";
 
 // The type list is meant to grow (reimbursement, events, car booking): add a value here, a detail table and routing rules.
 export const aprRequestType = pgEnum("apr_request_type", ["hr", "expenditure_small", "expenditure_large"]);
-export const aprRequestStatus = pgEnum("apr_request_status", ["draft", "pending", "approved", "rejected", "withdrawn"]);
-export const aprStepStatus = pgEnum("apr_step_status", ["waiting", "pending", "approved", "rejected", "skipped"]);
+// "returned": an approver sent the request back to the person who raised it, to be corrected and resubmitted to the same approver.
+export const aprRequestStatus = pgEnum("apr_request_status", ["draft", "pending", "approved", "rejected", "withdrawn", "returned"]);
+export const aprStepStatus = pgEnum("apr_step_status", ["waiting", "pending", "approved", "rejected", "skipped", "returned"]);
 export const aprAttachmentSlot = pgEnum("apr_attachment_slot", ["file_upload", "file_upload_2", "tax_invoice", "quotation", "supporting"]);
 export const aprEventAction = pgEnum("apr_event_action", [
-  "submitted", "assigned", "approved", "rejected", "withdrawn", "resubmitted", "reassigned", "comment", "viewed",
+  "submitted", "assigned", "approved", "rejected", "withdrawn", "resubmitted", "reassigned", "comment", "viewed", "returned",
 ]);
 
 const id = () => uuid("id").primaryKey().default(sql`gen_random_uuid()`);
@@ -227,6 +228,13 @@ export const aprHrDetails = pgTable("apr_hr_details", {
   lastName: text("last_name").notNull(),
   hrCategoryId: uuid("hr_category_id").notNull().references(() => aprHrCategories.id, { onDelete: "restrict" }),
   description: text("description"),
+  // Only when the request carries an amount: the budget it is spent from (branch and expense category), and what the budget looked like
+  // when it was submitted. Such a request counts against that budget like an expenditure does.
+  branchId: uuid("branch_id").references(() => aprBranches.id, { onDelete: "restrict" }),
+  budgetCategoryId: uuid("budget_category_id").references(() => aprCategories.id, { onDelete: "restrict" }),
+  budgetAllocatedPaise: paise("budget_allocated_paise"),
+  budgetAvailablePaise: paise("budget_available_paise"),
+  budgetRemainingPaise: paise("budget_remaining_paise"),
 });
 
 export const aprAttachments = pgTable(

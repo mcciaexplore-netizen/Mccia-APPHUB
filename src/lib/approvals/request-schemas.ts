@@ -73,6 +73,9 @@ export const hrRequestInput = z.object({
   requestedAt,
   amountPaise: amountPaise.nullish().transform((v) => v ?? null),
   description: optionalText(4000),
+  // Needed when there is an amount (the server checks that): the budget the money comes from.
+  branchId: idSchema.nullish().transform((v) => v ?? null),
+  budgetCategoryId: idSchema.nullish().transform((v) => v ?? null),
   fileUpload: optionalFile,
   fileUpload2: optionalFile,
 });
@@ -114,8 +117,17 @@ export const smallExpenditureInput = z.object({
 export type SmallExpenditureInput = z.output<typeof smallExpenditureInput>;
 
 export const decisionInput = z.object({
-  action: z.enum(["approve", "reject"]),
+  action: z.enum(["approve", "reject", "return"]),
   comment: text(2000).optional().transform((s) => s || null),
 });
 
 export const withdrawInput = z.object({ comment: text(2000).optional().transform((s) => s || null) });
+
+/** Corrections to a request that was returned: the same fields as the original form, plus which of its current files stay attached. */
+const keep = { keepAttachmentIds: z.array(idSchema).max(10).default([]) };
+export const resubmitInput = z.discriminatedUnion("kind", [
+  hrRequestInput.extend({ kind: z.literal("hr"), ...keep }),
+  largeExpenditureInput.extend({ kind: z.literal("large"), ...keep }),
+  smallExpenditureInput.extend({ kind: z.literal("small"), ...keep }),
+]);
+export type ResubmitInput = z.output<typeof resubmitInput>;

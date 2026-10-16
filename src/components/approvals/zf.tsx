@@ -309,11 +309,11 @@ export function FileInput({
   );
 }
 
-export function FormActions({ submitting, disabled, onReset, label = "Submit" }: { submitting: boolean; disabled?: boolean; onReset: () => void; label?: string }) {
+export function FormActions({ submitting, disabled, onReset, label = "Submit", resetLabel = "Reset" }: { submitting: boolean; disabled?: boolean; onReset: () => void; label?: string; resetLabel?: string }) {
   return (
     <div className="zf-actions">
       <button type="submit" className="btn btn-primary" disabled={submitting || disabled}>{submitting ? "Submitting…" : label}</button>
-      <button type="button" className="btn btn-ghost" onClick={onReset} disabled={submitting}>Reset</button>
+      <button type="button" className="btn btn-ghost" onClick={onReset} disabled={submitting}>{resetLabel}</button>
     </div>
   );
 }

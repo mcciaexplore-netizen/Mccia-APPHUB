@@ -74,7 +74,7 @@ export type RequestRow = {
 const categoryName = sql<string | null>`coalesce(${aprHrCategories.name}, ${aprCategories.name})`;
 /** The person who decided, or while it is pending the one it is waiting for. */
 const approverName = sql<string | null>`coalesce(
-  (select s.approver_name from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.status in ('approved', 'rejected') order by s.step_no desc limit 1),
+  (select s.approver_name from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.status in ('approved', 'rejected', 'returned') order by s.step_no desc limit 1),
   (select s.approver_name from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.status = 'pending' limit 1))`;
 
 const SORT_SQL: Record<SortKey, SQL> = {
@@ -170,7 +170,12 @@ export async function waitingCount(user: ApprovalsUser): Promise<number> {
 
 /* ---------------------------------------------------------------- one request */
 
-export type StepRow = { stepNo: number; stepLabel: string; approverName: string; status: "waiting" | "pending" | "approved" | "rejected" | "skipped"; comment: string | null; decidedAt: Date | null };
+export type StepRow = { stepNo: number; stepLabel: string; approverName: string; status: "waiting" | "pending" | "approved" | "rejected" | "skipped" | "returned"; comment: string | null; decidedAt: Date | null };
+/** Where a request's budget stood when it was submitted, and where it stands now. */
+type BudgetView = {
+  snapshot: { allocatedPaise: number | null; availablePaise: number | null; afterPaise: number | null };
+  now: BudgetAssessment & { spentPaise: number; pendingPaise: number };
+};
 export type EventRow = { id: number; action: string; stepNo: number | null; actorName: string; comment: string | null; fromStatus: string | null; toStatus: string | null; createdAt: Date };
 export type AttachmentRow = { id: string; slot: string; fileName: string; size: number; mime: string };
 
@@ -189,7 +194,7 @@ export type RequestDetail = {
   decidedAt: Date | null;
   decisionComment: string | null;
   currentApproverUserId: string | null;
-  hr: { firstName: string; lastName: string; categoryName: string; description: string | null } | null;
+  hr: { firstName: string; lastName: string; categoryName: string; description: string | null; branchName: string | null; budgetCategoryName: string | null; budget: BudgetView | null } | null;
   expenditure: {
     categoryName: string;
     branchName: string;
@@ -207,9 +212,13 @@ export type RequestDetail = {
   steps: StepRow[];
   events: EventRow[];
   attachments: AttachmentRow[];
+  /** While the request is returned: who sent it back and what they asked to be corrected. */
+  returned: { byName: string; comment: string | null; at: Date | null } | null;
   can: {
     decide: boolean;
     withdraw: boolean;
+    /** The person who raised a returned request may correct it and send it back. */
+    edit: boolean;
     /** The approver must write a comment before approving: the request is over budget. */
     commentToApprove: boolean;
   };
@@ -225,9 +234,9 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
   const [req] = await db.select().from(aprRequests).where(and(eq(aprRequests.id, requestId), visibility(user)));
   if (!req) return null;
 
-  const [hr, exp, steps, events, attachments] = await Promise.all([
+  const [hrRow, exp, steps, events, attachments] = await Promise.all([
     db
-      .select({ firstName: aprHrDetails.firstName, lastName: aprHrDetails.lastName, description: aprHrDetails.description, categoryName: aprHrCategories.name })
+      .select({ d: aprHrDetails, categoryName: aprHrCategories.name })
       .from(aprHrDetails).innerJoin(aprHrCategories, eq(aprHrCategories.id, aprHrDetails.hrCategoryId)).where(eq(aprHrDetails.requestId, requestId)).then((r) => r[0] ?? null),
     db
       .select({ d: aprExpenditureDetails, categoryName: aprCategories.name, branchName: aprBranches.name })
@@ -259,14 +268,42 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
     };
   }
 
+  // An HR request that carries an amount has a budget too, shown the same way.
+  let hr: RequestDetail["hr"] = null;
+  if (hrRow) {
+    const d = hrRow.d;
+    const [branchName, budgetCategoryName, position] = await Promise.all([
+      d.branchId ? db.select({ name: aprBranches.name }).from(aprBranches).where(eq(aprBranches.id, d.branchId)).then((r) => r[0]?.name ?? null) : null,
+      d.budgetCategoryId ? db.select({ name: aprCategories.name }).from(aprCategories).where(eq(aprCategories.id, d.budgetCategoryId)).then((r) => r[0]?.name ?? null) : null,
+      d.branchId && d.budgetCategoryId && req.financialYear ? budgetPosition(req.financialYear, d.branchId, d.budgetCategoryId) : null,
+    ]);
+    let budget: BudgetView | null = null;
+    if (position) {
+      const now = assessBudget(position, req.amountPaise ?? 0);
+      liveOver = req.status === "pending" && now.overBudget;
+      budget = {
+        snapshot: { allocatedPaise: d.budgetAllocatedPaise, availablePaise: d.budgetAvailablePaise, afterPaise: d.budgetRemainingPaise },
+        now: { ...now, spentPaise: position.spentPaise, pendingPaise: position.pendingPaise },
+      };
+    }
+    hr = { firstName: d.firstName, lastName: d.lastName, categoryName: hrRow.categoryName, description: d.description, branchName, budgetCategoryName, budget };
+  }
+
   const pending = req.status === "pending";
+  const returnedStep = req.status === "returned" ? steps.find((x) => x.stepNo === req.currentStep && x.status === "returned") : undefined;
   const mine = pending && req.currentApproverUserId === user.id && req.requesterUserId !== user.id;
   return {
     id: req.id, requestNo: req.requestNo, type: req.type, status: req.status, requesterUserId: req.requesterUserId, requesterName: req.requesterName,
     requesterEmail: req.requesterEmail, requestedAt: req.requestedAt, financialYear: req.financialYear, amountPaise: req.amountPaise, overBudget: req.overBudget,
     decidedAt: req.decidedAt, decisionComment: req.decisionComment, currentApproverUserId: req.currentApproverUserId,
     hr, expenditure, steps, events, attachments,
-    can: { decide: mine, withdraw: pending && req.requesterUserId === user.id, commentToApprove: mine && (req.overBudget || liveOver) },
+    returned: returnedStep ? { byName: returnedStep.approverName, comment: returnedStep.comment, at: returnedStep.decidedAt } : null,
+    can: {
+      decide: mine,
+      withdraw: (pending || req.status === "returned") && req.requesterUserId === user.id,
+      edit: req.status === "returned" && req.requesterUserId === user.id,
+      commentToApprove: mine && (req.overBudget || liveOver),
+    },
   };
 }
 
@@ -275,4 +312,48 @@ export async function attachmentForDownload(user: ApprovalsUser, attachmentId: s
   const [a] = await db.select().from(aprAttachments).where(eq(aprAttachments.id, attachmentId));
   if (!a || !(await canSeeRequest(user, a.requestId))) return null;
   return { storageKey: a.storageKey, fileName: a.fileName, mime: a.mime };
+}
+
+/** The values a returned request's correction form opens with: the raw choices (ids) behind what the detail page shows in words. */
+export type EditValues = {
+  type: AprRequestType;
+  requestNo: string | null;
+  requesterName: string;
+  requesterEmail: string;
+  requestedAt: Date;
+  amountPaise: number | null;
+  hr: { firstName: string; lastName: string; hrCategoryId: string; description: string | null; branchId: string | null; budgetCategoryId: string | null } | null;
+  expenditure: {
+    categoryId: string; branchId: string; nature: string | null; vendorName: string | null; expenseDate: string | null; taxInvoiceDate: string | null;
+    publicationTypeId: string | null; publicationId: string | null;
+  } | null;
+  attachments: AttachmentRow[];
+  returnedBy: string | null;
+  returnComment: string | null;
+};
+
+/** Null unless the request is returned and this person is the one who raised it: nobody else may open the correction form. */
+export async function getEditValues(requestId: string, user: ApprovalsUser): Promise<EditValues | null> {
+  const [req] = await db.select().from(aprRequests).where(and(eq(aprRequests.id, requestId), eq(aprRequests.requesterUserId, user.id), eq(aprRequests.status, "returned")));
+  if (!req) return null;
+  const [[hr], [exp], steps, attachments] = await Promise.all([
+    db.select().from(aprHrDetails).where(eq(aprHrDetails.requestId, requestId)),
+    db.select().from(aprExpenditureDetails).where(eq(aprExpenditureDetails.requestId, requestId)),
+    db.select().from(aprRequestSteps).where(and(eq(aprRequestSteps.requestId, requestId), eq(aprRequestSteps.stepNo, req.currentStep))),
+    db.select().from(aprAttachments).where(eq(aprAttachments.requestId, requestId)).orderBy(asc(aprAttachments.uploadedAt)),
+  ]);
+  const step = steps[0];
+  return {
+    type: req.type, requestNo: req.requestNo, requesterName: req.requesterName, requesterEmail: req.requesterEmail, requestedAt: req.requestedAt, amountPaise: req.amountPaise,
+    hr: hr ? { firstName: hr.firstName, lastName: hr.lastName, hrCategoryId: hr.hrCategoryId, description: hr.description, branchId: hr.branchId, budgetCategoryId: hr.budgetCategoryId } : null,
+    expenditure: exp
+      ? {
+          categoryId: exp.categoryId, branchId: exp.branchId, nature: exp.natureOfExpenditure, vendorName: exp.vendorName, expenseDate: exp.expenseDate, taxInvoiceDate: exp.taxInvoiceDate,
+          publicationTypeId: exp.publicationTypeId, publicationId: exp.publicationId,
+        }
+      : null,
+    attachments: attachments.map((a) => ({ id: a.id, slot: a.slot, fileName: a.fileName, size: a.size, mime: a.mime })),
+    returnedBy: step?.approverName ?? null,
+    returnComment: step?.comment ?? null,
+  };
 }

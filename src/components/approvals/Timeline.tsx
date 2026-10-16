@@ -2,7 +2,7 @@ import { formatDateTime } from "@/lib/approvals/format";
 import type { EventRow } from "@/lib/approvals/request-queries";
 
 const KIND: Record<string, string> = {
-  submitted: "submitted", approved: "approved", rejected: "rejected", withdrawn: "withdrawn", assigned: "assigned", viewed: "assigned", comment: "assigned",
+  submitted: "submitted", approved: "approved", rejected: "rejected", withdrawn: "withdrawn", assigned: "assigned", viewed: "assigned", comment: "assigned", returned: "assigned", resubmitted: "submitted",
 };
 
 const sentence = (e: EventRow): string => {
@@ -13,6 +13,8 @@ const sentence = (e: EventRow): string => {
     case "approved": return `Approved by ${e.actorName}`;
     case "rejected": return `Rejected by ${e.actorName}`;
     case "withdrawn": return `Withdrawn by ${e.actorName}`;
+    case "returned": return `Returned for corrections by ${e.actorName}`;
+    case "resubmitted": return `Corrected and sent back by ${e.actorName}`;
     case "comment": return `${e.actorName} commented`;
     default: return `${e.actorName}: ${e.action}`;
   }

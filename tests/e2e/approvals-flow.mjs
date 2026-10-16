@@ -377,6 +377,97 @@ try {
   check("the change is in the audit log", (await sql`select count(*)::int n from apr_admin_audit where entity = 'approver_rule' and summary like '%ZZ Flow Small Approver%'`)[0].n >= 1);
   await A.page.request.patch(`${BASE}/api/approvals/rules/${rule.id}`, { data: { approverUserId: null } });
 
+  section("16b. Return for corrections: the approver returns it, the requester edits and resubmits");
+  const ret = await submitWith(R.page, { kind: "large", employeeUserId: ids.req, ...common(branch.id, cat.id), amountPaise: 1200000, vendorName: "ZZ Return Vendor", natureOfExpenditure: "first version" });
+  check("a 12,000 request is raised for the return test", ret.status === 201, ret.json.error);
+  const dpage = D.page;
+  await dpage.goto(BASE + `/approvals/requests/${ret.json.id}`);
+  check("the approver sees Approve, Return for corrections and Reject", (await dpage.getByRole("button", { name: "Approve", exact: true }).count()) === 1 && (await dpage.getByRole("button", { name: "Return for corrections", exact: true }).count()) === 1 && (await dpage.getByRole("button", { name: "Reject", exact: true }).count()) === 1);
+  await dpage.getByRole("button", { name: "Return for corrections", exact: true }).click();
+  check("returning without a comment is stopped with a plain message", await dpage.getByText("Please write a comment saying what needs to be corrected.").first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false));
+  check("and nothing changed", (await sql`select status from apr_requests where id = ${ret.json.id}`)[0].status === "pending");
+  await dpage.locator("textarea").first().fill("Vendor name is incomplete, please write the full name");
+  await dpage.getByRole("button", { name: "Return for corrections", exact: true }).click();
+  check("returning with a comment shows a message", await toast(dpage, "Request returned for corrections"));
+  const [retRow] = await sql`select r.status, r.current_step, r.current_approver_user_id, s.status as step_status, s.comment from apr_requests r join apr_request_steps s on s.request_id = r.id and s.step_no = r.current_step where r.id = ${ret.json.id}`;
+  check("the request is returned, keeps its step and approver, and the comment is on the step", retRow.status === "returned" && retRow.step_status === "returned" && retRow.current_approver_user_id === ids.dg && /full name/.test(retRow.comment), JSON.stringify(retRow));
+  check("the requester was told it needs corrections", (await sql`select count(*)::int n from apr_notifications where user_id = ${ids.req} and request_id = ${ret.json.id} and title like '%returned for corrections%'`)[0].n === 1);
+  check("a returned request is not in the DG's inbox any more", !(await (async () => { await dpage.goto(BASE + "/approvals/inbox"); return (await dpage.locator("main").first().innerText()).includes(ret.json.requestNo); })()));
+  check("nobody can approve it while it is returned", (await post(dpage, `/api/approvals/requests/${ret.json.id}/decision`, { action: "approve" })).status() === 409);
+
+  const rr = R.page;
+  await rr.goto(BASE + `/approvals/requests/${ret.json.id}`);
+  const retText = await rr.locator("main").first().innerText();
+  check("the requester sees Returned, who returned it and why", /Returned/.test(retText) && retText.includes("ZZ Flow DG") && retText.includes("Vendor name is incomplete"), retText.replace(/\s+/g, " ").slice(0, 160));
+  check("they have Edit and resubmit and Withdraw, and no Approve", (await rr.getByRole("link", { name: "Edit and resubmit" }).count()) === 1 && (await rr.getByRole("button", { name: "Withdraw request" }).count()) === 1 && (await rr.getByRole("button", { name: "Approve", exact: true }).count()) === 0);
+  check("nobody else can open the correction form", (await status(O.page, `/approvals/requests/${ret.json.id}/edit`)) === 404 && (await status(D.page, `/approvals/requests/${ret.json.id}/edit`)) === 404);
+  await rr.getByRole("link", { name: "Edit and resubmit" }).click();
+  await rr.waitForURL(/\/edit$/, { timeout: 30000 });
+  check("the correction form opens with the reason and the saved values", (await rr.locator("[role=status]", { hasText: "Returned for corrections" }).count()) >= 1 && (await rr.locator("#ex-vendor").inputValue()) === "ZZ Return Vendor" && /12,000/.test(await rr.locator("#ex-amount").inputValue()));
+  check("it offers Resubmit and Cancel, not Submit and Reset", (await rr.getByRole("button", { name: "Resubmit" }).count()) === 1 && (await rr.getByRole("button", { name: "Cancel" }).count()) === 1 && (await rr.getByRole("button", { name: "Submit", exact: true }).count()) === 0);
+  await rr.locator("#ex-vendor").fill("ZZ Return Vendor Private Limited");
+  await rr.locator("#ex-amount").fill("9,999");
+  check("an amount below 10,000 is blocked on the large form, as on a new request", (await rr.getByText("must be submitted through the Expenses form").count()) >= 1 && (await rr.getByRole("button", { name: "Resubmit" }).isDisabled()));
+  await rr.locator("#ex-amount").fill("12,500");
+  await rr.getByRole("button", { name: "Resubmit" }).click();
+  check("resubmitting shows a message", await toast(rr, "corrected and sent back for approval"));
+  await rr.waitForURL(new RegExp(`/approvals/requests/${ret.json.id}`), { timeout: 30000 });
+  const [backRow] = await sql`select r.status, r.request_no, r.amount_paise, r.current_approver_user_id, d.vendor_name, s.status as step_status, s.comment from apr_requests r join apr_expenditure_details d on d.request_id = r.id join apr_request_steps s on s.request_id = r.id and s.step_no = r.current_step where r.id = ${ret.json.id}`;
+  check("it is pending again with the same number, the new amount and vendor, for the same approver", backRow.status === "pending" && backRow.request_no === ret.json.requestNo && Number(backRow.amount_paise) === 1250000 && backRow.vendor_name === "ZZ Return Vendor Private Limited" && backRow.current_approver_user_id === ids.dg && backRow.step_status === "pending" && backRow.comment === null, JSON.stringify(backRow));
+  const retEvents = (await sql`select action from apr_approval_events where request_id = ${ret.json.id} order by id`).map((e) => e.action);
+  check("the history keeps submitted, returned, resubmitted", ["submitted", "returned", "resubmitted"].every((a) => retEvents.includes(a)) && retEvents.indexOf("returned") < retEvents.indexOf("resubmitted"), retEvents.join(","));
+  await dpage.goto(BASE + `/approvals/requests/${ret.json.id}`);
+  check("the timeline on the request page tells the story", /Returned for corrections by ZZ Flow DG/.test(await dpage.locator("main").first().innerText()) && /Corrected and sent back by ZZ Flow Requester/.test(await dpage.locator("main").first().innerText()));
+  check("the DG is told it was corrected", (await sql`select count(*)::int n from apr_notifications where user_id = ${ids.dg} and request_id = ${ret.json.id} and title like '%corrected%'`)[0].n === 1);
+  // The category is already overspent in this test, so approving needs a comment.
+  await dpage.locator("textarea").first().fill("Approved after the correction");
+  await dpage.getByRole("button", { name: "Approve", exact: true }).click();
+  check("the DG approves the corrected request", await toast(dpage, "Request approved") && await poll(async () => (await sql`select status from apr_requests where id = ${ret.json.id}`)[0].status === "approved"));
+  check("nobody can open the correction form of an approved request", (await status(R.page, `/approvals/requests/${ret.json.id}/edit`)) === 404);
+  check("the status filter offers Returned and the list still opens", (await status(D.page, "/approvals/expenditures/all?status=returned")) === 200);
+
+  section("16c. Returning from the DG's inbox");
+  const ret2 = await submitWith(R.page, { kind: "large", employeeUserId: ids.req, ...common(branch.id, cat.id), amountPaise: 1100000 });
+  await dpage.goto(BASE + "/approvals/inbox");
+  const inboxRow = dpage.locator("tbody tr", { hasText: ret2.json.requestNo });
+  await inboxRow.getByRole("button", { name: "Return", exact: true }).click();
+  check("the Return dialog needs a comment before it can be sent", await dpage.getByRole("dialog").getByRole("button", { name: "Return", exact: true }).isDisabled());
+  await dpage.locator("textarea").first().fill("Attach the quotation");
+  await dpage.getByRole("dialog").getByRole("button", { name: "Return", exact: true }).click();
+  check("returning from the inbox works", await toast(dpage, "Request returned for corrections") && await poll(async () => (await sql`select status from apr_requests where id = ${ret2.json.id}`)[0].status === "returned"));
+  check("the requester can withdraw a returned request", (await post(R.page, `/api/approvals/requests/${ret2.json.id}/withdraw`, {})).status() === 200 && (await sql`select status from apr_requests where id = ${ret2.json.id}`)[0].status === "withdrawn");
+
+  section("16d. HR requests with an amount follow the budget rules");
+  await rr.goto(BASE + "/approvals/hr/new");
+  check("the HR form shows no branch or budget fields until an amount is typed", (await rr.locator("#hr-branch").count()) === 0);
+  await rr.locator("#hr-category").click();
+  await rr.getByRole("option", { name: "Certificate", exact: true }).click();
+  await rr.locator("#hr-amount").fill("1,000");
+  check("typing an amount shows Branch Name and Budget category", (await rr.locator("#hr-branch").count()) === 1 && (await rr.locator("#hr-budget-category").count()) === 1);
+  await rr.getByRole("button", { name: "Submit", exact: true }).click();
+  check("submitting without them shows an inline message and sends nothing", await rr.getByText("Choose a branch.").first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false) && (await rr.getByText("Choose the category the budget is kept under.").count()) >= 1);
+  await rr.locator("#hr-branch").click();
+  await rr.getByRole("option", { name: "ZZ Flow Branch", exact: true }).click();
+  await rr.locator("#hr-budget-category").click();
+  await rr.getByRole("option", { name: "ZZ Flow Cat", exact: true }).click();
+  check("the live budget appears for that branch and category", await poll(async () => (await rr.locator("#hr-available").inputValue()) !== ""));
+  await rr.getByRole("button", { name: "Submit", exact: true }).click();
+  await rr.waitForURL(/\/approvals\/requests\/[0-9a-f-]{36}/, { timeout: 30000 }).catch(() => {});
+  const hrMoneyId = new URL(rr.url()).pathname.split("/").pop();
+  const [hrMoneyRow] = await sql`select r.status, r.over_budget, r.amount_paise, h.branch_id, h.budget_category_id from apr_requests r join apr_hr_details h on h.request_id = r.id where r.id = ${hrMoneyId}`;
+  check("the HR request keeps its amount, branch and category, and is over budget (the category is already overspent)", hrMoneyRow.status === "pending" && Number(hrMoneyRow.amount_paise) === 100000 && hrMoneyRow.branch_id === branch.id && hrMoneyRow.budget_category_id === cat.id && hrMoneyRow.over_budget === true, JSON.stringify(hrMoneyRow));
+  check("its page shows the budget and the over-budget badge", /Budget/.test(await rr.locator("main").first().innerText()) && /over budget/i.test(await rr.locator("main").first().innerText()));
+  check("the DG needs a comment to approve it, as for an expenditure", (await post(D.page, `/api/approvals/requests/${hrMoneyId}/decision`, { action: "approve" })).status() === 422);
+  check("an HR request without an amount still needs nothing extra", (await submitWith(R.page, { kind: "hr", firstName: "ZZ", lastName: "NoAmount", hrCategoryId: hrCat.id })).status === 201);
+  const noBranch = await submitWith(R.page, { kind: "hr", firstName: "ZZ", lastName: "NoBranch", hrCategoryId: hrCat.id, amountPaise: 100000 });
+  check("an amount without a branch is refused by the server too", noBranch.status === 422 && /branch and a category/.test(noBranch.json.error), noBranch.json.error);
+
+  section("16e. The first approver and the DG cannot be the same person");
+  const hrRule1 = (await sql`select id from apr_approver_rules where request_type = 'hr' and step_no = 1`)[0];
+  const clash = await A.page.request.patch(`${BASE}/api/approvals/rules/${hrRule1.id}`, { data: { approverUserId: ids.dg } });
+  check("naming the DG as an HR first approver is refused with the reason", clash.status() === 409 && /must be different people/.test((await body(clash)).error), (await body(clash)).error);
+  check("and the rule is unchanged", (await sql`select cardinality(approver_user_ids)::int n from apr_approver_rules where id = ${hrRule1.id}`)[0].n === 0);
+
   section("17. Console and the seeded data");
   check("no browser console or page errors on any screen", consoleErrors.length === 0 && pageErrors.length === 0, [...consoleErrors, ...pageErrors].join(" | "));
 } catch (e) {

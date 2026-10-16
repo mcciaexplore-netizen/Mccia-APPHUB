@@ -16,7 +16,7 @@ import {
   FULL_ACCESS_ROLES, approvalsApps, canSee, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, type ApprovalsRole,
 } from "../src/lib/approvals/approvals.manifest";
 import {
-  assessBudget, budgetWarning, commentRequired, formFor, formatRequestNo, percentUsed, planSteps, utilisationLevel, wrongFormMessage,
+  assessBudget, budgetWarning, commentRequired, escalationApprover, formFor, formatRequestNo, percentUsed, planSteps, STATUS_LABEL, utilisationLevel, wrongFormMessage,
   type RuleLike,
 } from "../src/lib/approvals/calc";
 import { decisionInput, fileUploadStart, hrRequestInput, isAllowedFileName, largeExpenditureInput, mimeFor, safeFileName, smallExpenditureInput } from "../src/lib/approvals/request-schemas";
@@ -133,8 +133,24 @@ eq("routing: amount bands, min inclusive and max exclusive", [
   planSteps([rule(1, "Large", ["a"], { minAmountPaise: 1_000_000 })], "r", 1_000_000).problem,
 ], [null, "no-approver", null]);
 
+// Approvals: when the first approver raises a request himself, the Director General decides it; the same person never holds two steps.
+const dgEsc = { approverUserId: "dg", stepLabel: "Director General" };
+eq("routing: the first approver raising a small request goes to the DG, not refused", planSteps([rule(1, "Reviewer", ["shrotri"])], "shrotri", 100, dgEsc),
+  { steps: [{ stepNo: 1, stepLabel: "Director General", approverUserId: "dg" }], problem: null });
+eq("routing: without a DG to hand it to, the first approver's own small request is still refused", planSteps([rule(1, "Reviewer", ["shrotri"])], "shrotri", 100).problem, "only-self");
+eq("routing: the first approver raising a large request has the DG only (step 1 of 1)", planSteps([rule(1, "Reviewer", ["shrotri"]), rule(2, "Director General", ["dg"])], "shrotri", 2_000_000, dgEsc).steps.map((s) => [s.stepNo, s.approverUserId]), [[1, "dg"]]);
+eq("routing: the DG being the one who raised it is not handed to themselves", planSteps([rule(1, "Reviewer", ["dg"])], "dg", 100, dgEsc).problem, "only-self");
+eq("routing: nobody named still says so, the DG is not invented", planSteps([rule(1, "Reviewer", [])], "shrotri", 100, dgEsc).problem, "no-approver");
+eq("routing: the same person on two steps is refused", planSteps([rule(1, "Reviewer", ["a"]), rule(2, "Director General", ["a"])], "req", 100).problem, "same-approver");
+eq("routing: two different people on two steps are fine", planSteps([rule(1, "Reviewer", ["a"]), rule(2, "Director General", ["b"])], "req", 100).problem, null);
+const typed = (requestType: string, r: RuleLike) => ({ ...r, requestType });
+eq("escalation: the DG is the last staffed step of the large expenditure rules", escalationApprover([typed("hr", rule(2, "Director General", ["hrdg"])), typed("expenditure_large", rule(1, "Reviewer", ["shrotri"])), typed("expenditure_large", rule(2, "Director General", ["dg"]))]), { approverUserId: "dg", stepLabel: "Director General" });
+eq("escalation: with no large expenditure DG the HR one is used, and with none at all there is none", [escalationApprover([typed("hr", rule(2, "Director General", ["hrdg"]))])?.approverUserId, escalationApprover([typed("expenditure_large", rule(1, "Reviewer", ["a"]))])], ["hrdg", null]);
+
 // Approvals: decisions, utilisation, numbers.
 eq("comment: needed to reject, and to approve over budget", [commentRequired("reject", false), commentRequired("approve", true), commentRequired("approve", false)], [true, true, false]);
+eq("comment: always needed to return a request for corrections", [commentRequired("return", false), commentRequired("return", true)], [true, true]);
+eq("status: a returned request has a label", STATUS_LABEL.returned, "Returned");
 eq("utilisation: percent and colours", [percentUsed(1000, 905), percentUsed(1000, 1000), percentUsed(1000, 1010), percentUsed(null, 5), percentUsed(0, 5), percentUsed(0, 0)], [91, 100, 101, null, 100, 0]);
 eq("utilisation: above 90 is amber, above 100 is red", [utilisationLevel(90), utilisationLevel(91), utilisationLevel(100), utilisationLevel(101), utilisationLevel(null)], ["ok", "warn", "warn", "over", "ok"]);
 eq("request number", [formatRequestNo("HR", "2026-27", 1), formatRequestNo("EXB", "2026-27", 123), formatRequestNo("EXP", "2027-28", 12345)], ["HR-2026-27-0001", "EXB-2026-27-0123", "EXP-2027-28-12345"]);

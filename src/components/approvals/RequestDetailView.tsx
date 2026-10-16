@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Download, Paperclip } from "lucide-react";
 import { OverBudgetBadge, StatusBadge } from "@/components/approvals/Badges";
 import { DecisionPanel, WithdrawButton } from "@/components/approvals/DecisionPanel";
@@ -9,8 +10,8 @@ import type { AttachmentRow, RequestDetail, StepRow } from "@/lib/approvals/requ
 const SLOT_LABEL: Record<string, string> = {
   file_upload: "File upload", file_upload_2: "File upload (second)", tax_invoice: "Tax Invoice", quotation: "Quotation", supporting: "Tax Invoice/Supporting Documents",
 };
-const STEP_TONE: Record<StepRow["status"], string> = { waiting: "badge-neutral", pending: "badge-amber", approved: "badge-green", rejected: "badge-red", skipped: "badge-neutral" };
-const STEP_LABEL: Record<StepRow["status"], string> = { waiting: "Waiting", pending: "Waiting for decision", approved: "Approved", rejected: "Rejected", skipped: "Not needed" };
+const STEP_TONE: Record<StepRow["status"], string> = { waiting: "badge-neutral", pending: "badge-amber", approved: "badge-green", rejected: "badge-red", skipped: "badge-neutral", returned: "badge-amber" };
+const STEP_LABEL: Record<StepRow["status"], string> = { waiting: "Waiting", pending: "Waiting for decision", approved: "Approved", rejected: "Rejected", skipped: "Not needed", returned: "Returned for corrections" };
 
 const size = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 const money = (p: number | null) => (p == null ? "—" : formatINR(p, { symbol: true }));
@@ -41,8 +42,9 @@ function Files({ items }: { items: AttachmentRow[] }) {
 /** Everything about one request, read only, with the approver's controls when it is waiting for them. */
 export function RequestDetailView({ d }: { d: RequestDetail }) {
   const e = d.expenditure;
+  const b = e ?? d.hr?.budget ?? null; // an HR request that carries an amount has a budget too
   const name = d.hr ? `${d.hr.firstName} ${d.hr.lastName}` : d.requesterName;
-  const warning = e ? budgetWarning({ ...e.now, noBudget: e.now.noBudget }) : null;
+  const warning = b ? budgetWarning(b.now) : null;
 
   return (
     <div className="space-y-8">
@@ -53,6 +55,18 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
         {d.overBudget && <OverBudgetBadge />}
         {d.can.withdraw && <span className="ml-auto"><WithdrawButton id={d.id} /></span>}
       </div>
+
+      {d.status === "returned" && (
+        <div role="status" className="apr-notice max-w-3xl space-y-2">
+          <p><b>Returned for corrections{d.returned ? ` by ${d.returned.byName}` : ""}.</b></p>
+          {d.returned?.comment && <p className="whitespace-pre-wrap">&ldquo;{d.returned.comment}&rdquo;</p>}
+          {d.can.edit ? (
+            <p><Link href={`/approvals/requests/${d.id}/edit`} className="btn btn-primary btn-sm">Edit and resubmit</Link></p>
+          ) : (
+            <p>Waiting for {d.requesterName} to correct it. It goes back to {d.returned?.byName ?? "the same approver"} when they do.</p>
+          )}
+        </div>
+      )}
 
       {d.can.decide && <DecisionPanel id={d.id} commentToApprove={d.can.commentToApprove} />}
 
@@ -67,6 +81,8 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
           <Item label="Date of Request">{formatDateTime(d.requestedAt)}</Item>
           <Item label="Financial year">{d.financialYear}</Item>
           <Item label="Amount">{money(d.amountPaise)}</Item>
+          {d.hr?.branchName && <Item label="Branch Name">{d.hr.branchName}</Item>}
+          {d.hr?.budgetCategoryName && <Item label="Budget category">{d.hr.budgetCategoryName}</Item>}
           {d.hr && <Item label="Description"><span className="whitespace-pre-wrap">{d.hr.description}</span></Item>}
           {e && <Item label="Vendor Name"><span className="whitespace-pre-wrap">{e.vendorName}</span></Item>}
           {e && d.type === "expenditure_small" && <Item label="Date of expense">{isoToDisplay(e.expenseDate)}</Item>}
@@ -76,7 +92,7 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
         </dl>
       </section>
 
-      {e && (
+      {b && (
         <section aria-labelledby="req-budget">
           <h2 id="req-budget" className="mb-3">Budget</h2>
           {warning && d.status === "pending" && <p className="apr-notice mb-3 max-w-2xl">{warning}</p>}
@@ -86,19 +102,19 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
               <tbody>
                 <tr>
                   <td className="font-bold">When submitted</td>
-                  <td className="text-right">{e.snapshot.allocatedPaise == null ? "No budget" : money(e.snapshot.allocatedPaise)}</td>
-                  <td className="text-right">{e.snapshot.allocatedPaise == null || e.snapshot.availablePaise == null ? "—" : money(e.snapshot.allocatedPaise - e.snapshot.availablePaise)}</td>
+                  <td className="text-right">{b.snapshot.allocatedPaise == null ? "No budget" : money(b.snapshot.allocatedPaise)}</td>
+                  <td className="text-right">{b.snapshot.allocatedPaise == null || b.snapshot.availablePaise == null ? "—" : money(b.snapshot.allocatedPaise - b.snapshot.availablePaise)}</td>
                   <td className="text-right">—</td>
-                  <td className={`text-right ${e.snapshot.availablePaise != null && e.snapshot.availablePaise < (d.amountPaise ?? 0) ? "zf-neg" : ""}`}>
-                    {e.snapshot.availablePaise == null ? "—" : `${money(e.snapshot.availablePaise)} → ${money(e.snapshot.afterPaise)} after this request`}
+                  <td className={`text-right ${b.snapshot.availablePaise != null && b.snapshot.availablePaise < (d.amountPaise ?? 0) ? "zf-neg" : ""}`}>
+                    {b.snapshot.availablePaise == null ? "—" : `${money(b.snapshot.availablePaise)} → ${money(b.snapshot.afterPaise)} after this request`}
                   </td>
                 </tr>
                 <tr>
                   <td className="font-bold">Now</td>
-                  <td className="text-right">{e.now.noBudget ? "No budget" : money(e.now.allocatedPaise)}</td>
-                  <td className="text-right">{money(e.now.spentPaise)}</td>
-                  <td className="text-right">{money(e.now.pendingPaise)}</td>
-                  <td className="text-right">{e.now.noBudget ? "—" : money(e.now.allocatedPaise! - e.now.spentPaise)}</td>
+                  <td className="text-right">{b.now.noBudget ? "No budget" : money(b.now.allocatedPaise)}</td>
+                  <td className="text-right">{money(b.now.spentPaise)}</td>
+                  <td className="text-right">{money(b.now.pendingPaise)}</td>
+                  <td className="text-right">{b.now.noBudget ? "—" : money(b.now.allocatedPaise! - b.now.spentPaise)}</td>
                 </tr>
               </tbody>
             </table>

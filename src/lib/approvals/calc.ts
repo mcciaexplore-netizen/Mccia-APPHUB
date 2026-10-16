@@ -70,39 +70,65 @@ export type RuleLike = {
   active: boolean;
 };
 type PlannedStep = { stepNo: number; stepLabel: string; approverUserId: string };
-export type StepPlan = { steps: PlannedStep[]; problem: null } | { steps: []; problem: "no-approver" | "only-self" };
+export type StepPlan = { steps: PlannedStep[]; problem: null } | { steps: []; problem: "no-approver" | "only-self" | "same-approver" };
+
+/** Who decides a request when the person who would normally approve it is the one who raised it: the Director General. */
+export type Escalation = { approverUserId: string; stepLabel: string };
+
+/**
+ * The Director General for the escalation above: the person on the last staffed step of the expenditure rules (or, with none, the HR
+ * rules). Null when nobody is named there.
+ */
+export function escalationApprover(rules: readonly (RuleLike & { requestType: string })[]): Escalation | null {
+  for (const type of ["expenditure_large", "hr"]) {
+    const last = rules.filter((r) => r.requestType === type && r.active && r.stepNo > 1 && r.approverUserIds.length > 0).sort((a, b) => b.stepNo - a.stepNo)[0];
+    if (last) return { approverUserId: last.approverUserIds[0], stepLabel: last.stepLabel };
+  }
+  return null;
+}
 
 /**
  * Turns a request type's routing rules into the steps this request will go through, in order.
  * - A rule applies when its amount band holds the amount (min inclusive, max exclusive, no max means no upper bound).
  * - A rule with nobody named is skipped, so leaving "Reviewer" empty makes the DG the only approver.
  * - A step goes to the first person named who is not the requester: nobody approves their own request, and a step that can
- *   only be done by the requester is dropped. If nothing is left the request cannot be routed, and the reason says why.
+ *   only be done by the requester is dropped. When that leaves nothing (the first approver raising their own request), the
+ *   Director General decides it instead. If there is still nothing, the request cannot be routed, and the reason says why.
+ * - Two steps held by the same person are refused: the first approver and the Director General must be different people.
  */
-export function planSteps(rules: readonly RuleLike[], requesterUserId: string, amountPaise: number): StepPlan {
+export function planSteps(rules: readonly RuleLike[], requesterUserId: string, amountPaise: number, escalation: Escalation | null = null): StepPlan {
   const applicable = rules
     .filter((r) => r.active && amountPaise >= r.minAmountPaise && (r.maxAmountPaise == null || amountPaise < r.maxAmountPaise))
     .sort((a, b) => a.stepNo - b.stepNo);
   const staffed = applicable.filter((r) => r.approverUserIds.length > 0);
   if (staffed.length === 0) return { steps: [], problem: "no-approver" };
   const steps: PlannedStep[] = [];
+  let droppedForRequester = false;
   for (const r of staffed) {
     const approver = r.approverUserIds.find((id) => id !== requesterUserId);
     if (approver) steps.push({ stepNo: steps.length + 1, stepLabel: r.stepLabel, approverUserId: approver });
+    else droppedForRequester = true;
   }
-  return steps.length ? { steps, problem: null } : { steps: [], problem: "only-self" };
+  if (steps.length === 0 && droppedForRequester && escalation && escalation.approverUserId !== requesterUserId) {
+    steps.push({ stepNo: 1, stepLabel: escalation.stepLabel, approverUserId: escalation.approverUserId });
+  }
+  if (steps.length === 0) return { steps: [], problem: "only-self" };
+  if (new Set(steps.map((s) => s.approverUserId)).size !== steps.length) return { steps: [], problem: "same-approver" };
+  return { steps, problem: null };
 }
 
-export const planProblemMessage = (p: "no-approver" | "only-self"): string =>
+export const planProblemMessage = (p: "no-approver" | "only-self" | "same-approver"): string =>
   p === "no-approver"
     ? "No approver has been set up for this kind of request yet. Ask an Approvals admin to name one under Approver Rules."
-    : "You are the only approver set up for this kind of request, and nobody can approve their own request. Ask an Approvals admin to name someone else.";
+    : p === "only-self"
+      ? "You are the only approver set up for this kind of request, and nobody can approve their own request. Ask an Approvals admin to name someone else."
+      : "The same person is named on more than one approval step for this kind of request. The first approver and the Director General must be different people. Ask an Approvals admin to fix Approver Rules.";
 
 /* ---------------------------------------------------------------- decisions */
 
-/** Whether the approver must write a comment: always to reject, and also to approve a request that is over budget. */
-export function commentRequired(action: "approve" | "reject", overBudget: boolean): boolean {
-  return action === "reject" || overBudget;
+/** Whether the approver must write a comment: always to reject or to return a request for corrections, and also to approve one that is over budget. */
+export function commentRequired(action: "approve" | "reject" | "return", overBudget: boolean): boolean {
+  return action !== "approve" || overBudget;
 }
 
 /** Percent of a budget used, as a whole number; null when there is no budget to compare with. */
@@ -125,4 +151,4 @@ export const formatRequestNo = (prefix: string, financialYear: string, n: number
 /* ---------------------------------------------------------------- labels */
 
 export const TYPE_LABEL = { hr: "HR request", expenditure_large: "Expenditure request", expenditure_small: "Expense request" } as const;
-export const STATUS_LABEL = { draft: "Draft", pending: "Pending", approved: "Approved", rejected: "Rejected", withdrawn: "Withdrawn" } as const;
+export const STATUS_LABEL = { draft: "Draft", pending: "Pending", approved: "Approved", rejected: "Rejected", withdrawn: "Withdrawn", returned: "Returned" } as const;

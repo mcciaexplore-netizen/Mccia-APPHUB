@@ -14,6 +14,8 @@ const inRange = (range: { from?: string; to?: string }): (SQL | undefined)[] => 
 
 const sum = (col: typeof aprRequests.amountPaise) => sql<number>`coalesce(sum(${col}), 0)::bigint`.mapWith(Number);
 const countWhere = (status: string) => sql<number>`(count(*) filter (where ${aprRequests.status} = ${status}))::int`;
+/** Still open: waiting for an approver, or sent back and waiting for the person who raised it. */
+const countOpen = sql<number>`(count(*) filter (where ${aprRequests.status} in ('pending', 'returned')))::int`;
 
 /* ---------------------------------------------------------------- HR */
 
@@ -26,7 +28,7 @@ export async function hrReport(range: { from?: string; to?: string }): Promise<{
   const [byCategory, byMonth] = await Promise.all([
     db
       .select({
-        name: aprHrCategories.name, total: sql<number>`count(*)::int`, approved: countWhere("approved"), pending: countWhere("pending"), rejected: countWhere("rejected"),
+        name: aprHrCategories.name, total: sql<number>`count(*)::int`, approved: countWhere("approved"), pending: countOpen, rejected: countWhere("rejected"),
         amountPaise: sum(aprRequests.amountPaise),
       })
       .from(aprRequests)

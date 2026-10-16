@@ -2,10 +2,10 @@ import { STATUS_LABEL } from "@/lib/approvals/calc";
 import type { AprRequestStatus } from "@/db/approvals-schema";
 
 const TONE: Record<AprRequestStatus, string> = {
-  draft: "badge-neutral", pending: "badge-amber", approved: "badge-green", rejected: "badge-red", withdrawn: "badge-neutral",
+  draft: "badge-neutral", pending: "badge-amber", approved: "badge-green", rejected: "badge-red", withdrawn: "badge-neutral", returned: "badge-amber",
 };
 
-/** Pending is amber, Approved green, Rejected red. */
+/** Pending and Returned are amber, Approved green, Rejected red. */
 export function StatusBadge({ status }: { status: AprRequestStatus }) {
   return <span className={`badge ${TONE[status]}`}>{STATUS_LABEL[status]}</span>;
 }

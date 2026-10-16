@@ -1,34 +1,58 @@
 import "server-only";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { aprBranches, aprBudgets, aprCategories, aprExpenditureDetails, aprRequests } from "@/db/approvals-schema";
+import { aprBranches, aprBudgets, aprCategories, aprExpenditureDetails, aprHrDetails, aprRequests } from "@/db/approvals-schema";
 import { percentUsed, type BudgetPosition } from "./calc";
 
 /**
- * How much of a budget is used. Spent is the sum of APPROVED expenditure (both forms) for the branch, category and financial year;
- * pending is shown for information only. Nothing is stored: it is always worked out from the requests, so it can never drift.
+ * How much of a budget is used. Spent is the sum of APPROVED expenditure (both forms) and of approved HR requests that carry an amount
+ * (they name a branch and a category too), for the branch, category and financial year; pending is shown for information only. A request
+ * sent back for corrections counts for nothing until it is resubmitted. Nothing is stored: it is always worked out from the requests,
+ * so it can never drift.
  */
 
 type Spend = { branchId: string; categoryId: string; spentPaise: number; pendingPaise: number };
 
 async function spendRows(financialYear: string, only?: { branchId: string; categoryId: string }): Promise<Spend[]> {
   const amount = aprRequests.amountPaise;
-  return db
-    .select({
-      branchId: aprExpenditureDetails.branchId,
-      categoryId: aprExpenditureDetails.categoryId,
-      spentPaise: sql<number>`coalesce(sum(${amount}) filter (where ${aprRequests.status} = 'approved'), 0)::bigint`.mapWith(Number),
-      pendingPaise: sql<number>`coalesce(sum(${amount}) filter (where ${aprRequests.status} = 'pending'), 0)::bigint`.mapWith(Number),
-    })
-    .from(aprRequests)
-    .innerJoin(aprExpenditureDetails, eq(aprExpenditureDetails.requestId, aprRequests.id))
-    .where(and(
-      eq(aprRequests.financialYear, financialYear),
-      inArray(aprRequests.status, ["approved", "pending"]),
-      only ? eq(aprExpenditureDetails.branchId, only.branchId) : undefined,
-      only ? eq(aprExpenditureDetails.categoryId, only.categoryId) : undefined,
-    ))
-    .groupBy(aprExpenditureDetails.branchId, aprExpenditureDetails.categoryId);
+  const sums = {
+    spentPaise: sql<number>`coalesce(sum(${amount}) filter (where ${aprRequests.status} = 'approved'), 0)::bigint`.mapWith(Number),
+    pendingPaise: sql<number>`coalesce(sum(${amount}) filter (where ${aprRequests.status} = 'pending'), 0)::bigint`.mapWith(Number),
+  };
+  const [expenditure, hr] = await Promise.all([
+    db
+      .select({ branchId: aprExpenditureDetails.branchId, categoryId: aprExpenditureDetails.categoryId, ...sums })
+      .from(aprRequests)
+      .innerJoin(aprExpenditureDetails, eq(aprExpenditureDetails.requestId, aprRequests.id))
+      .where(and(
+        eq(aprRequests.financialYear, financialYear),
+        inArray(aprRequests.status, ["approved", "pending"]),
+        only ? eq(aprExpenditureDetails.branchId, only.branchId) : undefined,
+        only ? eq(aprExpenditureDetails.categoryId, only.categoryId) : undefined,
+      ))
+      .groupBy(aprExpenditureDetails.branchId, aprExpenditureDetails.categoryId),
+    db
+      .select({ branchId: aprHrDetails.branchId, categoryId: aprHrDetails.budgetCategoryId, ...sums })
+      .from(aprRequests)
+      .innerJoin(aprHrDetails, eq(aprHrDetails.requestId, aprRequests.id))
+      .where(and(
+        eq(aprRequests.financialYear, financialYear),
+        inArray(aprRequests.status, ["approved", "pending"]),
+        isNotNull(aprHrDetails.branchId),
+        isNotNull(aprHrDetails.budgetCategoryId),
+        only ? eq(aprHrDetails.branchId, only.branchId) : undefined,
+        only ? eq(aprHrDetails.budgetCategoryId, only.categoryId) : undefined,
+      ))
+      .groupBy(aprHrDetails.branchId, aprHrDetails.budgetCategoryId),
+  ]);
+  const merged = new Map<string, Spend>();
+  for (const r of [...expenditure, ...hr]) {
+    const key = `${r.branchId}|${r.categoryId}`;
+    const have = merged.get(key);
+    if (have) { have.spentPaise += r.spentPaise; have.pendingPaise += r.pendingPaise; }
+    else merged.set(key, { branchId: r.branchId as string, categoryId: r.categoryId as string, spentPaise: r.spentPaise, pendingPaise: r.pendingPaise });
+  }
+  return [...merged.values()];
 }
 
 /** The position for one branch, category and financial year; allocated is null when no budget row exists. */
