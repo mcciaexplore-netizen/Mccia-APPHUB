@@ -205,7 +205,22 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
             </div>
           )}
         </div>
-        {seesAll ? <p className="text-sm text-muted">The Support Admin and the Super Admin can open every application, so there is nothing to assign.</p>
+        {seesAll ? (
+          <div className="space-y-4">
+            <p className="text-sm text-muted">The Support Admin and the Super Admin can open every application, so there is nothing to assign. This is everything {person.name} can open:</p>
+            {catalog.departments.map((d) => {
+              const list = catalog.apps.filter((x) => x.departmentId === d.id);
+              if (list.length === 0) return null;
+              return (
+                <div key={d.id}>
+                  <p className="label-xs mb-1.5">{d.name}{d.isActive ? "" : " (inactive)"}</p>
+                  <p className="flex flex-wrap gap-1.5">{list.map((x) => <span key={x.id} className={`badge ${x.isActive ? "" : "badge-neutral line-through"}`} title={x.isActive ? undefined : "Inactive"}>{x.name}</span>)}</p>
+                </div>
+              );
+            })}
+            {catalog.apps.length === 0 && <p className="text-sm text-subtle">No applications are registered yet.</p>}
+          </div>
+        )
         : !accessEditable ? (
           appNames.length === 0 ? <p className="text-sm text-subtle">No applications assigned.</p>
           : <p className="flex flex-wrap gap-1.5">{appNames.map((n) => <span key={n} className="badge">{n}</span>)}</p>
