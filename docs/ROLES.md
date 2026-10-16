@@ -42,7 +42,7 @@ Under Administrator > Approval Forms the Support Admin edits the three forms eve
 | **HR** | `HR_ADMIN_*` | The HR reviewer (step 1 of HR requests). Approvals and the applications given to them only; cannot open Administrator. |
 | **Expenditure** | `EXPENDITURE_ADMIN_*` | The first approver of expenses (step 1, both sizes). Same limits as HR. |
 
-Each is set with `<PREFIX>_EMAIL`, `<PREFIX>_NAME` and `<PREFIX>_PASSWORD`, in Vercel and in your local `.env`. They sign in with the password from the settings, so to change one you change it there and redeploy. From the screens none of them can be locked out, deactivated, deleted, have a password reset, or be given another role; the directory marks them "Main admin" (Support Admin, Super Admin) or "Main account" (HR, Expenditure), "password in settings". The Support Admin can still give HR and Expenditure applications, on their profile like anyone else.
+Each is set with `<PREFIX>_EMAIL`, `<PREFIX>_NAME` and `<PREFIX>_PASSWORD`, in Vercel and in your local `.env`. They sign in with the password from the settings, so to change one you change it there and redeploy. The directory marks them "Main admin" (Support Admin, Super Admin) or "Main account" (HR, Expenditure), "password in settings". From the screens their password cannot be reset and their role cannot be changed (both come from the settings). Their details (name, designation, branch, team, reporting manager) can be edited, and the Support Admin can deactivate or delete them like anyone else; but because the settings still define the account, it is switched on again, or made again, the next time it signs in (or is needed) unless its settings are also removed in Vercel. The Support Admin can still give HR and Expenditure applications, on their profile like anyone else.
 
 The Support Admin can be set with `SUPPORT_ADMIN_*` and the older `HEAD_ADMIN_*` at the same time: both work, so you can change over safely. Keep the old ones until you have signed in with the new ones, then you can delete them. An account counts only when its email **and** its password are both filled in; a half-filled setting is ignored and never locks anyone out.
 
@@ -55,6 +55,10 @@ Only the Support Admin manages people, roles and access; the Super Admin cannot.
 The forms are for everyone who signs in; there is nothing to tick. The sidebar's **Approval System** is one link; it opens a page with two cards, **HR Approval Form** and **Expenditure Approval Form**. HR Approval Form opens the HR form; Expenditure Approval Form opens the Expenses form (below ₹10,000), which points to the DG Expenditure form for ₹10,000 and above. The Super Admin (the DG) has them too. An approver with something waiting is told so on that page.
 
 The Approval System is not an application in the **Application access** box: the old "Approvals" card and the entry pages of HR Approval and Expenditure (which an earlier version offered as ticks, migration 0012) are left out of the box, and migration 0013 removes them from the database.
+
+## What the Support Admin can do to people
+
+The Support Admin can edit and delete **everyone**: an ordinary user, an Admin, the Super Admin and the main accounts. Only three things are refused: deleting or deactivating themselves, deleting or deactivating the last active Support Admin, and changing another Support Admin's role. Deleting is permanent (their account, password and application access; their past activity stays in the history as an unknown user); deactivating is reversible and signs the person out at once.
 
 ## Setting people up
 

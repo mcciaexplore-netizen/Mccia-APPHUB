@@ -270,7 +270,7 @@ eq("rbac: only the Support Admin changes roles: not the Super Admin, not an Admi
   canChangeRole(ADMIN, { id: "x", role: "member" }), canChangeRole(ADMIN, { id: "x", role: "admin" }), canChangeRole(ADMIN, { id: "x", role: "super_admin" }),
   canChangeRole(SUPER, { id: "x", role: "member" }), canChangeRole(A_PEOPLE, { id: "x", role: "member" }), canChangeRole(ADMIN, { id: "a", role: "head_admin" }), canChangeRole(ADMIN, { id: "h", role: "head_admin" }),
 ], [true, true, true, false, false, false, false]);
-eq("rbac: the Super Admin is a main admin: nobody deactivates them (change their role first), but everyone else can still be deactivated by the top roles", [canDeactivate(ADMIN, { id: "x", role: "super_admin" }), canDeactivate(SUPER, { id: "x", role: "super_admin" }), canDeactivate(ADMIN, { id: "x", role: "admin" }), canDeactivate(ADMIN, { id: "x", role: "member" })], [false, false, true, true]);
+eq("rbac: the Support Admin may deactivate anyone but themselves, the Super Admin included; the Super Admin has no such power", [canDeactivate(ADMIN, { id: "x", role: "super_admin" }), canDeactivate(SUPER, { id: "x", role: "super_admin" }), canDeactivate(SUPER, { id: "x", role: "member" }), canDeactivate(ADMIN, { id: "x", role: "admin" }), canDeactivate(ADMIN, { id: "x", role: "member" }), canDeactivate(ADMIN, { id: "x", role: "head_admin" })], [true, false, false, true, true, true]);
 eq("rbac: an Admin with nothing switched on can do nothing and cannot even open Administrator", [
   canAdminister(A_NONE), isStaff(A_NONE), canManageAccess(A_NONE, mk("member")), canImportUsers(A_NONE), Object.values(capabilities(A_NONE)).some(Boolean),
 ], [false, false, false, false, false]);

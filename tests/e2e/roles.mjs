@@ -124,7 +124,7 @@ try {
   const superRowText = await A.locator("tr", { hasText: sup.name }).first().innerText();
   check("the Super Admin is shown as a main admin, without the 'password in settings' note", /Main admin/i.test(superRowText) && !/password in settings/i.test(superRowText), superRowText.replace(/\s+/g, " ").slice(0, 120));
   check("while the Support Admin keeps 'Main admin · password in settings'", /Main admin · password in settings/i.test(await A.locator("tr", { hasText: envAdmin.name }).first().innerText()));
-  check("a main admin's status cannot be clicked to deactivate them, and there is no Delete button on their row", (await A.locator("tr", { hasText: sup.name }).first().getByRole("button", { name: /Delete/ }).count()) === 0 && (await A.locator("tr", { hasText: sup.name }).first().getByTitle("Click to deactivate").count()) === 0);
+  check("the Support Admin can deactivate and delete the Super Admin: their status can be clicked and their row has a Delete button", (await A.locator("tr", { hasText: sup.name }).first().getByRole("button", { name: /Delete/ }).count()) === 1 && (await A.locator("tr", { hasText: sup.name }).first().getByTitle("Click to deactivate").count()) === 1);
   check("the sections are listed once, in the sidebar, with no second row of the same links on the page", (await A.locator('nav[aria-label="Administrator sections"]').count()) === 0 && (await tabs(A)).length === 5);
   check("the Administrator menu has five items: Dashboard, Users, Approval Forms, Notification Panel and Activity Log", JSON.stringify(await tabs(A)) === JSON.stringify(["Dashboard", "Users", "Approval Forms", "Notification Panel", "Activity Log"]), (await tabs(A)).join("|"));
   const roleOptions = await A.locator("select[aria-label], select").evaluateAll((els) => els.flatMap((e) => [...e.options].map((o) => o.textContent)));
@@ -171,6 +171,22 @@ try {
   await dlg.getByRole("button", { name: "Create user" }).click();
   check("an Admin can be created straight away, with nothing switched on", await poll(async () => { const r = (await sql`select role, admin_areas from users where email = 'zzr-new-admin@gmail.com'`)[0]; return r && r.role === "admin" && r.admin_areas.length === 0; }));
 
+  section("3b. The Support Admin can edit and delete everyone: an Admin, a Super Admin and a plain user");
+  const doomed = [await mk("Doomed Admin", "admin"), await mk("Doomed Super", "super_admin"), await mk("Doomed User", "member")];
+  for (const d of doomed) {
+    await visit(A, `/administrator/users/${d.id}`, ADMIN_PW);
+    await A.getByRole("heading", { name: d.name }).waitFor({ timeout: 30000 }).catch(() => {});
+    check(`${d.name}: the details can be edited and saved`, (await A.getByLabel("Designation").isEnabled()) && (await A.getByRole("button", { name: "Save details" }).count()) === 1);
+    await A.getByLabel("Designation").fill("Edited by the Support Admin");
+    await A.getByRole("button", { name: "Save details" }).click();
+    check(`${d.name}: the edit is stored`, await toast(A, "Details saved") && await poll(async () => (await sql`select designation from users where id = ${d.id}`)[0].designation === "Edited by the Support Admin"));
+    await A.getByRole("button", { name: "Delete", exact: true }).click();
+    await A.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
+    check(`${d.name}: deleting asks for confirmation and removes the account`, await toast(A, "User deleted") && await poll(async () => (await sql`select count(*)::int n from users where id = ${d.id}`)[0].n === 0));
+  }
+  await visit(A, "/administrator/users", ADMIN_PW);
+  check("the Support Admin's own row has no Delete and no way to deactivate themselves", (await A.locator("tr", { hasText: envAdmin.name }).first().getByRole("button", { name: /Delete/ }).count()) === 0 && (await A.locator("tr", { hasText: envAdmin.name }).first().getByTitle("Click to deactivate").count()) === 0);
+
   section("4. The Super Admin (the DG): an ordinary user in the hub, plus the final approvals");
   await S.goto(BASE + "/");
   check("the Super Admin has no Administrator in the sidebar", !(await sidebarHasAdministrator(S)));
@@ -181,7 +197,7 @@ try {
   await A.getByRole("heading", { name: sup.name }).waitFor({ timeout: 30000 }).catch(() => {});
   const supProfile = await main(A);
   const supFacts = { mainLabel: /main admin/i.test(supProfile), inSettings: /password in settings/i.test(supProfile), link: await A.getByRole("button", { name: "Send setup link" }).count(), reset: await A.getByRole("button", { name: /Reset password/ }).count(), deactivate: await A.getByRole("button", { name: "Deactivate" }).count(), del: await A.getByRole("button", { name: "Delete" }).count() };
-  check("the Super Admin's profile has the Main admin label, setup link and password reset, but no Deactivate or Delete", supFacts.mainLabel && !supFacts.inSettings && supFacts.link === 1 && supFacts.reset === 1 && supFacts.deactivate === 0 && supFacts.del === 0, JSON.stringify(supFacts));
+  check("the Super Admin's profile has the Main admin label, setup link, password reset, Deactivate and Delete", supFacts.mainLabel && !supFacts.inSettings && supFacts.link === 1 && supFacts.reset === 1 && supFacts.deactivate === 1 && supFacts.del === 1, JSON.stringify(supFacts));
   check("and the Application access box lets the Support Admin choose what they may open: categories with their applications", (await A.locator("main label", { hasText: "ZZR App" }).count()) >= 1 && (await A.getByRole("button", { name: "Save access" }).count()) === 1);
   await A.locator("main label", { hasText: "ZZR App" }).getByRole("checkbox").first().check();
   await A.getByRole("button", { name: "Save access" }).click();
@@ -269,8 +285,8 @@ try {
     const envId = (await sql`select id from users where lower(email) = ${ENV_SUP_EMAIL}`)[0].id;
     await visit(A, `/administrator/users/${envId}`, ADMIN_PW);
     await A.getByRole("heading", { name: /./ }).first().waitFor({ timeout: 30000 }).catch(() => {});
-    check("their profile has no setup link or password reset, no Deactivate or Delete, and the Role box is fixed", (await A.getByRole("button", { name: "Send setup link" }).count()) === 0 && (await A.getByRole("button", { name: /Reset password/ }).count()) === 0
-      && (await A.getByRole("button", { name: "Deactivate" }).count()) === 0 && (await A.getByRole("button", { name: "Delete" }).count()) === 0 && (await A.getByLabel("Role").isDisabled()));
+    check("their profile has no setup link or password reset (the password is in the settings) and the Role box is fixed, but Deactivate and Delete are there", (await A.getByRole("button", { name: "Send setup link" }).count()) === 0 && (await A.getByRole("button", { name: /Reset password/ }).count()) === 0
+      && (await A.getByRole("button", { name: "Deactivate" }).count()) === 1 && (await A.getByRole("button", { name: "Delete" }).count()) === 1 && (await A.getByLabel("Role").isDisabled()));
     await E.goto(BASE + "/change-password");
     check("they are told their password is changed in the settings", /environment settings/i.test(await E.locator("body").innerText()));
   } else {
@@ -297,8 +313,8 @@ try {
       check("the directory shows HR as a User, marked Main account · password in settings", /user/i.test(hrRow) && /main account · password in settings/i.test(hrRow), hrRow.replace(/\s+/g, " ").slice(0, 140));
       await visit(A, `/administrator/users/${hrId}`, ADMIN_PW);
       await A.getByRole("heading", { name: /./ }).first().waitFor({ timeout: 30000 }).catch(() => {});
-      check("HR's profile has no password reset, setup link, Deactivate or Delete, and the Role box is fixed; applications can still be assigned", (await A.getByRole("button", { name: /Reset password/ }).count()) === 0 && (await A.getByRole("button", { name: "Send setup link" }).count()) === 0
-        && (await A.getByRole("button", { name: "Deactivate" }).count()) === 0 && (await A.getByRole("button", { name: "Delete" }).count()) === 0 && (await A.getByLabel("Role").isDisabled()) && (await A.getByRole("button", { name: "Save access" }).count()) === 1);
+      check("HR's profile has no password reset or setup link and the Role box is fixed, but Deactivate and Delete are there; applications can still be assigned", (await A.getByRole("button", { name: /Reset password/ }).count()) === 0 && (await A.getByRole("button", { name: "Send setup link" }).count()) === 0
+        && (await A.getByRole("button", { name: "Deactivate" }).count()) === 1 && (await A.getByRole("button", { name: "Delete" }).count()) === 1 && (await A.getByLabel("Role").isDisabled()) && (await A.getByRole("button", { name: "Save access" }).count()) === 1);
       // The rules are filled from the three accounts the first time: start from empty rules and no marker.
       await sql`update apr_approver_rules set approver_user_ids = '{}'`;
       await sql`delete from apr_settings where key = 'env_rules_seeded'`;

@@ -186,13 +186,13 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
                       </span>}
                 </td>
                 <td>
-                  {caps.toggleActive && !u.mainAdmin && u.id !== meId ? (
+                  {caps.toggleActive && u.id !== meId ? (
                     <button className={`${STATUS_BADGE[u.status]} cursor-pointer`} disabled={busy} title={u.isActive ? "Click to deactivate" : "Click to activate"}
                       onClick={async () => {
-                        if (u.isActive && !(await confirm({ title: "Deactivate this user?", confirmLabel: "Deactivate", danger: true, message: `${u.name} will be signed out at once and cannot open anything until you activate them again. Their access settings are kept.` }))) return;
+                        if (u.isActive && !(await confirm({ title: "Deactivate this user?", confirmLabel: "Deactivate", danger: true, message: `${u.name} will be signed out at once and cannot open anything until you activate them again. Their access settings are kept.${u.passwordInSettings ? " This account is set in the environment settings, so it is switched on again at its next sign-in unless you also remove its settings in Vercel." : ""}` }))) return;
                         startBusy(async () => { const r = await setPersonActive(u.id, !u.isActive); if (r.ok) { toast.success(u.isActive ? "User deactivated and signed out" : "User activated"); refresh(); } else toast.error(r.error); });
                       }}>{STATUS_LABEL[u.status]}</button>
-                  ) : <span className={STATUS_BADGE[u.status]} title={u.mainAdmin || u.id === meId ? "The main admin cannot be deactivated" : undefined}>{STATUS_LABEL[u.status]}</span>}
+                  ) : <span className={STATUS_BADGE[u.status]} title={u.id === meId ? "You cannot deactivate yourself" : undefined}>{STATUS_LABEL[u.status]}</span>}
                 </td>
                 <td className="whitespace-nowrap text-xs text-muted">{formatIST(u.lastLoginAt)}</td>
                 <td>
@@ -201,11 +201,11 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
                     {caps.invite && !u.passwordInSettings && (
                       <button className="chip !p-1.5 text-muted" aria-label={`Reset password for ${u.name}`} title="Reset password or send a setup link" onClick={() => setResetting({ id: u.id, name: u.name })}><KeyRound size={14} /></button>
                     )}
-                    {caps.remove && !u.mainAdmin && u.id !== meId && (
+                    {caps.remove && u.id !== meId && (
                       <button className="chip !p-1.5 text-brand-red" aria-label={`Delete ${u.name}`} title="Delete" disabled={busy}
                         onClick={async () => {
                           if (await confirm({ title: "Delete this user?", confirmLabel: "Delete", danger: true,
-                            message: `${u.name} (${u.email}) will be removed for good, with their password and their access to applications. Their past activity stays in the log as an unknown user. To stop someone signing in but keep the account, deactivate them instead.` }))
+                            message: `${u.name} (${u.email}) will be removed for good, with their password and their access to applications. Their past activity stays in the log as an unknown user. To stop someone signing in but keep the account, deactivate them instead.${u.passwordInSettings ? " This account is set in the environment settings, so it comes back at its next sign-in unless you also remove its settings in Vercel." : ""}` }))
                             startBusy(async () => { const r = await deletePerson(u.id); if (r.ok) { toast.success("User deleted"); refresh(); } else toast.error(r.error); });
                         }}><Trash2 size={14} /></button>
                     )}

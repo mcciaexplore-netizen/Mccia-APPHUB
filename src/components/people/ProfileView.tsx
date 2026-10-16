@@ -101,19 +101,19 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
           <p className="mt-2 flex flex-wrap items-center gap-2"><span className={roleBadge[person.role]}>{roleLabel[person.role]}</span><span className={STATUS_BADGE[person.status]}>{STATUS_LABEL[person.status]}</span>
             {person.mainAdmin && <span className="badge badge-neutral">{person.role === "head_admin" || person.role === "super_admin" ? "Main admin" : "Main account"}{person.passwordInSettings ? " · password in settings" : ""}</span>}</p>
         </div>
-        {((caps.invite && !person.passwordInSettings) || (caps.toggleActive && !person.mainAdmin) || (caps.remove && !person.mainAdmin)) && (
+        {((caps.invite && !person.passwordInSettings) || (caps.toggleActive && !self) || (caps.remove && !self)) && (
           <div className="flex flex-wrap gap-2">
             {caps.invite && !person.passwordInSettings && <button className="btn btn-ghost btn-sm" disabled={pending || !person.isActive} onClick={setupLink}><Mail size={14} /> Send setup link</button>}
             {caps.invite && !person.passwordInSettings && <button className="btn btn-ghost btn-sm" aria-label={`Reset password for ${person.name}`} onClick={() => setResetting(true)}><KeyRound size={14} /> Reset password</button>}
-            {caps.toggleActive && !self && !person.mainAdmin && (
+            {caps.toggleActive && !self && (
               <button className="btn btn-ghost btn-sm" disabled={pending} onClick={async () => {
-                if (person.isActive && !(await confirm({ title: "Deactivate this user?", confirmLabel: "Deactivate", danger: true, message: `${person.name} will be signed out at once and cannot open anything until you activate them again. Their access settings are kept.` }))) return;
+                if (person.isActive && !(await confirm({ title: "Deactivate this user?", confirmLabel: "Deactivate", danger: true, message: `${person.name} will be signed out at once and cannot open anything until you activate them again. Their access settings are kept.${person.passwordInSettings ? " This account is set in the environment settings, so it is switched on again at its next sign-in unless you also remove its settings in Vercel." : ""}` }))) return;
                 start(async () => { const r = await setPersonActive(person.id, !person.isActive); if (r.ok) { toast.success(person.isActive ? "User deactivated and signed out" : "User activated"); refresh(); } else toast.error(r.error); });
               }}><Power size={14} /> {person.isActive ? "Deactivate" : "Activate"}</button>
             )}
-            {caps.remove && !self && !person.mainAdmin && (
+            {caps.remove && !self && (
               <button className="btn btn-danger btn-sm" disabled={pending} onClick={async () => {
-                if (!(await confirm({ title: "Delete this user?", confirmLabel: "Delete", danger: true, message: `${person.name} (${person.email}) will be removed for good, with their password and their access to applications. Their past activity stays in the log as an unknown user. To stop someone signing in but keep the account, deactivate them instead.` }))) return;
+                if (!(await confirm({ title: "Delete this user?", confirmLabel: "Delete", danger: true, message: `${person.name} (${person.email}) will be removed for good, with their password and their access to applications. Their past activity stays in the log as an unknown user. To stop someone signing in but keep the account, deactivate them instead.${person.passwordInSettings ? " This account is set in the environment settings, so it comes back at its next sign-in unless you also remove its settings in Vercel." : ""}` }))) return;
                 start(async () => { const r = await deletePerson(person.id); if (r.ok) { toast.success("User deleted"); router.push(base); router.refresh(); } else toast.error(r.error); });
               }}><Trash2 size={14} /> Delete</button>
             )}
