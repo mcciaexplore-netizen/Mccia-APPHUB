@@ -203,7 +203,7 @@ try {
   const dp = D.page;
   await dp.goto(BASE + "/approvals/inbox");
   check("the request is in the DG's inbox", (await dp.locator("main").first().innerText()).includes(hrReq.request_no));
-  check("the DG's application menu shows DG APPROVALS", (await dp.locator("main nav").first().innerText()).includes("DG APPROVALS"));
+  check("the DG's application menu shows the Recommended Queue", (await dp.locator("main nav").first().innerText()).includes("Recommended Queue"));
   await dp.goto(BASE + `/approvals/requests/${hrId}`);
   check("the DG sees the Approve and Reject buttons", (await dp.getByRole("button", { name: "Approve", exact: true }).count()) === 1 && (await dp.getByRole("button", { name: "Reject", exact: true }).count()) === 1);
   await dp.getByRole("button", { name: "Approve", exact: true }).click();
@@ -334,30 +334,32 @@ try {
   check("it shows for the person who raised the request and not for anyone else opening the same link", raisedBanner === 1 && (await banner(D.page)) === 0, `${raisedBanner} / ${await banner(D.page)}`);
   await S.page.goto(BASE + "/approvals/hr/all");
   check("someone with full access who is not involved sees none of them", !(await S.page.locator("main").first().innerText()).includes(hrReq.request_no));
-  await D.page.goto(BASE + "/approvals/hr/approved");
-  check("the DG sees the approved HR request", (await D.page.locator("main").first().innerText()).includes(hrReq.request_no));
+  await A.page.goto(BASE + "/approvals/hr/approved");
+  check("the oversight account sees the approved HR request", (await A.page.locator("main").first().innerText()).includes(hrReq.request_no));
+  check("the DG alone does not have the all-requests lists: they have the Recommended Queue", (await status(D.page, "/approvals/hr/approved")) === 404 && (await status(D.page, "/approvals/expenditures/all")) === 404 && (await status(D.page, "/approvals/inbox")) === 200);
   await D.page.goto(BASE + "/approvals/my/completed");
   check("'Completed by me' lists what the DG decided", (await D.page.locator("main").first().innerText()).includes(hrReq.request_no));
   await S.page.goto(BASE + "/approvals/expenses/approved");
   check("the below-10k approver sees the approved expense in their list", (await S.page.locator("main").first().innerText()).includes(small.json.requestNo));
-  await D.page.goto(BASE + "/approvals/expenditures/all?q=" + encodeURIComponent(big.json.requestNo));
-  const searched = await D.page.locator("tbody tr").allInnerTexts();
+  await A.page.goto(BASE + "/approvals/expenditures/all?q=" + encodeURIComponent(big.json.requestNo));
+  const searched = await A.page.locator("tbody tr").allInnerTexts();
   check("search narrows the list to the matching request", searched.length === 1 && searched[0].includes(big.json.requestNo), searched.length);
-  const csv = await D.page.request.get(`${BASE}/api/approvals/requests/export?screen=expenditures/all`);
+  const csv = await A.page.request.get(`${BASE}/api/approvals/requests/export?screen=expenditures/all`);
+  check("the DG alone cannot export lists", (await D.page.request.get(`${BASE}/api/approvals/requests/export?screen=expenditures/all`)).status() === 403);
   const csvText = await csv.text();
   check("export gives a CSV with a header and the requests", csv.status() === 200 && /text\/csv/.test(csv.headers()["content-type"]) && csvText.includes("Request No.") && csvText.includes(big.json.requestNo));
   const sExport = await S.page.request.get(`${BASE}/api/approvals/requests/export?screen=hr/all`);
   check("export only holds what the person may see", sExport.status() === 200 && !(await sExport.text()).includes(hrReq.request_no));
 
   section("14. Reports and budgets are for the DG, viewers and admins");
-  await D.page.goto(BASE + "/approvals/budgets/utilisation");
-  const util = await D.page.locator("main").first().innerText();
+  await A.page.goto(BASE + "/approvals/budgets/utilisation");
+  const util = await A.page.locator("main").first().innerText();
   check("Budget Utilisation shows the branch, the category and 120% used (60,000 of 50,000)", util.includes("ZZ Flow Branch") && util.includes("ZZ Flow Cat") && /120%/.test(util), util.replace(/\s+/g, " ").slice(0, 200));
-  check("the overspent row is marked red", (await D.page.locator("tr[data-level=over]").count()) >= 1);
-  check("the DG can open the HR report and Approval Time", (await status(D.page, "/approvals/hr/report")) === 200 && (await status(D.page, "/approvals/hr/approval-time")) === 200);
+  check("the overspent row is marked red", (await A.page.locator("tr[data-level=over]").count()) >= 1);
+  check("the oversight account can open the HR report and Approval Time, the DG alone cannot", (await status(A.page, "/approvals/hr/report")) === 200 && (await status(A.page, "/approvals/hr/approval-time")) === 200 && (await status(D.page, "/approvals/hr/report")) === 404 && (await status(D.page, "/approvals/budgets/utilisation")) === 404);
   check("an ordinary requester gets a 404 for reports and budgets", (await status(R.page, "/approvals/hr/report")) === 404 && (await status(R.page, "/approvals/budgets/utilisation")) === 404 && (await status(R.page, "/approvals/budgets")) === 404);
-  await D.page.goto(BASE + `/approvals/timeline?id=${hrId}`);
-  check("the Approval Timeline shows who did what", /Submitted by ZZ Flow Requester/.test(await D.page.locator("main").first().innerText()) && /Approved by ZZ Flow DG/.test(await D.page.locator("main").first().innerText()));
+  await A.page.goto(BASE + `/approvals/timeline?id=${hrId}`);
+  check("the Approval Timeline shows who did what", /Submitted by ZZ Flow Requester/.test(await A.page.locator("main").first().innerText()) && /Approved by ZZ Flow DG/.test(await A.page.locator("main").first().innerText()));
 
   section("15. Notifications");
   const notes = await body(await R.page.request.get(`${BASE}/api/approvals/notifications`));
@@ -424,7 +426,7 @@ try {
   await dpage.getByRole("button", { name: "Approve", exact: true }).click();
   check("the DG approves the corrected request", await toast(dpage, "Request approved") && await poll(async () => (await sql`select status from apr_requests where id = ${ret.json.id}`)[0].status === "approved"));
   check("nobody can open the correction form of an approved request", (await status(R.page, `/approvals/requests/${ret.json.id}/edit`)) === 404);
-  check("the status filter offers Returned and the list still opens", (await status(D.page, "/approvals/expenditures/all?status=returned")) === 200);
+  check("the status filter offers Returned and the list still opens", (await status(A.page, "/approvals/expenditures/all?status=returned")) === 200);
 
   section("16c. Returning from the DG's inbox");
   const ret2 = await submitWith(R.page, { kind: "large", employeeUserId: ids.req, ...common(branch.id, cat.id), amountPaise: 1100000 });

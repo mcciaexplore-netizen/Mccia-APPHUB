@@ -61,7 +61,7 @@ const removeTestData = async () => {
 const scryptHash = (pw) => { const salt = crypto.randomBytes(16); const key = crypto.scryptSync(pw, salt, 32, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }); return `scrypt$16384$${salt.toString("base64")}$${key.toString("base64")}`; };
 const setPassword = (email, pw) => sql`update users set password_hash = ${scryptHash(pw)} where email = ${email}`;
 const snap = async () => ({
-  departments: (await sql`select name,is_active from departments where name not like 'ZZ%' order by sort_order,name`),
+  departments: (await sql`select name,is_active from departments where kind = 'application' and name not like 'ZZ%' order by sort_order,name`),
   apps: await sql`select a.name,a.url,a.is_active,a.status,d.name dept from apps a join departments d on d.id=a.department_id where a.name not like 'ZZ%' order by a.name`,
   branches: await sql`select name,is_active from branches where name not like 'ZZ%' order by name`,
   teams: await sql`select name,is_active from teams where name not like 'ZZ%' order by name`,
@@ -93,7 +93,7 @@ page.on("dialog", async (d) => { dialogs.push(d.message()); await d.dismiss(); }
 const go = async (p) => { await page.goto(BASE + p); await page.waitForLoadState("networkidle").catch(() => {}); };
 const main = async () => (await page.locator("main").first().innerText());
 const toast = async (t) => page.getByText(t).first().waitFor({ timeout: 20000 }).then(() => true).catch(() => false);
-const dep = async (name) => (await sql`select * from departments where name=${name}`)[0];
+const dep = async (name) => (await sql`select * from departments where kind = 'application' and name=${name}`)[0];
 const app = async (name) => (await sql`select * from apps where name=${name}`)[0];
 const sidebarLink = (n) => page.locator("aside:visible").getByRole("link", { name: n, exact: true });
 
@@ -156,18 +156,18 @@ try {
 
   section("3. Departments: add, duplicate, edit, reorder, deactivate");
   await go("/administrator/departments");
-  const addDept = async (name) => { await page.getByRole("button", { name: /Add department/ }).click(); const f = page.locator("form").filter({ has: page.getByRole("button", { name: "Create department" }) }); await f.locator("input").first().fill(name); await f.getByRole("button", { name: "Create department" }).click(); };
-  await addDept("ZZ Dept A"); check("add department shows a success message", await toast("Department created"));
+  const addDept = async (name) => { await page.getByRole("button", { name: /Add category/ }).click(); const f = page.locator("form").filter({ has: page.getByRole("button", { name: "Create category" }) }); await f.locator("input").first().fill(name); await f.getByRole("button", { name: "Create category" }).click(); };
+  await addDept("ZZ Dept A"); check("add application category shows a success message", await toast("Application category created"));
   const dA = await dep("ZZ Dept A"); check("department saved with a slug and active", dA && dA.slug === "zz-dept-a" && dA.is_active);
-  const maxReal = (await sql`select max(sort_order)::int m from departments where name not like 'ZZ%'`)[0].m; check("a new department is added at the END of the list", dA.sort_order > maxReal, dA.sort_order + " > " + maxReal);
+  const maxReal = (await sql`select max(sort_order)::int m from departments where kind = 'application' and name not like 'ZZ%'`)[0].m; check("a new department is added at the END of the list", dA.sort_order > maxReal, dA.sort_order + " > " + maxReal);
   await page.waitForTimeout(1500); await addDept("ZZ Dept A");
   check("duplicate department name is refused", await toast("already exists"));
   await page.waitForTimeout(500); await page.reload(); await page.waitForLoadState("networkidle");
   await page.locator("tr", { hasText: "ZZ Dept A" }).getByRole("button", { name: "Edit" }).click();
   const ef = page.locator("form").filter({ has: page.getByRole("button", { name: "Save" }) }); await ef.locator("input").first().fill("ZZ Dept A2"); await ef.getByRole("button", { name: "Save" }).click();
-  check("edit department shows a success message", await toast("Department saved")); await page.waitForTimeout(800);
+  check("edit application category shows a success message", await toast("Application category saved")); await page.waitForTimeout(800);
   check("rename persisted (name and slug)", (await dep("ZZ Dept A2"))?.slug === "zz-dept-a2");
-  await page.reload(); await page.waitForLoadState("networkidle"); await addDept("ZZ Dept B"); await toast("Department created"); await page.waitForTimeout(1500); await page.reload(); await page.waitForLoadState("networkidle");
+  await page.reload(); await page.waitForLoadState("networkidle"); await addDept("ZZ Dept B"); await toast("Application category created"); await page.waitForTimeout(1500); await page.reload(); await page.waitForLoadState("networkidle");
   const order = async () => (await sql`select name from departments where name like 'ZZ Dept%' order by sort_order,name`).map((r) => r.name);
   const o1 = await order(); await page.locator("tr", { hasText: "ZZ Dept A2" }).getByRole("button", { name: "Move down" }).click(); await toast("Reordered"); await page.waitForTimeout(1200);
   const o2 = await order(); check("move down changes the order", JSON.stringify(o1) !== JSON.stringify(o2), o1.join(">") + " => " + o2.join(">"));
@@ -277,11 +277,12 @@ try {
 
   await go("/administrator/users");
   await page.getByLabel("Filter by application").selectOption({ label: "ZZ App Uno" }); await page.waitForURL(/app=/);
-  await page.waitForFunction(() => /\d+ people? match/.test(document.querySelector("main")?.innerText ?? ""), null, { timeout: 15000 }).catch(() => {});
+  await page.waitForFunction(() => /\d+ (?:people|person) match/.test(document.querySelector("main")?.innerText ?? ""), null, { timeout: 15000 }).catch(() => {});
   const ft = (await main()).toLowerCase(); check("filtering the directory by application shows only people who hold it", ft.includes("asha patil") && !ft.includes("line"));
-  await go("/administrator/users"); await page.getByLabel("Filter by department").selectOption({ label: "ZZ Dept A2" }); await page.waitForURL(/dept=/);
-  await page.waitForFunction(() => /\d+ people? match/.test(document.querySelector("main")?.innerText ?? ""), null, { timeout: 15000 }).catch(() => {});
-  check("department filter works", (await main()).toLowerCase().includes("asha patil") && /\d+ people? match/.test(await main()));
+  const [zo] = await sql`insert into departments (kind, name, slug, icon, sort_order) values ('organisation', 'ZZ Org Dept', 'zz-org-dept', 'Building2', 9300) returning id`; await sql`update users set home_department_id = ${zo.id} where id = ${asha.id}`; // people's departments are organisation departments now
+  await go("/administrator/users"); await page.getByLabel("Filter by department").selectOption({ label: "ZZ Org Dept" }); await page.waitForURL(/dept=/);
+  await page.waitForFunction(() => /\d+ (?:people|person) match/.test(document.querySelector("main")?.innerText ?? ""), null, { timeout: 15000 }).catch(() => {});
+  check("department filter works", (await main()).toLowerCase().includes("asha patil") && /\d+ (?:people|person) match/.test(await main()), (await main()).replace(/\s+/g, " ").slice(-300) + " | " + page.url().slice(-80));
   await go("/administrator/users?status=pending"); check("the 'Pending invitation' filter lists people who have not set a password", (await main()).toLowerCase().includes("asha patil") && /Pending invitation/.test(await main()));
 
   section("6. Access: the profile, per app, templates, department Users tab");
@@ -296,8 +297,8 @@ try {
   await page.getByRole("button", { name: "Untick all" }).click(); await page.getByRole("button", { name: "Save access" }).click(); await toast("Access saved"); await page.waitForTimeout(1000);
   check("untick all + save removes every grant", await poll(async () => (await sql`select count(*)::int n from user_app_access where user_id=${asha.id}`)[0].n === 0));
   await go("/administrator/access/app/" + (await app("ZZ App Uno")).id); check("per-app access page opens", /Users with access|ZZ App Uno/.test(await main()));
-  await go("/administrator/departments"); await page.locator("main").getByRole("link", { name: "ZZ Dept A2" }).click(); await page.waitForURL(/departments\//); await page.getByRole("tab", { name: /Users/ }).click(); await page.getByText("People whose home department").waitFor({ timeout: 20000 });
-  const dut = (await main()).toLowerCase(); check("department Users tab lists its members", dut.includes("asha patil") && dut.includes("mixed case"));
+  await go("/administrator/departments"); await page.locator("main").getByRole("link", { name: "ZZ Dept A2" }).click(); await page.waitForURL(/departments\//);
+  const dut = (await main()).toLowerCase(); check("an application category's page has only an Applications tab (people sit in organisation departments, not in categories) and lists its applications", (await page.getByRole("tab").allInnerTexts()).map((t) => t.replace(/\s*\d+$/, "").trim()).join("|") === "Applications" && dut.includes("zz app uno"), (await page.getByRole("tab").allInnerTexts()).join("|"));
 
   section("7. Activity log and CSV export");
   await go("/administrator/activity"); const at = await main(); check("activity page lists the launches", at.includes("ZZ App Uno") && /launch/i.test(at));
@@ -424,7 +425,7 @@ try {
   await ie.getByPlaceholder("Search icons").fill("zzqqx"); check("an icon search with no match says so", (await ie.innerText()).includes("No icons match"));
   await ie.getByPlaceholder("Search icons").fill("wallet"); await opts.first().click();
   check("the clicked icon is marked selected", (await opts.first().getAttribute("aria-selected")) === "true");
-  await ie.getByRole("button", { name: "Save" }).click(); await toast("Department saved"); await page.waitForTimeout(1500);
+  await ie.getByRole("button", { name: "Save" }).click(); await toast("Application category saved"); await page.waitForTimeout(1500);
   check("department icon saved", (await dep("ZZ Dept A2")).icon === "Wallet", (await dep("ZZ Dept A2")).icon);
   await page.goto(deptUrl); await page.waitForLoadState("networkidle").catch(() => {});
   await page.locator("tr", { hasText: "ZZ App Uno" }).getByRole("button", { name: "Edit" }).click();
@@ -617,7 +618,7 @@ try {
   await mp.getByRole("button", { name: "Open menu" }).click(); await mp.waitForTimeout(500);
   check("menu button slides the sidebar in", await sb());
   await mp.locator("aside").last().getByRole("button", { name: "Administrator" }).click(); await mp.waitForTimeout(300);
-  check("Administrator expands to its sections on a phone", (await mp.locator("aside").last().locator("a[href^='/administrator']").count()) === 5);
+  check("Administrator expands to its sections on a phone", (await mp.locator("aside").last().locator("a[href^='/administrator']").count()) === 7);
   await mp.locator("aside").last().locator("a[href='/administrator/users']").click(); await mp.waitForURL((u) => /unlock|administrator\/users/.test(u.pathname)); await unlockIf(mp); await mp.waitForURL("**/administrator/users"); await mp.waitForLoadState("networkidle").catch(() => {}); check("tapping a section navigates", mp.url().endsWith("/administrator/users"), mp.url());
   for (const [p, l] of [["/", "home"], ["/administrator", "dashboard"], ["/administrator/departments", "departments"], ["/administrator/users", "users and access"], ["/administrator/users/import", "bulk add"], ["/administrator/users/org", "branches and teams"], ["/administrator/users/audit", "audit log"], ["/administrator/inventory", "application inventory"], ["/administrator/access", "access"], ["/administrator/activity", "activity"], ["/administrator/notifications", "notifications"], [deptUrl.replace(BASE, ""), "department detail"]]) await noOverflow(p, l);
   check("no script errors on the phone layout", mErr.length === 0, mErr.join(" | "));

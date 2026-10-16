@@ -17,13 +17,23 @@ Who approves what is data (Approver Rules screen, table `apr_approver_rules`); t
 
 ## Who the approvers are
 
-HR (step 1 of HR), Expenditure (step 1 of expenses, both sizes) and the Super Admin (step 2 of HR and of expenditure of ₹10,000 and above, and sees every request) are main accounts set in the environment (see `docs/ROLES.md`). The first time all three are set, the Approver Rules with nobody named are filled from them, once. After that the Support Admin decides everything on the Approver Rules screen.
+HR (step 1 of HR), Expenditure (step 1 of expenses, both sizes) and the Super Admin (step 2 of HR and of expenditure of ₹10,000 and above) are main accounts set in the environment (see `docs/ROLES.md`). The first time all three are set, the Approver Rules with nobody named are filled from them, once. After that the Support Admin decides everything on the Approver Rules screen.
 
 ## Decisions
 
+The button names say what the decision means:
+
+| Where the request is | Approve button | Reject button |
+|---|---|---|
+| First approver, and the DG decides next (every HR form, expenditure of ₹10,000 and above) | **Recommend to DG** (no separate Approve) | Reject |
+| The DG, at the last step | **Final approve** | **Final reject** |
+| Only one step (expense below the threshold) | **Approve** (final) | Reject |
+
+Lists: a first approver has **Recommended** (what they sent on) and **Rejected Forms**; the DG's list is the **Recommended Queue**, with **Rejected Forms** and **Completed by me**. The DG has no all-requests lists, timelines, reports, budgets or export.
+
 | Action | Needs a comment | What happens |
 |---|---|---|
-| Approve | only when over budget | Moves to the next step, or the request is approved |
+| Approve / Recommend | only when over budget | Moves to the next step, or the request is approved |
 | Return for corrections | always | Status **Returned**; the requester is told; the request keeps its step and approver |
 | Reject | always | Rejected at once; later steps are marked not needed |
 

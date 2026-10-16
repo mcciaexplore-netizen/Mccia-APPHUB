@@ -146,7 +146,7 @@ try {
   const menu = await fullMenu(A);
   for (const label of ["Hr", "Expenditures", "All_Budgets", "Administration"]) check(`HR Approval shows ${label}`, menu.includes(label));
   check("nothing in the application is still called DG Approval", !/DG Approval/.test(menu));
-  check("DG APPROVALS (approver inbox) is hidden from someone who is not a named approver", !menu.includes("DG APPROVALS"));
+  check("the Recommended Queue is hidden from someone who is not the Director General", !menu.includes("Recommended Queue"));
   await A.goto(BASE + "/approvals/hr/new");
   check("Event Approvals is in the menu, greyed out with a Coming soon tag", /Event Approvals/.test(await tabs(A).innerText()) && /Coming soon/i.test(await tabs(A).innerText()) && (await A.locator("main [aria-disabled=true]").count()) >= 1);
   await A.goto(BASE + "/approvals/admin/setup");

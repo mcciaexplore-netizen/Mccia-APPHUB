@@ -5,7 +5,7 @@ Five kinds of person, and what each can do. The rules live in one file, `src/lib
 | Role | Who | Can do |
 |---|---|---|
 | **Support Admin** (`head_admin`) | AI Studio (an environment account, see below) | Everything. The **only** one who changes roles and what each Admin may open. |
-| **Super Admin** (`super_admin`) | The DG | Everything in the software (people, access, applications, audit, activity, bulk add), except changing roles and the Admins' areas. |
+| **Super Admin** (`super_admin`) | The DG | An ordinary user of the hub plus the final approvals. Opens only the applications the Support Admin gives them, the Approval Forms and the DG dashboard. **No Administrator area at all.** |
 | **Admin** (`admin`) | People the Support Admin chooses | Only the areas of Administrator the Support Admin has switched on for them (below). Nothing is on until it is ticked. |
 | **User** (`member`) | Everyone else | Opens the applications assigned to them. New accounts are Users unless the Support Admin chooses otherwise. |
 | Team manager (`dept_lead`) | nobody today | Kept as it was (their team's people only). Not needed under this model. |
@@ -26,7 +26,7 @@ Five kinds of person, and what each can do. The rules live in one file, `src/lib
 | Account | Settings | What it is |
 |---|---|---|
 | **Support Admin** | `SUPPORT_ADMIN_*` (or the older `HEAD_ADMIN_*`) | Everything, including access, roles, applications and every Approval System setting. |
-| **Super Admin** | `SUPER_ADMIN_*` | The DG: the **final approver on all approvals** (step 2 of HR and of expenditure of ₹10,000 and above) and sees every request. |
+| **Super Admin** | `SUPER_ADMIN_*` | The DG: the **final approver on all approvals** (step 2 of HR and of expenditure of ₹10,000 and above). Sees only what is recommended to them (the Recommended Queue), the forms they rejected and the ones they completed. No all-requests lists, reports, budgets or export, and no Administrator. |
 | **HR** | `HR_ADMIN_*` | The HR reviewer (step 1 of HR requests). Approvals and the applications given to them only; cannot open Administrator. |
 | **Expenditure** | `EXPENDITURE_ADMIN_*` | The first approver of expenses (step 1, both sizes). Same limits as HR. |
 
@@ -36,12 +36,12 @@ The Support Admin can be set with `SUPPORT_ADMIN_*` and the older `HEAD_ADMIN_*`
 
 **Approver Rules:** the first time HR, Expenditure and the Super Admin are all set, the Approver Rules that have nobody named are filled from them, once (HR reviews HR; Expenditure is the first approver on expenses; the Super Admin is the final approver on HR and on expenditure of ₹10,000 and above). The Support Admin decides everything after that on the Approver Rules screen, and nothing is ever filled in again, so what they change or clear stays. The first approver and the Super Admin must still be different people.
 
-Whatever is ticked, an Admin can **never**: change a role, change what an Admin may open, delete a person, or see or touch the Support Admin, the Super Admin or another Admin (not in the directory, not by address, not through an import). They are also not Approval System admins: that module keeps its own roles (the Approvals admin is still the Support Admin).
+Only the Support Admin manages people, roles and access; the Super Admin cannot. Whatever is ticked, an Admin can **never**: change a role, change what an Admin may open, delete a person, or see or touch the Support Admin, the Super Admin or another Admin (not in the directory, not by address, not through an import). They are also not Approval System admins: that module keeps its own roles (the Approvals admin is still the Support Admin).
 
 ## Setting people up
 
 1. Sign in as the Support Admin and open Administrator, then Users & Access.
-2. **Add user** for each person. As the Support Admin you can choose Admin or Super admin (everyone else can only add Users). Each person gets a one-time setup link to choose their own password.
+2. **Add user** for each person. Only the Support Admin can add people (Admins with areas can add Users) and choose Admin or Super admin. Each person gets a one-time setup link to choose their own password.
 3. Open an Admin's profile and tick **What this Admin may open**, then save. It is recorded in the audit log.
 4. Anyone can be promoted or demoted later from their profile (Role). Making an Admin a User clears their areas.
 

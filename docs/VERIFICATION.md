@@ -11,15 +11,15 @@ What was run, on what, with what result. Everything below was run against a **sc
 | Lint | `npm run lint` | clean |
 | Unused-code scan | `npx knip` | clean |
 | Production build | `npm run build` | succeeds; all new routes present |
-| Unit | `npm run test:unit` | **155 / 155** (permissions matrix, now with the Super Admin and Admins with areas, import parsing, real Excel files, zip-bomb refusal, address safety, audit scrubbing, "every server action is guarded", "every route handler checks who is asking", plus the Approvals rules, including who decides when the first approver raises a request and the same-person check) |
-| Hub integration (database) | `npm run test:integration:hub` | **174 / 174** (the roles: what a Super Admin and an Admin with areas can see and change, bulk add limits; atomic access changes, team-manager limits, directory, bulk import and retry, one-time links, audit, revocation, deactivation, 200 × 4 grants) |
-| Approvals integration (database) | `npm run test:integration` | **187 / 187** (the earlier 108, plus return for corrections and resubmitting, the first approver raising his own request, the first-approver/DG rule, and HR amounts with budgets) |
+| Unit | `npm run test:unit` | **160 / 160** (permissions matrix, now with the Super Admin and Admins with areas, import parsing, real Excel files, zip-bomb refusal, address safety, audit scrubbing, "every server action is guarded", "every route handler checks who is asking", plus the Approvals rules, including who decides when the first approver raises a request and the same-person check) |
+| Hub integration (database) | `npm run test:integration:hub` | **177 / 177** (the roles: what a Super Admin and an Admin with areas can see and change, bulk add limits; atomic access changes, team-manager limits, directory, bulk import and retry, one-time links, audit, revocation, deactivation, 200 × 4 grants) |
+| Approvals integration (database) | `npm run test:integration` | **194 / 194** (the earlier 108, plus return for corrections and resubmitting, the first approver raising his own request, the first-approver/DG rule, and HR amounts with budgets) |
 | Hub in a browser | `npm run test:e2e` | **227 / 227** (the earlier 186 checks, ported to the new screens, plus new ones) |
 | Users & Access in a browser | `npm run test:e2e:people` | **112 / 112** |
 | Approval System in a browser | `npm run test:e2e:approvals` | **90 / 90** (regression) |
-| Approval System request flow | `npm run test:e2e:approvals:flow` | **141 / 141** (the earlier 104, plus returning, correcting and resubmitting in the browser, returning from the inbox, HR with an amount, and the rule check) |
-| Roles in a browser | `npm run test:e2e:roles` | **88 / 88** (Support Admin sets an Admin's areas and roles; Super Admin; Admins with different areas see and open only theirs; plain users and Admins with nothing on are kept out) |
-| **Total checks** | | **1,174** |
+| Approval System request flow | `npm run test:e2e:approvals:flow` | **143 / 143** (the earlier 104, plus returning, correcting and resubmitting in the browser, returning from the inbox, HR with an amount, and the rule check) |
+| Roles in a browser | `npm run test:e2e:roles` | **86 / 86** (Support Admin sets an Admin's areas and roles; Super Admin; Admins with different areas see and open only theirs; plain users and Admins with nothing on are kept out) |
+| **Total checks** | | **1,189** |
 
 All browser suites write only rows with test names (`ZZ…`, `zz-…`, `ZZP…`, `zzp-…`), remove them afterwards, remove the audit entries they caused, and
 confirm that existing departments, applications, branches, teams, people and access are exactly as before.
