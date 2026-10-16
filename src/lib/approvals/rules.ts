@@ -3,6 +3,7 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { aprApproverRules, type AprRequestType } from "@/db/approvals-schema";
 import { recordAudit } from "./audit";
+import { ensureRulesSeeded } from "./env-rules";
 import { ApprovalsError } from "./errors";
 import { getDirectoryUsers, type ApprovalsUser } from "./host-adapter";
 
@@ -26,6 +27,7 @@ export type RuleRow = {
 };
 
 export async function listRules(): Promise<RuleRow[]> {
+  await ensureRulesSeeded();
   const rules = await db.select().from(aprApproverRules).orderBy(asc(aprApproverRules.requestType), asc(aprApproverRules.stepNo));
   const people = new Map((await getDirectoryUsers(rules.flatMap((r) => r.approverUserIds))).map((u) => [u.id, u]));
   return rules.map((r) => {

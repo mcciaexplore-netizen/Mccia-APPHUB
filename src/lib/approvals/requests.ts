@@ -5,6 +5,7 @@ import {
   aprApprovalEvents, aprApproverRules, aprAttachmentSlot, aprAttachments, aprBranches, aprCategories, aprCounters, aprExpenditureDetails,
   aprHrCategories, aprHrDetails, aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType,
 } from "@/db/approvals-schema";
+import { ensureRulesSeeded } from "./env-rules";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
 import { assessBudget, commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, REQUEST_PREFIX, TYPE_LABEL, wrongFormMessage, type BudgetAssessment, type ExpenditureForm } from "./calc";
@@ -57,6 +58,7 @@ async function nextSerial(prefix: string, financialYear: string): Promise<number
 }
 
 async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: string; requestNo: string }> {
+  await ensureRulesSeeded();
   const settings = await getSettings();
 
   const fileIds = p.files.map((f) => f.fileId);

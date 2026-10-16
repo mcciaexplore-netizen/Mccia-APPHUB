@@ -16,7 +16,7 @@ export default async function ChangePasswordPage() {
         <h1 className="section-title text-center">Change password</h1>
         <p className="mt-2 text-center text-sm text-muted">Signed in as {user.email}.</p>
         {managedInEnv ? (
-          <p className="alert mt-6 text-left">This account&apos;s password is set in the environment settings (<code>HEAD_ADMIN_PASSWORD</code> for the Support Admin, <code>SUPER_ADMIN_PASSWORD</code> for the Super Admin). Change it there and redeploy.</p>
+          <p className="alert mt-6 text-left">This account&apos;s password is set in the environment settings (the <code>…_PASSWORD</code> setting of this account: Support Admin, Super Admin, HR or Expenditure). Change it there and redeploy.</p>
         ) : (
           <ChangePasswordForm />
         )}

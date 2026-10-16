@@ -39,6 +39,8 @@ const launch = () => BROWSER === "chromium"
 console.log(`Testing ${BASE} in ${BROWSER}`);
 const res = []; const check = (n, ok, x = "") => { res.push([n, !!ok]); console.log(`${ok ? "PASS" : "FAIL"}  ${n}${x !== "" ? "  -> " + String(x).slice(0, 220) : ""}`); };
 const section = (t) => console.log(`\n== ${t} ==`);
+/** The page's HTML, read again if the page happens to be navigating at that very moment (a redirect still settling). */
+const html = async (pg) => { for (let i = 0; i < 6; i++) { try { return await pg.content(); } catch { await pg.waitForLoadState("domcontentloaded").catch(() => {}); await pg.waitForTimeout(400); } } return pg.content(); };
 const startedAt = new Date();
 // Waits (up to a limit) for something the app does in the background to show up, instead of guessing a fixed delay.
 const poll = async (fn, ms = 25000) => { const end = Date.now() + ms; let v; while (Date.now() < end) { try { v = await fn(); if (v) return v; } catch { /* keep trying */ } await new Promise((r) => setTimeout(r, 800)); } return v; };
@@ -102,9 +104,9 @@ try {
     for (const p of ["/", "/administrator/users", "/go/00000000-0000-4000-8000-000000000000", "/change-password"]) { await ap0.goto(BASE + p); check("signed out, " + p + " goes to the login page", new URL(ap0.url()).pathname === "/login", ap0.url()); }
     check("the login page asks for an email and a password", (await ap0.locator("input[name=email]").count()) === 1 && (await ap0.locator("input[name=password]").count()) === 1);
     await signIn(ap0, ADMIN_EMAIL, "definitely-wrong-1");
-    const wrongTxt = await ap0.content(); check("a wrong password shows an error and stays on the login page", /Incorrect email or password/.test(wrongTxt) && new URL(ap0.url()).pathname === "/login");
+    const wrongTxt = await html(ap0); check("a wrong password shows an error and stays on the login page", /Incorrect email or password/.test(wrongTxt) && new URL(ap0.url()).pathname === "/login");
     await signIn(ap0, "nobody-here@example.com", "definitely-wrong-1");
-    check("an unknown email gets exactly the same message (no hint which emails exist)", /Incorrect email or password/.test(await ap0.content()));
+    check("an unknown email gets exactly the same message (no hint which emails exist)", /Incorrect email or password/.test(await html(ap0)));
     for (let i = 0; i < 6; i++) await signIn(ap0, ADMIN_EMAIL, "wrong-attempt-" + i + "x");
     await signIn(ap0, ADMIN_EMAIL, ADMIN_PW);
     check("after many wrong passwords the right one still works (no lockout)", new URL(ap0.url()).pathname === "/", ap0.url());
@@ -147,7 +149,7 @@ try {
   } else console.log("NOTE  no real https application here to launch; the redirect target is checked on a test app in section 4");
   check("/go/not-a-uuid is 404", (await page.request.get(BASE + "/go/not-a-uuid", { maxRedirects: 0 })).status() === 404);
   check("/go/<unknown uuid> is 404", (await page.request.get(BASE + "/go/00000000-0000-4000-8000-000000000000", { maxRedirects: 0 })).status() === 404);
-  const nf = await page.goto(BASE + "/this-page-does-not-exist"); check("unknown page is a branded 404", nf.status() === 404 && (await page.content()).includes("Page not found"));
+  const nf = await page.goto(BASE + "/this-page-does-not-exist"); check("unknown page is a branded 404", nf.status() === 404 && (await html(page)).includes("Page not found"));
   const hh = (await page.request.get(BASE + "/")).headers();
   check("security headers present", hh["x-frame-options"] === "DENY" && hh["x-content-type-options"] === "nosniff" && !!hh["referrer-policy"], `${hh["x-frame-options"]} / ${hh["x-content-type-options"]}`);
   check("the old auth endpoints are gone", (await page.request.get(BASE + "/api/auth/session")).status() === 404);
@@ -309,9 +311,9 @@ try {
   await go("/administrator/notifications"); check("notifications panel renders", (await main()).includes("Notifications Panel"));
   await go("/administrator"); const dash = (await main()).toLowerCase(); check("/administrator is the dashboard, with real counts for people and applications", page.url().endsWith("/administrator") && ["total users", "active users", "pending invitations", "registered", "under testing", "unavailable"].every((t) => dash.includes(t)) && /\d/.test(dash), page.url());
   await go("/administrator/apps"); check("old /administrator/apps redirects", page.url().endsWith("/administrator/departments"), page.url());
-  const bad = await page.goto(BASE + "/administrator/departments/not-a-uuid"); check("bad department id shows the not-found page", /Page not found/i.test(await page.content()), bad.status());
-  const bad2 = await page.goto(BASE + "/administrator/departments/00000000-0000-4000-8000-000000000000"); check("unknown department id shows the not-found page", /Page not found/i.test(await page.content()), bad2.status());
-  const bad3 = await page.goto(BASE + "/administrator/access/user/not-a-uuid"); check("bad user id on access page is a 404", bad3.status() === 404 || bad3.status() === 200 && /not found/i.test(await page.content()), bad3.status());
+  const bad = await page.goto(BASE + "/administrator/departments/not-a-uuid"); check("bad department id shows the not-found page", /Page not found/i.test(await html(page)), bad.status());
+  const bad2 = await page.goto(BASE + "/administrator/departments/00000000-0000-4000-8000-000000000000"); check("unknown department id shows the not-found page", /Page not found/i.test(await html(page)), bad2.status());
+  const bad3 = await page.goto(BASE + "/administrator/access/user/not-a-uuid"); check("bad user id on access page is a 404", bad3.status() === 404 || bad3.status() === 200 && /not found/i.test(await html(page)), bad3.status());
 
 
   section("8b. Access: templates, the assign-applications dialog, per-application editor, tick-all");
@@ -437,15 +439,15 @@ try {
   // Asha was created by bulk add with no password: she opens her one-time link and chooses her own.
   const sc = await browser.newContext(); const sp = await sc.newPage();
   await sp.goto(ashaLink); await sp.waitForLoadState("networkidle").catch(() => {});
-  check("the one-time link greets her by name and asks her to choose a password", /Choose your password/.test(await sp.content()) && /Asha Patil/.test(await sp.content()));
+  check("the one-time link greets her by name and asks her to choose a password", /Choose your password/.test(await html(sp)) && /Asha Patil/.test(await html(sp)));
   const pw1 = sp.locator("input[autocomplete=new-password]").nth(0), pw2 = sp.locator("input[autocomplete=new-password]").nth(1), savePw = sp.getByRole("button", { name: /Save password/ });
   await pw1.fill("abcdefghijkl"); await pw2.fill("abcdefghijkl"); await savePw.click();
   check("a weak password is refused on that page", await sp.getByText(/one letter and one number/).first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false));
   await pw1.fill(ashaPw); await pw2.fill("Different-pass-9"); await savePw.click();
   check("two different passwords are refused", await sp.getByText(/do not match/).first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false));
   await pw2.fill(ashaPw); await savePw.click(); await sp.waitForURL(/\/login\?set=1/, { timeout: 20000 }).catch(() => {});
-  check("choosing a good password sends her to sign in, with a confirmation", /Your password is saved/.test(await sp.content()), sp.url());
-  await sp.goto(ashaLink); check("the link works once only: opening it again says it cannot be used", /This link cannot be used/.test(await sp.content()));
+  check("choosing a good password sends her to sign in, with a confirmation", /Your password is saved/.test(await html(sp)), sp.url());
+  await sp.goto(ashaLink); check("the link works once only: opening it again says it cannot be used", /This link cannot be used/.test(await html(sp)));
   await sc.close();
   const ac = await browser.newContext({ viewport: { width: 1300, height: 1000 } }); const ap = await ac.newPage();
   await signIn(ap, ashaEmail, ashaPw);
@@ -508,7 +510,7 @@ try {
   check("deactivating saves", (await sql`select is_active from users where email=${ashaEmail}`)[0].is_active === false);
   await ap.goto(BASE + "/"); check("a deactivated user is signed out on their very next click", new URL(ap.url()).pathname === "/login", ap.url());
   const blocked = await browser.newContext(); const bp = await blocked.newPage(); await signIn(bp, ashaEmail, ashaPw);
-  check("a deactivated user cannot sign in", new URL(bp.url()).pathname === "/login" && /Incorrect email or password/.test(await bp.content())); await blocked.close();
+  check("a deactivated user cannot sign in", new URL(bp.url()).pathname === "/login" && /Incorrect email or password/.test(await html(bp))); await blocked.close();
   await userPage(ashaEmail);
   await urow(ashaEmail).getByRole("button", { name: "Inactive", exact: true }).click(); await toast("activated"); await page.waitForTimeout(1200);
   await ap.goto(BASE + "/"); if (new URL(ap.url()).pathname !== "/") await signIn(ap, ashaEmail, ashaPw);
@@ -526,10 +528,10 @@ try {
   // user: change own password, sign out
   await ap.goto(BASE + "/change-password");
   const cp = async (cur, nw, again) => { await ap.locator("input[autocomplete=current-password]").fill(cur); await ap.locator("input[autocomplete=new-password]").nth(0).fill(nw); await ap.locator("input[autocomplete=new-password]").nth(1).fill(again); await ap.getByRole("button", { name: "Save password" }).click(); await ap.waitForTimeout(2500); };
-  await cp("Totally-wrong-1", "Asha-third-pass-9", "Asha-third-pass-9"); check("a wrong current password is refused", /Current password is incorrect/.test(await ap.content()));
-  await cp(ashaNew, "Asha-third-pass-9", "Different-pass-9"); check("mismatched new passwords are refused", /do not match/.test(await ap.content()));
-  await cp(ashaNew, "abcdefghijkl", "abcdefghijkl"); check("a weak new password is refused", /one letter and one number/.test(await ap.content()));
-  await cp(ashaNew, "Asha-third-pass-9", "Asha-third-pass-9"); check("changing the password works", /Password changed/.test(await ap.content()));
+  await cp("Totally-wrong-1", "Asha-third-pass-9", "Asha-third-pass-9"); check("a wrong current password is refused", /Current password is incorrect/.test(await html(ap)));
+  await cp(ashaNew, "Asha-third-pass-9", "Different-pass-9"); check("mismatched new passwords are refused", /do not match/.test(await html(ap)));
+  await cp(ashaNew, "abcdefghijkl", "abcdefghijkl"); check("a weak new password is refused", /one letter and one number/.test(await html(ap)));
+  await cp(ashaNew, "Asha-third-pass-9", "Asha-third-pass-9"); check("changing the password works", /Password changed/.test(await html(ap)));
   await ap.goto(BASE + "/"); check("they stay signed in on this browser after changing it", new URL(ap.url()).pathname === "/", ap.url());
   await ap.locator("header").first().getByRole("button", { name: /Asha Patil/ }).click(); await ap.getByRole("button", { name: "Sign out" }).click(); await ap.waitForURL("**/login", { timeout: 20000 }).catch(() => {});
   check("Sign out returns to the login page", new URL(ap.url()).pathname === "/login", ap.url());
@@ -543,7 +545,7 @@ try {
   const mrow = urow(ADMIN_EMAIL);
   check("the main admin has no Reset password button", (await mrow.getByRole("button", { name: /^Reset password for/ }).count()) === 0);
   check("the main admin cannot be deactivated from the screen (no button to press)", (await mrow.getByRole("button", { name: "Active", exact: true }).count()) === 0 && (await mrow.getByText("Active", { exact: true }).count()) >= 1);
-  await page.goto(BASE + "/change-password"); check("the main admin is told the password lives in the settings", /environment settings/.test(await page.content()));
+  await page.goto(BASE + "/change-password"); check("the main admin is told the password lives in the settings", /environment settings/.test(await html(page)));
 
   // the Administrator lock
   await page.goto(BASE + "/administrator/users"); await page.waitForTimeout(3500);
@@ -556,7 +558,7 @@ try {
   check("after leaving Administrator, going back asks for the password again", new URL(page.url()).pathname === "/unlock", page.url());
   check("the unlock page remembers where you were going", new URL(page.url()).searchParams.get("next") === "/administrator/users");
   await page.locator("input[name=password]").fill("not-the-password-1"); await page.getByRole("button", { name: "Unlock" }).click(); await page.waitForTimeout(2000);
-  check("a wrong unlock password is refused and stays locked", new URL(page.url()).pathname === "/unlock" && /Incorrect password/.test(await page.content()));
+  check("a wrong unlock password is refused and stays locked", new URL(page.url()).pathname === "/unlock" && /Incorrect password/.test(await html(page)));
   await unlockIf(page); check("the right password opens it at the page you asked for", new URL(page.url()).pathname === "/administrator/users", page.url());
   const exportAfterLeave = await (async () => { await page.goto(BASE + "/"); return page.request.get(BASE + "/administrator/activity/export", { maxRedirects: 0 }); })();
   check("once locked, even the CSV export is closed", exportAfterLeave.status() >= 300 && exportAfterLeave.status() < 400, exportAfterLeave.status());

@@ -52,6 +52,7 @@ const FY = financialYearOf();
 // The test replaces the routing rules and the request counters with its own; the real ones are put back at the end.
 const savedRules = await db.select().from(T.aprApproverRules);
 const savedCounters = await db.select().from(T.aprCounters);
+const savedSeedMarker = await db.select().from(T.aprSettings).where(eq(T.aprSettings.key, "env_rules_seeded"));
 const cleanup = async () => {
   const people = await db.select({ id: users.id }).from(users).where(like(users.email, "zz-int-%"));
   for (const p of people) {
@@ -520,6 +521,47 @@ try {
   await R.withdrawRequest(hrOver.id, null, req);
   const util2 = (await B.utilisation(FY)).find((u) => u.branchId === branch.id && u.categoryId === cat2.id);
   check("budget utilisation includes approved HR amounts", util2?.spentPaise === 500_000 + 2_500_000 + 350_000 + 4_000_000, util2?.spentPaise);
+
+  /* ------------------------------------------------------------------ the main accounts fill empty approver rules, once */
+  const EnvRules = await import("../src/lib/approvals/env-rules");
+  const MARKER = "env_rules_seeded";
+  const markerRows = () => db.select().from(T.aprSettings).where(eq(T.aprSettings.key, MARKER));
+  const savedMarker = await markerRows();
+  const seededRule = async (type: string, stepNo: number) => (await db.select().from(T.aprApproverRules).where(and(eq(T.aprApproverRules.requestType, type as never), eq(T.aprApproverRules.stepNo, stepNo))))[0];
+  const idOf = async (email: string) => (await db.select({ id: users.id }).from(users).where(eq(users.email, email)))[0]?.id;
+  process.env.SUPER_ADMIN_EMAIL = "zz-int-main-super@example.com"; process.env.SUPER_ADMIN_PASSWORD = "Int-super-pass-1";
+  process.env.HR_ADMIN_EMAIL = "zz-int-main-hr@example.com"; process.env.HR_ADMIN_PASSWORD = "Int-hr-pass-1"; process.env.HR_ADMIN_NAME = "ZZ Int Main HR";
+  delete process.env.EXPENDITURE_ADMIN_EMAIL;
+  await db.delete(T.aprApproverRules);
+  await db.delete(T.aprSettings).where(eq(T.aprSettings.key, MARKER));
+  await EnvRules.ensureRulesSeeded();
+  check("nothing is filled in until HR, Expenditure and the Super Admin are all set", (await db.select().from(T.aprApproverRules)).length === 0 && (await markerRows()).length === 0);
+  process.env.EXPENDITURE_ADMIN_EMAIL = "zz-int-main-exp@example.com"; process.env.EXPENDITURE_ADMIN_PASSWORD = "Int-exp-pass-1";
+  await EnvRules.ensureRulesSeeded();
+  const [hrId, expId, dgId] = [await idOf("zz-int-main-hr@example.com"), await idOf("zz-int-main-exp@example.com"), await idOf("zz-int-main-super@example.com")];
+  check("once all three are set, their rows are made and the five routing rules are created from them", !!hrId && !!expId && !!dgId && (await db.select().from(T.aprApproverRules)).length === 5);
+  check("HR reviews HR, then the Super Admin", (await seededRule("hr", 1))?.approverUserIds[0] === hrId && (await seededRule("hr", 2))?.approverUserIds[0] === dgId);
+  check("Expenditure is the first approver on both sizes, and the Super Admin is the final approver of the large ones", (await seededRule("expenditure_large", 1))?.approverUserIds[0] === expId && (await seededRule("expenditure_large", 2))?.approverUserIds[0] === dgId && (await seededRule("expenditure_small", 1))?.approverUserIds[0] === expId);
+  check("the Super Admin is on no first step, so the first approver and the DG are different people", (await db.select().from(T.aprApproverRules)).every((r) => r.stepNo === 1 ? !r.approverUserIds.includes(dgId!) : !r.approverUserIds.some((i) => i === hrId || i === expId)));
+  check("the run is recorded once, and in the audit log as the system", (await markerRows()).length === 1 && (await db.select().from(T.aprAdminAudit)).some((a) => a.actorName === "System" && /Filled 5 empty approver rules/.test(a.summary)));
+  await db.update(T.aprApproverRules).set({ approverUserIds: [] }).where(and(eq(T.aprApproverRules.requestType, "hr"), eq(T.aprApproverRules.stepNo, 1)));
+  await EnvRules.ensureRulesSeeded();
+  check("after that nothing is ever filled in again: a rule the Support Admin cleared on purpose stays empty", (await seededRule("hr", 1))?.approverUserIds.length === 0);
+  await db.delete(T.aprSettings).where(eq(T.aprSettings.key, MARKER));
+  const anotherApprover = await person("otherapprover", []);
+  await db.update(T.aprApproverRules).set({ approverUserIds: [anotherApprover.id] }).where(and(eq(T.aprApproverRules.requestType, "expenditure_large"), eq(T.aprApproverRules.stepNo, 1)));
+  await EnvRules.ensureRulesSeeded();
+  check("a rule that already has someone is never overwritten, only the empty ones are filled", (await seededRule("expenditure_large", 1))?.approverUserIds[0] === anotherApprover.id && (await seededRule("hr", 1))?.approverUserIds[0] === hrId);
+  // an HR request now goes to the HR account first and then the Super Admin, through the real submit
+  const mainHr: Actor = { id: hrId!, name: "ZZ Int Main HR", email: "zz-int-main-hr@example.com", roles: ["requester", "approver"] };
+  const submitter = await person("mainsubmitter", []);
+  const viaMain = await R.submitHrRequest(hr({ lastName: "ViaMain" }), submitter);
+  const viaMainRow = await row(viaMain.id);
+  check("an HR request submitted now waits for the HR account, in two steps ending with the Super Admin", viaMainRow.currentApproverUserId === hrId && viaMainRow.totalSteps === 2);
+  check("the HR account approves, and it moves to the Super Admin, who approves last", (await R.decideRequest(viaMain.id, { action: "approve", comment: null }, mainHr)).status === "pending" && (await row(viaMain.id)).currentApproverUserId === dgId);
+  for (const k of ["SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD", "HR_ADMIN_EMAIL", "HR_ADMIN_PASSWORD", "HR_ADMIN_NAME", "EXPENDITURE_ADMIN_EMAIL", "EXPENDITURE_ADMIN_PASSWORD"]) delete process.env[k];
+  await db.delete(T.aprSettings).where(eq(T.aprSettings.key, MARKER));
+  if (savedMarker.length) await db.insert(T.aprSettings).values(savedMarker).onConflictDoNothing();
 } catch (e) {
   bad++;
   console.log("FAIL the suite ran to the end without an unexpected error\n", e);
@@ -527,6 +569,8 @@ try {
   await cleanup().catch((e) => console.error("CLEANUP FAILED:", e));
   if (savedRules.length) await db.insert(T.aprApproverRules).values(savedRules).catch((e) => console.error("COULD NOT RESTORE THE ROUTING RULES:", e));
   if (savedCounters.length) await db.insert(T.aprCounters).values(savedCounters).catch((e) => console.error("COULD NOT RESTORE THE COUNTERS:", e));
+  await db.delete(T.aprSettings).where(eq(T.aprSettings.key, "env_rules_seeded")).catch(() => {});
+  if (savedSeedMarker.length) await db.insert(T.aprSettings).values(savedSeedMarker).catch((e) => console.error("COULD NOT RESTORE THE RULES MARKER:", e));
   console.log(`\n${ok}/${ok + bad} integration checks passed`);
   process.exit(bad ? 1 : 0);
 }

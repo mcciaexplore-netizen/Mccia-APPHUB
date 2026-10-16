@@ -166,7 +166,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
                 <td>
                   <Link href={`${base}/${u.id}`} className="font-bold text-ink hover:text-primary">{u.name}</Link>{u.designation && <span className="text-xs text-muted"> · {u.designation}</span>}
                   <span className="block text-xs text-muted">{u.email}</span>
-                  {u.mainAdmin && <span className="badge badge-neutral mt-1">Main admin{u.passwordInSettings ? " · password in settings" : ""}</span>}
+                  {u.mainAdmin && <span className="badge badge-neutral mt-1">{u.role === "head_admin" || u.role === "super_admin" ? "Main admin" : "Main account"}{u.passwordInSettings ? " · password in settings" : ""}</span>}
                 </td>
                 <td><span className={roleBadge[u.role]}>{roleLabel[u.role]}</span></td>
                 <td className="text-xs">

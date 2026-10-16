@@ -27,6 +27,12 @@ process.env.HEAD_ADMIN_PASSWORD = "Env-admin-pass-1";
 process.env.SUPER_ADMIN_EMAIL = "zz-hub-env-super@example.com";
 process.env.SUPER_ADMIN_NAME = "ZZH Env Super";
 process.env.SUPER_ADMIN_PASSWORD = "Env-super-pass-1";
+process.env.HR_ADMIN_EMAIL = "zz-hub-env-hr@example.com";
+process.env.HR_ADMIN_NAME = "ZZH Env HR";
+process.env.HR_ADMIN_PASSWORD = "Env-hr-pass-1";
+process.env.EXPENDITURE_ADMIN_EMAIL = "zz-hub-env-exp@example.com";
+process.env.EXPENDITURE_ADMIN_NAME = "ZZH Env Expenditure";
+process.env.EXPENDITURE_ADMIN_PASSWORD = "Env-exp-pass-1";
 delete process.env.SMTP_HOST; // no real email from a test
 delete process.env.SMTP_FROM;
 delete process.env.ALLOWED_EMAIL_DOMAIN;
@@ -439,6 +445,37 @@ try {
   delete process.env.SUPER_ADMIN_EMAIL;
   check("with no SUPER_ADMIN_EMAIL at all, that address is an ordinary account again and the Support Admin is unaffected", !isEnvAdmin(SUPER_EMAIL) && !!(await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1")));
   process.env.SUPER_ADMIN_EMAIL = SUPER_EMAIL;
+
+  // ------------------------------------------------------------------------------------------------ 13. HR and Expenditure main accounts
+  console.log("\n== 13. HR and Expenditure main accounts, and the SUPPORT_ADMIN_* names ==");
+  const HR_EMAIL = "zz-hub-env-hr@example.com", EXP_EMAIL = "zz-hub-env-exp@example.com";
+  const rowOf = async (email: string) => (await db.select().from(S.users).where(eq(S.users.email, email)))[0];
+  check("signing in with one main account makes sure all four exist, active and with no stored password", (await rowOf("zz-hub-env-admin@example.com"))?.role === "head_admin" && (await rowOf(SUPER_EMAIL))?.role === "super_admin"
+    && (await rowOf(HR_EMAIL))?.role === "member" && (await rowOf(EXP_EMAIL))?.role === "member"
+    && (await rowOf(HR_EMAIL))?.passwordHash === null && (await rowOf(EXP_EMAIL))?.isActive === true && (await rowOf(HR_EMAIL))?.name === "ZZH Env HR" && (await rowOf(EXP_EMAIL))?.name === "ZZH Env Expenditure");
+  const hrUser = await authenticate(HR_EMAIL, "Env-hr-pass-1");
+  const expUser = await authenticate(EXP_EMAIL, "Env-exp-pass-1");
+  check("HR and Expenditure sign in with the passwords from the settings, as ordinary users (not administrators)", hrUser?.role === "member" && expUser?.role === "member");
+  check("wrong passwords, and each other's, are refused", (await authenticate(HR_EMAIL, "Env-exp-pass-1")) === null && (await authenticate(EXP_EMAIL, "Env-hr-pass-1")) === null && (await authenticate(HR_EMAIL, "nope")) === null);
+  check("all four count as environment accounts", [HR_EMAIL, EXP_EMAIL, SUPER_EMAIL, "zz-hub-env-admin@example.com"].every(isEnvAdmin));
+  await db.update(S.users).set({ role: "admin", adminAreas: ["people"], isActive: false }).where(eq(S.users.id, hrUser!.id));
+  const hrFixed = await authenticate(HR_EMAIL, "Env-hr-pass-1");
+  check("they cannot be locked out or promoted: signing in puts HR back to an ordinary, active user with no Admin areas", hrFixed?.role === "member" && hrFixed.isActive === true && hrFixed.adminAreas.length === 0);
+  const hrPerson = await getPerson(admin, hrUser!.id);
+  check("the directory marks HR as a main account whose password is in the settings", hrPerson?.mainAdmin === true && hrPerson.passwordInSettings === true && hrPerson.role === "member");
+  check("the Support Admin can give HR applications on their profile, like anyone's", (await applyAccess(admin, { userIds: [hrUser!.id], appIds: [aTally.id], mode: "add", source: "test" })).changed.length === 1 && (await grantsOf(hrUser!.id)).includes(aTally.id));
+  check("no setup link can be made for HR or Expenditure", (await refused(() => sendInvite({ id: hrUser!.id, name: "HR", email: HR_EMAIL, isActive: true }, admin.id))) !== null && (await refused(() => sendInvite({ id: expUser!.id, name: "E", email: EXP_EMAIL, isActive: true }, admin.id))) !== null);
+  process.env.HR_ADMIN_EMAIL = SUPER_EMAIL; // one address cannot be two main accounts: the one earlier in the list wins
+  check("an address set for two main accounts belongs to the first (Support, then Super, HR, Expenditure)", (await authenticate(SUPER_EMAIL, "Env-super-pass-1"))?.role === "super_admin" && (await authenticate(SUPER_EMAIL, "Env-hr-pass-1")) === null && !isEnvAdmin(HR_EMAIL));
+  process.env.HR_ADMIN_EMAIL = HR_EMAIL;
+  process.env.SUPPORT_ADMIN_EMAIL = "zz-hub-env-support@example.com";
+  process.env.SUPPORT_ADMIN_NAME = "ZZH Env Support";
+  process.env.SUPPORT_ADMIN_PASSWORD = "Env-support-pass-1";
+  const sup2 = await authenticate("zz-hub-env-support@example.com", "Env-support-pass-1");
+  check("SUPPORT_ADMIN_* works as the Support Admin, and wins over the older HEAD_ADMIN_*", sup2?.role === "head_admin" && sup2.name === "ZZH Env Support" && !isEnvAdmin("zz-hub-env-admin@example.com"));
+  delete process.env.SUPPORT_ADMIN_EMAIL; delete process.env.SUPPORT_ADMIN_NAME; delete process.env.SUPPORT_ADMIN_PASSWORD;
+  check("with the SUPPORT_ADMIN_* settings gone, HEAD_ADMIN_* is the Support Admin again", isEnvAdmin("zz-hub-env-admin@example.com") && (await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1"))?.role === "head_admin");
+  check("a main account cannot be created or imported as a new person", (await refused(() => checkImport(admin, [R(1, { name: "ZZH Dup HR", email: HR_EMAIL })], { existing: "skip" }).then((c) => { if (c.checks[0].errors.length) throw new UserError(c.checks[0].errors.join(" ")); }))) !== null);
 } finally {
   await cleanup().catch((e) => console.error("cleanup failed", e));
   const left = await db.select({ n: count() }).from(S.users).where(like(S.users.email, "zz-hub-%"));

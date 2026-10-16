@@ -283,6 +283,57 @@ try {
     console.log("   (skipped: set SUPER_ADMIN_EMAIL to a zzr-... address and SUPER_ADMIN_PASSWORD in the environment of this test and of the site to run these)");
   }
 
+  section("7c. HR and Expenditure main accounts, and the approver rules filled from them (when HR_ADMIN_*, EXPENDITURE_ADMIN_* and SUPER_ADMIN_* are set to test addresses)");
+  const ENV_HR = { email: (process.env.HR_ADMIN_EMAIL || "").trim().toLowerCase(), pw: process.env.HR_ADMIN_PASSWORD || "" };
+  const ENV_EXP = { email: (process.env.EXPENDITURE_ADMIN_EMAIL || "").trim().toLowerCase(), pw: process.env.EXPENDITURE_ADMIN_PASSWORD || "" };
+  if ([ENV_HR, ENV_EXP].every((a) => a.email.startsWith("zzr-") && a.pw) && ENV_SUP_EMAIL.startsWith("zzr-") && ENV_SUP_PW) {
+    const savedRules = await sql`select id, request_type, step_no, step_label, min_amount_paise, max_amount_paise, approver_user_ids, active from apr_approver_rules`;
+    const savedMarker = await sql`select key, value from apr_settings where key = 'env_rules_seeded'`;
+    try {
+      const H = (await newSession()).page, X = (await newSession()).page;
+      await signIn(H, ENV_HR.email, ENV_HR.pw);
+      check("HR signs in with the password from the settings", new URL(H.url()).pathname === "/");
+      await signIn(X, ENV_EXP.email, ENV_EXP.pw);
+      check("so does Expenditure", new URL(X.url()).pathname === "/");
+      check("neither has Administrator in the sidebar, and its address sends them home", !(await sidebarHasAdministrator(H)) && !(await sidebarHasAdministrator(X)) && (await H.goto(BASE + "/administrator").then(() => new URL(H.url()).pathname)) === "/");
+      check("both have the Approval System", (await H.locator("aside").first().getByRole("button", { name: "Approval System" }).count()) > 0);
+      const hrId = (await sql`select id from users where lower(email) = ${ENV_HR.email}`)[0].id;
+      await visit(A, "/administrator/users", ADMIN_PW);
+      const hrRow = await A.locator("tr", { hasText: ENV_HR.email }).first().innerText();
+      check("the directory shows HR as a User, marked Main account · password in settings", /user/i.test(hrRow) && /main account · password in settings/i.test(hrRow), hrRow.replace(/\s+/g, " ").slice(0, 140));
+      await visit(A, `/administrator/users/${hrId}`, ADMIN_PW);
+      await A.getByRole("heading", { name: /./ }).first().waitFor({ timeout: 30000 }).catch(() => {});
+      check("HR's profile has no password reset, setup link, Deactivate or Delete, and the Role box is fixed; applications can still be assigned", (await A.getByRole("button", { name: /Reset password/ }).count()) === 0 && (await A.getByRole("button", { name: "Send setup link" }).count()) === 0
+        && (await A.getByRole("button", { name: "Deactivate" }).count()) === 0 && (await A.getByRole("button", { name: "Delete" }).count()) === 0 && (await A.getByLabel("Role").isDisabled()) && (await A.getByRole("button", { name: "Save access" }).count()) === 1);
+      // The rules are filled from the three accounts the first time: start from empty rules and no marker.
+      await sql`update apr_approver_rules set approver_user_ids = '{}'`;
+      await sql`delete from apr_settings where key = 'env_rules_seeded'`;
+      await visit(A, "/approvals/admin/rules", ADMIN_PW);
+            const supId = (await sql`select id from users where lower(email) = ${ENV_SUP_EMAIL}`)[0].id;
+      const expId = (await sql`select id from users where lower(email) = ${ENV_EXP.email}`)[0].id;
+      const rule = async (t, n) => (await sql`select approver_user_ids from apr_approver_rules where request_type = ${t}::apr_request_type and step_no = ${n}`)[0]?.approver_user_ids?.[0];
+      check("opening Approver Rules fills them from the accounts: HR reviews HR, Expenditure is the first approver, the Super Admin is last", await poll(async () => (await rule("hr", 1)) === hrId && (await rule("hr", 2)) === supId && (await rule("expenditure_large", 1)) === expId && (await rule("expenditure_large", 2)) === supId && (await rule("expenditure_small", 1)) === expId));
+      const picked = await A.locator("main select").evaluateAll((els) => els.map((e) => e.options[e.selectedIndex]?.textContent ?? "").join("|"));
+      check("the screen names them", picked.includes("ZZR Env HR") && picked.includes("ZZR Env Expenditure") && picked.includes("ZZR Env Super"), picked);
+      const SE = (await newSession()).page;
+      await signIn(SE, ENV_SUP_EMAIL, ENV_SUP_PW);
+      check("HR is now an approver and opens the approvals waiting for them; the Super Admin sees every request", (await H.goto(BASE + "/approvals/my/pending")).status() === 200 && (await SE.goto(BASE + "/approvals/hr/all")).status() === 200 && (await SE.goto(BASE + "/approvals/expenditures/all")).status() === 200);
+      check("the Support Admin alone has the Approvals settings: the Super Admin does not open Approver Rules", (await SE.goto(BASE + "/approvals/admin/rules")).status() === 404);
+      check("the run is noted once in the audit log as the System", (await sql`select count(*)::int n from apr_admin_audit where actor_name = 'System' and summary like 'Filled % empty approver rules%' and created_at >= ${startedAt}`)[0].n === 1);
+      await sql`update apr_approver_rules set approver_user_ids = '{}' where request_type = 'hr' and step_no = 1`;
+      await visit(A, "/approvals/admin/rules", ADMIN_PW);
+      check("what the Support Admin clears is not filled in again", (await rule("hr", 1)) === undefined);
+    } finally {
+      await sql`delete from apr_approver_rules`;
+      for (const r of savedRules) await sql`insert into apr_approver_rules (id, request_type, step_no, step_label, min_amount_paise, max_amount_paise, approver_user_ids, active) values (${r.id}, ${r.request_type}::apr_request_type, ${r.step_no}, ${r.step_label}, ${r.min_amount_paise}, ${r.max_amount_paise}, ${r.approver_user_ids}, ${r.active})`;
+      await sql`delete from apr_settings where key = 'env_rules_seeded'`;
+      for (const m of savedMarker) await sql`insert into apr_settings (key, value) values (${m.key}, ${m.value}) on conflict do nothing`;
+      await sql`delete from apr_admin_audit where actor_name = 'System' and created_at >= ${startedAt}`;
+    }
+  } else {
+    console.log("   (skipped: needs HR_ADMIN_*, EXPENDITURE_ADMIN_* and SUPER_ADMIN_* set to zzr-... test addresses with passwords)");
+  }
+
   section("8. Console and untouched data");
   check("no browser console or page errors on any screen", consoleErrors.length === 0 && pageErrors.length === 0, [...consoleErrors, ...pageErrors].join(" | "));
 } catch (e) {

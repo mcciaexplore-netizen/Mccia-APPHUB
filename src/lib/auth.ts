@@ -9,28 +9,49 @@ const digest = (v: string) => createHash("sha256").update(v).digest();
 const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
 
 /**
- * The accounts whose email and password live in the environment settings, not in the database: the Support Admin (HEAD_ADMIN_*) and,
- * when set, the Super Admin (SUPER_ADMIN_*). They sign in with the password from the settings, so changing it there (and redeploying)
- * changes it, and neither can be locked out from the screens. One address cannot be both: the Support Admin wins.
+ * The four main accounts, whose email, name and password live in the environment settings, not in the database:
+ *   Support Admin  SUPPORT_ADMIN_* (or the older HEAD_ADMIN_*)   everything
+ *   Super Admin    SUPER_ADMIN_*                                 the DG: the final approver on all approvals
+ *   HR             HR_ADMIN_*                                    the HR reviewer (approvals and their applications only)
+ *   Expenditure    EXPENDITURE_ADMIN_*                           the expense approver (approvals and their applications only)
+ * Each is set with <PREFIX>_EMAIL, <PREFIX>_NAME and <PREFIX>_PASSWORD. They sign in with the password from the settings, so changing it
+ * there (and redeploying) changes it, and none of them can be locked out, deactivated, deleted or given another role from the screens.
+ * An address can belong to only one of them: the first in the list above wins.
  */
-type EnvAccount = { role: "head_admin" | "super_admin"; email: string; password: string | undefined; name: string };
+export type EnvKey = "support" | "super" | "hr" | "expenditure";
+type EnvAccount = { key: EnvKey; role: "head_admin" | "super_admin" | "member"; email: string; password: string | undefined; name: string };
+const ENV_DEFS: { key: EnvKey; role: EnvAccount["role"]; prefixes: string[]; name: string }[] = [
+  { key: "support", role: "head_admin", prefixes: ["SUPPORT_ADMIN", "HEAD_ADMIN"], name: "Admin" },
+  { key: "super", role: "super_admin", prefixes: ["SUPER_ADMIN"], name: "Super Admin" },
+  { key: "hr", role: "member", prefixes: ["HR_ADMIN"], name: "HR" },
+  { key: "expenditure", role: "member", prefixes: ["EXPENDITURE_ADMIN"], name: "Expenditure" },
+];
 const lower = (v: string | undefined) => v?.trim().toLowerCase() || "";
 
 function envAccounts(): EnvAccount[] {
-  const head: EnvAccount = { role: "head_admin", email: lower(process.env.HEAD_ADMIN_EMAIL), password: process.env.HEAD_ADMIN_PASSWORD, name: process.env.HEAD_ADMIN_NAME?.trim() || "Admin" };
-  const sup: EnvAccount = { role: "super_admin", email: lower(process.env.SUPER_ADMIN_EMAIL), password: process.env.SUPER_ADMIN_PASSWORD, name: process.env.SUPER_ADMIN_NAME?.trim() || "Super Admin" };
-  return [head, sup].filter((a, i, all) => a.email && all.findIndex((b) => b.email === a.email) === i);
+  const out: EnvAccount[] = [];
+  for (const d of ENV_DEFS) {
+    const prefix = d.prefixes.find((p) => lower(process.env[`${p}_EMAIL`]));
+    if (!prefix) continue;
+    const email = lower(process.env[`${prefix}_EMAIL`]);
+    if (out.some((a) => a.email === email)) continue;
+    out.push({ key: d.key, role: d.role, email, password: process.env[`${prefix}_PASSWORD`], name: process.env[`${prefix}_NAME`]?.trim() || d.name });
+  }
+  return out;
 }
 const envAccount = (email: string): EnvAccount | null => envAccounts().find((a) => a.email === email.trim().toLowerCase()) ?? null;
 
-/** True for an account that signs in with a password from the environment (the Support Admin, and the Super Admin when SUPER_ADMIN_EMAIL is set). */
+/** True for one of the four main accounts: it signs in with a password from the environment settings. */
 export const isEnvAdmin = (email: string) => !!envAccount(email);
+
+/** The address set for one of the main accounts, or null when it is not set. */
+export const envAccountEmail = (key: EnvKey): string | null => envAccounts().find((a) => a.key === key)?.email ?? null;
 
 /** Changes whenever the person's password changes, so older sign-ins stop working. */
 export const userFingerprint = (u: Pick<User, "email" | "passwordHash">) =>
   createHash("sha256").update(isEnvAdmin(u.email) ? `env:${envAccount(u.email)?.password ?? ""}` : (u.passwordHash ?? "")).digest("base64url").slice(0, 12);
 
-/** Makes sure an environment account has a row (the first sign-in creates it), holds its role, and is active. */
+/** Makes sure a main account has a row (the first sign-in creates it), holds its role, and is active. */
 async function ensureEnvAdmin(acc: EnvAccount): Promise<User> {
   const [u] = await db.select().from(users).where(eq(users.email, acc.email));
   if (!u) {
@@ -42,10 +63,20 @@ async function ensureEnvAdmin(acc: EnvAccount): Promise<User> {
     return created;
   }
   if (u.role !== acc.role || !u.isActive || u.status !== "approved") {
-    const [fixed] = await db.update(users).set({ role: acc.role, isActive: true, status: "approved" }).where(eq(users.id, u.id)).returning();
+    const [fixed] = await db.update(users).set({ role: acc.role, adminAreas: [], isActive: true, status: "approved" }).where(eq(users.id, u.id)).returning();
     return fixed;
   }
   return u;
+}
+
+/**
+ * Makes sure every main account that is set has a row, so the Support Admin can pick it (for example on the Approver Rules) before it has
+ * ever signed in. Changes nothing for an account that already has a row.
+ */
+export async function ensureEnvAccounts(): Promise<void> {
+  for (const acc of envAccounts()) {
+    await db.insert(users).values({ name: acc.name, email: acc.email, role: acc.role, status: "approved", signupSource: "env" }).onConflictDoNothing();
+  }
 }
 
 /** Returns the person if the email and password are right and the account may sign in; otherwise null. Never locks anyone out. */
@@ -56,7 +87,9 @@ export async function authenticate(emailRaw: string, password: string): Promise<
   const env = envAccount(email);
   if (env) {
     if (!env.password || !same(password, env.password)) return null;
-    return ensureEnvAdmin(env);
+    const me = await ensureEnvAdmin(env);
+    await ensureEnvAccounts().catch((e) => console.error("[auth] could not create the other main accounts", e));
+    return me;
   }
 
   const [u] = await db.select().from(users).where(eq(users.email, email));

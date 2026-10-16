@@ -15,6 +15,10 @@ Who approves what is data (Approver Rules screen, table `apr_approver_rules`); t
 - Nobody approves their own request. When the first approver raises a request, his step is dropped and the Director General decides it, for any amount.
 - A request keeps the steps it was given when it was submitted: later rule changes do not alter it.
 
+## Who the approvers are
+
+HR (step 1 of HR), Expenditure (step 1 of expenses, both sizes) and the Super Admin (step 2 of HR and of expenditure of ₹10,000 and above, and sees every request) are main accounts set in the environment (see `docs/ROLES.md`). The first time all three are set, the Approver Rules with nobody named are filled from them, once. After that the Support Admin decides everything on the Approver Rules screen.
+
 ## Decisions
 
 | Action | Needs a comment | What happens |
