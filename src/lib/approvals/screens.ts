@@ -16,6 +16,10 @@ export type ListScreen = {
   waitingForMe?: boolean;
   /** Only requests this person has already decided. */
   decidedByMe?: boolean;
+  /** Only requests this person recommended to a later approver (approved their step, and the request goes on). */
+  recommendedByMe?: boolean;
+  /** Only requests this person rejected. */
+  rejectedByMe?: boolean;
   /** Show the Branch column (expenditure lists). */
   branch?: boolean;
   /** Show vendor and tax invoice date (the below-threshold approved list). */
@@ -49,10 +53,12 @@ const LIST_SCREENS: Record<string, ListScreen> = {
   "expenses/rejected": { title: "Rejected Expenses", intro: "Expenses below ₹10,000 that were rejected.", types: SMALL, statuses: ["rejected"], branch: true, vendor: true, categories: "expense" },
 
   inbox: {
-    title: "DG APPROVALS", intro: "Everything waiting for your decision, newest first. Open a request to see its details before deciding.",
+    title: "Recommended Queue", intro: "Everything recommended to you for the final decision, HR and Expenditure together, newest first. Open a request to see its details before deciding.",
     statuses: ["pending"], waitingForMe: true, branch: true, quickDecide: true, categories: "all",
   },
-  "my/pending": { title: "Waiting for my approval", intro: "Requests waiting for your decision.", statuses: ["pending"], waitingForMe: true, branch: true, categories: "all" },
+  "my/pending": { title: "Pending Approvals", intro: "Forms waiting for your decision.", statuses: ["pending"], waitingForMe: true, branch: true, quickDecide: true, categories: "all" },
+  "my/recommended": { title: "Recommended", intro: "Forms you recommended to the Director General, and where each one stands now.", recommendedByMe: true, branch: true, categories: "all" },
+  "my/rejected": { title: "Rejected Forms", intro: "Forms you rejected.", rejectedByMe: true, branch: true, categories: "all" },
   "my/completed": { title: "Completed by me", intro: "Requests you have already approved or rejected.", decidedByMe: true, branch: true, categories: "all" },
 };
 

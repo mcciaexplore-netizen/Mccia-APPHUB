@@ -15,10 +15,9 @@ import { scrub } from "../src/lib/scrub";
 import { xlsxToTable } from "../src/lib/xlsx-read";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
-  FULL_ACCESS_ROLES, approvalsApps, canSee, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, type ApprovalsRole,
-} from "../src/lib/approvals/approvals.manifest";
+  FULL_ACCESS_ROLES, approvalsApps, canSee, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
 import {
-  assessBudget, budgetWarning, commentRequired, escalationApprover, formFor, formatRequestNo, percentUsed, planSteps, STATUS_LABEL, utilisationLevel, wrongFormMessage,
+  assessBudget, budgetWarning, commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, percentUsed, planSteps, STATUS_LABEL, utilisationLevel, wrongFormMessage,
   type RuleLike,
 } from "../src/lib/approvals/calc";
 import { decisionInput, fileUploadStart, hrRequestInput, isAllowedFileName, largeExpenditureInput, mimeFor, safeFileName, smallExpenditureInput } from "../src/lib/approvals/request-schemas";
@@ -93,7 +92,9 @@ eq("today in IST: late evening UTC is already tomorrow", [todayIST(new Date("202
 eq("card url: path, full address and trailing slash match", [isApprovalsUrl("/approvals"), isApprovalsUrl("https://hub.mccia.org/approvals"), isApprovalsUrl("https://hub.mccia.org/approvals/")], [true, true, true]);
 eq("card url: other paths do not", [isApprovalsUrl("https://x.org/approvals/admin"), isApprovalsUrl("https://x.org/other"), isApprovalsUrl("/approvals-old")], [false, false, false]);
 eq("menu: a form is for everyone", canSee({ label: "F", href: "/f", form: true }, ["requester"]), true);
-eq("menu: any other page without a role list needs full access", [canSee({ label: "L", href: "/l" }, ["requester"]), ...FULL_ACCESS_ROLES.map((r) => canSee({ label: "L", href: "/l" }, ["requester", r]))], [false, true, true, true, true]);
+eq("menu: any other page without a role list needs full access, which the Director General alone does not have (their menu is the Recommended Queue)", [canSee({ label: "L", href: "/l" }, ["requester"]), ...FULL_ACCESS_ROLES.map((r) => canSee({ label: "L", href: "/l" }, ["requester", r]))], [false, true, false, true, true]);
+eq("menu: the DG alone is told apart from a DG who also reviews or oversees", [isDgOnly(["requester", "dg"]), isDgOnly(["requester", "dg", "approver"]), isDgOnly(["requester", "dg", "viewer"]), isDgOnly(["requester", "approver"])], [true, false, false, false]);
+eq("menu: reports and budgets are not for the Director General", [canSee({ label: "R", href: "/r", roles: ["viewer", "approvals_admin"] }, ["requester", "dg"]), canSee({ label: "Q", href: "/q", roles: ["dg"] }, ["requester", "dg"])], [false, true]);
 eq("menu: a section is kept for everyone (its pages decide what is left in it)", canSee({ label: "S", items: [] }, ["requester"]), true);
 eq("menu: admin-only item is hidden from a requester and shown to an admin", [canSee({ label: "A", href: "/a", roles: ["approvals_admin"] }, ["requester"]), canSee({ label: "A", href: "/a", roles: ["approvals_admin"] }, ["requester", "approvals_admin"])], [false, true]);
 eq("full access: a plain requester has none, each of the four roles has it", [hasFullAccess(["requester"]), ...FULL_ACCESS_ROLES.map((r) => hasFullAccess(["requester", r]))], [false, true, true, true, true]);
@@ -153,6 +154,8 @@ eq("escalation: with no large expenditure DG the HR one is used, and with none a
 eq("comment: needed to reject, and to approve over budget", [commentRequired("reject", false), commentRequired("approve", true), commentRequired("approve", false)], [true, true, false]);
 eq("comment: always needed to return a request for corrections", [commentRequired("return", false), commentRequired("return", true)], [true, true]);
 eq("status: a returned request has a label", STATUS_LABEL.returned, "Returned");
+eq("decisions: a step before the last recommends to the next approver, the last of several decides finally, a lone step just approves", [decisionMode(1, 2), decisionMode(2, 2), decisionMode(1, 1), decisionMode(1, 3), decisionMode(3, 3)], ["recommend", "final", "single", "recommend", "final"]);
+eq("decisions: the buttons say what they do", [MODE_WORDS.recommend.approve, MODE_WORDS.final.approve, MODE_WORDS.final.reject, MODE_WORDS.single.approve, MODE_WORDS.single.reject], ["Recommend to DG", "Final approve", "Final reject", "Approve", "Reject"]);
 eq("utilisation: percent and colours", [percentUsed(1000, 905), percentUsed(1000, 1000), percentUsed(1000, 1010), percentUsed(null, 5), percentUsed(0, 5), percentUsed(0, 0)], [91, 100, 101, null, 100, 0]);
 eq("utilisation: above 90 is amber, above 100 is red", [utilisationLevel(90), utilisationLevel(91), utilisationLevel(100), utilisationLevel(101), utilisationLevel(null)], ["ok", "warn", "warn", "over", "ok"]);
 eq("request number", [formatRequestNo("HR", "2026-27", 1), formatRequestNo("EXB", "2026-27", 123), formatRequestNo("EXP", "2027-28", 12345)], ["HR-2026-27-0001", "EXB-2026-27-0123", "EXP-2027-28-12345"]);
@@ -216,15 +219,18 @@ const SUPER: Actor = { id: "s", role: "super_admin", teamId: null };
 const adminWith = (...areas: string[]): Actor => ({ id: "ad", role: "admin", teamId: null, adminAreas: areas });
 const A_PEOPLE = adminWith("people"), A_NONE = adminWith(), A_AUDIT = adminWith("audit"), A_IMPORT = adminWith("import");
 const mk = (role: Target["role"], id = "x"): Target => person({ id, role });
-eq("rbac: the Super Admin has the same reach as the Support Admin over people, access, import and organisation", [
+eq("rbac: the Super Admin (the DG) is an ordinary user in the hub: no reach over people, access, import or organisation, and no Administrator", [
   canManageAccess(SUPER, mk("member")), canManageAccess(SUPER, mk("admin")), canImportUsers(SUPER), canDeactivate(SUPER, { id: "x", role: "member" }), canEditPerson(SUPER, mk("admin")),
-  hasArea(SUPER, "audit"), hasArea(SUPER, "apps"), canAdminister(SUPER),
-], [true, true, true, true, true, true, true, true]);
+  hasArea(SUPER, "audit"), hasArea(SUPER, "apps"), canAdminister(SUPER), isStaff(SUPER), Object.values(capabilities(SUPER)).some(Boolean),
+], [false, false, false, false, false, false, false, false, false, false]);
+eq("rbac: only the Support Admin manages people, roles and access: the Support Admin reaches everyone, including the Super Admin", [
+  canManageAccess(ADMIN, mk("super_admin")), canEditPerson(ADMIN, mk("super_admin")), canChangeRole(ADMIN, { id: "x", role: "super_admin" }), canAdminister(ADMIN),
+], [true, true, true, true]);
 eq("rbac: only the Support Admin changes roles: not the Super Admin, not an Admin, never their own, never a Support Admin's", [
   canChangeRole(ADMIN, { id: "x", role: "member" }), canChangeRole(ADMIN, { id: "x", role: "admin" }), canChangeRole(ADMIN, { id: "x", role: "super_admin" }),
   canChangeRole(SUPER, { id: "x", role: "member" }), canChangeRole(A_PEOPLE, { id: "x", role: "member" }), canChangeRole(ADMIN, { id: "a", role: "head_admin" }), canChangeRole(ADMIN, { id: "h", role: "head_admin" }),
 ], [true, true, true, false, false, false, false]);
-eq("rbac: the Super Admin is a main admin: nobody deactivates them (change their role first), but everyone else can still be deactivated by the top roles", [canDeactivate(ADMIN, { id: "x", role: "super_admin" }), canDeactivate(SUPER, { id: "x", role: "super_admin" }), canDeactivate(ADMIN, { id: "x", role: "admin" }), canDeactivate(SUPER, { id: "x", role: "member" })], [false, false, true, true]);
+eq("rbac: the Super Admin is a main admin: nobody deactivates them (change their role first), but everyone else can still be deactivated by the top roles", [canDeactivate(ADMIN, { id: "x", role: "super_admin" }), canDeactivate(SUPER, { id: "x", role: "super_admin" }), canDeactivate(ADMIN, { id: "x", role: "admin" }), canDeactivate(ADMIN, { id: "x", role: "member" })], [false, false, true, true]);
 eq("rbac: an Admin with nothing switched on can do nothing and cannot even open Administrator", [
   canAdminister(A_NONE), isStaff(A_NONE), canManageAccess(A_NONE, mk("member")), canImportUsers(A_NONE), Object.values(capabilities(A_NONE)).some(Boolean),
 ], [false, false, false, false, false]);
@@ -242,13 +248,13 @@ eq("rbac: an Admin can edit, deactivate and send links to plain users only, and 
 ], [true, false, false, false, true, false, false, false, false, false]);
 eq("rbac: without Users & access an Admin edits nobody, even with other areas on", [canEditPerson(A_AUDIT, mk("member")), canManageAccess(A_AUDIT, mk("member")), canDeactivate(A_IMPORT, { id: "x", role: "member" })], [false, false, false]);
 eq("rbac: bulk add needs its own area", [canImportUsers(A_IMPORT), canImportUsers(A_PEOPLE), canImportUsers(A_NONE)], [true, false, false]);
-eq("rbac: an import may update plain users for an Admin with Bulk add, anyone for the top roles, and nothing without the area", [canUpdateByImport(A_IMPORT, mk("member")), canUpdateByImport(A_IMPORT, mk("admin")), canUpdateByImport(A_IMPORT, mk("super_admin")), canUpdateByImport(A_PEOPLE, mk("member")), canUpdateByImport(SUPER, mk("admin")), canUpdateByImport(ADMIN, mk("super_admin"))], [true, false, false, false, true, true]);
+eq("rbac: an import may update plain users for an Admin with Bulk add, anyone for the top roles, and nothing without the area", [canUpdateByImport(A_IMPORT, mk("member")), canUpdateByImport(A_IMPORT, mk("admin")), canUpdateByImport(A_IMPORT, mk("super_admin")), canUpdateByImport(A_PEOPLE, mk("member")), canUpdateByImport(ADMIN, mk("admin")), canUpdateByImport(ADMIN, mk("super_admin"))], [true, false, false, false, true, true]);
 eq("rbac: an Admin with Users & access may hand out any application, one without may hand out none", [grantableApps(A_PEOPLE, new Set(["app1"])), [...(grantableApps(A_NONE, new Set(["app1"])) ?? ["x"])]], [null, []]);
 eq("rbac: Admin and Super Admin can be given through the screens, only by the Support Admin (and the Support Admin role never)", [[...PROMOTABLE_ROLES], [...ASSIGNABLE_ROLES].includes("head_admin" as never)], [["admin", "super_admin"], false]);
 eq("rbac: the areas an Admin can be given", [...ADMIN_AREAS], ["people", "import", "org", "apps", "audit", "activity"]);
 eq("rbac: a plain user and a Team manager never open Administrator", [canAdminister(USER), canAdminister(TM)], [false, false]);
-eq("tabs: the Support Admin and the Super Admin see every tab, as before", [adminTabsFor(ADMIN).map((t) => t.label), adminTabsFor(SUPER).map((t) => t.label)],
-  [["Dashboard", "Departments", "Users & Access", "Applications", "Application categories", "Approvals", "Notifications Panel", "Activity log"], ["Dashboard", "Departments", "Users & Access", "Applications", "Application categories", "Approvals", "Notifications Panel", "Activity log"]]);
+eq("tabs: the Support Admin sees every tab", adminTabsFor(ADMIN).map((t) => t.label),
+  ["Dashboard", "Departments", "Users & Access", "Applications", "Application categories", "Approvals", "Notifications Panel", "Activity log"]);
 eq("tabs: an Admin sees the Dashboard and only the tabs of the areas switched on", [adminTabsFor(A_NONE).map((t) => t.label), adminTabsFor(adminWith("people")).map((t) => t.label), adminTabsFor(adminWith("apps", "activity")).map((t) => t.label)],
   [["Dashboard", "Notifications Panel"], ["Dashboard", "Users & Access", "Notifications Panel"], ["Dashboard", "Applications", "Application categories", "Notifications Panel", "Activity log"]]);
 eq("tabs: Users & Access opens on the first page of it the Admin may use", [adminTabsFor(A_IMPORT).find((t) => t.label === "Users & Access")?.href, adminTabsFor(A_AUDIT).find((t) => t.label === "Users & Access")?.href, adminTabsFor(adminWith("org")).find((t) => t.label === "Users & Access")?.href],

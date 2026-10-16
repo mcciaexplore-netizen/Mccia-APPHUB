@@ -61,7 +61,7 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
   const dirtyApps = apps.length !== saved.length || apps.some((id) => !saved.includes(id));
   const refresh = () => router.refresh();
   const isHeadAdmin = person.role === "head_admin"; // the Support Admin: their role is never changed here
-  const seesAll = isHeadAdmin || person.role === "super_admin"; // can open every application
+  const seesAll = isHeadAdmin; // the Support Admin can open every application; the Super Admin and everyone else get the applications assigned to them
   const self = person.id === meId;
   const template = templates.find((t) => t.id === tpl);
 
@@ -207,7 +207,7 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
         </div>
         {seesAll ? (
           <div className="space-y-4">
-            <p className="text-sm text-muted">The Support Admin and the Super Admin can open every application, so there is nothing to assign. This is everything {person.name} can open:</p>
+            <p className="text-sm text-muted">The Support Admin can open every application, so there is nothing to assign. This is everything {person.name} can open:</p>
             {catalog.departments.map((d) => {
               const list = catalog.apps.filter((x) => x.departmentId === d.id);
               if (list.length === 0) return null;

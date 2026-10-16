@@ -5,7 +5,7 @@ import {
   aprApprovalEvents, aprAttachments, aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprPublicationTypes,
   aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType,
 } from "@/db/approvals-schema";
-import { assessBudget, type BudgetAssessment } from "./calc";
+import { assessBudget, decisionMode, type BudgetAssessment, type DecisionMode } from "./calc";
 import { budgetPosition } from "./budget-position";
 import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
 import type { SortKey } from "./list-params";
@@ -48,6 +48,10 @@ export type ListFilter = {
   waitingForMe?: boolean;
   /** Only requests this person has already approved or rejected. */
   decidedByMe?: boolean;
+  /** Only requests this person recommended onward (their step approved, and the request has a later step). */
+  recommendedByMe?: boolean;
+  /** Only requests this person rejected. */
+  rejectedByMe?: boolean;
   sort?: SortKey;
   dir?: "asc" | "desc";
   page?: number;
@@ -69,6 +73,9 @@ export type RequestRow = {
   overBudget: boolean;
   vendorName: string | null;
   taxInvoiceDate: string | null;
+  /** Which step it is at, of how many: a decision before the last one is a recommendation. */
+  currentStep: number;
+  totalSteps: number;
 };
 
 const categoryName = sql<string | null>`coalesce(${aprHrCategories.name}, ${aprCategories.name})`;
@@ -108,6 +115,12 @@ function conditions(user: ApprovalsUser, f: ListFilter): SQL | undefined {
     f.decidedByMe
       ? sql`exists (select 1 from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id} and s.status in ('approved', 'rejected'))`
       : undefined,
+    f.recommendedByMe
+      ? sql`exists (select 1 from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id} and s.status = 'approved' and s.step_no < ${aprRequests.totalSteps})`
+      : undefined,
+    f.rejectedByMe
+      ? sql`exists (select 1 from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id} and s.status = 'rejected')`
+      : undefined,
     needle
       ? or(
           ilike(aprRequests.requestNo, `%${likeEscape(needle)}%`),
@@ -135,6 +148,7 @@ export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Pro
         id: aprRequests.id, requestNo: aprRequests.requestNo, type: aprRequests.type, status: aprRequests.status, name: aprRequests.requesterName,
         categoryName, branchName: aprBranches.name, amountPaise: aprRequests.amountPaise, requestedAt: aprRequests.requestedAt, decidedAt: aprRequests.decidedAt,
         approverName, overBudget: aprRequests.overBudget, vendorName: aprExpenditureDetails.vendorName, taxInvoiceDate: aprExpenditureDetails.taxInvoiceDate,
+        currentStep: aprRequests.currentStep, totalSteps: aprRequests.totalSteps,
       })
       .from(aprRequests)
       .leftJoin(aprHrDetails, eq(aprHrDetails.requestId, aprRequests.id))
@@ -221,6 +235,8 @@ export type RequestDetail = {
     edit: boolean;
     /** The approver must write a comment before approving: the request is over budget. */
     commentToApprove: boolean;
+    /** What this person's "approve" means: recommend it to the next approver, give the final decision after someone recommended it, or approve a one-step request. */
+    mode: DecisionMode;
   };
 };
 
@@ -303,6 +319,7 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
       withdraw: (pending || req.status === "returned") && req.requesterUserId === user.id,
       edit: req.status === "returned" && req.requesterUserId === user.id,
       commentToApprove: mine && (req.overBudget || liveOver),
+      mode: decisionMode(req.currentStep, req.totalSteps),
     },
   };
 }

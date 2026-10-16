@@ -21,9 +21,9 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (!app) notFound();
 
   const [people, granted] = await Promise.all([
-    // The Support Admin and the Super Admin already see every app, so they are not listed. An Admin reaches only plain users.
+    // The Support Admin already sees every app, so they are not listed. An Admin reaches only plain users.
     db.select({ id: users.id, name: users.name, email: users.email, designation: users.designation, isActive: users.isActive })
-      .from(users).where(isSuper(me) ? notInArray(users.role, ["head_admin", "super_admin"]) : inArray(users.role, ["member", "dept_lead"])).orderBy(users.name),
+      .from(users).where(isSuper(me) ? notInArray(users.role, ["head_admin"]) : inArray(users.role, ["member", "dept_lead"])).orderBy(users.name),
     db.select({ userId: userAppAccess.userId }).from(userAppAccess).where(eq(userAppAccess.appId, id)),
   ]);
 

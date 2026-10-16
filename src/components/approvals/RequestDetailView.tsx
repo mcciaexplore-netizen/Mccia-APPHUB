@@ -68,7 +68,7 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
         </div>
       )}
 
-      {d.can.decide && <DecisionPanel id={d.id} commentToApprove={d.can.commentToApprove} />}
+      {d.can.decide && <DecisionPanel id={d.id} commentToApprove={d.can.commentToApprove} mode={d.can.mode} />}
 
       <section aria-labelledby="req-details">
         <h2 id="req-details" className="mb-3">Request</h2>
@@ -137,7 +137,7 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
                 <span className="block text-xs text-[var(--z-muted)]">{s.stepLabel}{s.decidedAt ? ` · ${formatDateTime(s.decidedAt)}` : ""}</span>
                 {s.comment && <span className="mt-1 block whitespace-pre-wrap text-sm">&ldquo;{s.comment}&rdquo;</span>}
               </span>
-              <span className={`badge ${STEP_TONE[s.status]}`}>{STEP_LABEL[s.status]}</span>
+              <span className={`badge ${STEP_TONE[s.status]}`}>{s.status === "approved" && s.stepNo < d.steps.length ? "Recommended to DG" : STEP_LABEL[s.status]}</span>
             </li>
           ))}
         </ul>

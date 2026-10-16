@@ -365,14 +365,17 @@ try {
   const admImport = await mkUser("Admin Import", { role: "admin", adminAreas: ["import"] });
   const admAudit = await mkUser("Admin Audit", { role: "admin", adminAreas: ["audit"] });
   const grantsOf = (u: string) => grantRows(u);
-  check("the Super Admin opens every application without any grant, like the Support Admin", (await getAccessibleApps(superAdmin)).some((a) => a.id === aOps.id) && (await getLaunchTarget(superAdmin, aOps.id)) !== null);
+  check("the Support Admin opens every application without any grant", (await getAccessibleApps(admin)).some((a) => a.id === aOps.id) && (await getLaunchTarget(admin, aOps.id)) !== null);
+  check("the Super Admin (the DG) sees only the applications assigned to them, like any user: none until one is given", (await getAccessibleApps(superAdmin)).length === 0 && (await getLaunchTarget(superAdmin, aOps.id)) === null);
+  await applyAccess(admin, { userIds: [superAdmin.id], appIds: [aOps.id], mode: "add", source: "test" });
+  check("and exactly that one once the Support Admin gives it", (await getAccessibleApps(superAdmin)).map((a) => a.id).join() === aOps.id && (await getLaunchTarget(superAdmin, aOps.id)) !== null && (await getLaunchTarget(superAdmin, aTally.id)) === null);
   check("an Admin is an ordinary user for applications: only what is ticked for them", (await getAccessibleApps(admPeople)).length === 0 && (await getLaunchTarget(admPeople, aOps.id)) === null);
   const everyone = await listPeople(admin, pf({}));
   const superRow = (await listPeople(admin, pf({}), 500)).rows.find((r) => r.id === superAdmin.id);
   check("the Super Admin is a main admin in the directory, but their password is not in the settings", superRow?.mainAdmin === true && superRow.passwordInSettings === false && superRow.status === "active");
   check("a plain user and an Admin are not main admins", (await listPeople(admin, pf({}), 500)).rows.filter((r) => [plain.id, admPeople.id, admNone.id].includes(r.id)).every((r) => !r.mainAdmin));
   check("the profile says the same", (await getPerson(admin, superAdmin.id))?.mainAdmin === true && (await getPerson(admin, superAdmin.id))?.passwordInSettings === false);
-  check("the Super Admin sees the same directory as the Support Admin", (await listPeople(superAdmin, pf({}))).total === everyone.total && everyone.total > 10);
+  check("the Super Admin sees no one in the directory: only the Support Admin manages people", (await listPeople(superAdmin, pf({}))).total === 0 && everyone.total > 10);
   const seen = await listPeople(admPeople, pf({}), 500);
   check("an Admin with Users & access sees plain users and Team managers, and themselves", seen.total > 5 && seen.rows.every((r) => r.role === "member" || r.role === "dept_lead" || r.id === admPeople.id) && seen.rows.some((r) => r.id === admPeople.id));
   check("and never the Support Admin, the Super Admin or another Admin", !seen.rows.some((r) => [admin.id, superAdmin.id, admNone.id, admImport.id, admAudit.id].includes(r.id)));
@@ -393,7 +396,7 @@ try {
   check("nor their own", (await refused(() => applyAccess(admPeople, { userIds: [admPeople.id], appIds: [aOps.id], mode: "add", source: "test" }))) !== null);
   check("an Admin without Users & access cannot change anyone's access", (await refused(() => applyAccess(admNone, { userIds: [plain.id], appIds: [aTally.id], mode: "add", source: "test" }))) !== null && (await refused(() => applyAccess(admAudit, { userIds: [plain.id], appIds: [aTally.id], mode: "add", source: "test" }))) !== null);
   check("the per-application screen applies the same rule", (await refused(() => applyAppUserChange(admPeople, { appId: aTally.id, add: [superAdmin.id], remove: [], source: "test" }))) !== null && (await applyAppUserChange(admPeople, { appId: aTally.id, add: [plain.id], remove: [], source: "test" })).changed.length === 1);
-  check("the Super Admin may change anyone's access, as the Support Admin may", (await applyAccess(superAdmin, { userIds: [plain.id], appIds: [aLedger.id], mode: "add", source: "test" })).changed.length === 1);
+  check("the Super Admin cannot change anyone's access, only the Support Admin can", (await refused(() => applyAccess(superAdmin, { userIds: [plain.id], appIds: [aLedger.id], mode: "add", source: "test" }))) !== null && (await applyAccess(admin, { userIds: [plain.id], appIds: [aLedger.id], mode: "add", source: "test" })).changed.length === 1);
 
   const impRows: ImportRow[] = [
     R(1, { name: "ZZH Imp Fresh", email: "zz-hub-imp-fresh@example.com" }),
@@ -404,8 +407,9 @@ try {
   const impChk = await checkImport(admImport, impRows, { existing: "update" });
   check("an Admin with Bulk add may import, and update plain users", impChk.checks.find((c) => c.row === 1)?.action === "create" && impChk.checks.find((c) => c.row === 3)?.action === "update");
   check("but a row naming the Super Admin is refused, so an update can never reach that account", impChk.checks.find((c) => c.row === 2)?.action === "none" && /cannot change that person/.test(impChk.checks.find((c) => c.row === 2)?.errors.join(" ") ?? ""), impChk.checks.find((c) => c.row === 2));
-  const impTop = await checkImport(superAdmin, impRows, { existing: "update" });
-  check("the Super Admin may update any account in an import", impTop.checks.find((c) => c.row === 2)?.action === "update");
+  const impTop = await checkImport(admin, impRows, { existing: "update" });
+  check("the Support Admin may update any account in an import", impTop.checks.find((c) => c.row === 2)?.action === "update");
+  check("the Super Admin cannot import people at all", (await refused(() => checkImport(superAdmin, impRows, { existing: "skip" }))) !== null);
   const impOut = await commitBatch(admImport as never, impRows, { existing: "update" }, [1, 2, 3], { invite: false });
   check("committing as that Admin creates the new person, updates the plain user and leaves the Super Admin alone", impOut.find((o) => o.row === 1)?.outcome === "created" && impOut.find((o) => o.row === 3)?.outcome === "updated" && impOut.find((o) => o.row === 2)?.outcome === "invalid", impOut.map((o) => `${o.row}:${o.outcome}`).join());
   check("an account made by an Admin's import is a plain user", (await db.select().from(S.users).where(eq(S.users.email, "zz-hub-imp-fresh@example.com")))[0]?.role === "member");

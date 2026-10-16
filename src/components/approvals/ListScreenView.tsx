@@ -13,6 +13,7 @@ import { listRequests } from "@/lib/approvals/request-queries";
 import type { ListScreen } from "@/lib/approvals/screens";
 import type { ApprovalsUser } from "@/lib/approvals/host-adapter";
 import type { AprRequestStatus } from "@/db/approvals-schema";
+import { decisionMode } from "@/lib/approvals/calc";
 
 const TYPE_SHORT = { hr: "HR", expenditure_large: "Expenditure", expenditure_small: "Expense" } as const;
 
@@ -21,7 +22,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
   const path = `/approvals/${slug}`;
   const [{ rows, total, page, pageSize }, hrCats, expCats, branches] = await Promise.all([
     listRequests(user, {
-      types: screen.types, statuses: params.status ? [params.status as AprRequestStatus] : screen.statuses, mine: screen.mine, waitingForMe: screen.waitingForMe, decidedByMe: screen.decidedByMe,
+      types: screen.types, statuses: params.status ? [params.status as AprRequestStatus] : screen.statuses, mine: screen.mine, waitingForMe: screen.waitingForMe, decidedByMe: screen.decidedByMe, recommendedByMe: screen.recommendedByMe, rejectedByMe: screen.rejectedByMe,
       q: params.q, from: params.from, to: params.to, categoryId: params.categoryId, branchId: params.branchId, sort: params.sort, dir: params.dir, page: params.page,
     }),
     screen.categories !== "expense" ? listMaster("hr-categories", true) : Promise.resolve([]),
@@ -97,7 +98,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
                   <td className="whitespace-nowrap"><span className="inline-flex flex-wrap items-center gap-1"><StatusBadge status={r.status} />{r.overBudget && <OverBudgetBadge />}</span></td>
                   <td>{r.approverName ?? ""}</td>
                   <td className="whitespace-nowrap">{r.decidedAt ? formatDateTime(r.decidedAt) : ""}</td>
-                  {screen.quickDecide && <td className="whitespace-nowrap"><QuickDecide id={r.id} label={r.requestNo ?? "request"} overBudget={r.overBudget} /></td>}
+                  {screen.quickDecide && <td className="whitespace-nowrap"><QuickDecide id={r.id} label={r.requestNo ?? "request"} overBudget={r.overBudget} kind={decisionMode(r.currentStep, r.totalSteps)} /></td>}
                 </ClickableRow>
               );
             })}

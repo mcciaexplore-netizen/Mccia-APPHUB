@@ -9,7 +9,7 @@ export const metadata = { title: "Budget Utilisation · MCCIA Approvals" };
 const money = (p: number | null) => (p == null ? "—" : formatINR(p));
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ fy?: string }> }) {
-  await requirePage("viewer", "dg");
+  await requirePage("viewer");
   const { fy } = await searchParams;
   const year = fy && isFinancialYear(fy) ? fy : financialYearOf();
   const years = [...new Set([year, ...recentFinancialYears()])].sort().reverse();

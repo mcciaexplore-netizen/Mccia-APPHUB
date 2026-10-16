@@ -10,7 +10,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const monthLabel = (ym: string) => `${MONTHS[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  await requirePage("viewer", "dg");
+  await requirePage("viewer");
   const range = readRange(await searchParams);
   const r = await hrReport(range);
   const max = Math.max(1, ...r.byMonth.map((m) => m.total));

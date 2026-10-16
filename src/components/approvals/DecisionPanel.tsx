@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { api, useAction } from "@/components/approvals/api";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { MODE_WORDS, type DecisionMode } from "@/lib/approvals/calc";
 
 /** Approve, Return for corrections and Reject, with a comment box. A comment is required to reject or return, and to approve a request that is over budget. */
-export function DecisionPanel({ id, commentToApprove }: { id: string; commentToApprove: boolean }) {
+export function DecisionPanel({ id, commentToApprove, mode }: { id: string; commentToApprove: boolean; mode: DecisionMode }) {
+  const words = MODE_WORDS[mode];
   const { run, pending } = useAction();
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +22,7 @@ export function DecisionPanel({ id, commentToApprove }: { id: string; commentToA
       return;
     }
     setError(null);
-    run(() => api("POST", `/api/approvals/requests/${id}/decision`, { action, comment }), action === "approve" ? "Request approved" : action === "reject" ? "Request rejected" : "Request returned for corrections");
+    run(() => api("POST", `/api/approvals/requests/${id}/decision`, { action, comment }), action === "approve" ? words.done : action === "reject" ? "Request rejected" : "Request returned for corrections");
   };
 
   return (
@@ -33,9 +35,9 @@ export function DecisionPanel({ id, commentToApprove }: { id: string; commentToA
       </label>
       {error && <p className="zf-error" role="alert">{error}</p>}
       <div className="flex flex-wrap gap-2">
-        <button type="button" className="btn btn-primary" disabled={pending} onClick={() => decide("approve")}>Approve</button>
+        <button type="button" className="btn btn-primary" disabled={pending} onClick={() => decide("approve")}>{words.approve}</button>
         <button type="button" className="btn btn-ghost" disabled={pending} onClick={() => decide("return")}>Return for corrections</button>
-        <button type="button" className="btn btn-danger" disabled={pending} onClick={() => decide("reject")}>Reject</button>
+        <button type="button" className="btn btn-danger" disabled={pending} onClick={() => decide("reject")}>{words.reject}</button>
       </div>
     </section>
   );

@@ -10,7 +10,8 @@ const sentence = (e: EventRow): string => {
     case "submitted": return `Submitted by ${e.actorName}`;
     case "assigned": return e.comment ?? "Sent for approval";
     case "viewed": return `Opened by ${e.actorName}`;
-    case "approved": return `Approved by ${e.actorName}`;
+    // An approval that leaves the request pending was a recommendation to the next approver.
+    case "approved": return e.toStatus === "pending" ? `Recommended to the DG by ${e.actorName}` : `Approved by ${e.actorName}`;
     case "rejected": return `Rejected by ${e.actorName}`;
     case "withdrawn": return `Withdrawn by ${e.actorName}`;
     case "returned": return `Returned for corrections by ${e.actorName}`;

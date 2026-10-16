@@ -17,6 +17,11 @@ export const ALL_ROLES: readonly ApprovalsRole[] = ["requester", "approver", "dg
  */
 export const FULL_ACCESS_ROLES: readonly ApprovalsRole[] = ["approver", "dg", "viewer", "approvals_admin"];
 export const hasFullAccess = (roles: readonly ApprovalsRole[]) => roles.some((r) => FULL_ACCESS_ROLES.includes(r));
+/**
+ * The Director General and nothing else: they see the forms and their Recommended Queue (and what they decided or rejected), not the
+ * all-requests lists, timelines, reports or budgets. Anyone who also reviews first (approver), oversees (viewer) or administers is not "only" the DG.
+ */
+export const isDgOnly = (roles: readonly ApprovalsRole[]) => roles.includes("dg") && !roles.some((r) => r === "approver" || r === "viewer" || r === "approvals_admin");
 
 export type NavItem = {
   label: string;
@@ -35,7 +40,7 @@ export type AppKey = "hr" | "exp";
 export type NavApp = { key: AppKey; title: string; nav: NavEntry[] };
 
 const HANDLERS = ["approver", "dg"] as const; // people who are asked to decide requests
-const OVERSIGHT = ["viewer", "dg", "approvals_admin"] as const; // see every request and every budget, read only (an admin can also edit masters)
+const OVERSIGHT = ["viewer", "approvals_admin"] as const; // see every request and every budget, read only (an admin can also edit masters)
 const ADMIN = ["approvals_admin"] as const;
 
 /**
@@ -81,11 +86,13 @@ export const approvalsApps: NavApp[] = [
         ],
       },
       { label: "Event Approvals", disabled: true },
-      { label: "DG APPROVALS", href: "/approvals/inbox", roles: HANDLERS },
+      { label: "Recommended Queue", href: "/approvals/inbox", roles: ["dg"] },
       {
         label: "Approvals", roles: HANDLERS,
         items: [
-          { label: "Waiting for my approval", href: "/approvals/my/pending", roles: HANDLERS },
+          { label: "Pending Approvals", href: "/approvals/my/pending", roles: ["approver"] },
+          { label: "Recommended", href: "/approvals/my/recommended", roles: ["approver"] },
+          { label: "Rejected Forms", href: "/approvals/my/rejected", roles: HANDLERS },
           { label: "Completed by me", href: "/approvals/my/completed", roles: HANDLERS },
         ],
       },
@@ -147,7 +154,7 @@ export const isGroup = (e: NavEntry): e is NavGroup => "items" in e;
 export const canSee = (entry: NavEntry, mine: readonly ApprovalsRole[]): boolean => {
   if (entry.roles) return entry.roles.some((r) => mine.includes(r));
   if (isGroup(entry)) return true;
-  return !!entry.form || hasFullAccess(mine);
+  return !!entry.form || (hasFullAccess(mine) && !isDgOnly(mine));
 };
 
 /** Every entry with a link, flattened across both apps. The catch-all route looks screens up here. */

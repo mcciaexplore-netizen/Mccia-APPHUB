@@ -179,7 +179,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
                   )}
                 </td>
                 <td>
-                  {u.role === "head_admin" || u.role === "super_admin" ? <span className="text-xs text-muted">All applications</span>
+                  {u.role === "head_admin" ? <span className="text-xs text-muted">All applications</span>
                     : u.apps.length === 0 ? <span className="text-subtle">None</span>
                     : <span className="flex flex-wrap gap-1.5">
                         {u.apps.slice(0, 3).map((a) => <span key={a.id} className={`badge ${a.active ? "" : "badge-neutral line-through"}`} title={a.active ? undefined : "Inactive"}>{a.name}</span>)}

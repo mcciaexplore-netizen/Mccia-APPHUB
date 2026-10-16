@@ -350,7 +350,7 @@ export async function decideRequest(requestId: string, input: { action: "approve
   if (next) {
     await notify({
       userId: next.approverUserId, requestId, link: link(requestId, req.type), email: settings.notifyApproverOnAssignment,
-      title: `${TYPE_LABEL[req.type]} ${no} is waiting for your approval`, body: `${req.requesterName}${moneyOf(req.amountPaise)}${overBudget ? " · over budget" : ""}`,
+      title: `${TYPE_LABEL[req.type]} ${no} was recommended to you for the final decision`, body: `${req.requesterName}${moneyOf(req.amountPaise)}${overBudget ? " · over budget" : ""}`,
     });
   } else if (decision === "returned") {
     await notify({

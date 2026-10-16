@@ -5,9 +5,10 @@ import type { Role } from "@/db/schema";
  * screens all ask here, so a rule can never differ between them. Pure functions (no database), so they are unit-tested directly.
  *
  * Roles, as they exist in the database:
- *   head_admin   Support Admin. Everything, and the only one who changes roles and the Admins' areas. Set in the environment
- *                (HEAD_ADMIN_EMAIL), never granted through the screens.
- *   super_admin  Super Admin (the DG). Everything in the software, except changing roles and the Admins' areas.
+ *   head_admin   Support Admin. Everything: people, roles, access, applications, settings. The only one who manages accounts. Set in the
+ *                environment (SUPPORT_ADMIN_* or HEAD_ADMIN_*), never granted through the screens.
+ *   super_admin  Super Admin (the DG). An ordinary user in the hub (only the applications the Support Admin assigns, no Administrator) who
+ *                is the final approver in the Approval System: the Recommended Queue.
  *   admin        Admin. Only the areas of Administrator that the Support Admin has switched on for them (see ADMIN_AREAS), and within an
  *                area never: changing roles, deleting people, or touching the Support Admin, Super Admin or another Admin.
  *   dept_lead    Team manager (kept, but nobody needs it). Sees and manages the people in their team or reporting to them, and can only
@@ -37,15 +38,15 @@ export const ASSIGNABLE_ROLES = ["member", "dept_lead"] as const satisfies reado
 /** The roles only the Support Admin may give, on a person's profile or when adding them. head_admin is never one of them. */
 export const PROMOTABLE_ROLES = ["admin", "super_admin"] as const satisfies readonly Role[];
 
-/** The Support Admin and the Super Admin: full power over the software (the Support Admin alone changes roles and the Admins' areas). */
-export const isSuper = (a: Pick<Actor, "role">) => a.role === "head_admin" || a.role === "super_admin";
+/** The Support Admin: full power over the software, and the only one who manages accounts, roles and access. (The Super Admin is not one of these.) */
+export const isSuper = (a: Pick<Actor, "role">) => a.role === "head_admin";
 export const isSupport = (a: Pick<Actor, "role">) => a.role === "head_admin";
 export const isAdminRole = (a: Pick<Actor, "role">) => a.role === "admin";
 export const isTeamManager = (a: Pick<Actor, "role">) => a.role === "dept_lead";
 
-/** Whether this person may use one area of Administrator: the two top roles always, an Admin only when it has been switched on for them. */
+/** Whether this person may use one area of Administrator: the Support Admin always, an Admin only when it has been switched on for them. */
 export const hasArea = (a: Pick<Actor, "role" | "adminAreas">, area: AdminArea) => isSuper(a) || (isAdminRole(a) && !!a.adminAreas?.includes(area));
-/** Whether they may open Administrator at all: the two top roles, or an Admin with at least one area. */
+/** Whether they may open Administrator at all: the Support Admin, or an Admin with at least one area. */
 export const canAdminister = (a: Pick<Actor, "role" | "adminAreas">) => isSuper(a) || (isAdminRole(a) && ADMIN_AREAS.some((x) => a.adminAreas?.includes(x)));
 /** Anyone who may use the people-and-access tools at all. */
 export const isStaff = (a: Pick<Actor, "role" | "adminAreas">) => isSuper(a) || isTeamManager(a) || hasArea(a, "people");

@@ -152,3 +152,17 @@ export const formatRequestNo = (prefix: string, financialYear: string, n: number
 
 export const TYPE_LABEL = { hr: "HR request", expenditure_large: "Expenditure request", expenditure_small: "Expense request" } as const;
 export const STATUS_LABEL = { draft: "Draft", pending: "Pending", approved: "Approved", rejected: "Rejected", withdrawn: "Withdrawn", returned: "Returned" } as const;
+
+/* ---------------------------------------------------------------- what "approve" means at a step */
+
+export type DecisionMode = "recommend" | "final" | "single";
+/**
+ * A decision before the last step is a recommendation to the next approver ("Recommend to DG"); the last of several steps is the final
+ * decision; a request with one step simply gets approved. The same call is made on the server either way: only the wording differs.
+ */
+export const decisionMode = (currentStep: number, totalSteps: number): DecisionMode => (currentStep < totalSteps ? "recommend" : totalSteps > 1 ? "final" : "single");
+export const MODE_WORDS: Record<DecisionMode, { approve: string; reject: string; done: string }> = {
+  recommend: { approve: "Recommend to DG", reject: "Reject", done: "Recommended to the DG" },
+  final: { approve: "Final approve", reject: "Final reject", done: "Request approved" },
+  single: { approve: "Approve", reject: "Reject", done: "Request approved" },
+};

@@ -9,7 +9,7 @@ import { listMaster } from "@/lib/approvals/masters";
 export const metadata = { title: "Budgets · MCCIA Approvals" };
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ fy?: string }> }) {
-  const user = await requirePage("viewer", "dg");
+  const user = await requirePage("viewer");
   const { fy } = await searchParams;
   const year = fy && isFinancialYear(fy) ? fy : financialYearOf();
   const canEdit = hasRole(user, "approvals_admin");

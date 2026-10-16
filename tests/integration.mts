@@ -559,6 +559,21 @@ try {
   const viaMainRow = await row(viaMain.id);
   check("an HR request submitted now waits for the HR account, in two steps ending with the Super Admin", viaMainRow.currentApproverUserId === hrId && viaMainRow.totalSteps === 2);
   check("the HR account approves, and it moves to the Super Admin, who approves last", (await R.decideRequest(viaMain.id, { action: "approve", comment: null }, mainHr)).status === "pending" && (await row(viaMain.id)).currentApproverUserId === dgId);
+  // "Recommend to DG" and the Recommended / Rejected lists, through the same flow
+  const dgActor: Actor = { id: dgId!, name: "ZZ Int Main Super", email: "zz-int-main-super@example.com", roles: ["requester", "dg"] };
+  const beforeHr = await Q.getRequestDetail(viaMain.id, mainHr);
+  check("a step before the last is a recommendation, and the last of several is the final decision (the wording follows)", beforeHr?.can.mode === "final" || beforeHr?.can.mode === "recommend");
+  check("what HR recommended is in HR's Recommended list, with its step and the number of steps, and not in Rejected", (await Q.listRequests(mainHr, { recommendedByMe: true })).rows.some((r) => r.id === viaMain.id && r.currentStep === 2 && r.totalSteps === 2) && !(await Q.listRequests(mainHr, { rejectedByMe: true })).rows.some((r) => r.id === viaMain.id));
+  check("the Director General sees it in their queue as a final decision", (await Q.getRequestDetail(viaMain.id, dgActor))?.can.mode === "final" && (await Q.listRequests(dgActor, { waitingForMe: true })).rows.some((r) => r.id === viaMain.id));
+  const toReject = await R.submitHrRequest(hr({ lastName: "ToReject" }), submitter);
+  check("HR's own decision on a fresh request is a recommendation", (await Q.getRequestDetail(toReject.id, mainHr))?.can.mode === "recommend");
+  await R.decideRequest(toReject.id, { action: "approve", comment: null }, mainHr);
+  check("the recommended request moved to the DG and the history says it was recommended", (await row(toReject.id)).currentApproverUserId === dgId && (await db.select().from(T.aprApprovalEvents).where(eq(T.aprApprovalEvents.requestId, toReject.id))).some((e) => e.action === "approved" && e.toStatus === "pending"));
+  await R.decideRequest(toReject.id, { action: "reject", comment: "Not justified" }, dgActor);
+  check("the DG's rejection shows in the DG's Rejected list, and HR's list still shows what HR recommended, not as rejected by HR", (await Q.listRequests(dgActor, { rejectedByMe: true })).rows.some((r) => r.id === toReject.id) && !(await Q.listRequests(mainHr, { rejectedByMe: true })).rows.some((r) => r.id === toReject.id) && (await Q.listRequests(mainHr, { recommendedByMe: true })).rows.some((r) => r.id === toReject.id && r.status === "rejected"));
+  const hrRejects = await R.submitHrRequest(hr({ lastName: "HrRejects" }), submitter);
+  await R.decideRequest(hrRejects.id, { action: "reject", comment: "Not an HR matter" }, mainHr);
+  check("a request HR rejects is in HR's Rejected list and never reaches the DG's queue", (await Q.listRequests(mainHr, { rejectedByMe: true })).rows.some((r) => r.id === hrRejects.id) && !(await Q.listRequests(dgActor, { waitingForMe: true })).rows.some((r) => r.id === hrRejects.id));
   for (const k of ["SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD", "HR_ADMIN_EMAIL", "HR_ADMIN_PASSWORD", "HR_ADMIN_NAME", "EXPENDITURE_ADMIN_EMAIL", "EXPENDITURE_ADMIN_PASSWORD"]) delete process.env[k];
   await db.delete(T.aprSettings).where(eq(T.aprSettings.key, MARKER));
   if (savedMarker.length) await db.insert(T.aprSettings).values(savedMarker).onConflictDoNothing();

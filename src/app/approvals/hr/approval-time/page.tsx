@@ -27,7 +27,7 @@ function Groups({ title, rows }: { title: string; rows: TurnaroundGroup[] }) {
 }
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  await requirePage("viewer", "dg");
+  await requirePage("viewer");
   const range = readRange(await searchParams);
   const t = await turnaround(range);
 

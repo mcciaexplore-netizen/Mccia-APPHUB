@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
   const access = await resolveAccess();
   if (access.status === "anonymous") return NextResponse.redirect(new URL("/login?next=%2Fapprovals", req.url));
   const { user } = access;
-  const target = hasAnyRole(user, ["approver", "dg"]) && (await waitingCount(user)) > 0 ? "/approvals/inbox" : "/approvals/expenses/new";
+  const waiting = hasAnyRole(user, ["approver", "dg"]) && (await waitingCount(user)) > 0;
+  const target = waiting ? (hasAnyRole(user, ["dg"]) ? "/approvals/inbox" : "/approvals/my/pending") : "/approvals/expenses/new";
   return NextResponse.redirect(new URL(target, req.url));
 }
