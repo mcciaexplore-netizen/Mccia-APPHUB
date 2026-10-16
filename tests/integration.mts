@@ -22,7 +22,7 @@ delete process.env.SMTP_HOST; // no real email from a test
 
 const { and, eq, like, sql } = await import("drizzle-orm");
 const { db } = await import("../src/db");
-const { apps: hubApps, departments: hubDepartments, userAppAccess, users } = await import("../src/db/schema");
+const { users } = await import("../src/db/schema");
 const T = await import("../src/db/approvals-schema");
 const S = await import("../src/lib/approvals/request-schemas");
 const R = await import("../src/lib/approvals/requests");
@@ -73,14 +73,12 @@ const cleanup = async () => {
   await db.delete(T.aprPublications).where(like(T.aprPublications.name, "ZZ%"));
   await db.delete(T.aprPublicationTypes).where(like(T.aprPublicationTypes.name, "ZZ%"));
   await db.delete(T.aprCounters);
-  await db.delete(hubApps).where(like(hubApps.name, "ZZ Int%"));
-  await db.delete(hubDepartments).where(like(hubDepartments.name, "ZZ Int%"));
 };
 
 const person = async (key: string, roles: Actor["roles"]): Promise<Actor> => {
   const email = `zz-int-${key}@example.com`;
   const [u] = await db.insert(users).values({ name: `ZZ Int ${key}`, email, status: "approved" }).returning({ id: users.id });
-  return { id: u.id, name: `ZZ Int ${key}`, email, roles: ["requester", ...roles], apps: ["hr", "exp"] };
+  return { id: u.id, name: `ZZ Int ${key}`, email, roles: ["requester", ...roles] };
 };
 const bytesOf = async (stream: ReadableStream<Uint8Array>) => Buffer.concat(await (async () => { const out: Buffer[] = []; const rd = stream.getReader(); for (;;) { const { done, value } = await rd.read(); if (done) break; out.push(Buffer.from(value)); } return out; })());
 
@@ -561,14 +559,14 @@ try {
   await EnvRules.ensureRulesSeeded();
   check("a rule that already has someone is never overwritten, only the empty ones are filled", (await seededRule("expenditure_large", 1))?.approverUserIds[0] === anotherApprover.id && (await seededRule("hr", 1))?.approverUserIds[0] === hrId);
   // an HR request now goes to the HR account first and then the Super Admin, through the real submit
-  const mainHr: Actor = { id: hrId!, name: "ZZ Int Main HR", email: "zz-int-main-hr@example.com", roles: ["requester", "approver"], apps: ["hr", "exp"] };
+  const mainHr: Actor = { id: hrId!, name: "ZZ Int Main HR", email: "zz-int-main-hr@example.com", roles: ["requester", "approver"] };
   const submitter = await person("mainsubmitter", []);
   const viaMain = await R.submitHrRequest(hr({ lastName: "ViaMain" }), submitter);
   const viaMainRow = await row(viaMain.id);
   check("an HR request submitted now waits for the HR account, in two steps ending with the Super Admin", viaMainRow.currentApproverUserId === hrId && viaMainRow.totalSteps === 2);
   check("the HR account approves, and it moves to the Super Admin, who approves last", (await R.decideRequest(viaMain.id, { action: "approve", comment: null }, mainHr)).status === "pending" && (await row(viaMain.id)).currentApproverUserId === dgId);
   // "Recommend to DG" and the Recommended / Rejected lists, through the same flow
-  const dgActor: Actor = { id: dgId!, name: "ZZ Int Main Super", email: "zz-int-main-super@example.com", roles: ["requester", "dg"], apps: ["hr", "exp"] };
+  const dgActor: Actor = { id: dgId!, name: "ZZ Int Main Super", email: "zz-int-main-super@example.com", roles: ["requester", "dg"] };
   const beforeHr = await Q.getRequestDetail(viaMain.id, mainHr);
   check("a step before the last is a recommendation, and the last of several is the final decision (the wording follows)", beforeHr?.can.mode === "final" || beforeHr?.can.mode === "recommend");
   check("what HR recommended is in HR's Recommended list, with its step and the number of steps, and not in Rejected", (await Q.listRequests(mainHr, { recommendedByMe: true })).rows.some((r) => r.id === viaMain.id && r.currentStep === 2 && r.totalSteps === 2) && !(await Q.listRequests(mainHr, { rejectedByMe: true })).rows.some((r) => r.id === viaMain.id));
@@ -582,37 +580,6 @@ try {
   const hrRejects = await R.submitHrRequest(hr({ lastName: "HrRejects" }), submitter);
   await R.decideRequest(hrRejects.id, { action: "reject", comment: "Not an HR matter" }, mainHr);
   check("a request HR rejects is in HR's Rejected list and never reaches the DG's queue", (await Q.listRequests(mainHr, { rejectedByMe: true })).rows.some((r) => r.id === hrRejects.id) && !(await Q.listRequests(dgActor, { waitingForMe: true })).rows.some((r) => r.id === hrRejects.id));
-  // Which Approval System applications a person may open: ticked in the hub's application list, or both for people with full access
-  const Host = await import("../src/lib/approvals/host-adapter");
-  const { APP_ENTRY, appsFor } = await import("../src/lib/approvals/approvals.manifest");
-  const appRow = async (urlPath: string, name: string) => {
-    const [have] = await db.select({ id: hubApps.id, isActive: hubApps.isActive, departmentId: hubApps.departmentId }).from(hubApps).where(eq(hubApps.url, urlPath));
-    if (have) return { ...have, made: false };
-    let [d] = await db.select({ id: hubDepartments.id }).from(hubDepartments).where(eq(hubDepartments.name, "ZZ Int Approval System"));
-    if (!d) [d] = await db.insert(hubDepartments).values({ name: "ZZ Int Approval System", slug: "zz-int-approval-system", icon: "Building2", sortOrder: 9500 }).returning({ id: hubDepartments.id });
-    const [a] = await db.insert(hubApps).values({ departmentId: d.id, name, url: urlPath, icon: "AppWindow" }).returning({ id: hubApps.id, isActive: hubApps.isActive, departmentId: hubApps.departmentId });
-    return { ...a, made: true };
-  };
-  const hrApp = await appRow(APP_ENTRY.hr, "ZZ Int HR Approval");
-  const expApp = await appRow(APP_ENTRY.exp, "ZZ Int Expenditure Approval");
-  const unticked = await person("noticks", []);
-  const hrTicked = await person("hrticked", []);
-  const bothTicked = await person("bothticked", []);
-  await db.insert(userAppAccess).values([{ userId: hrTicked.id, appId: hrApp.id }, { userId: bothTicked.id, appId: hrApp.id }, { userId: bothTicked.id, appId: expApp.id }]);
-  const openTo = async (p: Actor) => appsFor(p.roles, await Host.tickedApps(p.id));
-  check("the two applications are in the hub's list, each at the entry page of its application", !!hrApp.id && !!expApp.id);
-  check("a person nobody ticked anything for opens neither application", (await Host.tickedApps(unticked.id)).length === 0 && (await openTo(unticked)).length === 0);
-  check("ticking HR Approval opens HR Approval only, and ticking both opens both", JSON.stringify(await openTo(hrTicked)) === '["hr"]' && JSON.stringify(await openTo(bothTicked)) === '["hr","exp"]');
-  const approverNoTicks = await person("approvernoticks", ["approver"]);
-  check("a person with approval duties opens both applications without any tick", JSON.stringify(await openTo(approverNoTicks)) === '["hr","exp"]');
-  await db.update(hubApps).set({ isActive: false }).where(eq(hubApps.id, hrApp.id));
-  check("an application switched off is not opened even when ticked", JSON.stringify(await openTo(hrTicked)) === "[]" && JSON.stringify(await openTo(bothTicked)) === '["exp"]');
-  await db.update(hubApps).set({ isActive: hrApp.isActive }).where(eq(hubApps.id, hrApp.id));
-  await db.update(hubDepartments).set({ isActive: false }).where(eq(hubDepartments.id, expApp.departmentId));
-  check("and neither is one whose category is switched off", !(await openTo(bothTicked)).includes("exp"));
-  await db.update(hubDepartments).set({ isActive: true }).where(eq(hubDepartments.id, expApp.departmentId));
-  for (const a of [hrApp, expApp]) if (a.made) await db.delete(hubApps).where(eq(hubApps.id, a.id));
-  await db.delete(hubDepartments).where(eq(hubDepartments.name, "ZZ Int Approval System"));
   for (const k of ["SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD", "HR_ADMIN_EMAIL", "HR_ADMIN_PASSWORD", "HR_ADMIN_NAME", "EXPENDITURE_ADMIN_EMAIL", "EXPENDITURE_ADMIN_PASSWORD"]) delete process.env[k];
   await db.delete(T.aprSettings).where(eq(T.aprSettings.key, MARKER));
   if (savedMarker.length) await db.insert(T.aprSettings).values(savedMarker).onConflictDoNothing();

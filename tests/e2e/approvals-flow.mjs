@@ -139,7 +139,6 @@ try {
   for (const [k, p] of Object.entries(PEOPLE)) {
     const [u] = await sql`insert into users (name, email, password_hash, status) values (${p.name}, ${p.email}, ${hash(PW)}, 'approved') returning id`;
     ids[k] = u.id;
-    await sql`insert into user_app_access (user_id, app_id) select ${u.id}, id from apps where url in ('/approvals/hr/new', '/approvals/expenses/new') on conflict do nothing`; // the Approval System's two applications are ticked for each of them, as the Support Admin would
   }
   // HR and expenditure of 10,000 and above: the DG only (the Reviewer step is left empty). Expenses below 10,000: the small approver.
   await sql`update apr_approver_rules set approver_user_ids = '{}', active = true`;
@@ -204,9 +203,6 @@ try {
   const dp = D.page;
   await dp.goto(BASE + "/approvals/inbox");
   check("the request is in the DG's inbox", (await dp.locator("main").first().innerText()).includes(hrReq.request_no));
-  check("the DG's application menu shows the Recommended Queue", (await dp.locator("main nav").first().innerText()).includes("Recommended Queue"));
-  await dp.locator("main nav").first().getByText(/Recommended Queue\s*[1-9]/).waitFor({ timeout: 15000 }).catch(() => {});
-  check("and its tab carries a red count of what is waiting for them", /Recommended Queue\s*[1-9]/.test(await dp.locator("main nav").first().innerText()));
   await dp.goto(BASE + `/approvals/requests/${hrId}`);
   check("the DG sees the Approve and Reject buttons", (await dp.getByRole("button", { name: "Approve", exact: true }).count()) === 1 && (await dp.getByRole("button", { name: "Reject", exact: true }).count()) === 1);
   await dp.getByRole("button", { name: "Approve", exact: true }).click();
@@ -291,8 +287,7 @@ try {
   check("it went to the below-10k approver, not the DG", (await sql`select current_approver_user_id from apr_requests where id = ${small.json.id}`)[0].current_approver_user_id === ids.small);
   check("the DG cannot decide it", (await post(D.page, `/api/approvals/requests/${small.json.id}/decision`, { action: "approve" })).status() === 403);
   await S.page.goto(BASE + "/approvals/expenses/pending");
-  await S.page.locator('main nav[aria-label="Approvals pages"]').waitFor({ timeout: 15000 }).catch(() => {}); // the menu is drawn by the browser, a moment after the page
-  check("the below-10k approver's own list, Waiting for Me, holds this expense, with a red count on the tab and on the page's link", (await S.page.locator("main").first().innerText()).includes(small.json.requestNo) && /Approvals\s*[1-9]/.test(await S.page.locator("main nav").first().innerText()) && /Waiting for Me\s*[1-9]/.test(await S.page.locator('main nav[aria-label="Approvals pages"]').innerText()), JSON.stringify([(await S.page.locator("main").first().innerText()).includes(small.json.requestNo), await S.page.locator("main nav").first().innerText(), await S.page.locator("main nav").allInnerTexts()]));
+  check("the below-10k approver's own list (/approvals/expenses/pending) holds this expense", (await S.page.locator("main").first().innerText()).includes(small.json.requestNo));
   check("it is not an oversight page: the admin has no Waiting for Me, and sees every pending small expense under All Pending instead", (await status(A.page, "/approvals/expenses/pending")) === 404 && (await status(A.page, "/approvals/expenses/waiting")) === 200 && (await A.page.locator("main").first().innerText()).includes(small.json.requestNo));
   check("the category is already overspent, so the expense is flagged and its approver needs a comment", (await sql`select over_budget from apr_requests where id = ${small.json.id}`)[0].over_budget === true && (await post(S.page, `/api/approvals/requests/${small.json.id}/decision`, { action: "approve" })).status() === 422);
   check("with a comment the below-10k approver can approve it", (await post(S.page, `/api/approvals/requests/${small.json.id}/decision`, { action: "approve", comment: "within the overall budget" })).status() === 200);
@@ -320,11 +315,10 @@ try {
 
   section("13. Who sees what in the lists");
   // A plain requester holds no role that gives full access: they get the forms, the confirmation and their own request page, nothing else.
-  const tabsOf = (p) => p.locator('main nav[aria-label$=" sections"] a').allInnerTexts();
   await R.page.goto(BASE + "/approvals/hr/new");
-  check("a plain requester's HR Approval menu is just the HR and Expenditure forms", JSON.stringify(await tabsOf(R.page)) === JSON.stringify(["HR", "Expenditure"]) && (await R.page.locator('main nav[aria-label$=" pages"]').count()) === 0, (await tabsOf(R.page)).join("|"));
+  check("a plain requester's HR form has no application menu around it", (await R.page.locator('main nav[aria-label$=" sections"], main nav[aria-label$=" pages"]').count()) === 0);
   await R.page.goto(BASE + "/approvals/expenses/new");
-  check("and their Expenditure menu is just the Expenses form", JSON.stringify(await tabsOf(R.page)) === JSON.stringify(["Expenses"]), (await tabsOf(R.page)).join("|"));
+  check("nor does their Expenses form", (await R.page.locator('main nav[aria-label$=" sections"], main nav[aria-label$=" pages"]').count()) === 0);
   const closed = ["/approvals/hr/all", "/approvals/hr/pending", "/approvals/hr/approved", "/approvals/expenses/mine", "/approvals/expenses/approved", "/approvals/expenditures/all", "/approvals/inbox", "/approvals/my/pending", "/approvals/my/completed", "/approvals/timeline", "/approvals/hr/timeline"];
   const closedStatuses = []; for (const p of closed) closedStatuses.push(await status(R.page, p));
   check("every list, the inbox and both timelines are a 404 for them", closedStatuses.every((s) => s === 404), closedStatuses.join(","));

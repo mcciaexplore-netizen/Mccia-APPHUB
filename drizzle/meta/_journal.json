@@ -92,6 +92,13 @@
       "when": 1792155644492,
       "tag": "0012_approval_apps",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792168500315,
+      "tag": "0013_remove_approval_app_ticks",
+      "breakpoints": true
     }
   ]
 }

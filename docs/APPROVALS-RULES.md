@@ -29,7 +29,7 @@ The button names say what the decision means:
 | The DG, at the last step | **Final approve** | **Final reject** |
 | Only one step (expense below the threshold) | **Approve** (final) | Reject |
 
-Lists: in Expenditure an approver's own page is **Waiting for Me** (only the expenses waiting for them, decided in place) and an oversight account has **All Pending** (every pending expense below the threshold). The menu shows a red count on the pages that hold what is waiting for you (the DG's Recommended Queue, an approver's Pending Approvals or Waiting for Me). A first approver has **Recommended** (what they sent on) and **Rejected Forms**; the DG's list is the **Recommended Queue**, with **Rejected Forms** and **Completed by me**. The DG has no all-requests lists, timelines, reports, budgets or export.
+Lists: in Expenditure an approver's own page is **Waiting for Me** (only the expenses waiting for them, decided in place) and an oversight account has **All Pending** (every pending expense below the threshold). There is no menu of sections and pages inside the Approval System for now: the form pages show only the application's name and the bell, and the lists below are reached by their addresses (for example `/approvals/inbox`, `/approvals/my/pending`); the Approval System page tells an approver how many requests are waiting, with a link to their queue. A first approver has **Recommended** (what they sent on) and **Rejected Forms**; the DG's list is the **Recommended Queue**, with **Rejected Forms** and **Completed by me**. The DG has no all-requests lists, timelines, reports, budgets or export.
 
 | Action | Needs a comment | What happens |
 |---|---|---|
@@ -50,7 +50,7 @@ Lists: in Expenditure an approver's own page is **Waiting for Me** (only the exp
 
 ## Who may open the two applications
 
-The forms to raise a request (HR, Expenses, DG Expenditure) are open to everyone who signs in, through the two cards on the Approval System page (the sidebar's Approval System link). HR Approval and Expenditure Approval are also applications in the hub (category Approval System) that the Support Admin can tick per person; for now a tick controls nothing. See `docs/ROLES.md`.
+The forms to raise a request (HR, Expenses, DG Expenditure) are open to everyone who signs in, through the two cards on the Approval System page (the sidebar's Approval System link). Nothing is ticked for them; the Approval System is not an application in the hub's Application access box.
 
 ## Putting it live (order matters)
 

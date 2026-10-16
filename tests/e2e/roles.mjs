@@ -332,7 +332,7 @@ try {
     console.log("   (skipped: needs HR_ADMIN_*, EXPENDITURE_ADMIN_* and SUPER_ADMIN_* set to zzr-... test addresses with passwords)");
   }
 
-  section("7d. The Approval Forms are for everyone, in the Approval System section; the access box lists its two applications");
+  section("7d. The Approval Forms are for everyone, in the Approval System section; nothing about them is ticked");
   const aprLink = (page) => page.locator("aside").first().locator('a[href="/approvals"]');
   const cards = (page) => page.locator('section[aria-labelledby="approval-forms-title"]');
   await U.goto(BASE + "/");
@@ -346,10 +346,7 @@ try {
   check("the HR card opens the HR form", new URL(U.url()).pathname === "/approvals/hr/new" && (await U.locator("main form").count()) >= 1);
   check("the Expenses and DG Expenditure forms open for them too", (await U.goto(BASE + "/approvals/expenses/new")).status() === 200 && (await U.goto(BASE + "/approvals/expenditures/new")).status() === 200);
   await visit(A, `/administrator/users/${plain.id}`, ADMIN_PW);
-  check("the Application access box lists HR Approval and Expenditure Approval under the category Approval System, and no single 'Approvals'", (await A.locator("main label", { hasText: "HR Approval" }).count()) >= 1 && (await A.locator("main label", { hasText: "Expenditure Approval" }).count()) >= 1 && /Approval System/.test(await main(A)) && (await A.locator("main label", { hasText: /^\s*Approvals\s*$/ }).count()) === 0);
-  await A.locator("main label", { hasText: "HR Approval" }).getByRole("checkbox").first().check();
-  await A.getByRole("button", { name: "Save access" }).click();
-  check("ticking HR Approval is saved", await toast(A, "Access saved") && await poll(async () => (await sql`select count(*)::int n from user_app_access ua join apps a on a.id = ua.app_id where ua.user_id = ${plain.id} and a.url = '/approvals/hr/new'`)[0].n === 1));
+  check("the Application access box offers real applications only: no HR Approval, no Expenditure Approval, no Approval System category, no 'Approvals'", (await A.locator("main label", { hasText: /Approval/ }).count()) === 0 && !/Approval System/.test(await main(A)) && (await A.locator("main label", { hasText: "ZZR App" }).count()) >= 1);
   check("the Support Admin has the same page", (await A.goto(BASE + "/approvals").then(() => cards(A).getByRole("link").count())) === 2);
 
   section("8. Console and untouched data");

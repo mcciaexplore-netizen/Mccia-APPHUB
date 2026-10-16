@@ -93,21 +93,8 @@ const signIn = async (page, email, password) => {
   await page.waitForFunction(() => location.pathname !== "/login" || location.search.includes("error"), null, { timeout: 25000 }).catch(() => {});
   await page.waitForLoadState("networkidle").catch(() => {});
 };
-// An application's own menu is in the page: a row of section tabs, and under it the pages of the chosen section.
-const tabs = (page) => page.locator('main nav[aria-label$=" sections"]');
-const pagesRow = (page) => page.locator('main nav[aria-label$=" pages"]');
-// Everything the person can reach in the open application, found by opening each section in turn.
-const fullMenu = async (page) => {
-  await tabs(page).waitFor();
-  const out = [await tabs(page).innerText()];
-  const hrefs = await tabs(page).locator("a").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
-  for (const h of hrefs) {
-    await page.goto(BASE + h);
-    await tabs(page).waitFor();
-    if (await pagesRow(page).count()) out.push(await pagesRow(page).innerText());
-  }
-  return out.join("\n");
-};
+// An application's menu used to be a row of section tabs and a row of pages under it; there is none now, only the form or list itself.
+const menuRows = (page) => page.locator('main nav[aria-label$=" sections"], main nav[aria-label$=" pages"]');
 const hubApps = (page) => page.locator("aside:visible nav a[href^='/approvals/']");
 const toast = (page, t) => page.getByText(t).first().waitFor({ timeout: 20000 }).then(() => true).catch(() => false);
 const status = async (page, p, opts) => (await page.goto(BASE + p, opts)).status();
@@ -117,7 +104,6 @@ try {
   const [dept] = await sql`insert into departments (name, icon, sort_order) values ('ZZ Apr Dept', 'Building2', 9999) returning id`;
   const [card] = await sql`insert into apps (department_id, name, url, icon) values (${dept.id}, 'ZZ Apr Card', '/approvals', 'ClipboardList') returning id`;
   const [member] = await sql`insert into users (name, email, password_hash, status) values ('ZZ Apr Member', ${MEMBER.email}, ${hash(MEMBER.pw)}, 'approved') returning id`;
-  await sql`insert into user_app_access (user_id, app_id) select ${member.id}, id from apps where url in ('/approvals/hr/new', '/approvals/expenses/new') on conflict do nothing`; // the member has been given both Approval System applications; the outsider none
   await sql`insert into users (name, email, password_hash, status) values ('ZZ Apr Outsider', ${OUTSIDER.email}, ${hash(OUTSIDER.pw)}, 'approved')`;
   check("test card, department and people created", true && !!member);
 
@@ -131,7 +117,7 @@ try {
     await ctx.close();
   }
 
-  section("2. Admin: the module opens and the menu is right");
+  section("2. Admin: the module opens, and there is no application menu");
   const admin = await newSession();
   const A = admin.page;
   await signIn(A, ADMIN_EMAIL, ADMIN_PW);
@@ -141,18 +127,13 @@ try {
   await A.getByRole("link", { name: /Expenditure Approval Form/ }).click();
   await A.waitForURL(/\/approvals\/expenses\/new$/);
   check("the Expenditure card opens the Expenses form, inside the application titled Expenditure", (await A.locator("main h1").first().innerText()) === "Expenditure" && (await A.locator("main h2").first().innerText()) === "Expenses");
-  const expMenu = await fullMenu(A);
-  check("Expenditure shows Expenses and Approvals (with All Pending, My Requests, Rejected Expenses)", ["Expenses", "Approvals", "Approved Expenses", "All Pending", "My Requests", "Rejected Expenses"].every((t) => expMenu.includes(t)), expMenu.replace(/\s+/g, " ").slice(0, 160));
+  check("the Expenses form has no application menu: no row of sections and no row of pages", (await menuRows(A).count()) === 0);
   await A.goto(BASE + "/approvals");
   await A.getByRole("link", { name: /HR Approval Form/ }).click();
   await A.waitForURL(/\/approvals\/hr\/new$/);
   check("the HR card opens the HR form beside the sidebar, titled HR Approval (not DG Approval)", (await A.locator("main h1").first().innerText()) === "HR Approval");
-  const menu = await fullMenu(A);
-  for (const label of ["Hr", "Expenditures", "All_Budgets", "Administration"]) check(`HR Approval shows ${label}`, menu.includes(label));
-  check("nothing in the application is still called DG Approval", !/DG Approval/.test(menu));
-  check("the Recommended Queue is hidden from someone who is not the Director General", !menu.includes("Recommended Queue"));
+  check("the HR form has no application menu either, and nothing in the application is still called DG Approval", (await menuRows(A).count()) === 0 && !/DG Approval/.test(await A.locator("main").first().innerText()));
   await A.goto(BASE + "/approvals/hr/new");
-  check("Event Approvals is in the menu, greyed out with a Coming soon tag", /Event Approvals/.test(await tabs(A).innerText()) && /Coming soon/i.test(await tabs(A).innerText()) && (await A.locator("main [aria-disabled=true]").count()) >= 1);
   await A.goto(BASE + "/approvals/admin/setup");
   const home = await A.locator("main").first().innerText();
   check("the admin's Setup page shows the checklist", /Setup/.test(home) && /Expense categories/.test(home));
@@ -163,7 +144,6 @@ try {
   await A.goto(BASE + "/approvals/hr/new");
   const hrMain = await A.locator("main").first().innerText();
   check("the HR form shows the Zoho fields in order", ["Name", "Email", "Category", "Date of Request", "Amount", "Description", "File upload"].every((l, i, a) => hrMain.includes(l) && (i === 0 || hrMain.indexOf(l) > hrMain.indexOf(a[i - 1]))), hrMain.replace(/\s+/g, " ").slice(0, 160));
-  check("the menu marks the page you are on", (await pagesRow(A).locator("a[aria-current=page]").first().innerText()).trim() === "HR");
   check("a path that is not in the menu is a 404", (await status(A, "/approvals/definitely/not/here")) === 404);
 
   section("4. Approvals in the hub: a sidebar item, not an application");
@@ -250,12 +230,11 @@ try {
   await M.goto(BASE + "/approvals");
   check("the Approval System page gives them the two form cards", (await M.getByRole("link", { name: /Approval Form/ }).count()) === 2);
   await M.getByRole("link", { name: /Expenditure Approval Form/ }).click();
-  const tabLinks = (p) => tabs(p).locator("a").allInnerTexts();
-  await tabs(M).waitFor();
-  check("the Expenditure card takes them to Expenditure, which holds just the Expenses form (no Approvals, no lists, no Administration)", JSON.stringify(await tabLinks(M)) === JSON.stringify(["Expenses"]) && (await pagesRow(M).count()) === 0, (await tabLinks(M)).join("|"));
+  await M.locator("main h2").first().waitFor();
+  check("the Expenditure card takes them to the Expenses form, with no menu around it", (await M.locator("main h2").first().innerText()) === "Expenses" && (await menuRows(M).count()) === 0);
   await M.goto(BASE + "/approvals/hr/new");
-  await tabs(M).waitFor();
-  check("HR Approval shows them the HR and Expenditure forms and nothing else", JSON.stringify(await tabLinks(M)) === JSON.stringify(["HR", "Expenditure"]) && (await pagesRow(M).count()) === 0 && !/Event Approvals|DG APPROVALS|Administration|All_Budgets/.test(await tabs(M).innerText()), (await tabLinks(M)).join("|"));
+  await M.locator("main h2").first().waitFor();
+  check("the HR form has no menu around it either", (await menuRows(M).count()) === 0);
   const forms = [await status(M, "/approvals/hr/new"), await status(M, "/approvals/expenditures/new"), await status(M, "/approvals/expenses/new")];
   check("the three forms open for them", forms.every((s) => s === 200), forms.join(","));
   const listPaths = ["/approvals/hr/all", "/approvals/hr/pending", "/approvals/expenditures/all", "/approvals/expenses/mine", "/approvals/inbox", "/approvals/my/completed", "/approvals/timeline", "/approvals/hr/timeline", "/approvals/hr/report", "/approvals/hr/approval-time", "/approvals/budgets/utilisation"];
@@ -282,8 +261,6 @@ try {
   check("the viewer can now open the budgets page", (await status(M, "/approvals/budgets")) === 200);
   check("and, with full access, the lists and the CSV export too", (await status(M, "/approvals/hr/all")) === 200 && (await status(M, "/approvals/expenses/approved")) === 200 && (await M.request.get(`${BASE}/api/approvals/requests/export?screen=hr/all`)).status() === 200);
   await M.goto(BASE + "/approvals/hr/new");
-  await tabs(M).waitFor();
-  check("their menu grows past the forms", (await tabLinks(M)).length > 2 && /Hr/.test(await tabs(M).innerText()) && /Expenditures/.test(await tabs(M).innerText()), (await tabLinks(M)).join("|"));
   check("a viewer still cannot edit budgets (403)", (await M.request.post(`${BASE}/api/approvals/budgets`, { data: { financialYear: "2026-27", branchId: branch.id, categoryId: tgt.id, allocatedPaise: 1 } })).status() === 403);
   check("the budgets page for a viewer has no edit form", (await M.locator("button", { hasText: "Save budget" }).count()) === 0);
   await A.goto(BASE + "/approvals/admin/access");

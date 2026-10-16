@@ -38,12 +38,11 @@ The Support Admin can be set with `SUPPORT_ADMIN_*` and the older `HEAD_ADMIN_*`
 
 Only the Support Admin manages people, roles and access; the Super Admin cannot. Whatever is ticked, an Admin can **never**: change a role, change what an Admin may open, delete a person, or see or touch the Support Admin, the Super Admin or another Admin (not in the directory, not by address, not through an import). They are also not Approval System admins: that module keeps its own roles (the Approvals admin is still the Support Admin).
 
-## The Approval Forms, and HR Approval / Expenditure Approval
+## The Approval Forms
 
-- **The forms are for everyone who signs in.** The sidebar's **Approval System** is one link; it opens a page with two cards, **HR Approval Form** and **Expenditure Approval Form**; nothing has to be ticked. HR Approval Form opens the HR form; Expenditure Approval Form opens the Expenses form (below ₹10,000), which points to the DG Expenditure form for ₹10,000 and above. The Super Admin (the DG) has them too. An approver with something waiting is told so on that page.
-- In the **Application access** box of a person's profile, the category **Approval System** lists **HR Approval** and **Expenditure Approval**, ticked like any other application. For now a tick controls nothing.
-- A person added later has neither ticked. When the ticks were introduced everyone who was active got both (migration 0012).
-- These two rows are never shown as cards on the hub's home page and are not in the Applications list (they are not links to somewhere else).
+The forms are for everyone who signs in; there is nothing to tick. The sidebar's **Approval System** is one link; it opens a page with two cards, **HR Approval Form** and **Expenditure Approval Form**. HR Approval Form opens the HR form; Expenditure Approval Form opens the Expenses form (below ₹10,000), which points to the DG Expenditure form for ₹10,000 and above. The Super Admin (the DG) has them too. An approver with something waiting is told so on that page.
+
+The Approval System is not an application in the **Application access** box: the old "Approvals" card and the entry pages of HR Approval and Expenditure (which an earlier version offered as ticks, migration 0012) are left out of the box, and migration 0013 removes them from the database.
 
 ## Setting people up
 
@@ -57,4 +56,4 @@ Only the Support Admin manages people, roles and access; the Super Admin cannot.
 1. Run `scripts/apply-0010-in-neon-console.sql` in the Neon SQL editor (additive: two role values and one empty column).
 2. Deploy the code. (Pages read the new column, so the code must not go first.)
 
-For the Approval System applications: run `scripts/apply-0012-in-neon-console.sql` (adds the two applications and ticks both for every active person), then deploy.
+To remove the two Approval System rows that migration 0012 added: run `scripts/apply-0013-in-neon-console.sql` (before or after the deploy; the code already leaves them out of the access box).

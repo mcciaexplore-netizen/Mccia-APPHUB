@@ -488,6 +488,19 @@ try {
   delete process.env.SUPPORT_ADMIN_EMAIL; delete process.env.SUPPORT_ADMIN_NAME; delete process.env.SUPPORT_ADMIN_PASSWORD;
   check("with the SUPPORT_ADMIN_* settings gone, HEAD_ADMIN_* is the Support Admin again", isEnvAdmin("zz-hub-env-admin@example.com") && (await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1"))?.role === "head_admin");
   check("a main account cannot be created or imported as a new person", (await refused(() => checkImport(admin, [R(1, { name: "ZZH Dup HR", email: HR_EMAIL })], { existing: "skip" }).then((c) => { if (c.checks[0].errors.length) throw new UserError(c.checks[0].errors.join(" ")); }))) !== null);
+  // The Approval System is not an application to tick: the old /approvals card and the entry pages are left out of the access box, and so is a category that holds nothing else
+  const { getCatalog } = await import("../src/lib/catalog");
+  const [dOnlyApr] = await db.insert(S.departments).values({ name: "ZZH Approval System", icon: "ClipboardList", slug: "zzh-approval-system" }).returning();
+  const [dMixed] = await db.insert(S.departments).values({ name: "ZZH Mixed", icon: "Building2", slug: "zzh-mixed" }).returning();
+  await db.insert(S.apps).values([
+    { departmentId: dOnlyApr.id, name: "ZZH HR Approval", url: "/approvals/hr/new", icon: "UserCheck" },
+    { departmentId: dOnlyApr.id, name: "ZZH Old Approvals card", url: "/approvals", icon: "ClipboardList" },
+    { departmentId: dMixed.id, name: "ZZH Expenditure Approval", url: "/approvals/expenses/new", icon: "Wallet" },
+    { departmentId: dMixed.id, name: "ZZH Real App", url: "https://example.com/zzh-real", icon: "AppWindow" },
+  ]);
+  const cat = await getCatalog();
+  check("the access box does not offer the Approval System rows, nor a category that holds only those", !cat.apps.some((a) => /^ZZH (HR Approval|Old Approvals card|Expenditure Approval)$/.test(a.name)) && !cat.departments.some((d) => d.id === dOnlyApr.id));
+  check("a category that also holds a real application stays, with that application", cat.departments.some((d) => d.id === dMixed.id) && cat.apps.some((a) => a.name === "ZZH Real App" && a.departmentId === dMixed.id));
 } finally {
   await cleanup().catch((e) => console.error("cleanup failed", e));
   const left = await db.select({ n: count() }).from(S.users).where(like(S.users.email, "zz-hub-%"));

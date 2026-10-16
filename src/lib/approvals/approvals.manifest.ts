@@ -180,14 +180,6 @@ function appOwning(pathname: string): AppKey | null {
   return best?.key ?? null;
 }
 
-export const ALL_APPS: readonly AppKey[] = ["hr", "exp"];
-
-/**
- * Which application a person may open: people with full access (approvers, the DG, viewers, the Approvals admin) open both, because their
- * work is spread across them; everyone else (a plain requester) only the ones the Support Admin ticked for them in the hub.
- */
-export const appsFor = (roles: readonly ApprovalsRole[], ticked: readonly AppKey[]): AppKey[] => (hasFullAccess(roles) ? [...ALL_APPS] : ALL_APPS.filter((k) => ticked.includes(k)));
-
 /** The page each application opens on when it is chosen in the hub's sidebar. */
 export const APP_ENTRY: Record<AppKey, string> = { hr: "/approvals/hr/new", exp: "/approvals/expenses/new" };
 
@@ -200,8 +192,6 @@ const parseApp = (v: string | null | undefined): AppKey | null => (v === "hr" ||
  * Which application a page is showing. A page in a menu belongs to its application; a request page says which with ?app= (the links to it
  * all carry it); anything else falls back to the application this person most likely works in.
  */
-export function resolveApp(pathname: string, appParam: string | null, roles: readonly ApprovalsRole[], mine?: readonly AppKey[]): AppKey {
-  const guess = appOwning(pathname) ?? parseApp(appParam) ?? (roles.some((r) => r === "approvals_admin" || r === "dg" || r === "viewer") ? "hr" : roles.includes("approver") ? "exp" : "hr");
-  // A guess outside the applications this person may open gives way to the first one they may (a plain requester ticked for one only).
-  return mine && mine.length && !appOwning(pathname) && !mine.includes(guess) ? mine[0] : guess;
+export function resolveApp(pathname: string, appParam: string | null, roles: readonly ApprovalsRole[]): AppKey {
+  return appOwning(pathname) ?? parseApp(appParam) ?? (roles.some((r) => r === "approvals_admin" || r === "dg" || r === "viewer") ? "hr" : roles.includes("approver") ? "exp" : "hr");
 }
