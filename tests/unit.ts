@@ -15,7 +15,7 @@ import { scrub } from "../src/lib/scrub";
 import { xlsxToTable } from "../src/lib/xlsx-read";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
-  FULL_ACCESS_ROLES, approvalsApps, canSee, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
+  FULL_ACCESS_ROLES, approvalsApps, appForType, appsFor, canSee, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, resolveApp, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
 import {
   assessBudget, budgetWarning, commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, percentUsed, planSteps, STATUS_LABEL, utilisationLevel, wrongFormMessage,
   type RuleLike,
@@ -91,6 +91,11 @@ eq("today in IST: late evening UTC is already tomorrow", [todayIST(new Date("202
 // Approvals: which hub card is the module, and who sees which menu item.
 eq("card url: path, full address and trailing slash match", [isApprovalsUrl("/approvals"), isApprovalsUrl("https://hub.mccia.org/approvals"), isApprovalsUrl("https://hub.mccia.org/approvals/")], [true, true, true]);
 eq("card url: other paths do not", [isApprovalsUrl("https://x.org/approvals/admin"), isApprovalsUrl("https://x.org/other"), isApprovalsUrl("/approvals-old")], [false, false, false]);
+eq("card url: the entry pages of HR Approval and Expenditure Approval match when written without a domain, other approvals pages and other sites do not", [isApprovalsUrl("/approvals/hr/new"), isApprovalsUrl("/approvals/expenses/new"), isApprovalsUrl("https://x.org/approvals/hr/new"), isApprovalsUrl("/approvals/hr/all"), isApprovalsUrl("/approvals/hr/new/x")], [true, true, false, false, false]);
+eq("apps: a plain requester opens only the applications ticked for them", [appsFor(["requester"], []), appsFor(["requester"], ["exp"]), appsFor(["requester"], ["exp", "hr"])], [[], ["exp"], ["hr", "exp"]]);
+eq("apps: an approver, the DG, a viewer and the Approvals admin open both applications whatever is ticked", FULL_ACCESS_ROLES.map((r) => appsFor(["requester", r], []).join("+")), ["hr+exp", "hr+exp", "hr+exp", "hr+exp"]);
+eq("apps: which application raises each kind of request (HR and large expenditure: HR Approval; a small expense: Expenditure)", [appForType("hr"), appForType("expenditure_large"), appForType("expenditure_small")], ["hr", "hr", "exp"]);
+eq("apps: a request page falls back to the application the person has, and a page of an application stays in it", [resolveApp("/approvals/requests/x", null, ["requester"], ["exp"]), resolveApp("/approvals/requests/x", "hr", ["requester"], ["exp"]), resolveApp("/approvals/requests/x", "hr", ["requester"], ["hr", "exp"]), resolveApp("/approvals/hr/new", null, ["requester"], ["exp"])], ["exp", "exp", "hr", "hr"]);
 eq("menu: a form is for everyone", canSee({ label: "F", href: "/f", form: true }, ["requester"]), true);
 eq("menu: any other page without a role list needs full access, which the Director General alone does not have (their menu is the Recommended Queue)", [canSee({ label: "L", href: "/l" }, ["requester"]), ...FULL_ACCESS_ROLES.map((r) => canSee({ label: "L", href: "/l" }, ["requester", r]))], [false, true, false, true, true]);
 eq("menu: the DG alone is told apart from a DG who also reviews or oversees", [isDgOnly(["requester", "dg"]), isDgOnly(["requester", "dg", "approver"]), isDgOnly(["requester", "dg", "viewer"]), isDgOnly(["requester", "approver"])], [true, false, false, false]);

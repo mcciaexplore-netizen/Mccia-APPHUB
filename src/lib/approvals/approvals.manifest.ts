@@ -140,8 +140,12 @@ export const approvalsApps: NavApp[] = [
  */
 export const isModuleEnabled = (setting: string | undefined): boolean => !["false", "0", "off", "no"].includes((setting ?? "").trim().toLowerCase());
 
-/** A hub app card is the Approvals card when its URL is /approvals, with or without the domain in front. */
-export const APPROVALS_URL_PATTERN = "^(https?://[^/?#]+)?/approvals/?$";
+/**
+ * A hub app row belongs to the Approval System when its address is /approvals (the old single card, with or without the domain in front)
+ * or the entry page of one of its two applications (APP_ENTRY, written without a domain). Such a row is there so the Support Admin can
+ * tick it for a person; it is never shown as a card in the hub or launched from there.
+ */
+export const APPROVALS_URL_PATTERN = "^((https?://[^/?#]+)?/approvals/?|/approvals/(hr|expenses)/new)$";
 export const isApprovalsUrl = (url: string) => new RegExp(APPROVALS_URL_PATTERN).test(url.trim());
 
 export const isGroup = (e: NavEntry): e is NavGroup => "items" in e;
@@ -175,6 +179,14 @@ export function appOwning(pathname: string): AppKey | null {
   return best?.key ?? null;
 }
 
+export const ALL_APPS: readonly AppKey[] = ["hr", "exp"];
+
+/**
+ * Which application a person may open: people with full access (approvers, the DG, viewers, the Approvals admin) open both, because their
+ * work is spread across them; everyone else (a plain requester) only the ones the Support Admin ticked for them in the hub.
+ */
+export const appsFor = (roles: readonly ApprovalsRole[], ticked: readonly AppKey[]): AppKey[] => (hasFullAccess(roles) ? [...ALL_APPS] : ALL_APPS.filter((k) => ticked.includes(k)));
+
 /** The page each application opens on when it is chosen in the hub's sidebar. */
 export const APP_ENTRY: Record<AppKey, string> = { hr: "/approvals/hr/new", exp: "/approvals/expenses/new" };
 
@@ -187,6 +199,8 @@ export const parseApp = (v: string | null | undefined): AppKey | null => (v === 
  * Which application a page is showing. A page in a menu belongs to its application; a request page says which with ?app= (the links to it
  * all carry it); anything else falls back to the application this person most likely works in.
  */
-export function resolveApp(pathname: string, appParam: string | null, roles: readonly ApprovalsRole[]): AppKey {
-  return appOwning(pathname) ?? parseApp(appParam) ?? (roles.some((r) => r === "approvals_admin" || r === "dg" || r === "viewer") ? "hr" : roles.includes("approver") ? "exp" : "hr");
+export function resolveApp(pathname: string, appParam: string | null, roles: readonly ApprovalsRole[], mine?: readonly AppKey[]): AppKey {
+  const guess = appOwning(pathname) ?? parseApp(appParam) ?? (roles.some((r) => r === "approvals_admin" || r === "dg" || r === "viewer") ? "hr" : roles.includes("approver") ? "exp" : "hr");
+  // A guess outside the applications this person may open gives way to the first one they may (a plain requester ticked for one only).
+  return mine && mine.length && !appOwning(pathname) && !mine.includes(guess) ? mine[0] : guess;
 }

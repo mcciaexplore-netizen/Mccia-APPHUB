@@ -44,9 +44,9 @@ const ADMIN_LINKS = [
 ] as const;
 
 export function Sidebar({
-  user, departments, showApprovals, onNavigate, onClose,
+  user, departments, approvalApps, onNavigate, onClose,
 }: {
-  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; onNavigate: () => void; onClose: () => void;
+  user: SidebarUser | null; departments: SidebarDept[]; approvalApps: readonly AppKey[]; onNavigate: () => void; onClose: () => void;
 }) {
   const pathname = usePathname();
   const params = useSearchParams();
@@ -87,7 +87,7 @@ export function Sidebar({
           </Item>
         ))}
         {/* Approval System is a feature of the hub, not an application in a department: a dropdown whose two entries open the applications. */}
-        {showApprovals && (
+        {approvalApps.length > 0 && (
           <div>
             <button
               type="button"
@@ -101,7 +101,7 @@ export function Sidebar({
             </button>
             {(approvalsOpen || inApprovals) && (
               <div id={approvalsId} className="ml-8 mr-3 mt-0.5 space-y-0.5 border-l border-line pl-2">
-                {APPROVAL_APPS.map(({ key, Icon: AppIcon }) => {
+                {APPROVAL_APPS.filter((a) => approvalApps.includes(a.key)).map(({ key, Icon: AppIcon }) => {
                   const active = currentApp === key;
                   const title = approvalsApps.find((a) => a.key === key)!.title;
                   return (

@@ -330,6 +330,29 @@ try {
     console.log("   (skipped: needs HR_ADMIN_*, EXPENDITURE_ADMIN_* and SUPER_ADMIN_* set to zzr-... test addresses with passwords)");
   }
 
+  section("7d. The Approval System's two applications are ticked per person, like any other application");
+  const aprItem = (page) => page.locator("aside").first().getByRole("button", { name: "Approval System" });
+  const aprLinks = async (page) => (await page.locator("aside").first().locator("a[href^='/approvals/']").allInnerTexts()).map((t) => t.trim()).join("|");
+  await U.goto(BASE + "/");
+  check("a plain user nobody ticked anything for has no Approval System in the sidebar", (await aprItem(U).count()) === 0);
+  check("and its forms, and the bare /approvals address, are not found for them", (await U.goto(BASE + "/approvals/hr/new")).status() === 404 && (await U.goto(BASE + "/approvals/expenses/new")).status() === 404 && (await U.goto(BASE + "/approvals/expenditures/new")).status() === 404 && (await U.goto(BASE + "/approvals")).status() === 404);
+  await visit(A, `/administrator/users/${plain.id}`, ADMIN_PW);
+  check("the Application access box lists HR Approval and Expenditure Approval under the category Approval System, and no single 'Approvals'", (await A.locator("main label", { hasText: "HR Approval" }).count()) >= 1 && (await A.locator("main label", { hasText: "Expenditure Approval" }).count()) >= 1 && /Approval System/.test(await main(A)) && (await A.locator("main label", { hasText: /^\s*Approvals\s*$/ }).count()) === 0);
+  await A.locator("main label", { hasText: "HR Approval" }).getByRole("checkbox").first().check();
+  await A.getByRole("button", { name: "Save access" }).click();
+  check("ticking HR Approval is saved", await toast(A, "Access saved") && await poll(async () => (await sql`select count(*)::int n from user_app_access ua join apps a on a.id = ua.app_id where ua.user_id = ${plain.id} and a.url = '/approvals/hr/new'`)[0].n === 1));
+  await U.goto(BASE + "/");
+  await aprItem(U).click();
+  check("they then see Approval System with HR Approval only", (await aprLinks(U)) === "HR Approval", await aprLinks(U));
+  check("HR Approval's form opens for them; the Expenditure forms are still not found; /approvals leads into HR Approval", (await U.goto(BASE + "/approvals/hr/new")).status() === 200 && (await U.goto(BASE + "/approvals/expenses/new")).status() === 404 && (await U.goto(BASE + "/approvals/expenditures/new")).status() === 200 && (await U.goto(BASE + "/approvals").then(() => new URL(U.url()).pathname)) === "/approvals/hr/new");
+  await A.locator("main label", { hasText: "Expenditure Approval" }).getByRole("checkbox").first().check();
+  await A.getByRole("button", { name: "Save access" }).click();
+  check("ticking Expenditure Approval as well is saved", await toast(A, "Access saved") && await poll(async () => (await sql`select count(*)::int n from user_app_access ua join apps a on a.id = ua.app_id where ua.user_id = ${plain.id} and a.url in ('/approvals/hr/new', '/approvals/expenses/new')`)[0].n === 2));
+  await U.goto(BASE + "/");
+  if ((await aprLinks(U)) === "") await aprItem(U).click();
+  check("they then see both applications, and the Expenses form opens", (await aprLinks(U)) === "HR Approval|Expenditure" && (await U.goto(BASE + "/approvals/expenses/new")).status() === 200, await aprLinks(U));
+  check("the Support Admin always has both, and a person named as an approver needs no tick", (await A.goto(BASE + "/approvals/hr/new")).status() === 200 && (await A.goto(BASE + "/approvals/expenses/new")).status() === 200);
+
   section("8. Console and untouched data");
   check("no browser console or page errors on any screen", consoleErrors.length === 0 && pageErrors.length === 0, [...consoleErrors, ...pageErrors].join(" | "));
 } catch (e) {

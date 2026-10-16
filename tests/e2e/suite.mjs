@@ -122,7 +122,7 @@ try {
   const r0 = await page.goto(BASE + "/"); await page.waitForLoadState("networkidle").catch(() => {});
   check("home opens after signing in", r0.status() === 200 && page.url() === BASE + "/", r0.status());
   // Approval System is a sidebar item of its own now, so a department that holds nothing but an old Approvals card (URL /approvals) is not listed.
-  const isApprovalsCard = (a) => /^(https?:\/\/[^/?#]+)?\/approvals\/?$/.test(a.url.trim());
+  const isApprovalsCard = (a) => /^((https?:\/\/[^/?#]+)?\/approvals\/?|\/approvals\/(hr|expenses)\/new)$/.test(a.url.trim());
   const approvalsOnly = (name) => { const mine = before.apps.filter((a) => a.dept === name); return mine.length > 0 && mine.every(isApprovalsCard); };
   const realDeps = before.departments.filter((d) => d.is_active && !approvalsOnly(d.name)).map((d) => d.name);
   const links = await page.locator("aside:visible nav a").allInnerTexts();

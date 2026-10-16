@@ -139,6 +139,7 @@ try {
   for (const [k, p] of Object.entries(PEOPLE)) {
     const [u] = await sql`insert into users (name, email, password_hash, status) values (${p.name}, ${p.email}, ${hash(PW)}, 'approved') returning id`;
     ids[k] = u.id;
+    await sql`insert into user_app_access (user_id, app_id) select ${u.id}, id from apps where url in ('/approvals/hr/new', '/approvals/expenses/new') on conflict do nothing`; // the Approval System's two applications are ticked for each of them, as the Support Admin would
   }
   // HR and expenditure of 10,000 and above: the DG only (the Reviewer step is left empty). Expenses below 10,000: the small approver.
   await sql`update apr_approver_rules set approver_user_ids = '{}', active = true`;

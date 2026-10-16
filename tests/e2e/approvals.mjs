@@ -117,6 +117,7 @@ try {
   const [dept] = await sql`insert into departments (name, icon, sort_order) values ('ZZ Apr Dept', 'Building2', 9999) returning id`;
   const [card] = await sql`insert into apps (department_id, name, url, icon) values (${dept.id}, 'ZZ Apr Card', '/approvals', 'ClipboardList') returning id`;
   const [member] = await sql`insert into users (name, email, password_hash, status) values ('ZZ Apr Member', ${MEMBER.email}, ${hash(MEMBER.pw)}, 'approved') returning id`;
+  await sql`insert into user_app_access (user_id, app_id) select ${member.id}, id from apps where url in ('/approvals/hr/new', '/approvals/expenses/new') on conflict do nothing`; // the member has been given both Approval System applications; the outsider none
   await sql`insert into users (name, email, password_hash, status) values ('ZZ Apr Outsider', ${OUTSIDER.email}, ${hash(OUTSIDER.pw)}, 'approved')`;
   check("test card, department and people created", true && !!member);
 
@@ -285,10 +286,12 @@ try {
   check("taking it away closes the page again", (await status(M, "/approvals/budgets")) === 404);
   check("and the lists and the export close with it: forms only again", (await status(M, "/approvals/hr/all")) === 404 && (await M.request.get(`${BASE}/api/approvals/requests/export?screen=hr/all`)).status() === 403 && (await status(M, "/approvals/hr/new")) === 200);
 
-  section("10. Anyone signed in to the hub can open Approvals");
+  section("10. Approvals opens for a person only when the Support Admin has given them an application");
   const out = await newSession();
   await signIn(out.page, OUTSIDER.email, OUTSIDER.pw);
-  check("a second ordinary person can open /approvals too (nothing has to be ticked for them)", (await status(out.page, "/approvals")) === 200);
+  check("a second ordinary person, with neither application ticked, finds neither /approvals nor its forms", (await status(out.page, "/approvals")) === 404 && (await status(out.page, "/approvals/hr/new")) === 404 && (await status(out.page, "/approvals/expenses/new")) === 404);
+  await sql`insert into user_app_access (user_id, app_id) select (select id from users where email = ${OUTSIDER.email}), id from apps where url = '/approvals/expenses/new' on conflict do nothing`;
+  check("once Expenditure Approval is ticked for them, /approvals and the Expenses form open, and the HR form still does not", (await status(out.page, "/approvals")) === 200 && (await status(out.page, "/approvals/expenses/new")) === 200 && (await status(out.page, "/approvals/hr/new")) === 404);
   check("the API answers them (they read the dropdown lists)", (await out.page.request.get(`${BASE}/api/approvals/masters/categories`)).status() === 200);
   check("but the admin pages stay closed to them", (await status(out.page, "/approvals/admin/categories")) === 404);
 

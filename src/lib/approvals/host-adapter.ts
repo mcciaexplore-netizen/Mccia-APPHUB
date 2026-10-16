@@ -2,11 +2,11 @@ import "server-only";
 import { cache } from "react";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { users } from "@/db/schema";
+import { apps, departments, userAppAccess, users } from "@/db/schema";
 import { aprApproverRules, aprUserRoles } from "@/db/approvals-schema";
 import { ensureEnvAccounts, envAccountEmail } from "@/lib/auth";
 import { getCurrentUser as hostCurrentUser } from "@/lib/permissions";
-import { ALL_ROLES, type ApprovalsRole } from "./approvals.manifest";
+import { ALL_APPS, ALL_ROLES, APP_ENTRY, appsFor, type AppKey, type ApprovalsRole } from "./approvals.manifest";
 
 /**
  * The only file in the module that knows about the host: its session and its user table.
@@ -14,7 +14,8 @@ import { ALL_ROLES, type ApprovalsRole } from "./approvals.manifest";
  */
 
 export type { ApprovalsRole };
-export type ApprovalsUser = { id: string; name: string; email: string; roles: ApprovalsRole[] };
+/** `apps`: the Approval System applications (HR Approval, Expenditure) this person may open. */
+export type ApprovalsUser = { id: string; name: string; email: string; roles: ApprovalsRole[]; apps: AppKey[] };
 export type DirectoryUser = { id: string; name: string; email: string; headAdmin: boolean; active: boolean };
 
 export type Access =
@@ -44,12 +45,31 @@ async function rolesFor(userId: string, isHeadAdmin: boolean): Promise<Approvals
   return [...roles];
 }
 
-/** Who is asking. Approvals is part of the hub, so anyone signed in to the hub may open it: they are a requester, and what else they can do comes from their roles. */
+/**
+ * The Approval System applications the Support Admin has ticked for this person: each one is a row in the hub's application list whose
+ * address is the application's entry page (HR Approval, Expenditure Approval), ticked like any other application.
+ */
+export async function tickedApps(userId: string): Promise<AppKey[]> {
+  const rows = await db
+    .select({ url: apps.url })
+    .from(userAppAccess)
+    .innerJoin(apps, eq(apps.id, userAppAccess.appId))
+    .innerJoin(departments, eq(departments.id, apps.departmentId))
+    .where(and(eq(userAppAccess.userId, userId), eq(apps.isActive, true), eq(departments.isActive, true), inArray(apps.url, ALL_APPS.map((k) => APP_ENTRY[k]))));
+  const have = new Set(rows.map((r) => r.url));
+  return ALL_APPS.filter((k) => have.has(APP_ENTRY[k]));
+}
+
+/** Who is asking. Anyone signed in to the hub is a requester; what else they can do comes from their roles, and which applications they open from what the Support Admin ticked. */
 export const resolveAccess = cache(async (): Promise<Access> => {
   const host = await hostCurrentUser();
   if (!host) return { status: "anonymous" };
   const isHeadAdmin = host.role === "head_admin";
-  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles: await rolesFor(host.id, isHeadAdmin) } };
+  const [roles, ticked] = await Promise.all([rolesFor(host.id, isHeadAdmin), tickedApps(host.id)]);
+  // The HR, Expenditure and Super Admin main accounts (set in the environment) are the people the module is built around: both applications, always.
+  const email = host.email.toLowerCase();
+  const isMain = (["hr", "expenditure", "super"] as const).some((k) => envAccountEmail(k)?.toLowerCase() === email);
+  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles, apps: isMain ? [...ALL_APPS] : appsFor(roles, ticked) } };
 });
 
 /** Everyone who can sign in to the hub, for the Name dropdown and the approver pickers. There is no second user table. */

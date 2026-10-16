@@ -85,6 +85,13 @@
       "when": 1792145969974,
       "tag": "0011_departments_kind_hub_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792155644492,
+      "tag": "0012_approval_apps",
+      "breakpoints": true
     }
   ]
 }

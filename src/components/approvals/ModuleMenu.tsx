@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { NotificationBell } from "@/components/approvals/NotificationBell";
 import {
-  approvalsApps, canSee, isGroup, resolveApp, type ApprovalsRole, type NavEntry, type NavGroup, type NavItem,
+  approvalsApps, canSee, isGroup, resolveApp, type AppKey, type ApprovalsRole, type NavEntry, type NavGroup, type NavItem,
 } from "@/lib/approvals/approvals.manifest";
 
 const TAB = "whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition-all duration-200";
@@ -17,15 +17,16 @@ const off = "text-muted hover:bg-blue-tint hover:text-primary";
  * layout, outside this component, so a page that is not found or redirects still answers with a real 404 or redirect.
  */
 export function ModuleMenu({
-  roles, unread, waiting,
-}: { roles: ApprovalsRole[]; unread: number; waiting: number }) {
+  roles, apps, unread, waiting,
+}: { roles: ApprovalsRole[]; apps: AppKey[]; unread: number; waiting: number }) {
   const pathname = usePathname();
   const appParam = useSearchParams().get("app");
-  const app = approvalsApps.find((a) => a.key === resolveApp(pathname, appParam, roles))!;
+  const app = approvalsApps.find((a) => a.key === resolveApp(pathname, appParam, roles, apps))!;
 
   // Only what this person's roles allow, and no section left empty. A section left with a single page (a plain requester's one form)
   // becomes that page's own tab, so there is no row of pages with one link in it.
-  const entries = app.nav
+  // An application this person has not been given (they can still follow their own request) shows no menu at all.
+  const entries = (apps.includes(app.key) ? app.nav : [])
     .map((e): NavEntry | null => {
       if (!canSee(e, roles)) return null;
       if (!isGroup(e)) return e;

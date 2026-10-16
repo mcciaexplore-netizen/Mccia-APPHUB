@@ -1,12 +1,12 @@
 import { PageHeader } from "@/components/approvals/PageHeader";
 import { ExpenditureForm } from "@/components/approvals/RequestForms";
 import { expenditureFormProps } from "@/lib/approvals/form-data";
-import { requirePage } from "@/lib/approvals/guard";
+import { requireApp } from "@/lib/approvals/guard";
 
 export const metadata = { title: "Expenses · MCCIA Approvals" };
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const user = await requirePage();
+  const user = await requireApp("exp");
   return (
     <>
       <PageHeader title="Expenses" />

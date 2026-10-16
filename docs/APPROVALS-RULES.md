@@ -48,6 +48,10 @@ Lists: a first approver has **Recommended** (what they sent on) and **Rejected F
 - Over budget is flagged, never blocked: the approver must write a comment to approve it.
 - An HR amount needs a branch and an expense category. Without an amount no budget is attached.
 
+## Who may open the two applications
+
+HR Approval and Expenditure Approval are applications in the hub (category Approval System) that the Support Admin ticks per person; see `docs/ROLES.md`. Approvers, the DG, viewers and the Approvals admin open both without a tick. A request is refused (403) unless its application was given: HR and expenditure of the threshold and above need HR Approval, an expense below it needs Expenditure Approval.
+
 ## Putting it live (order matters)
 
 1. Run `scripts/apply-0009-in-neon-console.sql` in the Neon SQL editor (additive: new status values and five empty columns).

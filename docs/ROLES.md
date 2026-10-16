@@ -38,6 +38,16 @@ The Support Admin can be set with `SUPPORT_ADMIN_*` and the older `HEAD_ADMIN_*`
 
 Only the Support Admin manages people, roles and access; the Super Admin cannot. Whatever is ticked, an Admin can **never**: change a role, change what an Admin may open, delete a person, or see or touch the Support Admin, the Super Admin or another Admin (not in the directory, not by address, not through an import). They are also not Approval System admins: that module keeps its own roles (the Approvals admin is still the Support Admin).
 
+## HR Approval and Expenditure Approval are applications you tick
+
+In the **Application access** box of a person's profile, the category **Approval System** lists two applications, **HR Approval** and **Expenditure Approval**, ticked like any other application. The tick decides who sees that application in the sidebar and who can raise requests in it:
+
+- **HR Approval** holds the HR form and the large Expenditure form (₹10,000 and above); **Expenditure Approval** holds the Expenses form (below ₹10,000).
+- A person nobody ticked anything for has no Approval System in the sidebar, and its forms and `/approvals` are simply not found for them. A request is refused if its application was not given.
+- People with approval duties (a first approver, the DG, a viewer, the Approvals admin) and the HR, Expenditure and Super Admin main accounts open **both** whatever is ticked, as does the Support Admin. A person can always open the page of their own request from its notification.
+- A person added later gets neither until the Support Admin ticks it. When this was introduced everyone who was active got both (migration 0012), so nobody lost what they had.
+- These two rows are never shown as cards on the hub's home page, and are not in the Applications list (they are not links to somewhere else).
+
 ## Setting people up
 
 1. Sign in as the Support Admin and open Administrator, then Users & Access.
@@ -49,3 +59,5 @@ Only the Support Admin manages people, roles and access; the Super Admin cannot.
 
 1. Run `scripts/apply-0010-in-neon-console.sql` in the Neon SQL editor (additive: two role values and one empty column).
 2. Deploy the code. (Pages read the new column, so the code must not go first.)
+
+For the Approval System applications: run `scripts/apply-0012-in-neon-console.sql` (adds the two applications and ticks both for every active person), then deploy.
