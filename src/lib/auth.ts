@@ -16,32 +16,35 @@ const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
  *   Expenditure    EXPENDITURE_ADMIN_*                           the expense approver (approvals and their applications only)
  * Each is set with <PREFIX>_EMAIL, <PREFIX>_NAME and <PREFIX>_PASSWORD. They sign in with the password from the settings, so changing it
  * there (and redeploying) changes it, and none of them can be locked out, deactivated, deleted or given another role from the screens.
- * An address can belong to only one of them: the first in the list above wins.
+ * An account counts only when its email AND its password are both set, so a half-filled setting never locks anyone out. The Support Admin
+ * can be set by SUPPORT_ADMIN_* and by the older HEAD_ADMIN_* at the same time (both work, which makes changing over safe). An address can
+ * belong to only one account: the first in the list above wins.
  */
 export type EnvKey = "support" | "super" | "hr" | "expenditure";
-type EnvAccount = { key: EnvKey; role: "head_admin" | "super_admin" | "member"; email: string; password: string | undefined; name: string };
-const ENV_DEFS: { key: EnvKey; role: EnvAccount["role"]; prefixes: string[]; name: string }[] = [
-  { key: "support", role: "head_admin", prefixes: ["SUPPORT_ADMIN", "HEAD_ADMIN"], name: "Admin" },
-  { key: "super", role: "super_admin", prefixes: ["SUPER_ADMIN"], name: "Super Admin" },
-  { key: "hr", role: "member", prefixes: ["HR_ADMIN"], name: "HR" },
-  { key: "expenditure", role: "member", prefixes: ["EXPENDITURE_ADMIN"], name: "Expenditure" },
+type EnvAccount = { key: EnvKey; role: "head_admin" | "super_admin" | "member"; email: string; password: string; name: string };
+const ENV_DEFS: { key: EnvKey; role: EnvAccount["role"]; prefix: string; name: string }[] = [
+  { key: "support", role: "head_admin", prefix: "SUPPORT_ADMIN", name: "Admin" },
+  { key: "support", role: "head_admin", prefix: "HEAD_ADMIN", name: "Admin" },
+  { key: "super", role: "super_admin", prefix: "SUPER_ADMIN", name: "Super Admin" },
+  { key: "hr", role: "member", prefix: "HR_ADMIN", name: "HR" },
+  { key: "expenditure", role: "member", prefix: "EXPENDITURE_ADMIN", name: "Expenditure" },
 ];
 const lower = (v: string | undefined) => v?.trim().toLowerCase() || "";
 
 function envAccounts(): EnvAccount[] {
   const out: EnvAccount[] = [];
   for (const d of ENV_DEFS) {
-    const prefix = d.prefixes.find((p) => lower(process.env[`${p}_EMAIL`]));
-    if (!prefix) continue;
-    const email = lower(process.env[`${prefix}_EMAIL`]);
-    if (out.some((a) => a.email === email)) continue;
-    out.push({ key: d.key, role: d.role, email, password: process.env[`${prefix}_PASSWORD`], name: process.env[`${prefix}_NAME`]?.trim() || d.name });
+    const email = lower(process.env[`${d.prefix}_EMAIL`]);
+    // Spaces or a line break pasted around a password in the settings are not part of it.
+    const password = (process.env[`${d.prefix}_PASSWORD`] ?? "").trim();
+    if (!email || !password || out.some((a) => a.email === email)) continue;
+    out.push({ key: d.key, role: d.role, email, password, name: process.env[`${d.prefix}_NAME`]?.trim() || d.name });
   }
   return out;
 }
 const envAccount = (email: string): EnvAccount | null => envAccounts().find((a) => a.email === email.trim().toLowerCase()) ?? null;
 
-/** True for one of the four main accounts: it signs in with a password from the environment settings. */
+/** True for one of the four main accounts (an email and a password both set): it signs in with a password from the environment settings. */
 export const isEnvAdmin = (email: string) => !!envAccount(email);
 
 /** The address set for one of the main accounts, or null when it is not set. */
@@ -86,7 +89,7 @@ export async function authenticate(emailRaw: string, password: string): Promise<
 
   const env = envAccount(email);
   if (env) {
-    if (!env.password || !same(password, env.password)) return null;
+    if (!same(password, env.password)) return null;
     const me = await ensureEnvAdmin(env);
     await ensureEnvAccounts().catch((e) => console.error("[auth] could not create the other main accounts", e));
     return me;
@@ -103,7 +106,7 @@ export async function authenticate(emailRaw: string, password: string): Promise<
 /** Checks a password for someone who is already signed in (unlocking Administrator, changing a password). */
 export async function checkPassword(u: User, password: string): Promise<boolean> {
   const env = envAccount(u.email);
-  if (env) return !!env.password && same(password, env.password);
+  if (env) return same(password, env.password);
   return !!u.passwordHash && verifyPassword(password, u.passwordHash);
 }
 

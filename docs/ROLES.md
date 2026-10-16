@@ -32,7 +32,7 @@ Five kinds of person, and what each can do. The rules live in one file, `src/lib
 
 Each is set with `<PREFIX>_EMAIL`, `<PREFIX>_NAME` and `<PREFIX>_PASSWORD`, in Vercel and in your local `.env`. They sign in with the password from the settings, so to change one you change it there and redeploy. From the screens none of them can be locked out, deactivated, deleted, have a password reset, or be given another role; the directory marks them "Main admin" (Support Admin, Super Admin) or "Main account" (HR, Expenditure), "password in settings". The Support Admin can still give HR and Expenditure applications, on their profile like anyone else.
 
-Keep the old `HEAD_ADMIN_*` settings until the `SUPPORT_ADMIN_*` ones are live and you have signed in with them: removing both would lock the Support Admin out.
+The Support Admin can be set with `SUPPORT_ADMIN_*` and the older `HEAD_ADMIN_*` at the same time: both work, so you can change over safely. Keep the old ones until you have signed in with the new ones, then you can delete them. An account counts only when its email **and** its password are both filled in; a half-filled setting is ignored and never locks anyone out.
 
 **Approver Rules:** the first time HR, Expenditure and the Super Admin are all set, the Approver Rules that have nobody named are filled from them, once (HR reviews HR; Expenditure is the first approver on expenses; the Super Admin is the final approver on HR and on expenditure of ₹10,000 and above). The Support Admin decides everything after that on the Approver Rules screen, and nothing is ever filled in again, so what they change or clear stays. The first approver and the Super Admin must still be different people.
 

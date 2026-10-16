@@ -472,7 +472,15 @@ try {
   process.env.SUPPORT_ADMIN_NAME = "ZZH Env Support";
   process.env.SUPPORT_ADMIN_PASSWORD = "Env-support-pass-1";
   const sup2 = await authenticate("zz-hub-env-support@example.com", "Env-support-pass-1");
-  check("SUPPORT_ADMIN_* works as the Support Admin, and wins over the older HEAD_ADMIN_*", sup2?.role === "head_admin" && sup2.name === "ZZH Env Support" && !isEnvAdmin("zz-hub-env-admin@example.com"));
+  check("SUPPORT_ADMIN_* works as the Support Admin, and the older HEAD_ADMIN_* keeps working beside it, so changing over locks nobody out", sup2?.role === "head_admin" && sup2.name === "ZZH Env Support" && isEnvAdmin("zz-hub-env-admin@example.com") && (await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1"))?.role === "head_admin");
+  process.env.SUPPORT_ADMIN_PASSWORD = "";
+  check("an account with an email but no password is ignored: it is an ordinary account, it cannot sign in with an empty password, and the old settings still work", !isEnvAdmin("zz-hub-env-support@example.com") && (await authenticate("zz-hub-env-support@example.com", "")) === null && !!(await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1")));
+  process.env.SUPER_ADMIN_PASSWORD = "   ";
+  check("a password of only spaces counts as no password", !isEnvAdmin(SUPER_EMAIL));
+  process.env.SUPER_ADMIN_PASSWORD = "  Env-super-pass-1 \n";
+  check("spaces or a line break around a password in the settings are not part of it", (await authenticate(SUPER_EMAIL, "Env-super-pass-1"))?.role === "super_admin");
+  process.env.SUPER_ADMIN_PASSWORD = "Env-super-pass-1";
+  process.env.SUPPORT_ADMIN_PASSWORD = "Env-support-pass-1";
   delete process.env.SUPPORT_ADMIN_EMAIL; delete process.env.SUPPORT_ADMIN_NAME; delete process.env.SUPPORT_ADMIN_PASSWORD;
   check("with the SUPPORT_ADMIN_* settings gone, HEAD_ADMIN_* is the Support Admin again", isEnvAdmin("zz-hub-env-admin@example.com") && (await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1"))?.role === "head_admin");
   check("a main account cannot be created or imported as a new person", (await refused(() => checkImport(admin, [R(1, { name: "ZZH Dup HR", email: HR_EMAIL })], { existing: "skip" }).then((c) => { if (c.checks[0].errors.length) throw new UserError(c.checks[0].errors.join(" ")); }))) !== null);
