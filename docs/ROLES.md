@@ -38,15 +38,13 @@ The Support Admin can be set with `SUPPORT_ADMIN_*` and the older `HEAD_ADMIN_*`
 
 Only the Support Admin manages people, roles and access; the Super Admin cannot. Whatever is ticked, an Admin can **never**: change a role, change what an Admin may open, delete a person, or see or touch the Support Admin, the Super Admin or another Admin (not in the directory, not by address, not through an import). They are also not Approval System admins: that module keeps its own roles (the Approvals admin is still the Support Admin).
 
-## HR Approval and Expenditure Approval are applications you tick
+## The Approval Forms, and HR Approval / Expenditure Approval
 
-In the **Application access** box of a person's profile, the category **Approval System** lists two applications, **HR Approval** and **Expenditure Approval**, ticked like any other application. The tick decides who sees that application in the sidebar and who can raise requests in it:
-
-- **HR Approval** holds the HR form and the large Expenditure form (₹10,000 and above); **Expenditure Approval** holds the Expenses form (below ₹10,000).
-- A person nobody ticked anything for has no Approval System in the sidebar, and its forms and `/approvals` are simply not found for them. A request is refused if its application was not given.
-- People with approval duties (a first approver, the DG, a viewer, the Approvals admin) and the HR, Expenditure and Super Admin main accounts open **both** whatever is ticked, as does the Support Admin. A person can always open the page of their own request from its notification.
-- A person added later gets neither until the Support Admin ticks it. When this was introduced everyone who was active got both (migration 0012), so nobody lost what they had.
-- These two rows are never shown as cards on the hub's home page, and are not in the Applications list (they are not links to somewhere else).
+- **The forms are for everyone who signs in.** The top of the home page has two cards, **HR Approval Form** and **Expenditure Approval Form**; nothing has to be ticked. HR Approval Form opens the HR form; Expenditure Approval Form opens the Expenses form (below ₹10,000), which points to the DG Expenditure form for ₹10,000 and above. The Super Admin (the DG) has them too.
+- In the **Application access** box of a person's profile, the category **Approval System** lists **HR Approval** and **Expenditure Approval**, ticked like any other application. For now a tick decides whether the **Approval System** item (with that application's pages) appears in that person's sidebar. It does not control the forms.
+- People with approval duties (a first approver, the DG, a viewer, the Approvals admin) and the HR, Expenditure and Super Admin main accounts, and the Support Admin, always have both applications in the sidebar.
+- A person added later has neither ticked. When the ticks were introduced everyone who was active got both (migration 0012).
+- These two rows are never shown as cards on the home page and are not in the Applications list (they are not links to somewhere else).
 
 ## Setting people up
 

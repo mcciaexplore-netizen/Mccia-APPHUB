@@ -2,7 +2,6 @@ import "server-only";
 import { notFound, redirect } from "next/navigation";
 import { NextResponse, type NextRequest } from "next/server";
 import { ZodError, type ZodType } from "zod";
-import { appForType, type AppKey } from "./approvals.manifest";
 import { ApprovalsError } from "./errors";
 import { approvalsEnabled } from "./flags";
 import { hasAnyRole, resolveAccess, type ApprovalsRole, type ApprovalsUser } from "./host-adapter";
@@ -15,18 +14,6 @@ export async function requirePage(...anyOf: ApprovalsRole[]): Promise<ApprovalsU
   if (a.status === "anonymous") redirect("/login");
   if (anyOf.length && !hasAnyRole(a.user, anyOf)) notFound();
   return a.user;
-}
-
-/** For the form pages: a person who has not been given this application (see ApprovalsUser.apps) finds no such page. */
-export async function requireApp(key: AppKey): Promise<ApprovalsUser> {
-  const user = await requirePage();
-  if (!user.apps.includes(key)) notFound();
-  return user;
-}
-
-/** For submitting a request: the application that owns the kind of request must be one the person may open. */
-export function assertAppForType(user: Pick<ApprovalsUser, "apps">, type: Parameters<typeof appForType>[0]): void {
-  if (!user.apps.includes(appForType(type))) throw new ApprovalsError("You have not been given access to this application. Ask the Support Admin.", 403);
 }
 
 type Ctx<P> = { req: NextRequest; user: ApprovalsUser; params: P };

@@ -26,7 +26,8 @@ export default async function ApprovalsLayout({ children }: { children: React.Re
       <ConfirmProvider>
         <div className="apr-root">
           <Suspense fallback={null}>
-            <ModuleMenu roles={user.roles} apps={user.apps} unread={unread} waiting={waiting} />
+            {/* waitingCount is already limited to what is waiting for this person, so it serves the DG's queue and an approver's pending page alike. */}
+            <ModuleMenu roles={user.roles} apps={user.apps} unread={unread} waiting={waiting} pendingForMe={waiting} />
           </Suspense>
           <div className="mt-6">{children}</div>
         </div>

@@ -16,8 +16,9 @@ import { xlsxToTable } from "../src/lib/xlsx-read";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
   FULL_ACCESS_ROLES, approvalsApps, appForType, appsFor, canSee, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, resolveApp, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
+import { screenFor } from "../src/lib/approvals/screens";
 import {
-  assessBudget, budgetWarning, commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, percentUsed, planSteps, STATUS_LABEL, utilisationLevel, wrongFormMessage,
+  assessBudget, budgetWarning, commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, percentUsed, planProblemMessage, planSteps, STATUS_LABEL, utilisationLevel, wrongFormMessage,
   type RuleLike,
 } from "../src/lib/approvals/calc";
 import { decisionInput, fileUploadStart, hrRequestInput, isAllowedFileName, largeExpenditureInput, mimeFor, safeFileName, smallExpenditureInput } from "../src/lib/approvals/request-schemas";
@@ -106,6 +107,8 @@ eq("full access: a plain requester has none, each of the four roles has it", [ha
 const pagesOf = (roles: ApprovalsRole[], app: "hr" | "exp") =>
   approvalsApps.find((a) => a.key === app)!.nav.flatMap((e) => (isGroup(e) ? e.items : [e])).filter((i) => canSee(i, roles)).map((i) => i.label);
 eq("a plain requester sees the forms only: HR and Expenditure in HR Approval, Expenses in Expenditure", [pagesOf(["requester"], "hr"), pagesOf(["requester"], "exp")], [["HR", "Expenditure"], ["Expenses"]]);
+eq("menu: in Expenditure an approver is offered 'Waiting for Me', an oversight role 'All Pending', and nobody gets the old 'Pending' that showed everything to everyone", [pagesOf(["requester", "approver"], "exp").includes("Waiting for Me"), pagesOf(["requester", "approver"], "exp").includes("All Pending"), pagesOf(["requester", "viewer"], "exp").includes("All Pending"), pagesOf(["requester", "viewer"], "exp").includes("Waiting for Me"), pagesOf(["requester", "approvals_admin"], "exp").includes("Pending")], [true, false, true, false, false]);
+eq("screens: 'expenses/pending' is each approver's own list (only what waits for them, decided in place) and 'expenses/waiting' is the list of every pending small expense", [screenFor(["expenses", "pending"])?.waitingForMe, screenFor(["expenses", "pending"])?.quickDecide, screenFor(["expenses", "waiting"])?.waitingForMe, screenFor(["expenses", "waiting"])?.statuses, screenFor(["expenses", "waiting"])?.types], [true, true, undefined, ["pending"], ["expenditure_small"]]);
 eq("full access still has the forms, and more", [FULL_ACCESS_ROLES.every((r) => pagesOf(["requester", r], "hr").includes("HR") && pagesOf(["requester", r], "exp").includes("Expenses")), pagesOf(["requester", "viewer"], "hr").length > 2], [true, true]);
 
 // Approvals: budget maths. Only approved spend counts; pending is shown, never subtracted.
@@ -122,7 +125,8 @@ eq("budget: warning text", [budgetWarning(assessBudget(pos(1_000_000), 1_250_000
 eq("threshold: 9,999.99 is small, 10,000.00 is large", [formFor(999_999, 1_000_000), formFor(1_000_000, 1_000_000)], ["small", "large"]);
 eq("wrong form: small form with 10,000", wrongFormMessage("small", 1_000_000, 1_000_000), "Amounts of ₹10,000 and above must be submitted through DG Expenditure Approval.");
 eq("wrong form: large form with 9,999", wrongFormMessage("large", 999_900, 1_000_000), "Amounts below ₹10,000 must be submitted through the Expenses form.");
-eq("wrong form: nothing to say when it fits or is empty", [wrongFormMessage("small", 999_900, 1_000_000), wrongFormMessage("large", 1_000_000, 1_000_000), wrongFormMessage("small", null, 1_000_000), wrongFormMessage("small", 0, 1_000_000)], [null, null, null, null]);
+eq("wrong form: nothing to say when it fits or is empty", [wrongFormMessage("small", 999_900, 1_000_000), wrongFormMessage("large", 1_000_000, 1_000_000), wrongFormMessage("small", null, 1_000_000)], [null, null, null]);
+eq("wrong form: a zero or negative amount says so, instead of passing the form", [wrongFormMessage("small", 0, 1_000_000), wrongFormMessage("large", -500, 1_000_000)], ["Please enter a valid amount greater than ₹0.", "Please enter a valid amount greater than ₹0."]);
 
 // Approvals: who approves. A rule with nobody named is skipped; nobody approves their own request.
 const rule = (stepNo: number, label: string, ids: string[], extra: Partial<RuleLike> = {}): RuleLike => ({ stepNo, stepLabel: label, minAmountPaise: 0, maxAmountPaise: null, approverUserIds: ids, active: true, ...extra });
@@ -147,7 +151,8 @@ eq("routing: the first approver raising a small request goes to the DG, not refu
   { steps: [{ stepNo: 1, stepLabel: "Director General", approverUserId: "dg" }], problem: null });
 eq("routing: without a DG to hand it to, the first approver's own small request is still refused", planSteps([rule(1, "Reviewer", ["shrotri"])], "shrotri", 100).problem, "only-self");
 eq("routing: the first approver raising a large request has the DG only (step 1 of 1)", planSteps([rule(1, "Reviewer", ["shrotri"]), rule(2, "Director General", ["dg"])], "shrotri", 2_000_000, dgEsc).steps.map((s) => [s.stepNo, s.approverUserId]), [[1, "dg"]]);
-eq("routing: the DG being the one who raised it is not handed to themselves", planSteps([rule(1, "Reviewer", ["dg"])], "dg", 100, dgEsc).problem, "only-self");
+eq("routing: the DG being the one who raised it is not handed to themselves, and the reason names it", [planSteps([rule(1, "Reviewer", ["dg"])], "dg", 100, dgEsc).problem, planProblemMessage("requester-is-dg").startsWith("You are the Director General and also the requester")], ["requester-is-dg", true]);
+eq("routing: a first approver on their own, with a DG who is somebody else named, is handed on; with nobody to hand to it stays only-self", [planSteps([rule(1, "Reviewer", ["shrotri"])], "shrotri", 100, dgEsc).problem, planSteps([rule(1, "Reviewer", ["shrotri"])], "shrotri", 100).problem], [null, "only-self"]);
 eq("routing: nobody named still says so, the DG is not invented", planSteps([rule(1, "Reviewer", [])], "shrotri", 100, dgEsc).problem, "no-approver");
 eq("routing: the same person on two steps is refused", planSteps([rule(1, "Reviewer", ["a"]), rule(2, "Director General", ["a"])], "req", 100).problem, "same-approver");
 eq("routing: two different people on two steps are fine", planSteps([rule(1, "Reviewer", ["a"]), rule(2, "Director General", ["b"])], "req", 100).problem, null);

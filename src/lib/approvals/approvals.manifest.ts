@@ -125,7 +125,8 @@ export const approvalsApps: NavApp[] = [
       {
         label: "Approvals",
         items: [
-          { label: "Pending", href: "/approvals/expenses/pending" },
+          { label: "Waiting for Me", href: "/approvals/expenses/pending", roles: ["approver"] },
+          { label: "All Pending", href: "/approvals/expenses/waiting", roles: OVERSIGHT },
           { label: "My Requests", href: "/approvals/expenses/mine" },
           { label: "Rejected Expenses", href: "/approvals/expenses/rejected" },
         ],

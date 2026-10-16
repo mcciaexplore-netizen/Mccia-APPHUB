@@ -48,7 +48,8 @@ const LIST_SCREENS: Record<string, ListScreen> = {
   "expenditures/rejected": { title: "Rejected Expenditure Requests", intro: "Expenditure requests that were rejected.", types: LARGE, statuses: ["rejected"], branch: true, categories: "expense" },
 
   "expenses/approved": { title: "Approved Expenses", intro: "Expenses below ₹10,000 that were approved.", types: SMALL, statuses: ["approved"], branch: true, vendor: true, categories: "expense" },
-  "expenses/pending": { title: "Pending", intro: "Expenses below ₹10,000 waiting for a decision.", types: SMALL, statuses: ["pending"], branch: true, vendor: true, categories: "expense" },
+  "expenses/pending": { title: "Pending", intro: "Expenses below ₹10,000 waiting for your decision.", types: SMALL, statuses: ["pending"], waitingForMe: true, quickDecide: true, branch: true, vendor: true, categories: "expense" },
+  "expenses/waiting": { title: "All Pending Expenses", intro: "All expenses below ₹10,000 still waiting for a decision.", types: SMALL, statuses: ["pending"], branch: true, vendor: true, categories: "expense" },
   "expenses/mine": { title: "My Requests", intro: "Expenses below ₹10,000 that you raised, with where each one stands.", types: SMALL, mine: true, branch: true, vendor: true, categories: "expense", newHref: "/approvals/expenses/new" },
   "expenses/rejected": { title: "Rejected Expenses", intro: "Expenses below ₹10,000 that were rejected.", types: SMALL, statuses: ["rejected"], branch: true, vendor: true, categories: "expense" },
 

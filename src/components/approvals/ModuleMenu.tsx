@@ -17,16 +17,15 @@ const off = "text-muted hover:bg-blue-tint hover:text-primary";
  * layout, outside this component, so a page that is not found or redirects still answers with a real 404 or redirect.
  */
 export function ModuleMenu({
-  roles, apps, unread, waiting,
-}: { roles: ApprovalsRole[]; apps: AppKey[]; unread: number; waiting: number }) {
+  roles, apps, unread, waiting, pendingForMe,
+}: { roles: ApprovalsRole[]; apps: AppKey[]; unread: number; waiting: number; pendingForMe: number }) {
   const pathname = usePathname();
   const appParam = useSearchParams().get("app");
   const app = approvalsApps.find((a) => a.key === resolveApp(pathname, appParam, roles, apps))!;
 
   // Only what this person's roles allow, and no section left empty. A section left with a single page (a plain requester's one form)
   // becomes that page's own tab, so there is no row of pages with one link in it.
-  // An application this person has not been given (they can still follow their own request) shows no menu at all.
-  const entries = (apps.includes(app.key) ? app.nav : [])
+  const entries = app.nav
     .map((e): NavEntry | null => {
       if (!canSee(e, roles)) return null;
       if (!isGroup(e)) return e;
@@ -44,9 +43,13 @@ export function ModuleMenu({
     .sort((a, b) => b.length - a.length)[0];
   const activeGroup = entries.find((e): e is NavGroup => isGroup(e) && e.items.some((i) => i.href === activeHref));
 
-  const badge = (label: string) => (label === "DG APPROVALS" && waiting > 0 ? (
-    <span className="ml-2 rounded-pill bg-brand-red px-1.5 text-[0.68rem] font-bold leading-5 text-white">{waiting > 99 ? "99+" : waiting}</span>
-  ) : null);
+  // The red count: what is waiting for the Director General on the Recommended Queue, and what is waiting for an approver on their pending page.
+  const pill = (n: number) => <span className="ml-2 rounded-pill bg-brand-red px-1.5 text-[0.68rem] font-bold leading-5 text-white">{n > 99 ? "99+" : n}</span>;
+  const badge = (label: string) => {
+    if (label === "Recommended Queue" && waiting > 0) return pill(waiting);
+    if ((label === "Pending Approvals" || label === "Waiting for Me") && pendingForMe > 0) return pill(pendingForMe);
+    return null;
+  };
 
   return (
     <>
@@ -59,7 +62,7 @@ export function ModuleMenu({
         {entries.map((e) => {
           if (isGroup(e)) {
             return (
-              <Link key={e.label} href={e.items[0].href!} aria-current={e === activeGroup ? "true" : undefined} className={`${TAB} ${e === activeGroup ? on : off}`}>{e.label}</Link>
+              <Link key={e.label} href={e.items[0].href!} aria-current={e === activeGroup ? "true" : undefined} className={`${TAB} ${e === activeGroup ? on : off}`}>{e.label}{e.items.map((i) => badge(i.label)).find(Boolean)}</Link>
             );
           }
           const item = e as NavItem;
@@ -85,7 +88,7 @@ export function ModuleMenu({
               key={i.href} href={i.href!} aria-current={i.href === activeHref ? "page" : undefined}
               className={`whitespace-nowrap rounded-pill px-3.5 py-1.5 text-[0.82rem] transition-colors duration-200 ${i.href === activeHref ? "bg-primary font-semibold text-white" : "text-muted hover:bg-blue-tint hover:text-primary"}`}
             >
-              {i.label}
+              {i.label}{badge(i.label)}
             </Link>
           ))}
         </nav>

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { assertAppForType, ok, readJson, route } from "@/lib/approvals/guard";
+import { ok, readJson, route } from "@/lib/approvals/guard";
 import { rateLimit } from "@/lib/approvals/ratelimit";
 import { submitExpenditure, submitHrRequest } from "@/lib/approvals/requests";
 import { hrRequestInput, largeExpenditureInput, smallExpenditureInput } from "@/lib/approvals/request-schemas";
@@ -16,7 +16,6 @@ const body = z.discriminatedUnion("kind", [
 export const POST = route({}, async ({ req, user }) => {
   await rateLimit("submit", user.id, 30, 600);
   const input = await readJson(req, body);
-  assertAppForType(user, input.kind === "hr" ? "hr" : input.kind === "large" ? "expenditure_large" : "expenditure_small");
   const made = input.kind === "hr" ? await submitHrRequest(input, user) : await submitExpenditure(input.kind, input, user);
   return ok(made, 201);
 });

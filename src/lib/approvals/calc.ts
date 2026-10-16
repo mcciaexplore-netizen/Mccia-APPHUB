@@ -52,7 +52,8 @@ export const formFor = (amountPaise: number, thresholdPaise: number): Expenditur
 
 /** The message for an amount typed into the wrong expenditure form, or null when it belongs. The page adds the link to the other form. */
 export function wrongFormMessage(form: ExpenditureForm, amountPaise: number | null, thresholdPaise: number): string | null {
-  if (amountPaise == null || amountPaise <= 0) return null;
+  if (amountPaise == null) return null;
+  if (amountPaise <= 0) return "Please enter a valid amount greater than ₹0.";
   const limit = formatINR(thresholdPaise, { symbol: true }).replace(/\.00$/, "");
   if (form === "small" && amountPaise >= thresholdPaise) return `Amounts of ${limit} and above must be submitted through DG Expenditure Approval.`;
   if (form === "large" && amountPaise < thresholdPaise) return `Amounts below ${limit} must be submitted through the Expenses form.`;
@@ -70,7 +71,8 @@ export type RuleLike = {
   active: boolean;
 };
 type PlannedStep = { stepNo: number; stepLabel: string; approverUserId: string };
-export type StepPlan = { steps: PlannedStep[]; problem: null } | { steps: []; problem: "no-approver" | "only-self" | "same-approver" };
+type StepPlanProblem = "no-approver" | "only-self" | "same-approver" | "requester-is-dg";
+export type StepPlan = { steps: PlannedStep[]; problem: null } | { steps: []; problem: StepPlanProblem };
 
 /** Who decides a request when the person who would normally approve it is the one who raised it: the Director General. */
 export type Escalation = { approverUserId: string; stepLabel: string };
@@ -112,14 +114,20 @@ export function planSteps(rules: readonly RuleLike[], requesterUserId: string, a
   if (steps.length === 0 && droppedForRequester && escalation && escalation.approverUserId !== requesterUserId) {
     steps.push({ stepNo: 1, stepLabel: escalation.stepLabel, approverUserId: escalation.approverUserId });
   }
-  if (steps.length === 0) return { steps: [], problem: "only-self" };
+  if (steps.length === 0) {
+    // The Director General raised it themselves and there is nobody else to hand it to (the hand-over above refuses to give it back to them).
+    if (droppedForRequester && escalation && escalation.approverUserId === requesterUserId) return { steps: [], problem: "requester-is-dg" };
+    return { steps: [], problem: "only-self" };
+  }
   if (new Set(steps.map((s) => s.approverUserId)).size !== steps.length) return { steps: [], problem: "same-approver" };
   return { steps, problem: null };
 }
 
-export const planProblemMessage = (p: "no-approver" | "only-self" | "same-approver"): string =>
+export const planProblemMessage = (p: StepPlanProblem): string =>
   p === "no-approver"
     ? "No approver has been set up for this kind of request yet. Ask an Approvals admin to name one under Approver Rules."
+    : p === "requester-is-dg"
+      ? "You are the Director General and also the requester, so this request cannot be routed. Ask the Support Admin to assign a temporary approver for this request."
     : p === "only-self"
       ? "You are the only approver set up for this kind of request, and nobody can approve their own request. Ask an Approvals admin to name someone else."
       : "The same person is named on more than one approval step for this kind of request. The first approver and the Director General must be different people. Ask an Approvals admin to fix Approver Rules.";

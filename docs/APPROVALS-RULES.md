@@ -29,7 +29,7 @@ The button names say what the decision means:
 | The DG, at the last step | **Final approve** | **Final reject** |
 | Only one step (expense below the threshold) | **Approve** (final) | Reject |
 
-Lists: a first approver has **Recommended** (what they sent on) and **Rejected Forms**; the DG's list is the **Recommended Queue**, with **Rejected Forms** and **Completed by me**. The DG has no all-requests lists, timelines, reports, budgets or export.
+Lists: in Expenditure an approver's own page is **Waiting for Me** (only the expenses waiting for them, decided in place) and an oversight account has **All Pending** (every pending expense below the threshold). The menu shows a red count on the pages that hold what is waiting for you (the DG's Recommended Queue, an approver's Pending Approvals or Waiting for Me). A first approver has **Recommended** (what they sent on) and **Rejected Forms**; the DG's list is the **Recommended Queue**, with **Rejected Forms** and **Completed by me**. The DG has no all-requests lists, timelines, reports, budgets or export.
 
 | Action | Needs a comment | What happens |
 |---|---|---|
@@ -50,7 +50,7 @@ Lists: a first approver has **Recommended** (what they sent on) and **Rejected F
 
 ## Who may open the two applications
 
-HR Approval and Expenditure Approval are applications in the hub (category Approval System) that the Support Admin ticks per person; see `docs/ROLES.md`. Approvers, the DG, viewers and the Approvals admin open both without a tick. A request is refused (403) unless its application was given: HR and expenditure of the threshold and above need HR Approval, an expense below it needs Expenditure Approval.
+The forms to raise a request (HR, Expenses, DG Expenditure) are open to everyone who signs in, through the two cards at the top of the home page. HR Approval and Expenditure Approval are also applications in the hub (category Approval System) that the Support Admin ticks per person; for now a tick only decides whether that application's item shows in the person's sidebar. See `docs/ROLES.md`.
 
 ## Putting it live (order matters)
 

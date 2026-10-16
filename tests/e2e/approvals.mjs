@@ -140,7 +140,7 @@ try {
   check("it opens inside the hub: the hub sidebar is still there and the application is titled Expenditure", (await A.locator("main h1").first().innerText()) === "Expenditure" && (await A.locator("aside:visible nav", { hasText: "Administrator" }).count()) >= 1);
   check("the hub sidebar's Approval System dropdown lists HR Approval and Expenditure, and marks the one you are in", (await hubApps(A).allInnerTexts()).map((t) => t.trim()).join("|") === "HR Approval|Expenditure" && (await hubApps(A).nth(1).getAttribute("aria-current")) === "page");
   const expMenu = await fullMenu(A);
-  check("Expenditure shows Expenses and Approvals (with Pending, My Requests, Rejected Expenses)", ["Expenses", "Approvals", "Approved Expenses", "Pending", "My Requests", "Rejected Expenses"].every((t) => expMenu.includes(t)), expMenu.replace(/\s+/g, " ").slice(0, 160));
+  check("Expenditure shows Expenses and Approvals (with All Pending, My Requests, Rejected Expenses)", ["Expenses", "Approvals", "Approved Expenses", "All Pending", "My Requests", "Rejected Expenses"].every((t) => expMenu.includes(t)), expMenu.replace(/\s+/g, " ").slice(0, 160));
   await hubApps(A).nth(0).click();
   await A.waitForURL(/\/approvals\/hr\/new$/);
   check("clicking HR Approval in the dropdown opens it beside the sidebar, titled HR Approval (not DG Approval)", (await A.locator("main h1").first().innerText()) === "HR Approval" && (await hubApps(A).nth(0).getAttribute("aria-current")) === "page");
@@ -286,12 +286,11 @@ try {
   check("taking it away closes the page again", (await status(M, "/approvals/budgets")) === 404);
   check("and the lists and the export close with it: forms only again", (await status(M, "/approvals/hr/all")) === 404 && (await M.request.get(`${BASE}/api/approvals/requests/export?screen=hr/all`)).status() === 403 && (await status(M, "/approvals/hr/new")) === 200);
 
-  section("10. Approvals opens for a person only when the Support Admin has given them an application");
+  section("10. The forms are for everyone who signs in; a person with nothing ticked just has no Approval System item in the sidebar");
   const out = await newSession();
   await signIn(out.page, OUTSIDER.email, OUTSIDER.pw);
-  check("a second ordinary person, with neither application ticked, finds neither /approvals nor its forms", (await status(out.page, "/approvals")) === 404 && (await status(out.page, "/approvals/hr/new")) === 404 && (await status(out.page, "/approvals/expenses/new")) === 404);
-  await sql`insert into user_app_access (user_id, app_id) select (select id from users where email = ${OUTSIDER.email}), id from apps where url = '/approvals/expenses/new' on conflict do nothing`;
-  check("once Expenditure Approval is ticked for them, /approvals and the Expenses form open, and the HR form still does not", (await status(out.page, "/approvals")) === 200 && (await status(out.page, "/approvals/expenses/new")) === 200 && (await status(out.page, "/approvals/hr/new")) === 404);
+  check("a second ordinary person, with neither application ticked, can open /approvals and both forms", (await status(out.page, "/approvals")) === 200 && (await status(out.page, "/approvals/hr/new")) === 200 && (await status(out.page, "/approvals/expenses/new")) === 200 && (await status(out.page, "/approvals/expenditures/new")) === 200);
+  check("with nothing ticked the forms are all they have: no Approval System item in the sidebar, no lists", (await out.page.locator("aside").first().getByRole("button", { name: "Approval System" }).count()) === 0 && (await status(out.page, "/approvals/hr/all")) === 404);
   check("the API answers them (they read the dropdown lists)", (await out.page.request.get(`${BASE}/api/approvals/masters/categories`)).status() === 200);
   check("but the admin pages stay closed to them", (await status(out.page, "/approvals/admin/categories")) === 404);
 

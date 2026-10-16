@@ -208,7 +208,7 @@ try {
   check("a person not in the hub list is refused", (await refused(() => R.submitExpenditure("small", smallIn(100_000, { employeeUserId: randomUUID() }), req)))?.status === 400);
 
   /* ------------------------------------------------------------------ routing edge cases */
-  check("the DG raising an HR request while being its only approver is stopped with the reason", /nobody can approve their own request/.test((await refused(() => R.submitHrRequest(hr(), dg)))?.message ?? ""));
+  check("the DG raising an HR request while being its only approver is stopped with the reason", /Director General and also the requester/.test((await refused(() => R.submitHrRequest(hr(), dg)))?.message ?? ""));
   await db.update(T.aprApproverRules).set({ approverUserIds: [] }).where(eq(T.aprApproverRules.requestType, "expenditure_small"));
   check("with nobody named the request cannot be submitted, and says why", /No approver has been set up/.test((await refused(() => R.submitExpenditure("small", smallIn(100_000), req)))?.message ?? ""));
   check("and no half-saved request is left behind", (await db.select().from(T.aprRequests).where(eq(T.aprRequests.status, "draft"))).length === 0);
@@ -505,6 +505,7 @@ try {
   const hrMoneyDetails = (await db.select().from(T.aprHrDetails).where(eq(T.aprHrDetails.requestId, hrMoney.id)))[0];
   check("an HR request with an amount stores its branch, category and the budget picture", hrMoneyDetails.branchId === branch.id && hrMoneyDetails.budgetCategoryId === cat2.id && hrMoneyDetails.budgetAvailablePaise === 10_000_000 - before.spentPaise);
   check("it is not over budget, and it shows as pending against that budget", hrMoneyRow.overBudget === false && (await pos2()).pendingPaise === before.pendingPaise + 4_000_000);
+  check("the branch filter finds an HR request that carries a branch, as well as the expenditures", (await Q.listRequests(viewer, { branchId: branch.id })).rows.some((r) => r.id === hrMoney.id));
   const hrMoneyDetail = await Q.getRequestDetail(hrMoney.id, satav);
   check("the detail page carries the budget for an HR request", hrMoneyDetail?.hr?.budget?.snapshot.allocatedPaise === 10_000_000 && hrMoneyDetail.hr.branchName === "ZZ Int Branch" && hrMoneyDetail.hr.budgetCategoryName === "ZZ Int Category Two");
   await R.decideRequest(hrMoney.id, { action: "approve", comment: null }, satav);
@@ -512,6 +513,11 @@ try {
   check("once approved it counts as spent", (await pos2()).spentPaise === before.spentPaise + 4_000_000);
   const hrOver = await R.submitHrRequest(hr({ lastName: "Over", amountPaise: 9_000_000, branchId: branch.id, budgetCategoryId: cat2.id }), req);
   check("an HR amount beyond what is left is flagged, not blocked", (await row(hrOver.id)).overBudget === true);
+  // An old request with no financial year stored is judged on the year it was raised in, not waved through
+  await db.update(T.aprRequests).set({ financialYear: null }).where(eq(T.aprRequests.id, hrOver.id));
+  await db.update(T.aprRequests).set({ overBudget: false }).where(eq(T.aprRequests.id, hrOver.id));
+  const noYearNoComment = await refused(() => R.decideRequest(hrOver.id, { action: "approve", comment: null }, satav));
+  check("a request with no stored financial year is still checked against the budget when it is decided", noYearNoComment?.status === 422 && /over budget/.test(noYearNoComment.message), noYearNoComment);
   const hrOverNoComment = await refused(() => R.decideRequest(hrOver.id, { action: "approve", comment: null }, satav));
   check("approving it needs a comment, as for an expenditure", hrOverNoComment?.status === 422 && /over budget/.test(hrOverNoComment.message), hrOverNoComment);
   check("with a comment it goes through", (await R.decideRequest(hrOver.id, { action: "approve", comment: "approved by exception" }, satav)).status === "pending");
@@ -579,7 +585,6 @@ try {
   // Which Approval System applications a person may open: ticked in the hub's application list, or both for people with full access
   const Host = await import("../src/lib/approvals/host-adapter");
   const { APP_ENTRY, appsFor } = await import("../src/lib/approvals/approvals.manifest");
-  const Guard = await import("../src/lib/approvals/guard");
   const appRow = async (urlPath: string, name: string) => {
     const [have] = await db.select({ id: hubApps.id, isActive: hubApps.isActive, departmentId: hubApps.departmentId }).from(hubApps).where(eq(hubApps.url, urlPath));
     if (have) return { ...have, made: false };
@@ -606,7 +611,6 @@ try {
   await db.update(hubDepartments).set({ isActive: false }).where(eq(hubDepartments.id, expApp.departmentId));
   check("and neither is one whose category is switched off", !(await openTo(bothTicked)).includes("exp"));
   await db.update(hubDepartments).set({ isActive: true }).where(eq(hubDepartments.id, expApp.departmentId));
-  check("a request is refused when its application has not been given: HR and a large expenditure need HR Approval, a small expense needs Expenditure", (await refused(async () => Guard.assertAppForType({ apps: ["exp"] }, "hr")))?.status === 403 && (await refused(async () => Guard.assertAppForType({ apps: ["exp"] }, "expenditure_large")))?.status === 403 && (await refused(async () => Guard.assertAppForType({ apps: ["hr"] }, "expenditure_small")))?.status === 403 && (await refused(async () => Guard.assertAppForType({ apps: ["hr", "exp"] }, "expenditure_small"))) === null);
   for (const a of [hrApp, expApp]) if (a.made) await db.delete(hubApps).where(eq(hubApps.id, a.id));
   await db.delete(hubDepartments).where(eq(hubDepartments.name, "ZZ Int Approval System"));
   for (const k of ["SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD", "HR_ADMIN_EMAIL", "HR_ADMIN_PASSWORD", "HR_ADMIN_NAME", "EXPENDITURE_ADMIN_EMAIL", "EXPENDITURE_ADMIN_PASSWORD"]) delete process.env[k];

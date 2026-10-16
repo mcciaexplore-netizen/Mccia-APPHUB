@@ -355,7 +355,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
       <MoneyInput id="ex-amount" value={amount} onChange={setAmount} invalid={!!errors.amount} />
       {wrong && (
         <p className="apr-notice apr-notice-red mt-2" role="alert">
-          {wrong} <Link href={otherHref} className="apr-link">{large ? "Open the Expenses form" : "Open the DG Expenditure form"}</Link> with your details filled in.
+          {wrong}{amountPaise != null && amountPaise > 0 && <> <Link href={otherHref} className="apr-link">{large ? "Open the Expenses form" : "Open the DG Expenditure form"}</Link> with your details filled in.</>}
         </p>
       )}
     </Row>

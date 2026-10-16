@@ -109,7 +109,7 @@ function conditions(user: ApprovalsUser, f: ListFilter): SQL | undefined {
     f.from && /^\d{4}-\d{2}-\d{2}$/.test(f.from) ? gte(aprRequests.requestedAt, istStart(f.from)) : undefined,
     toExclusive ? lt(aprRequests.requestedAt, toExclusive) : undefined,
     f.categoryId ? or(eq(aprExpenditureDetails.categoryId, f.categoryId), eq(aprHrDetails.hrCategoryId, f.categoryId)) : undefined,
-    f.branchId ? eq(aprExpenditureDetails.branchId, f.branchId) : undefined,
+    f.branchId ? or(eq(aprExpenditureDetails.branchId, f.branchId), eq(aprHrDetails.branchId, f.branchId)) : undefined,
     f.mine ? eq(aprRequests.requesterUserId, user.id) : undefined,
     f.waitingForMe ? and(eq(aprRequests.status, "pending"), eq(aprRequests.currentApproverUserId, user.id)) : undefined,
     f.decidedByMe

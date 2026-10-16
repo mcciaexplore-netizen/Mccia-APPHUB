@@ -7,5 +7,10 @@ export const metadata = { title: "Notifications · MCCIA App Hub" };
 /** The administrator's own notifications: requests waiting for them, access and role changes, and decisions on their requests. */
 export default async function Page() {
   const me = await requireAdministrator();
-  return <NotificationList items={await noticeFeed(me.id)} />;
+  return (
+    <>
+      <h2 className="mb-5 text-xl">Notifications Panel</h2>
+      <NotificationList items={await noticeFeed(me.id)} />
+    </>
+  );
 }

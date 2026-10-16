@@ -205,6 +205,8 @@ try {
   await dp.goto(BASE + "/approvals/inbox");
   check("the request is in the DG's inbox", (await dp.locator("main").first().innerText()).includes(hrReq.request_no));
   check("the DG's application menu shows the Recommended Queue", (await dp.locator("main nav").first().innerText()).includes("Recommended Queue"));
+  await dp.locator("main nav").first().getByText(/Recommended Queue\s*[1-9]/).waitFor({ timeout: 15000 }).catch(() => {});
+  check("and its tab carries a red count of what is waiting for them", /Recommended Queue\s*[1-9]/.test(await dp.locator("main nav").first().innerText()));
   await dp.goto(BASE + `/approvals/requests/${hrId}`);
   check("the DG sees the Approve and Reject buttons", (await dp.getByRole("button", { name: "Approve", exact: true }).count()) === 1 && (await dp.getByRole("button", { name: "Reject", exact: true }).count()) === 1);
   await dp.getByRole("button", { name: "Approve", exact: true }).click();
@@ -288,6 +290,10 @@ try {
   check("a 5,000 expense is accepted with an EXB number", small.status === 201 && /^EXB-\d{4}-\d{2}-\d{4}$/.test(small.json.requestNo), small.json.requestNo ?? small.json.error);
   check("it went to the below-10k approver, not the DG", (await sql`select current_approver_user_id from apr_requests where id = ${small.json.id}`)[0].current_approver_user_id === ids.small);
   check("the DG cannot decide it", (await post(D.page, `/api/approvals/requests/${small.json.id}/decision`, { action: "approve" })).status() === 403);
+  await S.page.goto(BASE + "/approvals/expenses/pending");
+  await S.page.locator('main nav[aria-label="Approvals pages"]').waitFor({ timeout: 15000 }).catch(() => {}); // the menu is drawn by the browser, a moment after the page
+  check("the below-10k approver's own list, Waiting for Me, holds this expense, with a red count on the tab and on the page's link", (await S.page.locator("main").first().innerText()).includes(small.json.requestNo) && /Approvals\s*[1-9]/.test(await S.page.locator("main nav").first().innerText()) && /Waiting for Me\s*[1-9]/.test(await S.page.locator('main nav[aria-label="Approvals pages"]').innerText()), JSON.stringify([(await S.page.locator("main").first().innerText()).includes(small.json.requestNo), await S.page.locator("main nav").first().innerText(), await S.page.locator("main nav").allInnerTexts()]));
+  check("it is not an oversight page: the admin has no Waiting for Me, and sees every pending small expense under All Pending instead", (await status(A.page, "/approvals/expenses/pending")) === 404 && (await status(A.page, "/approvals/expenses/waiting")) === 200 && (await A.page.locator("main").first().innerText()).includes(small.json.requestNo));
   check("the category is already overspent, so the expense is flagged and its approver needs a comment", (await sql`select over_budget from apr_requests where id = ${small.json.id}`)[0].over_budget === true && (await post(S.page, `/api/approvals/requests/${small.json.id}/decision`, { action: "approve" })).status() === 422);
   check("with a comment the below-10k approver can approve it", (await post(S.page, `/api/approvals/requests/${small.json.id}/decision`, { action: "approve", comment: "within the overall budget" })).status() === 200);
   check("a future tax invoice date is refused", (await submitWith(R.page, { kind: "small", employeeUserId: ids.req, email: PEOPLE.req.email, ...common(branch.id, cat.id), amountPaise: 100000, vendorName: "V", taxInvoiceDate: "2099-01-01" })).status === 400);
@@ -296,7 +302,7 @@ try {
 
   section("11. Nobody approves their own request; two clicks at once");
   const self = await submitWith(D.page, { kind: "hr", firstName: "ZZ", lastName: "Dg", hrCategoryId: hrCat.id });
-  check("the DG raising an HR request when they are the only approver is stopped with a reason", self.status === 409 && /nobody can approve their own request/.test(self.json.error), self.json.error);
+  check("the DG raising an HR request when they are the only approver is stopped with a reason", self.status === 409 && /Director General and also the requester/.test(self.json.error), self.json.error);
   const race = await submitWith(R.page, { kind: "hr", firstName: "ZZ", lastName: "Race", hrCategoryId: hrCat.id });
   const [r1, r2] = await Promise.all([
     post(D.page, `/api/approvals/requests/${race.json.id}/decision`, { action: "approve" }),

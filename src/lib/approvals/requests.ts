@@ -267,9 +267,10 @@ export async function decideRequest(requestId: string, input: { action: "approve
 
   // Over budget is judged again now, as well as when it was submitted: the budget may have changed since.
   let overBudget = req.overBudget;
-  if (!overBudget && req.financialYear && req.amountPaise != null) {
+  const fy = req.financialYear ?? financialYearOf(req.requestedAt); // an old request without a stored year is judged on the year it was raised in
+  if (!overBudget && fy && req.amountPaise != null) {
     const key = await budgetKeyOf(requestId, req.type);
-    if (key) overBudget = assessBudget(await budgetPosition(req.financialYear, key.branchId, key.categoryId), req.amountPaise).overBudget;
+    if (key) overBudget = assessBudget(await budgetPosition(fy, key.branchId, key.categoryId), req.amountPaise).overBudget;
   }
   if (commentRequired(input.action, overBudget) && !input.comment) {
     throw new ApprovalsError(
