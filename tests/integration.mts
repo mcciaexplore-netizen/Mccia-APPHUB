@@ -618,6 +618,18 @@ try {
   check("with the extra fields gone a request needs no answers and keeps none", (await row(plain.id)).customValues.length === 0);
   await db.delete(T.aprFormFields);
 
+  // The HR and Expenditure places under Approval System: who has which, and what the three lists hold
+  const itemKeys = async (a: Actor) => (await Q.reviewItemsFor(a)).map((i) => i.key).join();
+  check("the HR reviewer has the HR place only, the DG both, an overseer both, and someone who approves nothing none", (await itemKeys(mainHr)) === "hr" && (await itemKeys(dgActor)) === "hr,expenditure" && (await itemKeys(viewer)) === "hr,expenditure" && (await itemKeys(req)) === "");
+  const reviewHr = await R.submitHrRequest(hr({ lastName: "ReviewList" }), submitter);
+  const waitFor = async (a: Actor) => (await Q.reviewItemsFor(a)).find((i) => i.key === "hr")?.waiting ?? 0;
+  check("a request waiting for the HR reviewer is counted in their HR place and is in their Pending list", (await waitFor(mainHr)) >= 1 && (await Q.listRequests(mainHr, { types: ["hr"], statuses: ["pending"], waitingForMe: true })).rows.some((r) => r.id === reviewHr.id));
+  await R.decideRequest(reviewHr.id, { action: "approve", comment: null }, mainHr);
+  check("once the reviewer recommends it, it is in their Approved list (approved at their step) and no longer Pending for them", (await Q.listRequests(mainHr, { types: ["hr"], approvedByMe: true })).rows.some((r) => r.id === reviewHr.id) && !(await Q.listRequests(mainHr, { types: ["hr"], waitingForMe: true })).rows.some((r) => r.id === reviewHr.id));
+  check("it is waiting for the DG now, so it is in the DG's Pending, not yet in their Approved", (await Q.listRequests(dgActor, { types: ["hr"], waitingForMe: true })).rows.some((r) => r.id === reviewHr.id) && !(await Q.listRequests(dgActor, { types: ["hr"], approvedByMe: true })).rows.some((r) => r.id === reviewHr.id));
+  await R.decideRequest(reviewHr.id, { action: "reject", comment: "Not needed" }, dgActor);
+  check("a rejection by the DG is in their Rejected list and not in their Approved list; HR's Approved list still shows what HR recommended", (await Q.listRequests(dgActor, { types: ["hr"], rejectedByMe: true })).rows.some((r) => r.id === reviewHr.id) && !(await Q.listRequests(dgActor, { types: ["hr"], approvedByMe: true })).rows.some((r) => r.id === reviewHr.id) && (await Q.listRequests(mainHr, { types: ["hr"], approvedByMe: true })).rows.some((r) => r.id === reviewHr.id));
+
   for (const k of ["SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD", "HR_ADMIN_EMAIL", "HR_ADMIN_PASSWORD", "HR_ADMIN_NAME", "EXPENDITURE_ADMIN_EMAIL", "EXPENDITURE_ADMIN_PASSWORD"]) delete process.env[k];
   await db.delete(T.aprSettings).where(eq(T.aprSettings.key, MARKER));
   if (savedMarker.length) await db.insert(T.aprSettings).values(savedMarker).onConflictDoNothing();

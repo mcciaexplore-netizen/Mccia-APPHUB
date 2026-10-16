@@ -22,7 +22,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
   const path = `/approvals/${slug}`;
   const [{ rows, total, page, pageSize }, hrCats, expCats, branches] = await Promise.all([
     listRequests(user, {
-      types: screen.types, statuses: params.status ? [params.status as AprRequestStatus] : screen.statuses, mine: screen.mine, waitingForMe: screen.waitingForMe, decidedByMe: screen.decidedByMe, recommendedByMe: screen.recommendedByMe, rejectedByMe: screen.rejectedByMe,
+      types: screen.types, statuses: params.status ? [params.status as AprRequestStatus] : screen.statuses, mine: screen.mine, waitingForMe: screen.waitingForMe, decidedByMe: screen.decidedByMe, recommendedByMe: screen.recommendedByMe, rejectedByMe: screen.rejectedByMe, approvedByMe: screen.approvedByMe,
       q: params.q, from: params.from, to: params.to, categoryId: params.categoryId, branchId: params.branchId, sort: params.sort, dir: params.dir, page: params.page,
     }),
     screen.categories !== "expense" ? listMaster("hr-categories", true) : Promise.resolve([]),

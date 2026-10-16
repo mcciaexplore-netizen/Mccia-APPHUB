@@ -492,6 +492,36 @@ try {
   await R.page.goto(BASE + "/approvals/hr/new");
   check("with the setting removed the form is back to its own fields", (await R.page.getByText("ZZ Employee code").count()) === 0);
 
+  section("16g. Approval System: HR and Expenditure open under it for approvers, each with Pending, Approved and Rejected");
+  const place = (page, key) => page.locator(`aside a[href="/approvals/review/${key}/pending"]`);
+  await S.page.goto(BASE + "/approvals");
+  check("the Approval System page itself is the same cards for the Expenditure approver, with Expenditure (and not HR) opened under it in the sidebar", (await S.page.getByRole("link", { name: /Approval Form/ }).count()) === 2 && (await place(S.page, "expenditure").count()) >= 1 && (await place(S.page, "hr").count()) === 0);
+  const small16 = await submitWith(R.page, { kind: "small", employeeUserId: ids.req, email: PEOPLE.req.email, ...common(branch.id, cat.id), amountPaise: 150000, vendorName: "ZZ Review Vendor", expenseDate: "2026-04-10", taxInvoiceDate: "2026-04-09" });
+  check("an expense is raised for the Expenditure approver", small16.status === 201, small16.json.error);
+  await place(S.page, "expenditure").first().click();
+  await S.page.waitForURL(/\/approvals\/review\/expenditure\/pending/);
+  const tabsNav = S.page.locator('nav[aria-label="Expenditure lists"]');
+  check("the Expenditure place has three tabs: Pending, Approved and Rejected", (await tabsNav.locator("a").allInnerTexts()).map((t) => t.replace(/\s*\d+$/, "").trim()).join("|") === "Pending|Approved|Rejected");
+  check("the request is in Pending, with Approve and Reject on its row", (await S.page.locator("main").first().innerText()).includes(small16.json.requestNo) && (await S.page.locator("tr", { hasText: small16.json.requestNo }).getByRole("button", { name: "Approve" }).count()) === 1 && (await S.page.locator("tr", { hasText: small16.json.requestNo }).getByRole("button", { name: "Reject" }).count()) === 1);
+  await S.page.goto(BASE + "/approvals/review/expenditure/approved");
+  check("it is not in Approved yet", !(await S.page.locator("main").first().innerText()).includes(small16.json.requestNo));
+  check("the approver decides it from the request page (a comment, because the budget is used up)", (await post(S.page, `/api/approvals/requests/${small16.json.id}/decision`, { action: "approve", comment: "fine" })).status() === 200);
+  await S.page.goto(BASE + "/approvals/review/expenditure/approved");
+  check("and now it is in Approved", (await S.page.locator("main").first().innerText()).includes(small16.json.requestNo));
+  check("the Expenditure approver has no HR place: its address is not found", (await status(S.page, "/approvals/review/hr/pending")) === 404);
+  const hr16 = await submitWith(R.page, { kind: "hr", firstName: "Hal", lastName: "Review", hrCategoryId: hrCat.id, custom: {} });
+  await D.page.goto(BASE + "/approvals");
+  check("the DG has both places under Approval System", (await place(D.page, "hr").count()) >= 1 && (await place(D.page, "expenditure").count()) >= 1);
+  await D.page.goto(BASE + "/approvals/review/hr/pending");
+  check("an HR request waiting for the DG is in the HR Pending list", hr16.status === 201 && (await D.page.locator("main").first().innerText()).includes(hr16.json.requestNo));
+  check("the DG's decision shows in their HR Rejected list", (await post(D.page, `/api/approvals/requests/${hr16.json.id}/decision`, { action: "reject", comment: "no" })).status() === 200 && (await (async () => { await D.page.goto(BASE + "/approvals/review/hr/rejected"); return (await D.page.locator("main").first().innerText()).includes(hr16.json.requestNo); })()));
+  await A.page.goto(BASE + "/approvals");
+  check("the Support Admin, who oversees everything, has both places", (await place(A.page, "hr").count()) >= 1 && (await place(A.page, "expenditure").count()) >= 1);
+  await A.page.goto(BASE + "/approvals/review/hr/rejected");
+  check("their Rejected list is every rejected HR request, not only their own", (await A.page.locator("main").first().innerText()).includes(hr16.json.requestNo));
+  await O.page.goto(BASE + "/approvals");
+  check("someone who approves nothing has no places under Approval System and cannot open them", (await O.page.locator('aside a[href^="/approvals/review/"]').count()) === 0 && (await status(O.page, "/approvals/review/hr/pending")) === 404 && (await status(O.page, "/approvals/review/expenditure/approved")) === 404);
+
   section("17. Console and the seeded data");
   check("no browser console or page errors on any screen", consoleErrors.length === 0 && pageErrors.length === 0, [...consoleErrors, ...pageErrors].join(" | "));
 } catch (e) {

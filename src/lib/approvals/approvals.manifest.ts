@@ -180,6 +180,28 @@ function appOwning(pathname: string): AppKey | null {
   return best?.key ?? null;
 }
 
+/**
+ * The two places an approver works, under Approval System in the hub's sidebar: HR (the HR requests) and Expenditure (expenses of every size).
+ * Each has three lists, Pending, Approved and Rejected, at /approvals/review/<place>/<list>.
+ */
+export type ReviewKey = "hr" | "expenditure";
+export const REVIEW_KEYS: readonly ReviewKey[] = ["hr", "expenditure"];
+export const REVIEW_LABEL: Record<ReviewKey, string> = { hr: "HR", expenditure: "Expenditure" };
+export const REVIEW_TABS = ["pending", "approved", "rejected"] as const;
+export type ReviewTab = (typeof REVIEW_TABS)[number];
+export const REVIEW_TAB_LABEL: Record<ReviewTab, string> = { pending: "Pending", approved: "Approved", rejected: "Rejected" };
+/** What the sidebar needs for one of them: which, and how many requests wait for this person there. */
+export type ReviewItem = { key: ReviewKey; waiting: number };
+
+/** The place and list a path under /approvals/review/ names, or null. */
+export function parseReviewPath(parts: readonly string[]): { key: ReviewKey; tab: ReviewTab } | null {
+  const [head, key, tab, ...rest] = parts;
+  if (head !== "review" || rest.length > 0) return null;
+  const k = REVIEW_KEYS.find((x) => x === key);
+  const t = REVIEW_TABS.find((x) => x === tab);
+  return k && t ? { key: k, tab: t } : null;
+}
+
 /** The page each application opens on when it is chosen in the hub's sidebar. */
 export const APP_ENTRY: Record<AppKey, string> = { hr: "/approvals/hr/new", exp: "/approvals/expenses/new" };
 

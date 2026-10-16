@@ -15,8 +15,8 @@ import { scrub } from "../src/lib/scrub";
 import { xlsxToTable } from "../src/lib/xlsx-read";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
-  FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
-import { screenFor } from "../src/lib/approvals/screens";
+  FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, parseReviewPath, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
+import { resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import {
   assessBudget, budgetWarning, commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, percentUsed, planProblemMessage, planSteps, STATUS_LABEL, utilisationLevel, wrongFormMessage,
@@ -108,6 +108,13 @@ eq("a plain requester sees the forms only: HR and Expenditure in HR Approval, Ex
 eq("menu: in Expenditure an approver is offered 'Waiting for Me', an oversight role 'All Pending', and nobody gets the old 'Pending' that showed everything to everyone", [pagesOf(["requester", "approver"], "exp").includes("Waiting for Me"), pagesOf(["requester", "approver"], "exp").includes("All Pending"), pagesOf(["requester", "viewer"], "exp").includes("All Pending"), pagesOf(["requester", "viewer"], "exp").includes("Waiting for Me"), pagesOf(["requester", "approvals_admin"], "exp").includes("Pending")], [true, false, true, false, false]);
 eq("screens: 'expenses/pending' is each approver's own list (only what waits for them, decided in place) and 'expenses/waiting' is the list of every pending small expense", [screenFor(["expenses", "pending"])?.waitingForMe, screenFor(["expenses", "pending"])?.quickDecide, screenFor(["expenses", "waiting"])?.waitingForMe, screenFor(["expenses", "waiting"])?.statuses, screenFor(["expenses", "waiting"])?.types], [true, true, undefined, ["pending"], ["expenditure_small"]]);
 eq("full access still has the forms, and more", [FULL_ACCESS_ROLES.every((r) => pagesOf(["requester", r], "hr").includes("HR") && pagesOf(["requester", r], "exp").includes("Expenses")), pagesOf(["requester", "viewer"], "hr").length > 2], [true, true]);
+
+// Approvals: the HR and Expenditure places under Approval System, each with Pending, Approved and Rejected.
+eq("review: the path names a place and a list, and nothing else is one", [parseReviewPath(["review", "hr", "pending"]), parseReviewPath(["review", "expenditure", "rejected"]), parseReviewPath(["review", "hr"]), parseReviewPath(["review", "events", "pending"]), parseReviewPath(["review", "hr", "pending", "x"]), parseReviewPath(["hr", "pending"])], [{ key: "hr", tab: "pending" }, { key: "expenditure", tab: "rejected" }, null, null, null, null]);
+eq("review: for an approver, Pending is what waits for them, with Approve and Reject on each row", [reviewScreen("hr", "pending", true).waitingForMe, reviewScreen("hr", "pending", true).quickDecide, reviewScreen("hr", "pending", true).types, reviewScreen("expenditure", "pending", true).types], [true, true, ["hr"], ["expenditure_large", "expenditure_small"]]);
+eq("review: for an approver, Approved and Rejected are what they approved and what they rejected", [reviewScreen("hr", "approved", true).approvedByMe, reviewScreen("hr", "rejected", true).rejectedByMe, reviewScreen("hr", "approved", true).statuses], [true, true, undefined]);
+eq("review: for someone who only oversees, the three lists are every request of that kind by its status, with no buttons", [reviewScreen("expenditure", "pending", false).statuses, reviewScreen("expenditure", "approved", false).statuses, reviewScreen("expenditure", "rejected", false).statuses, reviewScreen("expenditure", "pending", false).quickDecide ?? false, reviewScreen("expenditure", "pending", false).waitingForMe ?? false], [["pending"], ["approved"], ["rejected"], false, false]);
+eq("review: a path resolves to its list, and the fixed lists still resolve", [resolveScreen(["review", "hr", "approved"], true)?.title, resolveScreen(["inbox"], true)?.title, resolveScreen(["review", "nope", "approved"], true)], ["Approved", "Recommended Queue", undefined]);
 
 // Approvals: the form layout the Support Admin sets (names, order, hidden fields, extra fields) and the answers to the extra fields.
 const row = (o: Partial<FormFieldRow> & { key: string }): FormFieldRow => ({ form: "hr", label: o.key, builtin: true, kind: "text", required: false, hidden: false, sortOrder: 0, options: [], ...o });

@@ -1,4 +1,5 @@
 import type { AprRequestStatus, AprRequestType } from "@/db/approvals-schema";
+import { parseReviewPath, type ReviewKey, type ReviewTab } from "./approvals.manifest";
 
 /**
  * The list screens in the sidebar, as data. Each one is the same table with a different starting filter, so one component renders
@@ -20,6 +21,8 @@ export type ListScreen = {
   recommendedByMe?: boolean;
   /** Only requests this person rejected. */
   rejectedByMe?: boolean;
+  /** Only requests this person approved (at any step, whether or not they went on to a later one). */
+  approvedByMe?: boolean;
   /** Show the Branch column (expenditure lists). */
   branch?: boolean;
   /** Show vendor and tax invoice date (the below-threshold approved list). */
@@ -64,3 +67,34 @@ const LIST_SCREENS: Record<string, ListScreen> = {
 };
 
 export const screenFor = (slug: string[]): ListScreen | undefined => LIST_SCREENS[slug.join("/")];
+
+const REVIEW_TYPES: Record<ReviewKey, AprRequestType[]> = { hr: HR, expenditure: ["expenditure_large", "expenditure_small"] };
+
+/**
+ * The three lists of HR and of Expenditure that an approver works from (Pending, Approved, Rejected). For someone who decides requests they
+ * are about the person's own work: what waits for them (with Approve and Reject on each row), what they approved and what they rejected.
+ * For someone who only oversees, they are every request of that kind by its status.
+ */
+export function reviewScreen(key: ReviewKey, tab: ReviewTab, decides: boolean): ListScreen {
+  const types = REVIEW_TYPES[key];
+  const common = { types, branch: true, categories: key === "hr" ? ("hr" as const) : ("expense" as const) };
+  if (tab === "pending") {
+    return decides
+      ? { ...common, title: "Pending", intro: "Waiting for your decision. Approve or Reject here, or open a request to see its files and budget first.", statuses: ["pending"], waitingForMe: true, quickDecide: true }
+      : { ...common, title: "Pending", intro: "Still waiting for a decision.", statuses: ["pending"] };
+  }
+  if (tab === "approved") {
+    return decides
+      ? { ...common, title: "Approved", intro: "Requests you approved. One you recommended to the Director General shows where it stands now.", approvedByMe: true }
+      : { ...common, title: "Approved", intro: "Requests that were approved.", statuses: ["approved"] };
+  }
+  return decides
+    ? { ...common, title: "Rejected", intro: "Requests you rejected.", rejectedByMe: true }
+    : { ...common, title: "Rejected", intro: "Requests that were rejected.", statuses: ["rejected"] };
+}
+
+/** The screen for a path, whichever kind it is: one of the fixed lists, or one of the Pending / Approved / Rejected lists of HR and Expenditure. */
+export function resolveScreen(slug: string[], decides: boolean): ListScreen | undefined {
+  const review = parseReviewPath(slug);
+  return review ? reviewScreen(review.key, review.tab, decides) : screenFor(slug);
+}

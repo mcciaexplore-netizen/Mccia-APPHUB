@@ -6,6 +6,7 @@ import { ModuleHeader } from "@/components/approvals/ModuleHeader";
 import { getVisibleDepartments } from "@/lib/access";
 import { requirePage } from "@/lib/approvals/guard";
 import { unreadCount } from "@/lib/approvals/notify";
+import { reviewItemsFor } from "@/lib/approvals/request-queries";
 import { requireUser } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
@@ -19,9 +20,9 @@ export const metadata = { title: "Approval System · MCCIA App Hub" };
 export default async function ApprovalsLayout({ children }: { children: React.ReactNode }) {
   const hubUser = await requireUser();
   const user = await requirePage();
-  const [departments, unread] = await Promise.all([getVisibleDepartments(hubUser), unreadCount(user.id)]);
+  const [departments, unread, review] = await Promise.all([getVisibleDepartments(hubUser), unreadCount(user.id), reviewItemsFor(user)]);
   return (
-    <HubShell user={{ name: hubUser.name, role: hubUser.role, adminAreas: hubUser.adminAreas }} departments={departments} showApprovals>
+    <HubShell user={{ name: hubUser.name, role: hubUser.role, adminAreas: hubUser.adminAreas }} departments={departments} showApprovals review={review}>
       <ConfirmProvider>
         <div className="apr-root">
           <Suspense fallback={null}>

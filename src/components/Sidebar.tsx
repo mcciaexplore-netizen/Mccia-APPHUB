@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { Activity, Bell, ChevronDown, ClipboardCheck, ClipboardList, LayoutDashboard, ShieldCheck, UsersRound, Users, X } from "lucide-react";
+import { Activity, Bell, ChevronDown, ClipboardCheck, ClipboardList, LayoutDashboard, ShieldCheck, UserCheck, UsersRound, Users, Wallet, X } from "lucide-react";
 import { lockAdmin } from "@/actions/auth";
 import { Icon } from "@/components/Icon";
 import { isSafetyWeek, playSafetyMascot } from "@/components/SafetyMascot";
 import type { Role } from "@/db/schema";
 import { adminTabsFor } from "@/lib/admin-tabs";
 import { canAdminister } from "@/lib/rbac";
+import { REVIEW_LABEL, type ReviewItem } from "@/lib/approvals/approvals.manifest";
 
 export type SidebarDept = { id: string; name: string; icon: string };
 export type SidebarUser = { name: string; role: Role; adminAreas?: readonly string[] };
@@ -38,14 +39,15 @@ const ADMIN_LINKS = [
 ] as const;
 
 export function Sidebar({
-  user, departments, showApprovals, onNavigate, onClose,
+  user, departments, showApprovals, review = [], onNavigate, onClose,
 }: {
-  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; onNavigate: () => void; onClose: () => void;
+  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; /** Where this person works under Approval System (HR, Expenditure), with what waits for them. */ review?: readonly ReviewItem[]; onNavigate: () => void; onClose: () => void;
 }) {
   const pathname = usePathname();
   const params = useSearchParams();
   const d = params.get("d");
   const inApprovals = pathname === "/approvals" || pathname.startsWith("/approvals/");
+  const onReview = pathname.startsWith("/approvals/review/");
   const onHome = pathname === "/";
   const inAdmin = pathname.startsWith("/administrator");
   const [adminOpen, setAdminOpen] = useState(inAdmin);
@@ -76,11 +78,29 @@ export function Sidebar({
             <span className="flex-1 py-2">{dep.name}</span>
           </Item>
         ))}
-        {/* Approval System is a feature of the hub, not an application in a department: one link, to its own section (the forms). */}
+        {/* Approval System is a feature of the hub, not an application in a department. It opens its own page (the forms); once you are in it,
+            the places you work in (HR, Expenditure) open under it, for people who approve requests. */}
         {showApprovals && (
-          <Item href="/approvals" active={inApprovals} onNavigate={onNavigate}>
-            <ClipboardList size={20} /> <span className="flex-1 py-2">Approval System</span>
-          </Item>
+          <div>
+            <Item href="/approvals" active={inApprovals && !onReview} onNavigate={onNavigate}>
+              <ClipboardList size={20} /> <span className="flex-1 py-2">Approval System</span>
+              {review.length > 0 && <ChevronDown size={16} aria-hidden className={`transition-transform duration-200 ${inApprovals ? "rotate-180" : ""}`} />}
+            </Item>
+            {inApprovals && review.length > 0 && (
+              <div className="ml-8 mr-3 mt-0.5 space-y-0.5 border-l border-line pl-2" aria-label="Approval System">
+                {review.map((r) => {
+                  const active = pathname.startsWith(`/approvals/review/${r.key}/`);
+                  return (
+                    <Link key={r.key} href={`/approvals/review/${r.key}/pending`} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`${SUB} ${subTone(active)}`}>
+                      {r.key === "hr" ? <UserCheck size={15} className="shrink-0" /> : <Wallet size={15} className="shrink-0" />}
+                      <span className="flex-1 whitespace-nowrap py-2">{REVIEW_LABEL[r.key]}</span>
+                      {r.waiting > 0 && <span className="rounded-pill bg-brand-red px-1.5 text-[0.68rem] font-bold leading-5 text-white">{r.waiting > 99 ? "99+" : r.waiting}</span>}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
         {user?.role === "dept_lead" && (
           <>

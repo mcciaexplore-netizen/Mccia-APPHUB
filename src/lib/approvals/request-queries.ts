@@ -2,11 +2,12 @@ import "server-only";
 import { and, asc, desc, eq, gte, ilike, inArray, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  aprApprovalEvents, aprAttachments, aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprPublicationTypes,
+  aprApprovalEvents, aprApproverRules, aprAttachments, aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprPublicationTypes,
   aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType,
 } from "@/db/approvals-schema";
 import { assessBudget, decisionMode, type BudgetAssessment, type DecisionMode } from "./calc";
 import { budgetPosition } from "./budget-position";
+import { REVIEW_KEYS, type ReviewItem } from "./approvals.manifest";
 import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
 import type { SortKey } from "./list-params";
 
@@ -52,6 +53,8 @@ export type ListFilter = {
   recommendedByMe?: boolean;
   /** Only requests this person rejected. */
   rejectedByMe?: boolean;
+  /** Only requests this person approved at some step. */
+  approvedByMe?: boolean;
   sort?: SortKey;
   dir?: "asc" | "desc";
   page?: number;
@@ -121,6 +124,9 @@ function conditions(user: ApprovalsUser, f: ListFilter): SQL | undefined {
     f.rejectedByMe
       ? sql`exists (select 1 from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id} and s.status = 'rejected')`
       : undefined,
+    f.approvedByMe
+      ? sql`exists (select 1 from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id} and s.status = 'approved')`
+      : undefined,
     needle
       ? or(
           ilike(aprRequests.requestNo, `%${likeEscape(needle)}%`),
@@ -171,6 +177,22 @@ export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Pro
       .where(where),
   ]);
   return { rows, total, page, pageSize };
+}
+
+/**
+ * The places an approver works under Approval System, with how many requests wait for them in each. HR for someone named on an HR step,
+ * Expenditure for someone named on an expenditure step (either size); people who oversee everything (viewers, the Approvals admin) get both.
+ * A person who approves nothing and oversees nothing gets none, and the sidebar shows no dropdown.
+ */
+export async function reviewItemsFor(user: ApprovalsUser): Promise<ReviewItem[]> {
+  const oversees = hasAnyRole(user, ["viewer", "approvals_admin"]);
+  const [steps, waiting] = await Promise.all([
+    oversees ? Promise.resolve([] as { type: AprRequestType }[]) : db.select({ type: aprApproverRules.requestType }).from(aprApproverRules).where(and(eq(aprApproverRules.active, true), sql`${user.id}::uuid = any(${aprApproverRules.approverUserIds})`)),
+    db.select({ type: aprRequests.type, n: sql<number>`count(*)::int` }).from(aprRequests).where(and(eq(aprRequests.status, "pending"), eq(aprRequests.currentApproverUserId, user.id))).groupBy(aprRequests.type),
+  ]);
+  const named = new Set(steps.map((s) => (s.type === "hr" ? "hr" : "expenditure")));
+  const count = (k: "hr" | "expenditure") => waiting.filter((w) => (w.type === "hr") === (k === "hr")).reduce((a, w) => a + w.n, 0);
+  return REVIEW_KEYS.filter((k) => oversees || named.has(k) || count(k) > 0).map((key) => ({ key, waiting: count(key) }));
 }
 
 /** How many requests are waiting for this person; for the badge on the inbox link. */
