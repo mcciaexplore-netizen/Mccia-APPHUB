@@ -9,7 +9,7 @@ export default async function Page() {
   const me = await requireAdministrator();
   return (
     <>
-      <h2 className="mb-5 text-xl">Notifications Panel</h2>
+      <h2 className="mb-5 text-xl">Notification Panel</h2>
       <NotificationList items={await noticeFeed(me.id)} />
     </>
   );

@@ -18,7 +18,7 @@ export type DirectoryProps = {
   base: string;
   result: { rows: PersonRow[]; total: number; pages: number; page: number };
   filters: PeopleFilters;
-  options: { branches: Option[]; departments: Option[]; teams: Option[]; apps: Option[]; managers: Manager[] };
+  options: { branches: Option[]; teams: Option[]; apps: Option[]; managers: Manager[] };
   catalog: Catalog;
   templates: Template[];
   caps: Capabilities;
@@ -114,7 +114,6 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
           <input className="input !py-2 !pl-10" placeholder="Search name, email or designation" value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
         {select("Filter by branch", "branch", filters.branchId, options.branches, "All branches")}
-        {select("Filter by department", "dept", filters.departmentId, options.departments, "All departments")}
         {select("Filter by team", "team", filters.teamId, options.teams, "All teams")}
         <select className="input !w-auto !py-2" aria-label="Filter by role" value={filters.role ?? ""} onChange={(e) => setParam("role", e.target.value)}>
           <option value="">All roles</option><option value="member">User</option><option value="dept_lead">Team manager</option><option value="admin">Admin</option><option value="super_admin">Super admin</option><option value="head_admin">Support admin</option>
@@ -170,9 +169,9 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
                 </td>
                 <td><span className={roleBadge[u.role]}>{roleLabel[u.role]}</span></td>
                 <td className="text-xs">
-                  {[u.branch, u.department, u.team].filter(Boolean).length === 0 && !u.manager ? <span className="text-subtle">—</span> : (
+                  {[u.branch, u.team].filter(Boolean).length === 0 && !u.manager ? <span className="text-subtle">—</span> : (
                     <>
-                      <span className="block">{[u.branch, u.department].filter(Boolean).join(" · ") || <span className="text-subtle">—</span>}</span>
+                      <span className="block">{u.branch || <span className="text-subtle">—</span>}</span>
                       {u.team && <span className="block text-muted">Team: {u.team}</span>}
                       {u.manager && <span className="block text-muted">Reports to {u.manager}</span>}
                     </>

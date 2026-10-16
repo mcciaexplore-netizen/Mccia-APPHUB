@@ -18,7 +18,7 @@ export function DepartmentsList({ departments }: { departments: Row[] }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-2xl text-sm text-muted">Application categories arrange the applications in the hub (for example Finance, CAR Booking, Inventory). They are not the organisation&apos;s departments: those are under <Link href="/administrator/org-departments" className="text-primary hover:underline">Departments</Link>. Open a category to manage its applications.</p>
+        <p className="max-w-2xl text-sm text-muted">Application categories arrange the applications in the hub (for example Finance, CAR Booking, Inventory). Open a category to manage its applications.</p>
         <button className="btn btn-primary btn-sm" onClick={() => setShowAdd((s) => !s)}><Plus size={14} /> Add category</button>
       </div>
 

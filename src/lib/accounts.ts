@@ -11,7 +11,7 @@ import { INVITE_HOURS } from "@/lib/invites";
  */
 export type NewAccount = {
   name: string; email: string; role: Exclude<Role, "head_admin">;
-  departmentId: string | null; branchId: string | null; teamId: string | null; managerId: string | null; designation: string | null;
+  branchId: string | null; teamId: string | null; managerId: string | null; designation: string | null;
   appIds: string[];
   /** A scrypt hash when the administrator chose to set the password; null when the person will choose their own. Never plaintext. */
   passwordHash: string | null;
@@ -32,8 +32,8 @@ export async function createAccount(actor: Pick<User, "id">, a: NewAccount): Pro
     : sql``;
   const res = (await db.execute(sql`
     with u as (
-      insert into users (name, email, role, home_department_id, branch_id, team_id, reporting_manager_id, designation, password_hash, signup_source, status, reviewed_at, reviewed_by_id)
-      values (${a.name}, ${a.email}, ${a.role}::role, ${a.departmentId}::uuid, ${a.branchId}::uuid, ${a.teamId}::uuid, ${a.managerId}::uuid, ${a.designation}, ${a.passwordHash}, ${a.source}, 'approved', now(), ${actor.id}::uuid)
+      insert into users (name, email, role, branch_id, team_id, reporting_manager_id, designation, password_hash, signup_source, status, reviewed_at, reviewed_by_id)
+      values (${a.name}, ${a.email}, ${a.role}::role, ${a.branchId}::uuid, ${a.teamId}::uuid, ${a.managerId}::uuid, ${a.designation}, ${a.passwordHash}, ${a.source}, 'approved', now(), ${actor.id}::uuid)
       on conflict (email) do nothing returning id
     ) ${grants} ${invite}
     select id from u`)) as unknown as { rows: { id: string }[] };

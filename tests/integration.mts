@@ -53,6 +53,7 @@ const FY = financialYearOf();
 const savedRules = await db.select().from(T.aprApproverRules);
 const savedCounters = await db.select().from(T.aprCounters);
 const savedSeedMarker = await db.select().from(T.aprSettings).where(eq(T.aprSettings.key, "env_rules_seeded"));
+const savedFormFields = await db.select().from(T.aprFormFields);
 const cleanup = async () => {
   const people = await db.select({ id: users.id }).from(users).where(like(users.email, "zz-int-%"));
   for (const p of people) {
@@ -580,6 +581,43 @@ try {
   const hrRejects = await R.submitHrRequest(hr({ lastName: "HrRejects" }), submitter);
   await R.decideRequest(hrRejects.id, { action: "reject", comment: "Not an HR matter" }, mainHr);
   check("a request HR rejects is in HR's Rejected list and never reaches the DG's queue", (await Q.listRequests(mainHr, { rejectedByMe: true })).rows.some((r) => r.id === hrRejects.id) && !(await Q.listRequests(dgActor, { waitingForMe: true })).rows.some((r) => r.id === hrRejects.id));
+  // The Approval Forms editor: the layout of a form, the extra fields, and the answers kept with each request
+  const FC = await import("../src/lib/approvals/form-config");
+  const FF = await import("../src/lib/approvals/form-fields");
+  await db.delete(T.aprFormFields);
+  const defaults = await FC.getFormFields("hr");
+  check("with nothing set, a form has its own fields in the default order", defaults.map((f) => f.key).join() === FF.BUILTIN.hr.map((d) => d.key).join() && defaults.every((f) => !f.hidden && f.builtin));
+  const asInput = (fs: typeof defaults) => fs.map((f) => ({ key: f.key, label: f.label, hidden: f.hidden, kind: f.kind ?? undefined, required: f.required, options: f.options }));
+  const layout = (...extra: { key?: string | null; label: string; kind: "text" | "select" | "number" | "date" | "textarea"; required?: boolean; options?: string[]; hidden?: boolean }[]) => ({
+    fields: [...asInput(defaults).map((f) => (f.key === "description" ? { ...f, label: "Details" } : f.key === "file2" ? { ...f, hidden: true } : f)), ...extra.map((e) => ({ required: false, options: [], hidden: false, key: null, ...e }))],
+  });
+  const saved1 = await FC.saveFormFields("hr", FC.saveFieldsInput.parse(layout({ label: "Employee code", kind: "text", required: true }, { label: "Grade", kind: "select", options: ["A", "B"] })), viewer);
+  const empKey = saved1.find((f) => f.label === "Employee code")!.key;
+  check("a saved layout renames a built-in field, hides an optional one and adds the extra fields with their own keys", saved1.find((f) => f.key === "description")?.label === "Details" && saved1.find((f) => f.key === "file2")?.hidden === true && /^c_[a-z0-9]{8}$/.test(empKey) && saved1.filter((f) => !f.builtin).length === 2 && saved1.find((f) => f.label === "Grade")?.options.join() === "A,B");
+  check("the change is in the admin audit", (await db.select().from(T.aprAdminAudit)).some((a) => a.entity === "form_fields" && /HR form/.test(a.summary)));
+  const bad = async (l: ReturnType<typeof layout>) => (await refused(async () => FC.saveFormFields("hr", FC.saveFieldsInput.parse(l), viewer)))?.message ?? "";
+  check("a field the request cannot do without cannot be hidden", /cannot be hidden/.test(await bad({ fields: asInput(defaults).map((f) => (f.key === "category" ? { ...f, hidden: true } : f)) })));
+  check("two fields cannot share a name", /Two fields are called/.test(await bad(layout({ label: "details", kind: "text" }))));
+  check("a dropdown needs choices", /at least one choice/.test(await bad(layout({ label: "Level", kind: "select", options: [] }))));
+  check("every built-in field must be in the list", /missing some/.test(await bad({ fields: asInput(defaults).slice(1) })));
+  check("an unknown extra field key is refused", /Unknown field|no longer exists/.test(await bad(layout({ key: "c_zzzzzzzz", label: "Ghost", kind: "text" }))));
+  const hrWith = (custom: Record<string, string>, extra: object = {}) => hr({ lastName: "Custom", custom, ...extra });
+  const noCode = await refused(() => R.submitHrRequest(hrWith({}), req));
+  check("a required extra field must be answered, or the request is refused with its name", noCode?.status === 422 && /Employee code/.test(noCode.message), noCode);
+  const gradeKey = saved1.find((f) => f.label === "Grade")!.key;
+  check("a dropdown answer must be one of its choices", (await refused(() => R.submitHrRequest(hrWith({ [empKey]: "E-1", [gradeKey]: "Z" }), req)))?.status === 422);
+  const withAnswers = await R.submitHrRequest(hrWith({ [empKey]: " E-42 ", [gradeKey]: "B" }), req);
+  const storedAnswers = (await row(withAnswers.id)).customValues;
+  check("the answers are kept with the request, in the order of the form, each with the name the field had", JSON.stringify(storedAnswers) === JSON.stringify([{ key: empKey, label: "Employee code", value: "E-42" }, { key: gradeKey, label: "Grade", value: "B" }]), storedAnswers);
+  check("the request page lists them", JSON.stringify((await Q.getRequestDetail(withAnswers.id, viewer))?.custom) === JSON.stringify([{ label: "Employee code", value: "E-42" }, { label: "Grade", value: "B" }]));
+  const renamed = await FC.saveFormFields("hr", FC.saveFieldsInput.parse({ fields: asInput(saved1).map((f) => (f.key === empKey ? { ...f, label: "Staff number" } : f)) }), viewer);
+  check("renaming an extra field changes the form but not what an old request says", renamed.find((f) => f.key === empKey)?.label === "Staff number" && (await row(withAnswers.id)).customValues.find((c) => c.key === empKey)?.label === "Employee code");
+  const dropped = await FC.saveFormFields("hr", FC.saveFieldsInput.parse({ fields: asInput(renamed).filter((f) => f.key !== empKey && f.key !== gradeKey) }), viewer);
+  check("removing the extra fields takes them off the form, and old requests keep their answers", dropped.every((f) => f.builtin) && (await row(withAnswers.id)).customValues.length === 2);
+  const plain = await R.submitHrRequest(hr({ lastName: "NoExtras" }), req);
+  check("with the extra fields gone a request needs no answers and keeps none", (await row(plain.id)).customValues.length === 0);
+  await db.delete(T.aprFormFields);
+
   for (const k of ["SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD", "HR_ADMIN_EMAIL", "HR_ADMIN_PASSWORD", "HR_ADMIN_NAME", "EXPENDITURE_ADMIN_EMAIL", "EXPENDITURE_ADMIN_PASSWORD"]) delete process.env[k];
   await db.delete(T.aprSettings).where(eq(T.aprSettings.key, MARKER));
   if (savedMarker.length) await db.insert(T.aprSettings).values(savedMarker).onConflictDoNothing();
@@ -592,6 +630,8 @@ try {
   if (savedCounters.length) await db.insert(T.aprCounters).values(savedCounters).catch((e) => console.error("COULD NOT RESTORE THE COUNTERS:", e));
   await db.delete(T.aprSettings).where(eq(T.aprSettings.key, "env_rules_seeded")).catch(() => {});
   if (savedSeedMarker.length) await db.insert(T.aprSettings).values(savedSeedMarker).catch((e) => console.error("COULD NOT RESTORE THE RULES MARKER:", e));
+  await db.delete(T.aprFormFields).catch(() => {});
+  if (savedFormFields.length) await db.insert(T.aprFormFields).values(savedFormFields).catch((e) => console.error("COULD NOT RESTORE THE FORM FIELDS:", e));
   console.log(`\n${ok}/${ok + bad} integration checks passed`);
   process.exit(bad ? 1 : 0);
 }

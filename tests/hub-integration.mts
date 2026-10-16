@@ -94,7 +94,7 @@ try {
   const admin = await mkUser("Admin", { role: "head_admin" });
   const tm = await mkUser("Manager", { role: "dept_lead", teamId: tAcc.id, branchId: bPune.id });
   const tm2 = await mkUser("Other Manager", { role: "dept_lead", teamId: tSales.id });
-  const inTeam1 = await mkUser("Asha InTeam", { teamId: tAcc.id, branchId: bPune.id, homeDepartmentId: dFin.id });
+  const inTeam1 = await mkUser("Asha InTeam", { teamId: tAcc.id, branchId: bPune.id });
   const inTeam2 = await mkUser("Ravi InTeam", { teamId: tAcc.id, branchId: bPune.id });
   const reports = await mkUser("Meera Reports", { reportingManagerId: tm.id });
   const outside = await mkUser("Kiran Outside", { teamId: tSales.id, branchId: bMum.id });
@@ -161,7 +161,6 @@ try {
   check("search matches name and email, ignoring case", names(await listPeople(admin, pf({ q: "asha intea" }))).join() === "ZZH Asha InTeam" && names(await listPeople(admin, pf({ q: "ZZ-HUB-RAVI" }))).join() === "ZZH Ravi InTeam");
   check("filter by team", names(await listPeople(admin, pf({ team: tAcc.id, sort: "name" }))).join() === "ZZH Asha InTeam,ZZH Manager,ZZH Ravi InTeam");
   check("filter by branch", names(await listPeople(admin, pf({ branch: bMum.id }))).join() === "ZZH Kiran Outside");
-  check("filter by department", names(await listPeople(admin, pf({ dept: dFin.id }))).join() === "ZZH Asha InTeam");
   check("filter by role", names(await listPeople(admin, pf({ role: "dept_lead", q: "ZZH" }))).join() === "ZZH Manager,ZZH Other Manager");
   check("filter by reporting manager", names(await listPeople(admin, pf({ manager: tm.id }))).join() === "ZZH Meera Reports");
   check("filter by status: pending invitation, inactive", names(await listPeople(admin, pf({ status: "pending", q: "ZZH" }))).join() === "ZZH Pending Person" && names(await listPeople(admin, pf({ status: "inactive", q: "ZZH" }))).join() === "ZZH Inactive Person");
@@ -181,13 +180,13 @@ try {
   check("the profile of someone in scope opens for a team manager, out of scope it does not exist", !!(await getPerson(tm as User, inTeam1.id)) && (await getPerson(tm as User, outside.id)) === null && (await getPerson(tm as User, "not-a-uuid")) === null);
   check("a person can open their own profile; no one else's", !!(await getPerson(plain as User, plain.id)) && (await getPerson(plain as User, inTeam1.id)) === null);
   const prof = await getPerson(admin, inTeam1.id);
-  check("the profile gathers org, access and status in one read", prof?.team === "ZZH Accounts" && prof.branch === "ZZH Pune" && prof.department === "ZZH Finance" && prof.appIds.length === 2 && prof.status === "active");
+  check("the profile gathers org, access and status in one read", prof?.team === "ZZH Accounts" && prof.branch === "ZZH Pune" && prof.appIds.length === 2 && prof.status === "active");
   const sum = await adminSummary();
   check("the dashboard counts come from real rows", sum.users.total >= 10 && sum.users.pending >= 1 && sum.users.inactive >= 1 && sum.apps.total >= 4);
 
   // ------------------------------------------------------------------------------------------------ 4. organisation rules
   console.log("\n== 4. Branch, team and manager rules ==");
-  const none = { departmentId: null, branchId: null, teamId: null, managerId: null };
+  const none = { branchId: null, teamId: null, managerId: null };
   check("a team's branch fills in a blank branch", (await checkOrg({ ...none, teamId: tAcc.id }, null)).branchId === bPune.id);
   check("a team from another branch is refused, naming both", ((await refused(() => checkOrg({ ...none, teamId: tAcc.id, branchId: bMum.id }, null))) ?? "").includes("ZZH Pune"));
   check("a team with no branch fits any branch", (await checkOrg({ ...none, teamId: tFree.id, branchId: bMum.id }, null)).branchId === bMum.id);
@@ -198,18 +197,17 @@ try {
   check("a reporting loop is refused, direct or indirect", ((await refused(() => checkOrg({ ...none, managerId: inTeam2.id }, plain.id))) ?? "").includes("loop"));
   check("a valid chain is accepted", (await checkOrg({ ...none, managerId: tm.id }, plain.id)).managerId === tm.id);
   await db.update(S.users).set({ reportingManagerId: null }).where(eq(S.users.id, inTeam2.id));
-  check("a department that does not exist is refused", ((await refused(() => checkOrg({ ...none, departmentId: randomUUID() }, null))) ?? "").includes("no longer exists"));
 
   // ------------------------------------------------------------------------------------------------ 5. bulk import
   console.log("\n== 5. Bulk import: check, commit, retry ==");
-  const R = (row: number, o: Partial<ImportRow>): ImportRow => ({ row, name: "", email: "", branch: "", department: "", team: "", manager: "", role: "", applications: "", designation: "", ...o });
+  const R = (row: number, o: Partial<ImportRow>): ImportRow => ({ row, name: "", email: "", branch: "", team: "", manager: "", role: "", applications: "", designation: "", ...o });
   const rows: ImportRow[] = [
-    R(1, { name: "ZZH Boss", email: "zz-hub-imp-boss@example.com", branch: "ZZH Pune", department: "ZZH Finance", team: "ZZH Accounts", applications: "ZZH Tally, ZZH CRM", designation: "Head" }),
+    R(1, { name: "ZZH Boss", email: "zz-hub-imp-boss@example.com", branch: "ZZH Pune", team: "ZZH Accounts", applications: "ZZH Tally, ZZH CRM", designation: "Head" }),
     R(2, { name: "ZZH Report One", email: "zz-hub-imp-r1@example.com", manager: "zz-hub-imp-boss@example.com", team: "ZZH Accounts", applications: "ZZH Finance / ZZH Ledger", role: "Team manager" }),
     R(3, { name: "ZZH Bad Email", email: "not-an-email" }),
     R(4, { name: "ZZH Dup", email: "zz-hub-imp-boss@example.com" }),
     R(5, { name: "ZZH Existing", email: inTeam1.email }),
-    R(6, { name: "ZZH Typo Dept", email: "zz-hub-imp-typo@example.com", department: "ZZH Finnance" }),
+    R(6, { name: "ZZH Typo Branch", email: "zz-hub-imp-typo@example.com", branch: "ZZH Pnue" }),
     R(7, { name: "ZZH Wrong Team", email: "zz-hub-imp-wt@example.com", team: "ZZH Accounts", branch: "ZZH Mumbai" }),
     R(8, { name: "ZZH Bad Role", email: "zz-hub-imp-br@example.com", role: "Super administrator" }),
     R(9, { name: "ZZH Bad App", email: "zz-hub-imp-ba@example.com", applications: "ZZH Nope" }),
@@ -225,7 +223,7 @@ try {
   check("a bad email is invalid with a message naming the value", st(3).status === "invalid" && st(3).errors[0].includes("not-an-email"));
   check("a repeated email in the file is marked duplicate and points at the first row", st(4).status === "duplicate" && st(4).errors[0].includes("Row 1"));
   check("an existing account is marked exists and is skipped under the skip policy", st(5).status === "exists" && st(5).action === "skip");
-  check("a misspelt department needs correction and suggests the real one", st(6).status === "needs_correction" && st(6).suggestions[0].includes("ZZH Finance"), st(6));
+  check("a misspelt branch needs correction and suggests the real one", st(6).status === "needs_correction" && st(6).suggestions[0].includes("ZZH Pune"), st(6));
   check("a team that belongs to another branch is invalid and names both", st(7).status === "invalid" && st(7).errors[0].includes("ZZH Pune"));
   check("an administrator role cannot be assigned by import", st(8).status === "invalid" && st(8).errors[0].includes("not recognised"));
   check("an unknown application is invalid", st(9).status === "invalid" && st(9).errors[0].includes("ZZH Nope"));
@@ -243,7 +241,7 @@ try {
   const boss = (await db.select().from(S.users).where(eq(S.users.email, "zz-hub-imp-boss@example.com")))[0];
   const r1u = (await db.select().from(S.users).where(eq(S.users.email, "zz-hub-imp-r1@example.com")))[0];
   const child = (await db.select().from(S.users).where(eq(S.users.email, "zz-hub-imp-child@example.com")))[0];
-  check("organisation fields are saved: branch, team, department, designation, role", boss.branchId === bPune.id && boss.teamId === tAcc.id && boss.homeDepartmentId === dFin.id && boss.designation === "Head" && r1u.role === "dept_lead");
+  check("organisation fields are saved: branch, team, designation, role", boss.branchId === bPune.id && boss.teamId === tAcc.id && boss.designation === "Head" && r1u.role === "dept_lead");
   check("reporting managers inside the file are linked in the right order", r1u.reportingManagerId === boss.id && child.reportingManagerId === r1u.id);
   check("applications from the file are assigned, and only those", JSON.stringify(await grantRows(boss.id)) === JSON.stringify(sorted(aTally.id, aCrm.id)) && JSON.stringify(await grantRows(r1u.id)) === JSON.stringify([aLedger.id]) && (await grantRows(child.id)).length === 0);
   check("no password exists for imported people: they are pending an invitation", boss.passwordHash === null && (await listPeople(admin, pf({ status: "pending", q: "zz-hub-imp-boss" }))).total === 1);
@@ -264,9 +262,9 @@ try {
   check("a batch may not be larger than the limit", (await refused(() => commitBatch(admin, rows, { existing: "skip" }, Array.from({ length: 26 }, (_, i) => i + 1), { invite: true })))?.includes("between 1 and") === true);
   check("a row number that is not in the file is reported, not crashed on", (await commitBatch(admin, rows, { existing: "skip" }, [999], { invite: true }))[0].outcome === "failed");
 
-  const upd = await commitBatch(admin, [R(1, { name: "ZZH Asha Renamed", email: inTeam1.email, department: "ZZH Operations", applications: "ZZH Ops Tool", designation: "Senior" })], { existing: "update" }, [1], { invite: true });
+  const upd = await commitBatch(admin, [R(1, { name: "ZZH Asha Renamed", email: inTeam1.email, applications: "ZZH Ops Tool", designation: "Senior" })], { existing: "update" }, [1], { invite: true });
   const asha = (await db.select().from(S.users).where(eq(S.users.id, inTeam1.id)))[0];
-  check("the update policy changes department, designation and adds apps, but never the name, role, password or status", upd[0].outcome === "updated" && asha.homeDepartmentId === dOps.id && asha.designation === "Senior" && asha.name === "ZZH Asha InTeam" && asha.role === "member" && asha.passwordHash === "scrypt$16384$x$y" && (await grantRows(inTeam1.id)).includes(aOps.id));
+  check("the update policy changes designation and adds apps, but never the name, role, password or status", upd[0].outcome === "updated" && asha.designation === "Senior" && asha.name === "ZZH Asha InTeam" && asha.role === "member" && asha.passwordHash === "scrypt$16384$x$y" && (await grantRows(inTeam1.id)).includes(aOps.id));
   const noInvite = await commitBatch(admin, [R(1, { name: "ZZH No Invite", email: "zz-hub-imp-noinv@example.com" })], { existing: "skip" }, [1], { invite: false });
   check("creating without invitations makes the account but no invitation row", noInvite[0].outcome === "created" && noInvite[0].invitation === "none" && (await db.select({ n: count() }).from(S.userInvites).innerJoin(S.users, eq(S.users.id, S.userInvites.userId)).where(eq(S.users.email, "zz-hub-imp-noinv@example.com")))[0].n === 0);
 
@@ -349,7 +347,7 @@ try {
   check("an unknown person stops the whole per-application change, changing nobody", (await refused(() => applyAppUserChange(admin, { appId: aCrm.id, add: [randomUUID(), plain.id], remove: [outside.id], source: "test" })))?.includes("no longer exist") === true && JSON.stringify([await grantRows(outside.id), await grantRows(plain.id)]) === beforeMixed);
   check("a team manager may use it only for an application they hold and people in their scope", (await refused(() => applyAppUserChange(tm, { appId: aOps.id, add: [inTeam2.id], remove: [], source: "test" }))) !== null && (await refused(() => applyAppUserChange(tm, { appId: aCrm.id, add: [outside.id], remove: [], source: "test" }))) !== null && (await applyAppUserChange(tm, { appId: aTally.id, add: [inTeam2.id], remove: [], source: "test" })).changed.length === 1);
 
-  const baseAccount = { name: "ZZH Atomic", email: "zz-hub-atomic@example.com", role: "member" as const, departmentId: null, branchId: null, teamId: null, managerId: null, designation: null, appIds: [aTally.id, aCrm.id], passwordHash: null, inviteTokenHash: hashToken("atomic-token-for-test"), source: "admin" as const };
+  const baseAccount = { name: "ZZH Atomic", email: "zz-hub-atomic@example.com", role: "member" as const, branchId: null, teamId: null, managerId: null, designation: null, appIds: [aTally.id, aCrm.id], passwordHash: null, inviteTokenHash: hashToken("atomic-token-for-test"), source: "admin" as const };
   const madeId = await createAccount(admin, baseAccount);
   const invitesOf = async (id: string) => (await db.select({ n: count() }).from(S.userInvites).where(eq(S.userInvites.userId, id)))[0].n;
   check("an account, its applications and its invitation are created together", !!madeId && (await grantRows(madeId!)).length === 2 && (await invitesOf(madeId!)) === 1);

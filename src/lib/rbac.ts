@@ -23,8 +23,8 @@ export type AdminArea = (typeof ADMIN_AREAS)[number];
 export const AREA_LABEL: Record<AdminArea, { title: string; hint: string }> = {
   people: { title: "Users & access", hint: "Add and edit people, give or take away applications, send setup links, deactivate users" },
   import: { title: "Bulk add", hint: "Import people from a CSV or Excel file" },
-  org: { title: "Departments, branches & teams", hint: "Create and change the organisation's departments, branches and teams" },
-  apps: { title: "Applications", hint: "Departments, the application list and the link checks" },
+  org: { title: "Branches & teams", hint: "Create and change the organisation's branches and teams" },
+  apps: { title: "Applications", hint: "Application categories, the application list and the link checks" },
   audit: { title: "Audit log", hint: "See who changed what, and export it" },
   activity: { title: "Activity log", hint: "See which applications people opened, and export it" },
 };

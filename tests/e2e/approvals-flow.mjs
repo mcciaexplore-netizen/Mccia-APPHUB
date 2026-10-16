@@ -96,7 +96,8 @@ const removeFlowData = async () => {
   await sql`delete from apr_categories where name like 'ZZ%'`;
   await sql`delete from apr_hr_categories where name like 'ZZ%'`;
   await sql`delete from apr_branches where name like 'ZZ%'`;
-  await sql`delete from apr_admin_audit where summary like '%ZZ%'`;
+  await sql`delete from apr_form_fields`;
+  await sql`delete from apr_admin_audit where summary like '%ZZ%' or entity = 'form_fields'`;
   await sql`delete from apps where name like 'ZZ Flow%'`;
   await sql`delete from departments where name like 'ZZ Flow%'`;
 };
@@ -470,6 +471,26 @@ try {
   const clash = await A.page.request.patch(`${BASE}/api/approvals/rules/${hrRule1.id}`, { data: { approverUserId: ids.dg } });
   check("naming the DG as an HR first approver is refused with the reason", clash.status() === 409 && /must be different people/.test((await body(clash)).error), (await body(clash)).error);
   check("and the rule is unchanged", (await sql`select cardinality(approver_user_ids)::int n from apr_approver_rules where id = ${hrRule1.id}`)[0].n === 0);
+
+  section("16f. Approval Forms: an extra field the Support Admin adds is asked, checked and kept");
+  const hrFields = (await body(await A.page.request.get(`${BASE}/api/approvals/form-fields/hr`))).fields;
+  const toPut = (fs) => fs.map((f) => ({ key: f.key, label: f.label, hidden: f.hidden, kind: f.builtin ? undefined : f.kind, required: f.required, options: f.options }));
+  const put1 = await A.page.request.put(`${BASE}/api/approvals/form-fields/hr`, { data: { fields: [...toPut(hrFields), { key: null, label: "ZZ Employee code", kind: "text", required: true, hidden: false, options: [] }] } });
+  const saved = (await body(put1)).fields ?? [];
+  const codeKey = saved.find((f) => f.label === "ZZ Employee code")?.key;
+  check("the Support Admin saves an extra required field on the HR form", put1.status() === 200 && /^c_[a-z0-9]{8}$/.test(codeKey ?? ""), JSON.stringify(await body(put1)));
+  check("a requester is not allowed to change the forms", (await R.page.request.put(`${BASE}/api/approvals/form-fields/hr`, { data: { fields: toPut(hrFields) } })).status() === 403);
+  await R.page.goto(BASE + "/approvals/hr/new");
+  check("the HR form now asks for it, marked as required", (await R.page.getByText("ZZ Employee code").count()) >= 1);
+  const noCode = await submitWith(R.page, { kind: "hr", firstName: "Eve", lastName: "Extra", hrCategoryId: hrCat.id, custom: {} });
+  check("sending the request without it is refused, naming the field", noCode.status === 422 && /ZZ Employee code/.test(noCode.json.error), noCode.json.error);
+  const withCode = await submitWith(R.page, { kind: "hr", firstName: "Eve", lastName: "Extra", hrCategoryId: hrCat.id, custom: { [codeKey]: "E-42" } });
+  check("with the answer it is accepted", withCode.status === 201, withCode.json.error);
+  await R.page.goto(BASE + `/approvals/requests/${withCode.json.id}`);
+  check("the request page shows the answer under the field's name", /ZZ Employee code/.test(await R.page.locator("main").first().innerText()) && /E-42/.test(await R.page.locator("main").first().innerText()));
+  await sql`delete from apr_form_fields`;
+  await R.page.goto(BASE + "/approvals/hr/new");
+  check("with the setting removed the form is back to its own fields", (await R.page.getByText("ZZ Employee code").count()) === 0);
 
   section("17. Console and the seeded data");
   check("no browser console or page errors on any screen", consoleErrors.length === 0 && pageErrors.length === 0, [...consoleErrors, ...pageErrors].join(" | "));

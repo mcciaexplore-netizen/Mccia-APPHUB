@@ -32,7 +32,7 @@ function describe(a: AuditLine): string {
 
 /** One person, everything about them on one screen: who they are, where they sit, what they can open, and what changed recently. */
 export function ProfileView({ base, person, caps, options, catalog, templates, otherApps, audit, meId, accessEditable, appNames, responsibilities }: {
-  base: string; person: PersonDetail; caps: ProfileCaps; options: { branches: Option[]; departments: Option[]; teams: Option[]; managers: Manager[] };
+  base: string; person: PersonDetail; caps: ProfileCaps; options: { branches: Option[]; teams: Option[]; managers: Manager[] };
   catalog: Catalog; templates: Template[]; otherApps: number; audit: AuditLine[] | null; meId: string;
   /** Whether the viewer may change this person's access; when not (for example their own profile), it is shown read only. */
   accessEditable: boolean; appNames: string[];
@@ -47,7 +47,7 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
   const [resetting, setResetting] = useState(false);
 
   const [f, setF] = useState({
-    name: person.name, designation: person.designation ?? "", departmentId: person.departmentId ?? "", branchId: person.branchId ?? "",
+    name: person.name, designation: person.designation ?? "", branchId: person.branchId ?? "",
     teamId: person.teamId ?? "", managerId: person.managerId ?? "", role: person.role,
   });
   const [areas, setAreas] = useState<string[]>(person.adminAreas);
@@ -69,7 +69,7 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
     e.preventDefault();
     start(async () => {
       const r = await updatePerson(person.id, {
-        name: f.name, designation: f.designation, departmentId: f.departmentId || null, branchId: f.branchId || null, teamId: f.teamId || null, managerId: f.managerId || null,
+        name: f.name, designation: f.designation, branchId: f.branchId || null, teamId: f.teamId || null, managerId: f.managerId || null,
         role: caps.changeRole && !isHeadAdmin ? f.role : undefined,
       });
       if (r.ok) { toast.success("Details saved"); refresh(); } else toast.error(r.error);
@@ -127,7 +127,6 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Name"><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} required maxLength={120} disabled={!caps.editPerson} /></Field>
             <Field label="Designation"><input className="input" value={f.designation} onChange={(e) => set("designation", e.target.value)} maxLength={120} disabled={!caps.editPerson} /></Field>
-            <Field label="Department"><select className="input" value={f.departmentId} onChange={(e) => set("departmentId", e.target.value)} disabled={!caps.editPerson}><option value="">None</option>{options.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
             <Field label="Branch"><select className="input" value={f.branchId} onChange={(e) => set("branchId", e.target.value)} disabled={!caps.editPerson}><option value="">None</option>{options.branches.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
             <Field label="Team"><select className="input" value={f.teamId} onChange={(e) => set("teamId", e.target.value)} disabled={!caps.editPerson}><option value="">None</option>{options.teams.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
             <Field label="Reporting manager"><select className="input" value={f.managerId} onChange={(e) => set("managerId", e.target.value)} disabled={!caps.editPerson}><option value="">None</option>{options.managers.filter((m) => m.id !== person.id).map((d) => <option key={d.id} value={d.id}>{d.name} ({d.email})</option>)}</select></Field>

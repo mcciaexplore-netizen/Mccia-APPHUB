@@ -147,14 +147,14 @@ try {
   section("2. Editing a person: organisation, role, and the rules");
   await go("/administrator/users/" + m3.id);
   const form = A.getByRole("form", { name: "Details and organisation" });
-  check("the profile offers department, branch, team, reporting manager and role as choices, and a designation", (await form.locator("select").count()) === 5 && (await form.getByLabel("Designation").count()) === 1);
-  await form.locator("select").nth(2).selectOption({ label: "ZZP Team A" }); // team
-  await form.locator("select").nth(1).selectOption({ label: "ZZP Mumbai" }); // branch
+  check("the profile offers branch, team, reporting manager and role as choices, and a designation", (await form.locator("select").count()) === 4 && (await form.getByLabel("Designation").count()) === 1);
+  await form.locator("select").nth(1).selectOption({ label: "ZZP Team A" }); // team
+  await form.locator("select").nth(0).selectOption({ label: "ZZP Mumbai" }); // branch
   await form.getByRole("button", { name: "Save details" }).click();
   check("a team that belongs to another branch is refused, naming the branch", await toast(A, "belongs to branch")); await A.waitForTimeout(800);
   check("nothing was changed by the refusal", (await sql`select team_id from users where id = ${m3.id}`)[0].team_id === teamB.id);
-  await form.locator("select").nth(1).selectOption({ label: "ZZP Pune" });
-  await form.locator("select").nth(3).selectOption({ label: `ZZP Manager (${tm.email})` });
+  await form.locator("select").nth(0).selectOption({ label: "ZZP Pune" });
+  await form.locator("select").nth(2).selectOption({ label: `ZZP Manager (${tm.email})` });
   await form.getByLabel("Designation").fill("Team lead trainee");
   await form.getByRole("button", { name: "Save details" }).click(); check("a valid change saves", await toast(A, "Details saved")); await A.waitForTimeout(1200);
   const m3Row = (await sql`select team_id, branch_id, reporting_manager_id, designation from users where id = ${m3.id}`)[0];
@@ -165,9 +165,9 @@ try {
   await go("/administrator/users/" + tm.id);
   const tf = A.getByRole("form", { name: "Details and organisation" });
   await sql`update users set reporting_manager_id = ${tm.id} where id = ${m4.id}`;
-  await tf.locator("select").nth(3).selectOption({ label: `ZZP Member4 (${m4.email})` }); await tf.getByRole("button", { name: "Save details" }).click();
+  await tf.locator("select").nth(2).selectOption({ label: `ZZP Member4 (${m4.email})` }); await tf.getByRole("button", { name: "Save details" }).click();
   check("a reporting loop is refused with a clear message", await toast(A, "loop")); await A.waitForTimeout(800);
-  check("a person cannot be offered as their own manager", (await tf.locator("select").nth(3).locator("option", { hasText: tm.email }).count()) === 0);
+  check("a person cannot be offered as their own manager", (await tf.locator("select").nth(2).locator("option", { hasText: tm.email }).count()) === 0);
   await go("/administrator/users/" + m2.id);
   const rf = A.getByRole("form", { name: "Details and organisation" });
   await rf.getByLabel("Role").selectOption("dept_lead"); await rf.getByRole("button", { name: "Save details" }).click(); check("the role can be changed to Team manager", await toast(A, "Details saved")); await A.waitForTimeout(1000);
@@ -310,7 +310,7 @@ try {
   check("no one has a password until they choose one", x1.password_hash === null && x2.password_hash === null && x3.password_hash === null);
   // the update policy
   await A.getByRole("button", { name: "Start another import" }).click();
-  fs.writeFileSync(path.join(TMP, "zzp-update.csv"), "name,email,department,designation\nWhatever Name,zzp-xl1@gmail.com,ZZP Dept,Senior analyst\n");
+  fs.writeFileSync(path.join(TMP, "zzp-update.csv"), "name,email,designation\nWhatever Name,zzp-xl1@gmail.com,Senior analyst\n");
   await A.locator("input[type=file]").setInputFiles(path.join(TMP, "zzp-update.csv")); await A.getByLabel("name for row 1").waitFor({ timeout: 15000 });
   await poll(async () => /Create 0 accounts/.test(await createBtn.innerText()));
   check("by default an existing email is skipped and nothing would change", /already exists/i.test(await A.locator("tr[data-row='1']").innerText()) && (await createBtn.isDisabled()));

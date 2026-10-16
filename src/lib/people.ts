@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, count, desc, eq, exists, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { activityLog, apps, branches, departments, teams, userAppAccess, userInvites, users, type Role, type User } from "@/db/schema";
+import { activityLog, apps, branches, teams, userAppAccess, userInvites, users, type Role, type User } from "@/db/schema";
 import { accountStatus, type AccountStatus } from "@/lib/account-status";
 import { isEnvAdmin } from "@/lib/auth";
 import { MAX_PEOPLE } from "@/lib/access-ops";
@@ -21,7 +21,7 @@ const SORTS = ["name", "email", "lastLogin", "created"] as const;
 type PeopleSort = (typeof SORTS)[number];
 
 export type PeopleFilters = {
-  q?: string; branchId?: string; departmentId?: string; teamId?: string; managerId?: string; appId?: string;
+  q?: string; branchId?: string; teamId?: string; managerId?: string; appId?: string;
   role?: Role; status?: AccountStatus; sort: PeopleSort; dir: "asc" | "desc"; page: number;
 };
 
@@ -32,7 +32,7 @@ export function parsePeopleFilters(sp: Record<string, string | string[] | undefi
   const status = g("status");
   const sort = g("sort");
   return {
-    q: g("q") || undefined, branchId: id("branch"), departmentId: id("dept"), teamId: id("team"), managerId: id("manager"), appId: id("app"),
+    q: g("q") || undefined, branchId: id("branch"), teamId: id("team"), managerId: id("manager"), appId: id("app"),
     role: role === "head_admin" || role === "super_admin" || role === "admin" || role === "dept_lead" || role === "member" ? role : undefined,
     status: status === "active" || status === "inactive" || status === "pending" ? status : undefined,
     sort: (SORTS as readonly string[]).includes(sort ?? "") ? (sort as PeopleSort) : "name",
@@ -59,7 +59,6 @@ function filterSql(f: Partial<PeopleFilters>): SQL[] {
   const c: SQL[] = [];
   if (f.q) c.push(or(ilike(users.name, like(f.q)), ilike(users.email, like(f.q)), ilike(users.designation, like(f.q)))!);
   if (f.branchId) c.push(eq(users.branchId, f.branchId));
-  if (f.departmentId) c.push(eq(users.homeDepartmentId, f.departmentId));
   if (f.teamId) c.push(eq(users.teamId, f.teamId));
   if (f.managerId) c.push(eq(users.reportingManagerId, f.managerId));
   if (f.role) c.push(eq(users.role, f.role));
@@ -72,7 +71,7 @@ function filterSql(f: Partial<PeopleFilters>): SQL[] {
 
 export type PersonRow = {
   id: string; name: string; email: string; designation: string | null; role: Role; isActive: boolean; status: AccountStatus; mainAdmin: boolean; passwordInSettings: boolean;
-  department: string | null; branch: string | null; team: string | null; manager: string | null; lastLoginAt: Date | null; createdAt: Date;
+  branch: string | null; team: string | null; manager: string | null; lastLoginAt: Date | null; createdAt: Date;
   apps: { id: string; name: string; active: boolean }[];
 };
 
@@ -98,10 +97,9 @@ export async function listPeople(actor: Actor, f: PeopleFilters, pageSize = PEOP
     .select({
       id: users.id, name: users.name, email: users.email, designation: users.designation, role: users.role, isActive: users.isActive,
       hasPassword: sql<boolean>`${users.passwordHash} is not null`, lastLoginAt: users.lastLoginAt, createdAt: users.createdAt,
-      department: departments.name, branch: branches.name, team: teams.name, manager: manager.name,
+      branch: branches.name, team: teams.name, manager: manager.name,
     })
     .from(users)
-    .leftJoin(departments, eq(departments.id, users.homeDepartmentId))
     .leftJoin(branches, eq(branches.id, users.branchId))
     .leftJoin(teams, eq(teams.id, users.teamId))
     .leftJoin(manager, eq(manager.id, users.reportingManagerId))
@@ -128,20 +126,19 @@ export async function listPeople(actor: Actor, f: PeopleFilters, pageSize = PEOP
     return {
       id: b.id, name: b.name, email: b.email, designation: b.designation, role: b.role, isActive: b.isActive, mainAdmin, passwordInSettings,
       status: accountStatus({ isActive: b.isActive, hasPassword: b.hasPassword, passwordInSettings }),
-      department: b.department, branch: b.branch, team: b.team, manager: b.manager, lastLoginAt: b.lastLoginAt, createdAt: b.createdAt,
+      branch: b.branch, team: b.team, manager: b.manager, lastLoginAt: b.lastLoginAt, createdAt: b.createdAt,
       apps: byUser.get(b.id) ?? [],
     };
   });
   return { rows, total, pages, page: current };
 }
 
-/** Who a bulk action applies to: people picked by hand, plus everyone in the chosen team, department, branch or reporting line, plus an optional filter. */
-export type TargetSpec = { ids?: string[]; teamId?: string; departmentId?: string; branchId?: string; managerId?: string; filters?: Partial<PeopleFilters> };
+/** Who a bulk action applies to: people picked by hand, plus everyone in the chosen team, branch or reporting line, plus an optional filter. */
+export type TargetSpec = { ids?: string[]; teamId?: string; branchId?: string; managerId?: string; filters?: Partial<PeopleFilters> };
 
 export async function peopleIds(actor: Actor, spec: TargetSpec): Promise<string[]> {
   const groups: SQL[] = [];
   if (spec.teamId) groups.push(eq(users.teamId, spec.teamId));
-  if (spec.departmentId) groups.push(eq(users.homeDepartmentId, spec.departmentId));
   if (spec.branchId) groups.push(eq(users.branchId, spec.branchId));
   if (spec.managerId) groups.push(eq(users.reportingManagerId, spec.managerId));
   if (spec.filters) {
@@ -159,8 +156,8 @@ export async function peopleIds(actor: Actor, spec: TargetSpec): Promise<string[
 
 export type PersonDetail = {
   id: string; name: string; email: string; designation: string | null; phone: string | null; role: Role; adminAreas: string[]; isActive: boolean; status: AccountStatus; mainAdmin: boolean; passwordInSettings: boolean;
-  departmentId: string | null; branchId: string | null; teamId: string | null; managerId: string | null;
-  department: string | null; branch: string | null; team: string | null; manager: string | null;
+  branchId: string | null; teamId: string | null; managerId: string | null;
+  branch: string | null; team: string | null; manager: string | null;
   lastLoginAt: Date | null; createdAt: Date; appIds: string[];
   invite: { delivery: string; expiresAt: Date; state: "used" | "expired" | "open" } | null;
   launches: { app: string | null; at: Date }[];
@@ -171,10 +168,9 @@ export async function getPerson(actor: User, id: string): Promise<PersonDetail |
   if (!UUID.test(id)) return null;
   const [row] = await db
     .select({
-      u: users, department: departments.name, branch: branches.name, team: teams.name, manager: manager.name,
+      u: users, branch: branches.name, team: teams.name, manager: manager.name,
     })
     .from(users)
-    .leftJoin(departments, eq(departments.id, users.homeDepartmentId))
     .leftJoin(branches, eq(branches.id, users.branchId))
     .leftJoin(teams, eq(teams.id, users.teamId))
     .leftJoin(manager, eq(manager.id, users.reportingManagerId))
@@ -193,27 +189,16 @@ export async function getPerson(actor: User, id: string): Promise<PersonDetail |
   return {
     id: u.id, name: u.name, email: u.email, designation: u.designation, phone: u.phone, role: u.role, adminAreas: u.adminAreas, isActive: u.isActive, mainAdmin, passwordInSettings,
     status: accountStatus({ isActive: u.isActive, hasPassword: !!u.passwordHash, passwordInSettings }),
-    departmentId: u.homeDepartmentId, branchId: u.branchId, teamId: u.teamId, managerId: u.reportingManagerId,
-    department: row.department, branch: row.branch, team: row.team, manager: row.manager,
+    branchId: u.branchId, teamId: u.teamId, managerId: u.reportingManagerId,
+    branch: row.branch, team: row.team, manager: row.manager,
     lastLoginAt: u.lastLoginAt, createdAt: u.createdAt, appIds: grants.map((g) => g.appId), launches,
     invite: invite ? { delivery: invite.delivery, expiresAt: invite.expiresAt, state: invite.usedAt ? "used" : invite.expiresAt.getTime() < Date.now() ? "expired" : "open" } : null,
   };
 }
 
-/** How many people sit in each organisation department (even those with nobody), and how many are in none. Real counts from the database. */
-export async function departmentDistribution(): Promise<{ rows: { id: string; name: string; isActive: boolean; n: number }[]; none: number }> {
-  const [deps, counts] = await Promise.all([
-    db.select({ id: departments.id, name: departments.name, isActive: departments.isActive }).from(departments).where(eq(departments.kind, "organisation")).orderBy(asc(departments.sortOrder), asc(departments.name)),
-    db.select({ id: users.homeDepartmentId, n: count() }).from(users).groupBy(users.homeDepartmentId),
-  ]);
-  const n = new Map(counts.map((r) => [r.id, r.n]));
-  const rows = deps.map((d) => ({ ...d, n: n.get(d.id) ?? 0 }));
-  return { rows, none: counts.reduce((s, r) => s + r.n, 0) - rows.reduce((s, r) => s + r.n, 0) };
-}
-
 /** Real counts for the administrator's dashboard. Nothing here is estimated or made up. */
 export async function adminSummary() {
-  const [[u], [a], [{ branchesN }], [{ teamsN }], [{ depsN }]] = await Promise.all([
+  const [[u], [a], [{ branchesN }], [{ teamsN }]] = await Promise.all([
     db.select({
       total: count(),
       active: sql<number>`count(*) filter (where ${users.isActive} and ${hasLoginRoute})`.mapWith(Number),
@@ -229,7 +214,6 @@ export async function adminSummary() {
     }).from(apps),
     db.select({ branchesN: count() }).from(branches),
     db.select({ teamsN: count() }).from(teams),
-    db.select({ depsN: count() }).from(departments),
   ]);
-  return { users: u, apps: a, branches: branchesN, teams: teamsN, departments: depsN };
+  return { users: u, apps: a, branches: branchesN, teams: teamsN };
 }

@@ -11,6 +11,8 @@ import { appForType } from "./approvals.manifest";
 import { assessBudget, commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, REQUEST_PREFIX, TYPE_LABEL, wrongFormMessage, type BudgetAssessment, type ExpenditureForm } from "./calc";
 import { budgetPosition } from "./budget-position";
 import { checkFilesReady, claimFiles, releaseFiles } from "./files";
+import { resolveCustomAnswers } from "./form-config";
+import type { CustomAnswers } from "./form-fields";
 import { financialYearOf, formatINR, todayIST } from "./format";
 import { getDirectoryUsers, listUsers, type ApprovalsUser } from "./host-adapter";
 import { notify } from "./notify";
@@ -37,6 +39,8 @@ type Prepared = {
   amountPaise: number | null;
   overBudget: boolean;
   files: { slot: Slot; fileId: string }[];
+  /** The answers to the extra fields of the form, already checked (see resolveCustomAnswers). */
+  customValues: CustomAnswers;
   insertDetails: (requestId: string) => Promise<void>;
 };
 
@@ -86,6 +90,7 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
     .values({
       type: p.type, status: "draft", requesterUserId: actor.id, requesterName: p.requesterName, requesterEmail: p.requesterEmail,
       requestedAt: p.requestedAt, financialYear: fy, currentStep: 0, totalSteps: plan.steps.length, amountPaise: p.amountPaise, overBudget: p.overBudget,
+      customValues: p.customValues,
     })
     .returning({ id: aprRequests.id });
   } catch (e) {
@@ -163,8 +168,10 @@ export async function submitHrRequest(input: HrRequestInput, actor: ApprovalsUse
   const [category] = await db.select().from(aprHrCategories).where(eq(aprHrCategories.id, input.hrCategoryId));
   if (!category?.active) throw new ApprovalsError("Pick an active category.");
   const { budget } = await prepareHrBudget(input, financialYearOf(input.requestedAt));
+  const customValues = await resolveCustomAnswers("hr", input.custom);
   const name = `${input.firstName} ${input.lastName}`;
   return createRequest(actor, {
+    customValues,
     type: "hr", requesterName: name, requesterEmail: input.email ?? actor.email, requestedAt: input.requestedAt, amountPaise: input.amountPaise, overBudget: budget?.overBudget ?? false,
     files: [
       ...(input.fileUpload ? [{ slot: "file_upload" as const, fileId: input.fileUpload.fileId }] : []),
@@ -228,7 +235,9 @@ const expenditureFiles = (large: LargeExpenditureInput | null, small: SmallExpen
 /** Both expenditure forms. The amount must match the form: 10,000 and above is "large" (DG), anything lower is "small". */
 export async function submitExpenditure(form: ExpenditureForm, input: LargeExpenditureInput | SmallExpenditureInput, actor: ApprovalsUser) {
   const { employee, assessment, small, large } = await prepareExpenditure(form, input, financialYearOf(input.requestedAt));
+  const customValues = await resolveCustomAnswers(form, input.custom);
   return createRequest(actor, {
+    customValues,
     type: form === "large" ? "expenditure_large" : "expenditure_small",
     requesterName: employee.name, requesterEmail: input.email ?? employee.email, requestedAt: input.requestedAt,
     amountPaise: input.amountPaise, overBudget: assessment.overBudget,
@@ -392,6 +401,7 @@ export async function resubmitRequest(requestId: string, input: ResubmitInput, a
   let overBudget: boolean;
   let newFiles: { slot: Slot; fileId: string }[];
   let writeDetails: () => Promise<unknown>;
+  const customValues = await resolveCustomAnswers(input.kind, input.custom);
   if (input.kind === "hr") {
     const [category] = await db.select().from(aprHrCategories).where(eq(aprHrCategories.id, input.hrCategoryId));
     if (!category?.active) throw new ApprovalsError("Pick an active category.");
@@ -438,7 +448,7 @@ export async function resubmitRequest(requestId: string, input: ResubmitInput, a
       }));
     }
     attachmentsWritten = true;
-    await db.update(aprRequests).set({ requesterName, requesterEmail, amountPaise, overBudget, updatedAt: now }).where(and(eq(aprRequests.id, requestId), eq(aprRequests.status, "returned")));
+    await db.update(aprRequests).set({ requesterName, requesterEmail, amountPaise, overBudget, customValues, updatedAt: now }).where(and(eq(aprRequests.id, requestId), eq(aprRequests.status, "returned")));
     // The last two writes: the request, then its step, go back to waiting for the approver who returned it.
     const flipped = await db
       .update(aprRequests)

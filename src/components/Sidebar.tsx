@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { Activity, AppWindow, Bell, Building2, ChevronDown, ClipboardCheck, ClipboardList, Layers, LayoutDashboard, ShieldCheck, UsersRound, Users, X } from "lucide-react";
+import { Activity, Bell, ChevronDown, ClipboardCheck, ClipboardList, LayoutDashboard, ShieldCheck, UsersRound, Users, X } from "lucide-react";
 import { lockAdmin } from "@/actions/auth";
 import { Icon } from "@/components/Icon";
 import { isSafetyWeek, playSafetyMascot } from "@/components/SafetyMascot";
@@ -31,13 +31,10 @@ function Item({ href, active, onNavigate, children }: { href: string; active: bo
 
 const ADMIN_LINKS = [
   { href: "/administrator", label: "Dashboard", Icon: LayoutDashboard, exact: true },
-  { href: "/administrator/org-departments", label: "Departments", Icon: Building2 },
-  { href: "/administrator/users", label: "Users & Access", Icon: Users },
-  { href: "/administrator/inventory", label: "Applications", Icon: AppWindow },
-  { href: "/administrator/departments", label: "Application categories", Icon: Layers },
-  { href: "/administrator/approvals", label: "Approvals", Icon: ClipboardCheck },
-  { href: "/administrator/notifications", label: "Notifications Panel", Icon: Bell },
-  { href: "/administrator/activity", label: "Activity log", Icon: Activity },
+  { href: "/administrator/users", label: "Users", Icon: Users },
+  { href: "/administrator/approval-forms", label: "Approval Forms", Icon: ClipboardCheck },
+  { href: "/administrator/notifications", label: "Notification Panel", Icon: Bell },
+  { href: "/administrator/activity", label: "Activity Log", Icon: Activity },
 ] as const;
 
 export function Sidebar({

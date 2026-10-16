@@ -13,7 +13,7 @@ import { xlsxToTable } from "@/lib/xlsx-read";
 
 const BATCH = 25;
 const GRID_PAGE = 50;
-const blank = (row: number): ImportRow => ({ row, name: "", email: "", branch: "", department: "", team: "", manager: "", role: "", applications: "", designation: "" });
+const blank = (row: number): ImportRow => ({ row, name: "", email: "", branch: "", team: "", manager: "", role: "", applications: "", designation: "" });
 type Filter = "all" | "ready" | RowStatus;
 type Phase = "edit" | "running" | "done";
 
@@ -151,7 +151,7 @@ export function BulkAdd({ base, domains }: { base: string; domains: string }) {
           <h2 className="text-xl">Bulk add users</h2>
           <p className="mt-1 text-sm text-muted">
             Create many accounts at once from a CSV or Excel file, or type the rows below. Each person receives a one-time link to choose their own password, so <b>no password goes in the file</b>.
-            Branch, department, team and reporting manager are checked before anything is created. {domains && <>Emails must end with {domains}.</>}
+            Branch, team and reporting manager are checked before anything is created. {domains && <>Emails must end with {domains}.</>}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -177,7 +177,7 @@ export function BulkAdd({ base, domains }: { base: string; domains: string }) {
 
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Row</th><th>Name *</th><th>Email *</th><th>Branch</th><th>Department</th><th>Team</th><th>Reporting manager</th><th>Role</th><th>Applications</th><th>Designation</th><th>Check</th><th><span className="sr-only">Remove</span></th></tr></thead>
+              <thead><tr><th>Row</th><th>Name *</th><th>Email *</th><th>Branch</th><th>Team</th><th>Reporting manager</th><th>Role</th><th>Applications</th><th>Designation</th><th>Check</th><th><span className="sr-only">Remove</span></th></tr></thead>
               <tbody>
                 {shown.map((r) => {
                   const c = checks.get(r.row);
@@ -187,7 +187,7 @@ export function BulkAdd({ base, domains }: { base: string; domains: string }) {
                   return (
                     <tr key={r.row} data-row={r.row} className={c && c.errors.length ? "bg-red-tint/40" : ""}>
                       <td className="text-xs text-muted">{r.row}</td>
-                      {cell("name")}{cell("email", "min-w-44")}{cell("branch")}{cell("department")}{cell("team")}{cell("manager", "min-w-44")}{cell("role", "min-w-24")}{cell("applications", "min-w-44")}{cell("designation")}
+                      {cell("name")}{cell("email", "min-w-44")}{cell("branch")}{cell("team")}{cell("manager", "min-w-44")}{cell("role", "min-w-24")}{cell("applications", "min-w-44")}{cell("designation")}
                       <td className="min-w-56 text-xs">
                         {c ? (
                           <>
@@ -219,7 +219,7 @@ export function BulkAdd({ base, domains }: { base: string; domains: string }) {
               <label className="block"><span className="label-xs mb-1.5 block">If an email already has an account</span>
                 <select className="input" value={existing} disabled={phase === "running"} onChange={(e) => { setExisting(e.target.value as "skip" | "update"); setStale(true); }}>
                   <option value="skip">Skip it (change nothing)</option>
-                  <option value="update">Update their department, branch, team, manager and designation, and add the applications</option>
+                  <option value="update">Update their branch, team, manager and designation, and add the applications</option>
                 </select></label>
               <label className="flex items-start gap-2 text-sm sm:pt-6"><input type="checkbox" className="mt-1 h-4 w-4 accent-[var(--c-primary)]" checked={invite} disabled={phase === "running"} onChange={(e) => setInvite(e.target.checked)} />
                 <span>Create a setup link for each new person and email it. If email is not set up, you will get the links to pass on.</span></label>
@@ -238,7 +238,7 @@ export function BulkAdd({ base, domains }: { base: string; domains: string }) {
               <button className="btn btn-primary btn-sm" disabled={!canRun} onClick={() => void runImport(order)}>Create {summary ? summary.willCreate + summary.willUpdate : 0} {summary && summary.willCreate + summary.willUpdate === 1 ? "account" : "accounts"}</button>
               <button className="btn btn-ghost btn-sm" disabled={checking || phase === "running"} onClick={() => void runCheck(rows, existing)}>Check again</button>
               {summary && summary.invalid + summary.needsCorrection + summary.duplicate > 0 && (
-                <button className="btn btn-ghost btn-sm" onClick={() => download("rows-to-fix.csv", toCsv([["row", "problem", "name", "email", "branch", "department", "team", "reporting_manager", "role", "applications", "designation"], ...rows.filter((r) => { const c = checks.get(r.row); return c && c.errors.length; }).map((r) => [String(r.row), checks.get(r.row)!.errors.join(" "), ...rowToCells(r)])]))}><Download size={14} /> Download rows to fix</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => download("rows-to-fix.csv", toCsv([["row", "problem", "name", "email", "branch", "team", "reporting_manager", "role", "applications", "designation"], ...rows.filter((r) => { const c = checks.get(r.row); return c && c.errors.length; }).map((r) => [String(r.row), checks.get(r.row)!.errors.join(" "), ...rowToCells(r)])]))}><Download size={14} /> Download rows to fix</button>
               )}
             </div>
           </div>

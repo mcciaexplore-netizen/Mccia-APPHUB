@@ -184,6 +184,9 @@ export const aprRequests = pgTable(
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     decisionComment: text("decision_comment"),
     amountPaise: paise("amount_paise"),
+    // The answers to the extra fields the Support Admin added to the form (see aprFormFields), each kept with the label it had when it was
+    // answered, in the order of the form: [{ "key": "...", "label": "...", "value": "..." }].
+    customValues: jsonb("custom_values").$type<{ key: string; label: string; value: string }[]>().notNull().default(sql`'[]'::jsonb`),
     // Expenditure only: the amount was more than the budget left, or no budget exists for the branch, category and year.
     overBudget: boolean("over_budget").notNull().default(false),
     // Resubmit clones a rejected request into a new draft and links back to the original.
@@ -202,6 +205,31 @@ export const aprRequests = pgTable(
     index("apr_requests_requested_at_idx").on(t.requestedAt),
     index("apr_requests_fy_idx").on(t.financialYear),
   ],
+);
+
+/**
+ * How the request forms are laid out, set by the Support Admin. A row either overrides one of the built-in fields of a form (its label, its
+ * place in the order, whether it is shown) or is an extra field the Support Admin added (builtin = false). Built-in fields with no row keep
+ * their defaults (see src/lib/approvals/form-fields.ts). Forms: hr, large (expenditure of the threshold and above), small (below it).
+ */
+export const aprFormFields = pgTable(
+  "apr_form_fields",
+  {
+    id: id(),
+    form: text("form").notNull(),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    builtin: boolean("builtin").notNull().default(false),
+    // Extra fields only: text, textarea, number, date or select.
+    kind: text("kind").notNull().default("text"),
+    required: boolean("required").notNull().default(false),
+    hidden: boolean("hidden").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    // Extra fields of kind select: the choices.
+    options: text("options").array().notNull().default(sql`'{}'::text[]`),
+    createdAt: createdAt(),
+  },
+  (t) => [unique("apr_form_fields_form_key_uq").on(t.form, t.key)],
 );
 
 export const aprExpenditureDetails = pgTable("apr_expenditure_details", {

@@ -65,7 +65,11 @@ const optionalDate = dateOnly.optional().or(z.literal("")).transform((s) => s ||
 const fileRef = z.object({ fileId: idSchema });
 const optionalFile = fileRef.nullish().transform((f) => f ?? null);
 
+/** The answers to the extra fields the Support Admin added to a form, by field key. The server checks them against the fields as they are. */
+const custom = z.record(z.string().max(40), z.string().max(4000)).optional().default({});
+
 export const hrRequestInput = z.object({
+  custom,
   firstName: requiredText("First name", 60),
   lastName: requiredText("Last name", 60),
   email: optionalEmail,
@@ -82,6 +86,7 @@ export const hrRequestInput = z.object({
 export type HrRequestInput = z.output<typeof hrRequestInput>;
 
 const common = {
+  custom,
   // The person the request is for, picked from the hub's people. Defaults to whoever is signed in.
   employeeUserId: idSchema,
   requestedAt,

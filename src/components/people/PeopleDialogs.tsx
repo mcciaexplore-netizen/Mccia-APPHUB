@@ -98,14 +98,14 @@ export function ResetDialog({ person, onClose, onLinks }: { person: { id: string
 
 /** Add one person. By default they receive a setup link; setting a password by hand is the exception. */
 export function AddPersonDialog({ options, catalog, domains, canPromote, onClose, onDone }: {
-  options: { branches: Option[]; departments: Option[]; teams: Option[]; managers: Manager[] }; catalog: Catalog; domains: string;
+  options: { branches: Option[]; teams: Option[]; managers: Manager[] }; catalog: Catalog; domains: string;
   /** Only the Support Admin may add someone as an Admin or a Super Admin. */
   canPromote: boolean;
   onClose: () => void; onDone: (r: AddResult & { name: string; email: string }) => void;
 }) {
   const toast = useToast();
   const [pending, start] = useTransition();
-  const [v, setV] = useState({ name: "", email: "", designation: "", role: "member" as "member" | "dept_lead" | "admin" | "super_admin", departmentId: "", branchId: "", teamId: "", managerId: "" });
+  const [v, setV] = useState({ name: "", email: "", designation: "", role: "member" as "member" | "dept_lead" | "admin" | "super_admin", branchId: "", teamId: "", managerId: "" });
   const [appIds, setAppIds] = useState<string[]>([]);
   const [byHand, setByHand] = useState(false);
   const [password, setPassword] = useState(() => generatePassword());
@@ -118,7 +118,7 @@ export function AddPersonDialog({ options, catalog, domains, canPromote, onClose
         setError(null);
         start(async () => {
           const r = await addPerson({
-            ...v, departmentId: v.departmentId || null, branchId: v.branchId || null, teamId: v.teamId || null, managerId: v.managerId || null,
+            ...v, branchId: v.branchId || null, teamId: v.teamId || null, managerId: v.managerId || null,
             appIds, password: byHand ? password : "", invite: true,
           });
           if (r.ok) onDone({ ...r.data, name: v.name, email: v.email.trim().toLowerCase() });
@@ -131,7 +131,6 @@ export function AddPersonDialog({ options, catalog, domains, canPromote, onClose
         <Field label="Designation (optional)"><input className="input" value={v.designation} onChange={(e) => set("designation", e.target.value)} maxLength={120} /></Field>
         <Field label="Role">
           <select className="input" value={v.role} onChange={(e) => set("role", e.target.value)}><option value="member">User</option><option value="dept_lead">Team manager</option>{canPromote && <><option value="admin">Admin</option><option value="super_admin">Super admin</option></>}</select></Field>
-        <Field label="Department (optional)"><select className="input" value={v.departmentId} onChange={(e) => set("departmentId", e.target.value)}><option value="">None</option>{options.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
         <Field label="Branch (optional)"><select className="input" value={v.branchId} onChange={(e) => set("branchId", e.target.value)}><option value="">None</option>{options.branches.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
         <Field label="Team (optional)"><select className="input" value={v.teamId} onChange={(e) => set("teamId", e.target.value)}><option value="">None</option>{options.teams.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
         <Field label="Reporting manager (optional)"><select className="input" value={v.managerId} onChange={(e) => set("managerId", e.target.value)}><option value="">None</option>{options.managers.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.email})</option>)}</select></Field>
@@ -160,12 +159,12 @@ export function AddPersonDialog({ options, catalog, domains, canPromote, onClose
   );
 }
 
-type Source = "selected" | "team" | "department" | "branch";
+type Source = "selected" | "team" | "branch";
 
-/** Give or take away applications for chosen people, or for a whole team, department or branch: choose, review, confirm, result. */
+/** Give or take away applications for chosen people, or for a whole team or branch: choose, review, confirm, result. */
 export function AssignDialog({ selection, options, catalog, templates, onClose, onDone }: {
   selection: { ids: string[]; allMatching: boolean; filterQuery: string; count: number };
-  options: { branches: Option[]; departments: Option[]; teams: Option[] }; catalog: Catalog; templates: Template[];
+  options: { branches: Option[]; teams: Option[] }; catalog: Catalog; templates: Template[];
   onClose: () => void; onDone: () => void;
 }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -182,7 +181,7 @@ export function AssignDialog({ selection, options, catalog, templates, onClose, 
 
   const target = (): AssignTarget =>
     source === "selected" ? { ids: selection.allMatching ? [] : selection.ids, filterQuery: selection.allMatching ? selection.filterQuery : undefined }
-    : source === "team" ? { teamId: groupId } : source === "department" ? { departmentId: groupId } : { branchId: groupId };
+    : source === "team" ? { teamId: groupId } : { branchId: groupId };
   const ready = source === "selected" ? selection.count > 0 : !!groupId;
 
   // How many of the chosen people already have each application.
@@ -194,7 +193,7 @@ export function AssignDialog({ selection, options, catalog, templates, onClose, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, groupId, ready]);
 
-  const groups = source === "team" ? options.teams : source === "department" ? options.departments : options.branches;
+  const groups = source === "team" ? options.teams : options.branches;
   const shownStatus = ready ? status : null;
   const note = (id: string) => (shownStatus ? `${shownStatus.perApp[id] ?? 0} of ${shownStatus.people} have it` : null);
   const canReview = ready && (mode === "replace" || appIds.length > 0);
@@ -227,7 +226,7 @@ export function AssignDialog({ selection, options, catalog, templates, onClose, 
                 <label className="flex items-center gap-2 text-sm"><input type="radio" className="accent-[var(--c-primary)]" checked={source === "selected"} onChange={() => { setSource("selected"); setGroupId(""); }} />
                   The {selection.count} {selection.allMatching ? "people matching the current filters" : selection.count === 1 ? "person selected" : "people selected"}</label>
               )}
-              {(["team", "department", "branch"] as const).map((s) => (
+              {(["team", "branch"] as const).map((s) => (
                 <label key={s} className="flex flex-wrap items-center gap-2 text-sm"><input type="radio" className="accent-[var(--c-primary)]" checked={source === s} onChange={() => { setSource(s); setGroupId(""); }} />
                   Everyone in a {s}
                   {source === s && (

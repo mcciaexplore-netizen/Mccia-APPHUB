@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { desc } from "drizzle-orm";
-import { Bell, Building2, ClipboardCheck, ClipboardList, Layers, Network, ShieldCheck, Upload, Users } from "lucide-react";
+import { Bell, ClipboardCheck, ClipboardList, Layers, Network, ShieldCheck, Upload, Users } from "lucide-react";
 import { db } from "@/db";
 import { appChecks, apps } from "@/db/schema";
 import { CountUp } from "@/components/CountUp";
@@ -9,7 +9,7 @@ import { formatIST } from "@/lib/format";
 import { approvalsEnabled } from "@/lib/approvals/flags";
 import { approvalsOverview } from "@/lib/approvals/summary";
 import { noticeFeed } from "@/lib/notice-feed";
-import { adminSummary, departmentDistribution } from "@/lib/people";
+import { adminSummary } from "@/lib/people";
 import { requireAdministrator } from "@/lib/permissions";
 import { hasArea, isSuper } from "@/lib/rbac";
 
@@ -31,12 +31,11 @@ export default async function Page() {
   const me = await requireAdministrator();
   // Approvals cover HR and expenditure together, so only the two top roles see their numbers. The audit log needs its own area.
   const showApprovals = isSuper(me) && approvalsEnabled();
-  const [s, recent, latest, list, depts, approvals, notices] = await Promise.all([
+  const [s, recent, latest, list, approvals, notices] = await Promise.all([
     adminSummary(),
     hasArea(me, "audit") ? listAudit({ page: 1 }, 8) : Promise.resolve(null),
     db.selectDistinctOn([appChecks.appId], { appId: appChecks.appId, ok: appChecks.ok }).from(appChecks).orderBy(appChecks.appId, desc(appChecks.checkedAt)),
     db.select({ id: apps.id, url: apps.url }).from(apps),
-    departmentDistribution(),
     showApprovals ? approvalsOverview() : Promise.resolve(null),
     noticeFeed(me.id),
   ]);
@@ -85,18 +84,6 @@ export default async function Page() {
         </section>
       )}
 
-      <section aria-label="People by department" className="glass !rounded-md space-y-3 p-5 sm:p-6">
-        <div className="flex items-center justify-between"><h2 className="text-xl">People by department</h2><Link href="/administrator/org-departments" className="text-sm text-primary hover:underline"><Building2 size={14} className="mr-1 inline" />Departments</Link></div>
-        {depts.rows.length === 0 ? <p className="text-sm text-muted">No departments yet.</p> : (
-          <ul className="grid gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2 lg:grid-cols-3">
-            {depts.rows.map((d) => (
-              <li key={d.id} className={`flex justify-between gap-3 ${d.isActive ? "" : "opacity-60"}`}><Link href={`/administrator/users?dept=${d.id}`} className="text-primary hover:underline">{d.name}</Link><b>{d.n}</b></li>
-            ))}
-            <li className="flex justify-between gap-3 text-muted"><Link href="/administrator/users" className="hover:underline">No department yet</Link><b>{depts.none}</b></li>
-          </ul>
-        )}
-      </section>
-
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="glass !rounded-md space-y-3 p-5 sm:p-6" aria-label="Needs attention">
           <h2 className="text-xl">Needs attention</h2>
@@ -106,7 +93,6 @@ export default async function Page() {
           <div className="flex flex-wrap gap-2 border-t border-line pt-4">
             <Link href="/administrator/users/import" className="btn btn-primary btn-sm"><Upload size={14} /> Bulk add users</Link>
             <Link href="/administrator/users" className="btn btn-ghost btn-sm"><Users size={14} /> Users &amp; Access</Link>
-            <Link href="/administrator/org-departments" className="btn btn-ghost btn-sm"><Building2 size={14} /> Departments</Link>
             <Link href="/administrator/departments" className="btn btn-ghost btn-sm"><Layers size={14} /> Application categories</Link>
             <Link href="/administrator/users/org" className="btn btn-ghost btn-sm"><Network size={14} /> Branches &amp; teams ({s.branches} · {s.teams})</Link>
             <Link href="/administrator/inventory" className="btn btn-ghost btn-sm"><ClipboardList size={14} /> Application inventory</Link>

@@ -7,18 +7,17 @@ import { toCsv } from "@/lib/csv";
 export type ImportRow = {
   /** The row's number among the people in the file (the first person is row 1), used in every message. */
   row: number;
-  name: string; email: string; branch: string; department: string; team: string; manager: string; role: string; applications: string; designation: string;
+  name: string; email: string; branch: string; team: string; manager: string; role: string; applications: string; designation: string;
 };
 
 export const MAX_IMPORT_ROWS = 2000;
 export const MAX_FILE_BYTES = 2_000_000;
-export const COLUMNS = ["name", "email", "branch", "department", "team", "reporting_manager", "role", "applications", "designation"] as const;
+export const COLUMNS = ["name", "email", "branch", "team", "reporting_manager", "role", "applications", "designation"] as const;
 
 const ALIASES: Record<(typeof COLUMNS)[number], string[]> = {
   name: ["name", "full_name", "fullname", "user_name", "employee_name"],
   email: ["email", "email_address", "emailaddress", "e_mail", "e_mail_address", "mail", "username", "user_email"],
   branch: ["branch", "office", "location", "branch_name"],
-  department: ["department", "dept", "department_name"],
   team: ["team", "team_name", "group"],
   reporting_manager: ["reporting_manager", "manager", "reporting_manager_email", "manager_email", "reports_to", "reporting_to", "team_lead"],
   role: ["role", "user_role", "access_role"],
@@ -46,7 +45,7 @@ export function tableToRows(table: string[][]): ParsedTable {
   if (data.length - 1 > MAX_IMPORT_ROWS) return { rows: [], ignoredColumns, problem: `At most ${MAX_IMPORT_ROWS} people per file. Split it into smaller files.` };
   const cell = (r: string[], c: (typeof COLUMNS)[number]) => (index[c] >= 0 ? (r[index[c]] ?? "").trim() : "");
   const rows = data.slice(1).map((r, i): ImportRow => ({
-    row: i + 1, name: cell(r, "name"), email: cell(r, "email").toLowerCase(), branch: cell(r, "branch"), department: cell(r, "department"), team: cell(r, "team"),
+    row: i + 1, name: cell(r, "name"), email: cell(r, "email").toLowerCase(), branch: cell(r, "branch"), team: cell(r, "team"),
     manager: cell(r, "reporting_manager"), role: cell(r, "role"), applications: cell(r, "applications"), designation: cell(r, "designation"),
   }));
   return { rows, ignoredColumns };
@@ -56,15 +55,15 @@ export function tableToRows(table: string[][]): ParsedTable {
 export const TEMPLATE_CSV = `${[
   ["# MCCIA App Hub: add many people at once. Lines that start with # are notes and are ignored."],
   ["# Required: name and email. Everything else is optional. Do NOT add a password column: each person chooses their own from a link."],
-  ["# branch, department and team must already exist (see Branches & Teams, and Departments). Spelling is checked."],
+  ["# branch and team must already exist (see Branches & Teams). Spelling is checked."],
   ["# reporting_manager: that person's email. They must already have an account or appear in this file."],
   ["# role: leave empty for User, or write Team manager."],
-  ["# applications: names separated by commas. Write Department / App if the same name exists in two departments."],
-  ["# example: Asha Patil | asha.patil@example.com | Pune | Finance | Accounts | manager@example.com | | Tally, CRM | Accountant"],
+  ["# applications: names separated by commas. Write Category / App if the same name exists in two application categories."],
+  ["# example: Asha Patil | asha.patil@example.com | Pune | Accounts | manager@example.com | | Tally, CRM | Accountant"],
   [...COLUMNS],
 ]
   .map((r) => toCsv([r]))
   .join("\r\n")}\r\n`;
 
 /** One row as the person-friendly column names, for the corrected file or the results report. */
-export const rowToCells = (r: ImportRow) => [r.name, r.email, r.branch, r.department, r.team, r.manager, r.role, r.applications, r.designation];
+export const rowToCells = (r: ImportRow) => [r.name, r.email, r.branch, r.team, r.manager, r.role, r.applications, r.designation];

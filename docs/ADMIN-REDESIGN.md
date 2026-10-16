@@ -46,3 +46,7 @@ existed; this lists what was there, what was built now, and what was deliberatel
 ## Later decision: the DG's scope
 
 The Super Admin (the DG) has **no Administrator area**. They see only the applications the Support Admin assigns, the Approval Forms and the DG dashboard. Only the Support Admin manages people, roles and access. See `docs/ROLES.md` and `docs/APPROVALS-RULES.md`.
+
+## Later decision: no departments, and a five-item menu
+
+The organisation departments, their screen, the department field and filter on people, the department column in bulk add and the "People by department" figures were removed. The Administrator menu is now Dashboard, Users, Approval Forms, Notification Panel and Activity Log (see `docs/ROLES.md`). Run `scripts/apply-0014-in-neon-console.sql` before deploying: it adds the form settings and deletes the organisation departments.

@@ -208,6 +208,8 @@ export type RequestDetail = {
   decidedAt: Date | null;
   decisionComment: string | null;
   currentApproverUserId: string | null;
+  /** The answers to the extra fields the Support Admin added to the form, with the name each had when it was answered. */
+  custom: { label: string; value: string }[];
   hr: { firstName: string; lastName: string; categoryName: string; description: string | null; branchName: string | null; budgetCategoryName: string | null; budget: BudgetView | null } | null;
   expenditure: {
     categoryName: string;
@@ -312,6 +314,7 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
     id: req.id, requestNo: req.requestNo, type: req.type, status: req.status, requesterUserId: req.requesterUserId, requesterName: req.requesterName,
     requesterEmail: req.requesterEmail, requestedAt: req.requestedAt, financialYear: req.financialYear, amountPaise: req.amountPaise, overBudget: req.overBudget,
     decidedAt: req.decidedAt, decisionComment: req.decisionComment, currentApproverUserId: req.currentApproverUserId,
+    custom: (req.customValues ?? []).map((c) => ({ label: c.label, value: c.value })),
     hr, expenditure, steps, events, attachments,
     returned: returnedStep ? { byName: returnedStep.approverName, comment: returnedStep.comment, at: returnedStep.decidedAt } : null,
     can: {
@@ -345,6 +348,8 @@ export type EditValues = {
     publicationTypeId: string | null; publicationId: string | null;
   } | null;
   attachments: AttachmentRow[];
+  /** The answers to the extra fields, by field key. */
+  custom: Record<string, string>;
   returnedBy: string | null;
   returnComment: string | null;
 };
@@ -370,6 +375,7 @@ export async function getEditValues(requestId: string, user: ApprovalsUser): Pro
         }
       : null,
     attachments: attachments.map((a) => ({ id: a.id, slot: a.slot, fileName: a.fileName, size: a.size, mime: a.mime })),
+    custom: Object.fromEntries((req.customValues ?? []).map((c) => [c.key, c.value])),
     returnedBy: step?.approverName ?? null,
     returnComment: step?.comment ?? null,
   };

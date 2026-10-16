@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { EditInfo, ExpenditureFormProps, HrFormProps } from "@/components/approvals/RequestForms";
 import { hasRole, listUsers, type ApprovalsUser } from "./host-adapter";
+import { getFormFields } from "./form-config";
 import { listMaster, type MasterRow } from "./masters";
 import { formatINR } from "./format";
 import type { EditValues } from "./request-queries";
@@ -18,8 +19,8 @@ const idOrEmpty = (v: string | string[] | undefined) => (uuid.safeParse(first(v)
 export async function expenditureFormProps(
   form: "large" | "small", user: ApprovalsUser, search: Record<string, string | string[] | undefined>,
 ): Promise<ExpenditureFormProps> {
-  const [categories, branches, types, publications, people, settings] = await Promise.all([
-    listMaster("categories", false), listMaster("branches", false), listMaster("publication-types", false), listMaster("publications", false), listUsers(), getSettings(),
+  const [categories, branches, types, publications, people, settings, fields] = await Promise.all([
+    listMaster("categories", false), listMaster("branches", false), listMaster("publication-types", false), listMaster("publications", false), listUsers(), getSettings(), getFormFields(form),
   ]);
   const amount = first(search.amount);
   return {
@@ -31,6 +32,7 @@ export async function expenditureFormProps(
     publicationTypes: options(types),
     publications: publications.filter((p) => p.publicationTypeId).map((p) => ({ value: p.id, label: p.name, typeId: p.publicationTypeId! })).sort(byName),
     thresholdPaise: settings.thresholdPaise,
+    fields,
     canAdd: hasRole(user, "approvals_admin"),
     now: new Date().toISOString(),
     initial: {
@@ -41,13 +43,14 @@ export async function expenditureFormProps(
 }
 
 export async function hrFormProps(user: ApprovalsUser, edit?: { requestId: string; values: EditValues }): Promise<HrFormProps> {
-  const [categories, branches, expenseCategories] = await Promise.all([listMaster("hr-categories", false), listMaster("branches", false), listMaster("categories", false)]);
+  const [categories, branches, expenseCategories, fields] = await Promise.all([listMaster("hr-categories", false), listMaster("branches", false), listMaster("categories", false), getFormFields("hr")]);
   const hr = edit?.values.hr;
   return {
     me: { name: user.name, email: user.email },
     categories: options(categories),
     branches: options(branches),
     expenseCategories: options(expenseCategories),
+    fields,
     canAdd: hasRole(user, "approvals_admin"),
     now: new Date().toISOString(),
     edit: edit && hr
@@ -66,7 +69,7 @@ export async function hrFormProps(user: ApprovalsUser, edit?: { requestId: strin
 const editInfo = (requestId: string, v: EditValues): EditInfo => ({
   requestId, requestedAt: v.requestedAt.toISOString(),
   attachments: v.attachments.map((a) => ({ id: a.id, slot: a.slot, fileName: a.fileName, size: a.size })),
-  returnedBy: v.returnedBy, returnComment: v.returnComment,
+  returnedBy: v.returnedBy, returnComment: v.returnComment, custom: v.custom,
 });
 
 /** The expenditure form opened on a returned request: the same lists as a new one, filled with the request's own values. */

@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { and, count, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { apps, branches, departments, teams, userAppAccess, users, type User } from "@/db/schema";
+import { apps, branches, teams, userAppAccess, users, type User } from "@/db/schema";
 import { applyAccess, previewAccess, type AccessMode, MAX_PEOPLE } from "@/lib/access-ops";
 import { createAccount } from "@/lib/accounts";
 import { adminAction, staffAction, UserError } from "@/lib/action";
@@ -40,15 +40,14 @@ function checkDomain(email: string) {
 }
 
 /** Readable names for the audit record, so it still makes sense after a branch or manager is renamed or removed. */
-async function orgNames(f: { departmentId: string | null; branchId: string | null; teamId: string | null; managerId: string | null }) {
+async function orgNames(f: { branchId: string | null; teamId: string | null; managerId: string | null }) {
   const one = async <T extends { name: string }>(id: string | null, q: (i: string) => Promise<T[]>) => (id ? ((await q(id))[0]?.name ?? null) : null);
-  const [department, branch, team, manager] = await Promise.all([
-    one(f.departmentId, (i) => db.select({ name: departments.name }).from(departments).where(eq(departments.id, i))),
+  const [branch, team, manager] = await Promise.all([
     one(f.branchId, (i) => db.select({ name: branches.name }).from(branches).where(eq(branches.id, i))),
     one(f.teamId, (i) => db.select({ name: teams.name }).from(teams).where(eq(teams.id, i))),
     one(f.managerId, (i) => db.select({ name: users.name }).from(users).where(eq(users.id, i))),
   ]);
-  return { department, branch, team, manager };
+  return { branch, team, manager };
 }
 
 // ------------------------------------------------------------------------------------------------ adding and editing people
@@ -58,7 +57,7 @@ const newPerson = z.object({
   email: emailSchema,
   designation: optionalText(120),
   role: role.default("member"),
-  departmentId: optionalId, branchId: optionalId, teamId: optionalId, managerId: optionalId,
+  branchId: optionalId, teamId: optionalId, managerId: optionalId,
   appIds: uuidList.default([]),
   /** Leave empty to send a setup link. Only for someone who cannot receive email. */
   password: z.string().max(200).optional().default(""),
@@ -75,7 +74,7 @@ export async function addPerson(input: unknown) {
     checkMayGiveRole(admin, v.role);
     checkDomain(v.email);
     if (isEnvAdmin(v.email)) throw new UserError("That address is a main admin account, which is set in the environment settings.");
-    const org = await checkOrg({ departmentId: v.departmentId, branchId: v.branchId, teamId: v.teamId, managerId: v.managerId }, null);
+    const org = await checkOrg({ branchId: v.branchId, teamId: v.teamId, managerId: v.managerId }, null);
     const appIds = [...new Set(v.appIds)];
     if (appIds.length) {
       const found = await db.select({ id: apps.id }).from(apps).where(inArray(apps.id, appIds));
@@ -85,7 +84,7 @@ export async function addPerson(input: unknown) {
     const passwordHash = password ? await hashPassword(passwordSchema.parse(password)) : null;
     const token = !passwordHash && v.invite ? randomBytes(32).toString("base64url") : null;
     const id = await createAccount(admin, {
-      name: v.name, email: v.email, role: v.role, departmentId: org.departmentId, branchId: org.branchId, teamId: org.teamId, managerId: org.managerId,
+      name: v.name, email: v.email, role: v.role, branchId: org.branchId, teamId: org.teamId, managerId: org.managerId,
       designation: v.designation, appIds, passwordHash, inviteTokenHash: token ? hashToken(token) : null, source: "admin",
     });
     if (!id) throw new UserError("That email already has an account.");
@@ -105,11 +104,11 @@ export async function addPerson(input: unknown) {
 const personEdit = z.object({
   name: z.string().trim().min(1, "Name is required").max(120),
   designation: optionalText(120),
-  departmentId: optionalId, branchId: optionalId, teamId: optionalId, managerId: optionalId,
+  branchId: optionalId, teamId: optionalId, managerId: optionalId,
   role: role.optional(),
 });
 
-/** Name, designation, department, branch, team, reporting manager and (for the super administrator) role. Email never changes. */
+/** Name, designation, branch, team, reporting manager and (for the Support Admin) role. Email never changes. */
 export async function updatePerson(id: string, input: unknown) {
   return adminAction("people", async (admin) => {
     uuid.parse(id);
@@ -118,20 +117,20 @@ export async function updatePerson(id: string, input: unknown) {
     if (!cur) throw new UserError("User not found.");
     if (!canEditPerson(admin, cur)) throw new UserError("You cannot change that person's details.");
     const org = await checkOrg(
-      { departmentId: v.departmentId, branchId: v.branchId, teamId: v.teamId, managerId: v.managerId }, id,
-      { departmentId: cur.homeDepartmentId, branchId: cur.branchId, teamId: cur.teamId, managerId: cur.reportingManagerId },
+      { branchId: v.branchId, teamId: v.teamId, managerId: v.managerId }, id,
+      { branchId: cur.branchId, teamId: cur.teamId, managerId: cur.reportingManagerId },
     );
     const newRole = v.role ?? cur.role;
     if (newRole !== cur.role && isEnvAdmin(cur.email)) throw new UserError("This account's role is set in the environment settings and cannot be changed here.");
     if (newRole !== cur.role && !canChangeRole(admin, cur)) throw new UserError("That person's role cannot be changed here. Only the Support Admin changes roles.");
-    const before = await orgNames({ departmentId: cur.homeDepartmentId, branchId: cur.branchId, teamId: cur.teamId, managerId: cur.reportingManagerId });
+    const before = await orgNames({ branchId: cur.branchId, teamId: cur.teamId, managerId: cur.reportingManagerId });
     const after = await orgNames(org);
     const changes: Record<string, { from: unknown; to: unknown }> = {};
     const note = (k: string, from: unknown, to: unknown) => { if ((from ?? null) !== (to ?? null)) changes[k] = { from: from ?? null, to: to ?? null }; };
     note("name", cur.name, v.name); note("designation", cur.designation, v.designation); note("role", cur.role, newRole);
-    for (const k of ["department", "branch", "team", "manager"] as const) note(k, before[k], after[k]);
+    for (const k of ["branch", "team", "manager"] as const) note(k, before[k], after[k]);
     if (Object.keys(changes).length === 0) return;
-    await db.update(users).set({ name: v.name, designation: v.designation, homeDepartmentId: org.departmentId, branchId: org.branchId, teamId: org.teamId, reportingManagerId: org.managerId, role: newRole, adminAreas: newRole === "admin" ? cur.adminAreas : [] }).where(eq(users.id, id));
+    await db.update(users).set({ name: v.name, designation: v.designation, branchId: org.branchId, teamId: org.teamId, reportingManagerId: org.managerId, role: newRole, adminAreas: newRole === "admin" ? cur.adminAreas : [] }).where(eq(users.id, id));
     await writeAudit(admin, [{ action: "user.update", targetType: "user", targetId: id, targetLabel: v.name, details: { changes } }]);
     if (newRole !== cur.role) {
       await notifyUsers([{ userId: id, kind: "role_changed", title: "Your role changed", body: `Your role in the App Hub is now ${roleLabel[newRole]}.`, link: "/", dedupeKey: `role:${newRole}:${Math.floor(Date.now() / 60000)}` }]);
@@ -245,7 +244,7 @@ export async function sendSetupLinks(ids: unknown) {
 // ------------------------------------------------------------------------------------------------ assigning applications
 
 const target = z.object({
-  ids: uuidList.default([]), teamId: uuid.optional(), departmentId: uuid.optional(), branchId: uuid.optional(), managerId: uuid.optional(),
+  ids: uuidList.default([]), teamId: uuid.optional(), branchId: uuid.optional(), managerId: uuid.optional(),
   /** The directory's current filters as a query string, to mean "everyone matching these". */
   filterQuery: z.string().max(2000).optional(),
 });
@@ -255,7 +254,7 @@ export type AssignTarget = z.input<typeof target>;
 /** Resolves who a request means and makes sure every one of them is someone the actor may manage. */
 async function resolveTarget(actor: User, t: z.infer<typeof target>): Promise<string[]> {
   const filters = t.filterQuery ? parsePeopleFilters(Object.fromEntries(new URLSearchParams(t.filterQuery))) : undefined;
-  const ids = await peopleIds(actor, { ids: t.ids, teamId: t.teamId, departmentId: t.departmentId, branchId: t.branchId, managerId: t.managerId, filters });
+  const ids = await peopleIds(actor, { ids: t.ids, teamId: t.teamId, branchId: t.branchId, managerId: t.managerId, filters });
   if (ids.length === 0) throw new UserError("No one matches that selection.");
   if (ids.length > MAX_PEOPLE) throw new UserError(`That is more than ${MAX_PEOPLE} people. Narrow the selection.`);
   return ids;
@@ -299,7 +298,7 @@ export async function setPersonAccess(userId: string, appIds: unknown) {
 
 const importRows = z.array(z.object({
   row: z.number().int().min(1).max(100000),
-  name: z.string().max(300), email: z.string().max(300), branch: z.string().max(200), department: z.string().max(200), team: z.string().max(200),
+  name: z.string().max(300), email: z.string().max(300), branch: z.string().max(200), team: z.string().max(200),
   manager: z.string().max(300), role: z.string().max(100), applications: z.string().max(2000), designation: z.string().max(300),
 })).min(1).max(2000);
 const policy = z.object({ existing: z.enum(["skip", "update"]) });

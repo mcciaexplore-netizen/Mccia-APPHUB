@@ -10,6 +10,18 @@ Five kinds of person, and what each can do. The rules live in one file, `src/lib
 | **User** (`member`) | Everyone else | Opens the applications assigned to them. New accounts are Users unless the Support Admin chooses otherwise. |
 | Team manager (`dept_lead`) | nobody today | Kept as it was (their team's people only). Not needed under this model. |
 
+## The Administrator menu
+
+Five items, in the sidebar's Administrator menu: **Dashboard**, **Users** (the list of people; open one to see their details and tick the applications they may open), **Approval Forms** (the Support Admin only: where the forms everyone uses are edited, see below), **Notification Panel** and **Activity Log**. An Admin sees only the ones their areas allow, and never Approval Forms. There are no departments: the organisation departments were removed (migration 0014). Branches and teams, the audit log, bulk add, the application list and the application categories still exist at their addresses (for example `/administrator/users/org`, `/administrator/inventory`, `/administrator/departments`), they are just not in the menu.
+
+## Approval Forms (editing the forms)
+
+Under Administrator > Approval Forms the Support Admin edits the three forms everyone uses to raise a request: the HR form, the Expenses form (below ₹10,000) and the Expenditure form (₹10,000 and above). For each form:
+
+- **Built-in fields** can be renamed and moved up or down. The optional ones can be hidden; the ones a request cannot do without (the person, the category, the branch, the amount, and for Expenses the email and vendor) are always shown.
+- **Extra fields** can be added: short text, long text, number, date or a dropdown (with its choices). An extra field can be required, shown or hidden, moved, renamed and removed.
+- A saved change applies to the next person who opens the form. Requests already sent keep the answers they were given, under the name the field had at the time, and show them on the request page. Answers to extra fields are not in the lists or the CSV export.
+
 ## What an Admin can be given
 
 | Area | Lets them |
@@ -17,7 +29,7 @@ Five kinds of person, and what each can do. The rules live in one file, `src/lib
 | Users & access | Add and edit people, give or take away applications (any application), send setup links, reset passwords, deactivate users |
 | Bulk add | Import people from a CSV or Excel file |
 | Branches & teams | Create and change branches and teams |
-| Applications | Departments, the application list, link checks |
+| Applications | Application categories, the application list, link checks |
 | Audit log | See and export who changed what |
 | Activity log | See and export which applications were opened |
 
@@ -46,7 +58,7 @@ The Approval System is not an application in the **Application access** box: the
 
 ## Setting people up
 
-1. Sign in as the Support Admin and open Administrator, then Users & Access.
+1. Sign in as the Support Admin and open Administrator, then Users.
 2. **Add user** for each person. Only the Support Admin can add people (Admins with areas can add Users) and choose Admin or Super admin. Each person gets a one-time setup link to choose their own password.
 3. Open an Admin's profile and tick **What this Admin may open**, then save. It is recorded in the audit log.
 4. Anyone can be promoted or demoted later from their profile (Role). Making an Admin a User clears their areas.

@@ -89,6 +89,7 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
           {e?.publicationType && <Item label="Type of Publication">{e.publicationType}</Item>}
           {e?.publication && <Item label="Publication">{e.publication}</Item>}
           {e && d.type === "expenditure_small" && <Item label="Date of Tax Invoice">{isoToDisplay(e.taxInvoiceDate)}</Item>}
+          {d.custom.map((c) => <Item key={c.label} label={c.label}><span className="whitespace-pre-wrap">{c.value}</span></Item>)}
         </dl>
       </section>
 

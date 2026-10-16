@@ -1,14 +1,14 @@
 import "server-only";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { branches, departments, teams, users } from "@/db/schema";
+import { branches, teams, users } from "@/db/schema";
 import { UserError } from "@/lib/user-error";
 
 /**
- * The organisation a person sits in: department (the hub's own), branch, team and reporting manager. One function checks that a
+ * The organisation a person sits in: branch, team and reporting manager. One function checks that a
  * combination makes sense, and is used by the profile editor, the single add form and the bulk import alike.
  */
-export type OrgFields = { departmentId: string | null; branchId: string | null; teamId: string | null; managerId: string | null };
+export type OrgFields = { branchId: string | null; teamId: string | null; managerId: string | null };
 
 /**
  * Throws a plain-language error when the combination is not valid, otherwise returns the fields to save (a team's branch fills in a
@@ -17,10 +17,6 @@ export type OrgFields = { departmentId: string | null; branchId: string | null; 
  */
 export async function checkOrg(f: OrgFields, selfId: string | null, current?: Partial<OrgFields>): Promise<OrgFields> {
   let { branchId } = f;
-  if (f.departmentId) {
-    const [d] = await db.select({ id: departments.id }).from(departments).where(eq(departments.id, f.departmentId));
-    if (!d) throw new UserError("That department no longer exists.");
-  }
   if (branchId) {
     const [b] = await db.select({ id: branches.id, name: branches.name, isActive: branches.isActive }).from(branches).where(eq(branches.id, branchId));
     if (!b) throw new UserError("That branch no longer exists.");
@@ -43,7 +39,7 @@ export async function checkOrg(f: OrgFields, selfId: string | null, current?: Pa
     if ((!m.isActive || m.status !== "approved") && f.managerId !== current?.managerId) throw new UserError(`${m.name} is inactive and cannot be a reporting manager.`);
     if (selfId && (await managerChainReaches(f.managerId, selfId))) throw new UserError(`${m.name} already reports (directly or indirectly) to this person, which would make a loop.`);
   }
-  return { departmentId: f.departmentId, branchId, teamId: f.teamId, managerId: f.managerId };
+  return { branchId, teamId: f.teamId, managerId: f.managerId };
 }
 
 /** Whether walking up from `startId` through reporting managers reaches `targetId`. One recursive query; a loop already in the data cannot hang it. */

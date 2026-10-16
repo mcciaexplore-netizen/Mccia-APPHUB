@@ -23,13 +23,12 @@ async function grantableCatalog(actor: Pick<User, "id" | "role">) {
 }
 
 const loadOptions = async () => {
-  const [brs, deps, tms, appList] = await Promise.all([
+  const [brs, tms, appList] = await Promise.all([
     db.select({ id: branches.id, name: branches.name }).from(branches).orderBy(asc(branches.name)),
-    db.select({ id: departments.id, name: departments.name, isActive: departments.isActive }).from(departments).where(eq(departments.kind, "organisation")).orderBy(asc(departments.sortOrder), asc(departments.name)),
     db.select({ id: teams.id, name: teams.name }).from(teams).orderBy(asc(teams.name)),
     db.select({ id: apps.id, name: apps.name }).from(apps).orderBy(asc(apps.name)),
   ]);
-  return { branches: brs, departments: deps.map((d) => ({ id: d.id, name: d.isActive ? d.name : `${d.name} (inactive)` })), teams: tms, apps: appList };
+  return { branches: brs, teams: tms, apps: appList };
 };
 
 /** Who can be picked as a reporting manager: every active person for the two top roles; plain users and Team managers for an Admin (who never sees the others). */
@@ -78,7 +77,7 @@ export async function loadProfile(actor: User, id: string, base: string) {
   const nameOf = new Map(names.map((a) => [a.id, a.name]));
   return {
     base, person, catalog, templates, meId: actor.id,
-    options: { branches: options.branches, departments: options.departments, teams: options.teams, managers },
+    options: { branches: options.branches, teams: options.teams, managers },
     // What the buttons on this one person's page show: the actor's general abilities, narrowed to what they may do to THIS person.
     caps: { ...capabilities(actor), editPerson: canEditPerson(actor, person), invite: canEditPerson(actor, person), toggleActive: canDeactivate(actor, person) },
     accessEditable: canManageAccess(actor, { id: person.id, role: person.role, teamId: person.teamId, reportingManagerId: person.managerId }),

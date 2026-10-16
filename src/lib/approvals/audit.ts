@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { aprAdminAudit } from "@/db/approvals-schema";
 import type { ApprovalsUser } from "./host-adapter";
 
-export type AuditEntity = "category" | "hr_category" | "branch" | "publication_type" | "publication" | "budget" | "setting" | "role" | "approver_rule";
+export type AuditEntity = "category" | "hr_category" | "branch" | "publication_type" | "publication" | "budget" | "setting" | "role" | "approver_rule" | "form_fields";
 
 /** Every admin change to masters, rules, roles and settings leaves a row here. Request history is in apr_approval_events instead. */
 export async function recordAudit(

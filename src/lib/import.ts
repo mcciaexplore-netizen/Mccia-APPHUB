@@ -30,7 +30,7 @@ export type RowCheck = { row: number; name: string; email: string; status: RowSt
 export type ImportPolicy = { existing: "skip" | "update" };
 
 type Plan = {
-  row: ImportRow; email: string; name: string; role: Extract<Role, "member" | "dept_lead">; departmentId: string | null; branchId: string | null; teamId: string | null;
+  row: ImportRow; email: string; name: string; role: Extract<Role, "member" | "dept_lead">; branchId: string | null; teamId: string | null;
   managerId: string | null; managerEmail: string | null; managerRow: number | null; designation: string | null; appIds: string[]; existingId: string | null;
   action: RowAction;
 };
@@ -73,9 +73,7 @@ async function analyse(rows: ImportRow[], policy: ImportPolicy, actor: Actor) {
   const managerEmails = managerTokens.filter((t) => t.includes("@")).map((t) => t.toLowerCase());
   const managerNames = managerTokens.filter((t) => !t.includes("@")).map((t) => t.toLowerCase());
 
-  const [deps, brs, tms, catalog, byEmail, byName] = await Promise.all([
-    // Organisation departments are listed last so that, when an application group has the same name, the department wins.
-    db.select({ id: departments.id, name: departments.name, isActive: departments.isActive }).from(departments).orderBy(sql`(${departments.kind} = 'organisation')`),
+  const [brs, tms, catalog, byEmail, byName] = await Promise.all([
     db.select({ id: branches.id, name: branches.name, isActive: branches.isActive }).from(branches),
     db.select({ id: teams.id, name: teams.name, branchId: teams.branchId, isActive: teams.isActive }).from(teams),
     db.select({ id: apps.id, name: apps.name, departmentId: apps.departmentId, dept: departments.name }).from(apps).innerJoin(departments, eq(departments.id, apps.departmentId)).where(and(eq(apps.isActive, true), eq(departments.isActive, true))),
@@ -87,7 +85,6 @@ async function analyse(rows: ImportRow[], policy: ImportPolicy, actor: Actor) {
       : Promise.resolve([]),
   ]);
 
-  const depByName = new Map(deps.map((d) => [norm(d.name), d]));
   const brByName = new Map(brs.map((b) => [norm(b.name), b]));
   const teamByName = new Map(tms.map((t) => [norm(t.name), t]));
   const branchName = new Map(brs.map((b) => [b.id, b.name]));
@@ -95,11 +92,9 @@ async function analyse(rows: ImportRow[], policy: ImportPolicy, actor: Actor) {
   const peopleByName = new Map<string, { id: string; email: string }[]>();
   for (const u of byName) peopleByName.set(u.name.toLowerCase(), [...(peopleByName.get(u.name.toLowerCase()) ?? []), u]);
 
-  const inDept = new Map<string, string>();
   const byAppName = new Map<string, string[]>();
   const byFull = new Map<string, string>();
   for (const a of catalog) {
-    inDept.set(`${a.departmentId}|${norm(a.name)}`, a.id);
     byAppName.set(norm(a.name), [...(byAppName.get(norm(a.name)) ?? []), a.id]);
     byFull.set(norm(`${a.dept} / ${a.name}`), a.id);
   }
@@ -142,13 +137,7 @@ async function analyse(rows: ImportRow[], policy: ImportPolicy, actor: Actor) {
       if (s) suggestions.push(`${kind}: ${s}`);
     };
 
-    let departmentId: string | null = null, branchId: string | null = null, teamId: string | null = null;
-    if (raw.department.trim()) {
-      const d = depByName.get(norm(raw.department));
-      if (!d) need("Department", raw.department, deps.map((x) => x.name));
-      else if (!d.isActive) errors.push(`Department "${d.name}" is inactive.`);
-      else departmentId = d.id;
-    }
+    let branchId: string | null = null, teamId: string | null = null;
     if (raw.branch.trim()) {
       const b = brByName.get(norm(raw.branch));
       if (!b) need("Branch", raw.branch, brs.map((x) => x.name));
@@ -190,13 +179,11 @@ async function analyse(rows: ImportRow[], policy: ImportPolicy, actor: Actor) {
 
     const appIds: string[] = [];
     for (const token of raw.applications.split(/[,;|]/).map((s) => s.trim()).filter(Boolean)) {
-      const own = departmentId ? inDept.get(`${departmentId}|${norm(token)}`) : undefined;
       const full = byFull.get(norm(token));
       const named = byAppName.get(norm(token));
-      if (own) appIds.push(own);
-      else if (full) appIds.push(full);
+      if (full) appIds.push(full);
       else if (named?.length === 1) appIds.push(named[0]);
-      else if (named && named.length > 1) errors.push(`Application "${token}" exists in several departments. Write it as Department / App.`);
+      else if (named && named.length > 1) errors.push(`Application "${token}" exists in several application categories. Write it as Category / App.`);
       else need("Application", token, catalog.map((a) => a.name));
     }
 
@@ -206,12 +193,12 @@ async function analyse(rows: ImportRow[], policy: ImportPolicy, actor: Actor) {
     if (existing && policy.existing === "update" && !canUpdateByImport(actor, existing)) errors.push("You cannot change that person's account.");
     if (existing) {
       if (policy.existing === "skip") { action = "skip"; check.status = "exists"; warnings.push("This person already has an account. Nothing will change."); }
-      else { action = "update"; warnings.push("This person already has an account. Their department, branch, team, manager and designation will be updated, and the applications added. Role, password and status are never changed."); }
+      else { action = "update"; warnings.push("This person already has an account. Their branch, team, manager and designation will be updated, and the applications added. Role, password and status are never changed."); }
     }
     check.action = errors.length ? "none" : action;
     if (errors.length) check.status = suggestions.length ? "needs_correction" : "invalid";
     plans.set(raw.row, {
-      row: raw, email, name, role: role ?? "member", departmentId, branchId, teamId, managerId, managerEmail, managerRow, designation: raw.designation.trim() || null,
+      row: raw, email, name, role: role ?? "member", branchId, teamId, managerId, managerEmail, managerRow, designation: raw.designation.trim() || null,
       appIds: [...new Set(appIds)], existingId: existing?.id ?? null, action: check.action,
     });
   }
@@ -317,7 +304,6 @@ export async function commitBatch(actor: Actor & { name: string }, rows: ImportR
 
       if (p.action === "update" && p.existingId) {
         const set: Partial<typeof users.$inferInsert> = {};
-        if (p.departmentId) set.homeDepartmentId = p.departmentId;
         if (p.branchId) set.branchId = p.branchId;
         if (p.teamId) set.teamId = p.teamId;
         if (managerId) set.reportingManagerId = managerId;
@@ -332,7 +318,7 @@ export async function commitBatch(actor: Actor & { name: string }, rows: ImportR
 
       const token = opts.invite ? randomBytes(32).toString("base64url") : null;
       const id = await createAccount(actor, {
-        name: p.name, email: p.email, role: p.role, departmentId: p.departmentId, branchId: p.branchId, teamId: p.teamId, managerId, designation: p.designation,
+        name: p.name, email: p.email, role: p.role, branchId: p.branchId, teamId: p.teamId, managerId, designation: p.designation,
         appIds: p.appIds, passwordHash: null, inviteTokenHash: token ? hashToken(token) : null, source: "import",
       });
       if (!id) { results.push({ ...base, outcome: "skipped", message: "Already has an account. Not changed.", invitation: "none" }); continue; }

@@ -214,7 +214,7 @@ try {
   await go("/administrator/users");
   const ut = await main(); check("Users & Access offers Add user and Bulk add users", (await page.getByRole("button", { name: /Add user/ }).count()) === 1 && (await page.getByRole("link", { name: /Bulk add users/ }).count()) >= 1);
   check("the main admin row says its password lives in the settings", ut.toLowerCase().includes("main admin"));
-  for (const l of ["Filter by branch", "Filter by department", "Filter by team", "Filter by role", "Filter by status", "Filter by application"]) check(`the directory has: ${l}`, (await page.getByLabel(l).count()) === 1);
+  for (const l of ["Filter by branch", "Filter by team", "Filter by role", "Filter by status", "Filter by application"]) check(`the directory has: ${l}`, (await page.getByLabel(l).count()) === 1);
   await go("/administrator/users/import");
   const pickFile = async (name, content) => { fs.writeFileSync(SP + "/" + name, content); await page.locator("input[type=file]").setInputFiles(SP + "/" + name); };
   const problem = (text) => page.locator("[role=alert]", { hasText: text }).first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
@@ -224,17 +224,17 @@ try {
   await pickFile("bad4.csv", "name,email,password\nA,a@gmail.com,secret-pass-1\n"); check("a file with a password column is refused outright", await problem("Remove the password column"));
   fs.writeFileSync(SP + "/big.csv", "email,name\n" + "x".repeat(2_100_000)); await page.locator("input[type=file]").setInputFiles(SP + "/big.csv"); check("file over 2 MB is rejected", await problem("over 2 MB"));
   fs.writeFileSync(SP + "/notes.pdf", "x"); await page.locator("input[type=file]").setInputFiles(SP + "/notes.pdf"); check("a file that is not CSV or Excel is rejected", await problem("Choose a .csv or .xlsx"));
-  const csv = "\uFEFF" + ["name,email,department,applications,designation,ignored",
-    '"Asha Patil",zz-asha@gmail.com,ZZ Dept A2,"ZZ App Uno, ZZ App Uno",Accountant,x',
-    '  Mixed Case  ,  ZZ-UP@GMAIL.COM  ,ZZ Dept A2,ZZ App Uno,,',
+  const csv = "\uFEFF" + ["name,email,branch,applications,designation,ignored",
+    '"Asha Patil",zz-asha@gmail.com,,"ZZ App Uno, ZZ App Uno",Accountant,x',
+    '  Mixed Case  ,  ZZ-UP@GMAIL.COM  ,,ZZ App Uno,,',
     '"Line\nBreak",zz-nl@gmail.com,,,,',
     "=1+1,zz-formula@gmail.com,,,,",
     "",
     "Dup One,zz-dup@gmail.com,,,,",
     "Dup Two,ZZ-DUP@gmail.com,,,,",
     "Wrong Domain,zz-bad@yahoo.com,,,,",
-    "Bad Dept,zz-baddept@gmail.com,No Such Dept,,,",
-    "Bad App,zz-badapp@gmail.com,ZZ Dept A2,No Such App,,",
+    "Bad Branch,zz-badbranch@gmail.com,No Such Branch,,,",
+    "Bad App,zz-badapp@gmail.com,,No Such App,,",
     ",zz-noname@gmail.com,,,,",
     "Not An Email,not-an-email,,,,"].join("\r\n");
   fs.writeFileSync(SP + "/edge.csv", csv); await page.locator("input[type=file]").setInputFiles(SP + "/edge.csv");
@@ -243,7 +243,7 @@ try {
   check("blank lines are not counted as rows, and an unused column is reported", (await page.getByRole("button", { name: /^All · 11$/ }).count()) === 1 && (await main()).includes("ignored"), await createBtn.innerText());
   const rowText = async (n) => (await page.locator(`tr[data-row='${n}']`).innerText()).replace(/\s+/g, " ");
   check("a duplicate email is flagged and points at the first row", /duplicate/i.test(await rowText(6)) && /Row 5/.test(await rowText(6)), await rowText(6));
-  check("each problem row says why, with the exact value", /must end with/.test(await rowText(7)) && /No Such Dept/.test(await rowText(8)) && /No Such App/.test(await rowText(9)) && /Name is missing/.test(await rowText(10)) && /not a valid email/.test(await rowText(11)));
+  check("each problem row says why, with the exact value", /must end with/.test(await rowText(7)) && /No Such Branch/.test(await rowText(8)) && /No Such App/.test(await rowText(9)) && /Name is missing/.test(await rowText(10)) && /not a valid email/.test(await rowText(11)));
   check("a good row says it will be created", /ready/i.test(await rowText(1)) && /will create/.test(await rowText(1)));
   await page.getByLabel("name for row 10").fill("Fixed Name");
   await poll(async () => /Create 6 accounts/.test(await createBtn.innerText()) && !(await createBtn.isDisabled()));
@@ -251,14 +251,14 @@ try {
   await createBtn.click(); await page.getByText(/Finished\./).waitFor({ timeout: 90000 }); const sum = (await page.getByText(/Finished\./).innerText()).replace(/\s+/g, " ");
   check("summary: 11 submitted, 6 created, 5 not imported", /11 submitted: 6 created, 0 updated, 0 skipped, 5 not imported \(invalid\), 0 failed/.test(sum), sum);
   const u = async (e) => (await sql`select id,name,email,designation,home_department_id,password_hash from users where email=${e}`)[0];
-  const asha = await u("zz-asha@gmail.com"); check("department and designation set; BOM/CRLF handled", asha && asha.home_department_id === dA.id && asha.designation === "Accountant");
+  const asha = await u("zz-asha@gmail.com"); check("designation set; BOM/CRLF handled", asha && asha.designation === "Accountant");
   check("same app listed twice gives one grant", (await sql`select count(*)::int n from user_app_access where user_id=${asha.id}`)[0].n === 1);
   check("email is trimmed and lower-cased", !!(await u("zz-up@gmail.com")) && (await u("zz-up@gmail.com")).name === "Mixed Case");
   check("name with a line break in quotes is kept whole", (await u("zz-nl@gmail.com"))?.name === "Line\nBreak");
   check("formula-looking name is stored as plain text", (await u("zz-formula@gmail.com"))?.name === "=1+1");
   check("duplicate email inside one file: first created, second not", (await u("zz-dup@gmail.com"))?.name === "Dup One");
   check("the corrected row was created with its corrected name", (await u("zz-noname@gmail.com"))?.name === "Fixed Name");
-  check("wrong domain / unknown department / unknown app / bad email: none created", !(await u("zz-bad@yahoo.com")) && !(await u("zz-baddept@gmail.com")) && !(await u("zz-badapp@gmail.com")) && !(await u("not-an-email")));
+  check("wrong domain / unknown branch / unknown app / bad email: none created", !(await u("zz-bad@yahoo.com")) && !(await u("zz-badbranch@gmail.com")) && !(await u("zz-badapp@gmail.com")) && !(await u("not-an-email")));
   check("nobody was given a password: every imported account has none", (await sql`select count(*)::int n from users where email in ('zz-asha@gmail.com','zz-up@gmail.com','zz-nl@gmail.com','zz-formula@gmail.com','zz-dup@gmail.com','zz-noname@gmail.com') and password_hash is not null`)[0].n === 0);
   check("each new person has exactly one invitation, stored only as a hash", (await sql`select count(*)::int n from user_invites i join users us on us.id = i.user_id where us.email like 'zz-%' and i.token_hash ~ '^[0-9a-f]{64}$'`)[0].n === 6);
   const rtxt = await main(); check("each error row explains why in the results", /must end with|was not found|Name is missing|not a valid email/i.test(rtxt));
@@ -279,10 +279,6 @@ try {
   await page.getByLabel("Filter by application").selectOption({ label: "ZZ App Uno" }); await page.waitForURL(/app=/);
   await page.waitForFunction(() => /\d+ (?:people|person) match/.test(document.querySelector("main")?.innerText ?? ""), null, { timeout: 15000 }).catch(() => {});
   const ft = (await main()).toLowerCase(); check("filtering the directory by application shows only people who hold it", ft.includes("asha patil") && !ft.includes("line"));
-  const [zo] = await sql`insert into departments (kind, name, slug, icon, sort_order) values ('organisation', 'ZZ Org Dept', 'zz-org-dept', 'Building2', 9300) returning id`; await sql`update users set home_department_id = ${zo.id} where id = ${asha.id}`; // people's departments are organisation departments now
-  await go("/administrator/users"); await page.getByLabel("Filter by department").selectOption({ label: "ZZ Org Dept" }); await page.waitForURL(/dept=/);
-  await page.waitForFunction(() => /\d+ (?:people|person) match/.test(document.querySelector("main")?.innerText ?? ""), null, { timeout: 15000 }).catch(() => {});
-  check("department filter works", (await main()).toLowerCase().includes("asha patil") && /\d+ (?:people|person) match/.test(await main()), (await main()).replace(/\s+/g, " ").slice(-300) + " | " + page.url().slice(-80));
   await go("/administrator/users?status=pending"); check("the 'Pending invitation' filter lists people who have not set a password", (await main()).toLowerCase().includes("asha patil") && /Pending invitation/.test(await main()));
 
   section("6. Access: the profile, per app, templates, department Users tab");
@@ -309,7 +305,7 @@ try {
   const exF = await page.request.get(BASE + "/administrator/activity/export?action=launch"); check("export honours filters", exF.status() === 200);
 
   section("8. Notifications and navigation");
-  await go("/administrator/notifications"); check("notifications panel renders", (await main()).includes("Notifications Panel"));
+  await go("/administrator/notifications"); check("notifications panel renders", (await main()).includes("Notification Panel"));
   await go("/administrator"); const dash = (await main()).toLowerCase(); check("/administrator is the dashboard, with real counts for people and applications", page.url().endsWith("/administrator") && ["total users", "active users", "pending invitations", "registered", "under testing", "unavailable"].every((t) => dash.includes(t)) && /\d/.test(dash), page.url());
   await go("/administrator/apps"); check("old /administrator/apps redirects", page.url().endsWith("/administrator/departments"), page.url());
   const bad = await page.goto(BASE + "/administrator/departments/not-a-uuid"); check("bad department id shows the not-found page", /Page not found/i.test(await html(page)), bad.status());
@@ -553,7 +549,7 @@ try {
   await page.reload(); await page.waitForLoadState("networkidle").catch(() => {});
   check("background prefetching of other pages does not lock Administrator", new URL(page.url()).pathname === "/administrator/users", page.url());
   await page.locator("aside:visible nav a", { hasText: "Finance" }).first().click(); await page.waitForTimeout(1800);
-  const usersLink = page.locator("aside:visible").getByRole("link", { name: "Users & Access", exact: true });
+  const usersLink = page.locator("aside:visible").getByRole("link", { name: "Users", exact: true });
   if (!(await usersLink.count())) await page.locator("aside:visible").getByRole("button", { name: "Administrator" }).click();
   await usersLink.click(); await page.waitForURL((u) => /unlock|administrator\/users/.test(u.pathname), { timeout: 20000 }).catch(() => {});
   check("after leaving Administrator, going back asks for the password again", new URL(page.url()).pathname === "/unlock", page.url());
@@ -618,7 +614,7 @@ try {
   await mp.getByRole("button", { name: "Open menu" }).click(); await mp.waitForTimeout(500);
   check("menu button slides the sidebar in", await sb());
   await mp.locator("aside").last().getByRole("button", { name: "Administrator" }).click(); await mp.waitForTimeout(300);
-  check("Administrator expands to its sections on a phone", (await mp.locator("aside").last().locator("a[href^='/administrator']").count()) === 8);
+  check("Administrator expands to its sections on a phone", (await mp.locator("aside").last().locator("a[href^='/administrator']").count()) === 5);
   await mp.locator("aside").last().locator("a[href='/administrator/users']").click(); await mp.waitForURL((u) => /unlock|administrator\/users/.test(u.pathname)); await unlockIf(mp); await mp.waitForURL("**/administrator/users"); await mp.waitForLoadState("networkidle").catch(() => {}); check("tapping a section navigates", mp.url().endsWith("/administrator/users"), mp.url());
   for (const [p, l] of [["/", "home"], ["/administrator", "dashboard"], ["/administrator/departments", "departments"], ["/administrator/users", "users and access"], ["/administrator/users/import", "bulk add"], ["/administrator/users/org", "branches and teams"], ["/administrator/users/audit", "audit log"], ["/administrator/inventory", "application inventory"], ["/administrator/access", "access"], ["/administrator/activity", "activity"], ["/administrator/notifications", "notifications"], [deptUrl.replace(BASE, ""), "department detail"]]) await noOverflow(p, l);
   check("no script errors on the phone layout", mErr.length === 0, mErr.join(" | "));

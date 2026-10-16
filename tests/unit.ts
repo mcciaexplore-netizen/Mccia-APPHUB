@@ -10,13 +10,14 @@ import {
   type Actor, type Target,
 } from "../src/lib/rbac";
 import { isPublicAddress } from "../src/lib/net-guard";
-import { adminTabsFor, peopleTabsFor } from "../src/lib/admin-tabs";
+import { adminTabsFor } from "../src/lib/admin-tabs";
 import { scrub } from "../src/lib/scrub";
 import { xlsxToTable } from "../src/lib/xlsx-read";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
   FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
 import { screenFor } from "../src/lib/approvals/screens";
+import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import {
   assessBudget, budgetWarning, commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, percentUsed, planProblemMessage, planSteps, STATUS_LABEL, utilisationLevel, wrongFormMessage,
   type RuleLike,
@@ -107,6 +108,28 @@ eq("a plain requester sees the forms only: HR and Expenditure in HR Approval, Ex
 eq("menu: in Expenditure an approver is offered 'Waiting for Me', an oversight role 'All Pending', and nobody gets the old 'Pending' that showed everything to everyone", [pagesOf(["requester", "approver"], "exp").includes("Waiting for Me"), pagesOf(["requester", "approver"], "exp").includes("All Pending"), pagesOf(["requester", "viewer"], "exp").includes("All Pending"), pagesOf(["requester", "viewer"], "exp").includes("Waiting for Me"), pagesOf(["requester", "approvals_admin"], "exp").includes("Pending")], [true, false, true, false, false]);
 eq("screens: 'expenses/pending' is each approver's own list (only what waits for them, decided in place) and 'expenses/waiting' is the list of every pending small expense", [screenFor(["expenses", "pending"])?.waitingForMe, screenFor(["expenses", "pending"])?.quickDecide, screenFor(["expenses", "waiting"])?.waitingForMe, screenFor(["expenses", "waiting"])?.statuses, screenFor(["expenses", "waiting"])?.types], [true, true, undefined, ["pending"], ["expenditure_small"]]);
 eq("full access still has the forms, and more", [FULL_ACCESS_ROLES.every((r) => pagesOf(["requester", r], "hr").includes("HR") && pagesOf(["requester", r], "exp").includes("Expenses")), pagesOf(["requester", "viewer"], "hr").length > 2], [true, true]);
+
+// Approvals: the form layout the Support Admin sets (names, order, hidden fields, extra fields) and the answers to the extra fields.
+const row = (o: Partial<FormFieldRow> & { key: string }): FormFieldRow => ({ form: "hr", label: o.key, builtin: true, kind: "text", required: false, hidden: false, sortOrder: 0, options: [], ...o });
+eq("form fields: with nothing set, every form has its own fields in the default order, none hidden", FORM_KEYS.map((f) => [mergeFields(f, []).map((x) => x.key).join(), mergeFields(f, []).some((x) => x.hidden)]), FORM_KEYS.map((f) => [BUILTIN[f].map((d) => d.key).join(), false]));
+const hrSet = mergeFields("hr", [
+  row({ key: "name", label: "Full name", sortOrder: 10 }), row({ key: "description", label: "Details", sortOrder: 15 }), row({ key: "email", label: "Email", sortOrder: 20, hidden: true }),
+  row({ key: "category", sortOrder: 30, hidden: true }), row({ key: "c_aaaa1111", label: "Employee code", builtin: false, kind: "text", required: true, sortOrder: 1000 }),
+  row({ key: "c_bbbb2222", label: "Grade", builtin: false, kind: "select", options: ["A", "B"], sortOrder: 1010, hidden: true }),
+]);
+eq("form fields: a built-in field can be renamed and moved, and an optional one hidden", [hrSet.slice(0, 3).map((f) => f.label), hrSet.find((f) => f.key === "email")?.hidden], [["Full name", "Details", "Email"], true]);
+eq("form fields: a field the request cannot do without is never hidden, whatever is stored", hrSet.find((f) => f.key === "category")?.hidden, false);
+eq("form fields: the extra fields come with their kind, whether they are required, their choices and their place", hrSet.filter((f) => !f.builtin).map((f) => [f.key, f.label, f.kind, f.required, f.options.join("|"), f.hidden]), [["c_aaaa1111", "Employee code", "text", true, "", false], ["c_bbbb2222", "Grade", "select", false, "A|B", true]]);
+const answers = (given: Record<string, string>, fields: FormField[] = hrSet) => checkCustomAnswers(fields, given);
+eq("form fields: a required extra field must be answered", [answers({}), answers({ c_aaaa1111: "   " })], [{ ok: false, error: '"Employee code" is required.' }, { ok: false, error: '"Employee code" is required.' }]);
+eq("form fields: an answer is kept with the name the field has now, and a hidden field is not asked", answers({ c_aaaa1111: " E-42 ", c_bbbb2222: "Z" }), { ok: true, values: [{ key: "c_aaaa1111", label: "Employee code", value: "E-42" }] });
+const kinds = mergeFields("hr", [
+  row({ key: "c_n", label: "Count", builtin: false, kind: "number", sortOrder: 1 }), row({ key: "c_d", label: "Due", builtin: false, kind: "date", sortOrder: 2 }),
+  row({ key: "c_s", label: "Grade", builtin: false, kind: "select", options: ["A", "B"], sortOrder: 3 }), row({ key: "c_t", label: "Note", builtin: false, kind: "textarea", sortOrder: 4 }),
+]);
+eq("form fields: a number, a date and a dropdown choice are checked, and a long text is not cut", [
+  answers({ c_n: "12.5", c_d: "2026-10-31", c_s: "B", c_t: "x".repeat(4000) }, kinds).ok, answers({ c_n: "twelve" }, kinds).ok, answers({ c_d: "31/10/2026" }, kinds).ok, answers({ c_s: "C" }, kinds).ok, answers({ c_t: "x".repeat(4001) }, kinds).ok,
+], [true, false, false, false, false]);
 
 // Approvals: budget maths. Only approved spend counts; pending is shown, never subtracted.
 const pos = (allocated: number | null, spent = 0, pending = 0) => ({ allocatedPaise: allocated, spentPaise: spent, pendingPaise: pending });
@@ -260,14 +283,12 @@ eq("rbac: an Admin with Users & access may hand out any application, one without
 eq("rbac: Admin and Super Admin can be given through the screens, only by the Support Admin (and the Support Admin role never)", [[...PROMOTABLE_ROLES], [...ASSIGNABLE_ROLES].includes("head_admin" as never)], [["admin", "super_admin"], false]);
 eq("rbac: the areas an Admin can be given", [...ADMIN_AREAS], ["people", "import", "org", "apps", "audit", "activity"]);
 eq("rbac: a plain user and a Team manager never open Administrator", [canAdminister(USER), canAdminister(TM)], [false, false]);
-eq("tabs: the Support Admin sees every tab", adminTabsFor(ADMIN).map((t) => t.label),
-  ["Dashboard", "Departments", "Users & Access", "Applications", "Application categories", "Approvals", "Notifications Panel", "Activity log"]);
-eq("tabs: an Admin sees the Dashboard and only the tabs of the areas switched on", [adminTabsFor(A_NONE).map((t) => t.label), adminTabsFor(adminWith("people")).map((t) => t.label), adminTabsFor(adminWith("apps", "activity")).map((t) => t.label)],
-  [["Dashboard", "Notifications Panel"], ["Dashboard", "Users & Access", "Notifications Panel"], ["Dashboard", "Applications", "Application categories", "Notifications Panel", "Activity log"]]);
-eq("tabs: Users & Access opens on the first page of it the Admin may use", [adminTabsFor(A_IMPORT).find((t) => t.label === "Users & Access")?.href, adminTabsFor(A_AUDIT).find((t) => t.label === "Users & Access")?.href, adminTabsFor(adminWith("org")).find((t) => t.label === "Users & Access")?.href],
+eq("tabs: the Support Admin sees every tab: Dashboard, Users, Approval Forms, Notification Panel and Activity Log", adminTabsFor(ADMIN).map((t) => t.label),
+  ["Dashboard", "Users", "Approval Forms", "Notification Panel", "Activity Log"]);
+eq("tabs: an Admin sees the Dashboard, the Notification Panel and only the tabs of the areas switched on, never Approval Forms", [adminTabsFor(A_NONE).map((t) => t.label), adminTabsFor(adminWith("people")).map((t) => t.label), adminTabsFor(adminWith("apps", "activity")).map((t) => t.label)],
+  [["Dashboard", "Notification Panel"], ["Dashboard", "Users", "Notification Panel"], ["Dashboard", "Notification Panel", "Activity Log"]]);
+eq("tabs: Users opens on the first page of it the Admin may use", [adminTabsFor(A_IMPORT).find((t) => t.label === "Users")?.href, adminTabsFor(A_AUDIT).find((t) => t.label === "Users")?.href, adminTabsFor(adminWith("org")).find((t) => t.label === "Users")?.href],
   ["/administrator/users/import", "/administrator/users/audit", "/administrator/users/org"]);
-eq("tabs: inside Users & Access the Support Admin sees all four pages and an Admin only their own", [peopleTabsFor(ADMIN).map((t) => t.label), peopleTabsFor(adminWith("org", "audit")).map((t) => t.label)],
-  [["People", "Branches & teams", "Audit log", "By application & templates"], ["Branches & teams", "Audit log"]]);
 const own = new Set(["app1", "app2"]);
 eq("rbac: a team manager can hand out only the applications they hold", [
   grantableApps(ADMIN, own), firstUngrantable(grantableApps(TM, own), ["app1", "app2"]), firstUngrantable(grantableApps(TM, own), ["app1", "app9"]), firstUngrantable(grantableApps(USER, own), ["app1"]),
@@ -290,9 +311,10 @@ eq("audit: keys that look like secrets are dropped at any depth", scrub({ a: 1, 
 // Bulk import: reading the table
 const T = (rows: string[][]) => tableToRows(rows);
 eq("import: columns are found by their usual names, in any order, and rows are numbered from 1", (() => {
-  const r = T([["E-mail Address", "Full Name", "Dept", "Manager"], ["a@x.org", "Asha", "Finance", "m@x.org"]]);
-  return r.rows.length === 0 ? r.problem : [r.rows[0].row, r.rows[0].name, r.rows[0].email, r.rows[0].department, r.rows[0].manager];
-})(), [1, "Asha", "a@x.org", "Finance", "m@x.org"]);
+  const r = T([["E-mail Address", "Full Name", "Branch", "Manager"], ["a@x.org", "Asha", "Pune", "m@x.org"]]);
+  return r.rows.length === 0 ? r.problem : [r.rows[0].row, r.rows[0].name, r.rows[0].email, r.rows[0].branch, r.rows[0].manager];
+})(), [1, "Asha", "a@x.org", "Pune", "m@x.org"]);
+eq("import: a department column is not an import column any more: it is reported as ignored", T([["name", "email", "Department"], ["Asha", "a@x.org", "Finance"]]).ignoredColumns, ["Department"]);
 eq("import: a password column is refused outright, whatever it is called", ["password", "Initial Password", "pwd"].map((h) => !!T([["name", "email", h], ["A", "a@x.org", "secret-1"]]).problem), [true, true, true]);
 eq("import: name and email columns are required", [!!T([["name"], ["A"]]).problem, !!T([["email"], ["a@x.org"]]).problem, !!T([["name", "email"]]).problem], [true, true, true]);
 eq("import: notes starting with # and blank rows are skipped, emails are lower-cased and cells trimmed", (() => {

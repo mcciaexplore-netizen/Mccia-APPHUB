@@ -97,7 +97,6 @@ const toast = (page, t) => page.getByText(t).first().waitFor({ timeout: 20000 })
 const main = (page) => page.locator("main").first().innerText();
 // The sections of Administrator are listed once, in the sidebar's Administrator menu (there is no row of tabs on the page).
 const tabs = async (page) => (await page.locator("aside").first().locator("a[href^='/administrator']").allInnerTexts()).map((t) => t.trim());
-const subtabs = (page) => page.locator('nav[aria-label="Users and access pages"] a').allInnerTexts();
 const sidebarHasAdministrator = async (page) => (await page.locator("aside").first().getByRole("button", { name: "Administrator" }).count()) > 0;
 
 try {
@@ -126,9 +125,8 @@ try {
   check("the Super Admin is shown as a main admin, without the 'password in settings' note", /Main admin/i.test(superRowText) && !/password in settings/i.test(superRowText), superRowText.replace(/\s+/g, " ").slice(0, 120));
   check("while the Support Admin keeps 'Main admin · password in settings'", /Main admin · password in settings/i.test(await A.locator("tr", { hasText: envAdmin.name }).first().innerText()));
   check("a main admin's status cannot be clicked to deactivate them, and there is no Delete button on their row", (await A.locator("tr", { hasText: sup.name }).first().getByRole("button", { name: /Delete/ }).count()) === 0 && (await A.locator("tr", { hasText: sup.name }).first().getByTitle("Click to deactivate").count()) === 0);
-  check("the sections are listed once, in the sidebar, with no second row of the same links on the page", (await A.locator('nav[aria-label="Administrator sections"]').count()) === 0 && (await tabs(A)).length === 8);
-  check("all eight sections of Administrator, as before", JSON.stringify(await tabs(A)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Applications", "Application categories", "Approvals", "Notifications Panel", "Activity log"]), (await tabs(A)).join("|"));
-  check("the four pages inside Users & Access, as before", JSON.stringify(await subtabs(A)) === JSON.stringify(["People", "Branches & teams", "Audit log", "By application & templates"]), (await subtabs(A)).join("|"));
+  check("the sections are listed once, in the sidebar, with no second row of the same links on the page", (await A.locator('nav[aria-label="Administrator sections"]').count()) === 0 && (await tabs(A)).length === 5);
+  check("the Administrator menu has five items: Dashboard, Users, Approval Forms, Notification Panel and Activity Log", JSON.stringify(await tabs(A)) === JSON.stringify(["Dashboard", "Users", "Approval Forms", "Notification Panel", "Activity Log"]), (await tabs(A)).join("|"));
   const roleOptions = await A.locator("select[aria-label], select").evaluateAll((els) => els.flatMap((e) => [...e.options].map((o) => o.textContent)));
   check("the role filter lists User, Team manager, Admin, Super admin and Support admin", ["User", "Team manager", "Admin", "Super admin", "Support admin"].every((t) => roleOptions.includes(t)), roleOptions.join(","));
 
@@ -195,8 +193,8 @@ try {
   section("5. An Admin with Users & access");
   const pp = await visit(P, "/administrator", PW);
   check("the sidebar offers Administrator, and it opens after unlocking", (await sidebarHasAdministrator(P)) && pp === "/administrator");
-  check("the Admin sees the Dashboard, Users & Access and the Notifications Panel only", JSON.stringify(await tabs(P)) === JSON.stringify(["Dashboard", "Users & Access", "Notifications Panel"]), (await tabs(P)).join("|"));
-  check("the Administrator menu in the sidebar lists only those", (await P.locator("aside").first().innerText()).includes("Users & Access") && !(await P.locator("aside").first().innerText()).includes("Departments"));
+  check("the Admin sees the Dashboard, Users and the Notification Panel only", JSON.stringify(await tabs(P)) === JSON.stringify(["Dashboard", "Users", "Notification Panel"]), (await tabs(P)).join("|"));
+  check("the Administrator menu in the sidebar lists only those", (await P.locator("aside").first().innerText()).includes("Users") && !(await P.locator("aside").first().innerText()).includes("Approval Forms"));
   for (const p of ["/administrator/departments", "/administrator/inventory", "/administrator/users/org", "/administrator/users/audit", "/administrator/users/import", "/administrator/activity"]) {
     const landed = await visit(P, p, PW);
     check(`${p} is not open to them: they are sent back to the Dashboard`, landed === "/administrator", landed);
@@ -206,7 +204,6 @@ try {
   const pdir = await main(P);
   check("the directory shows plain users", pdir.includes(plain.name));
   check("and never the Support Admin, the Super Admin or another Admin", !pdir.includes(sup.name) && !pdir.includes(none.name) && !pdir.includes(org.name) && !pdir.includes(ADMIN_EMAIL), pdir.replace(/\s+/g, " ").slice(0, 160));
-  check("inside Users & Access they have People and By application & templates only", JSON.stringify(await subtabs(P)) === JSON.stringify(["People", "By application & templates"]), (await subtabs(P)).join("|"));
   await P.getByRole("button", { name: "Add user" }).click();
   check("Add user offers no Admin or Super admin to an Admin", (await P.getByRole("dialog").getByLabel("Role").locator("option").allInnerTexts()).join("|") === "User|Team manager");
   await P.keyboard.press("Escape");
@@ -235,10 +232,9 @@ try {
   section("6. An Admin with Branches & teams and the Audit log only");
   const op = await visit(O, "/administrator/users", PW);
   check("the People address is not open to them", op === "/administrator", op);
-  check("their tabs are the Dashboard, Departments, Users & Access and the Notifications Panel", JSON.stringify(await tabs(O)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Notifications Panel"]), (await tabs(O)).join("|"));
-  check("and Users & Access opens on the first page they may use, not People", (await O.locator("aside").first().locator("a[href^='/administrator']", { hasText: "Users & Access" }).getAttribute("href")) === "/administrator/users/org");
+  check("their menu is the Dashboard, Users and the Notification Panel", JSON.stringify(await tabs(O)) === JSON.stringify(["Dashboard", "Users", "Notification Panel"]), (await tabs(O)).join("|"));
+  check("and Users opens on the first page they may use, not People", (await O.locator("aside").first().locator("a[href^='/administrator']", { hasText: "Users" }).getAttribute("href")) === "/administrator/users/org");
   await visit(O, "/administrator/users/org", PW);
-  check("inside Users & Access they have Branches & teams and Audit log only", JSON.stringify(await subtabs(O)) === JSON.stringify(["Branches & teams", "Audit log"]), (await subtabs(O)).join("|"));
   check("the audit log opens", (await visit(O, "/administrator/users/audit", PW)) === "/administrator/users/audit");
   const csv = await O.request.get(BASE + "/administrator/users/audit/export");
   check("and can be exported", csv.status() === 200 && /text\/csv/.test(csv.headers()["content-type"] ?? ""));
@@ -348,6 +344,29 @@ try {
   await visit(A, `/administrator/users/${plain.id}`, ADMIN_PW);
   check("the Application access box offers real applications only: no HR Approval, no Expenditure Approval, no Approval System category, no 'Approvals'", (await A.locator("main label", { hasText: /Approval/ }).count()) === 0 && !/Approval System/.test(await main(A)) && (await A.locator("main label", { hasText: "ZZR App" }).count()) >= 1);
   check("the Support Admin has the same page", (await A.goto(BASE + "/approvals").then(() => cards(A).getByRole("link").count())) === 2);
+
+  section("7e. Approval Forms: the Support Admin changes what the forms ask");
+  await visit(A, "/administrator/approval-forms", ADMIN_PW);
+  check("the page has the three forms as tabs, and the HR form's eight fields as a list", (await A.getByRole("tab").count()) === 3 && (await A.getByRole("list", { name: /Fields of the HR form/ }).locator("li").count()) === 8);
+  await P.goto(BASE + "/administrator/approval-forms");
+  check("an Admin with areas switched on cannot open it: they are sent back to the hub", await poll(async () => new URL(P.url()).pathname !== "/administrator/approval-forms"));
+  await A.getByLabel("Name of field 6").fill("ZZR Details");
+  await A.getByLabel("Name", { exact: true }).fill("ZZR Employee code");
+  await A.getByRole("checkbox", { name: "Required" }).first().check();
+  await A.getByRole("button", { name: "Add field" }).click();
+  await A.locator("li", { has: A.getByLabel("Name of field 8") }).getByRole("checkbox", { name: "Shown" }).uncheck();
+  await A.getByRole("button", { name: "Save this form" }).click();
+  check("saving shows a message", await toast(A, "HR form saved"));
+  check("the settings are stored: the new name, the hidden field and the extra field", await poll(async () => { const r = await sql`select key, label, hidden, builtin, required from apr_form_fields where form = 'hr'`; return r.some((x) => x.key === "description" && x.label === "ZZR Details") && r.some((x) => x.key === "file2" && x.hidden) && r.some((x) => !x.builtin && x.label === "ZZR Employee code" && x.required); }));
+  await U.goto(BASE + "/approvals/hr/new");
+  const hrText = await U.locator("main").first().innerText();
+  check("the HR form now shows the new name and the extra field, and one file upload instead of two", /ZZR Details/.test(hrText) && /ZZR Employee code/.test(hrText) && (hrText.match(/File upload/g) ?? []).length === 1);
+  await U.getByRole("button", { name: "Submit" }).click();
+  check("submitting without the required extra field says so", await U.getByText('Fill in "ZZR Employee code".').first().waitFor({ timeout: 15000 }).then(() => true).catch(() => false));
+  await sql`delete from apr_form_fields`;
+  await sql`delete from apr_admin_audit where entity = 'form_fields'`;
+  await U.goto(BASE + "/approvals/hr/new");
+  check("with the settings removed the form is back to its own fields", !/ZZR Employee code/.test(await U.locator("main").first().innerText()) && ((await U.locator("main").first().innerText()).match(/File upload/g) ?? []).length === 2);
 
   section("8. Console and untouched data");
   check("no browser console or page errors on any screen", consoleErrors.length === 0 && pageErrors.length === 0, [...consoleErrors, ...pageErrors].join(" | "));
