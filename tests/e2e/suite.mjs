@@ -618,7 +618,7 @@ try {
   await mp.getByRole("button", { name: "Open menu" }).click(); await mp.waitForTimeout(500);
   check("menu button slides the sidebar in", await sb());
   await mp.locator("aside").last().getByRole("button", { name: "Administrator" }).click(); await mp.waitForTimeout(300);
-  check("Administrator expands to its sections on a phone", (await mp.locator("aside").last().locator("a[href^='/administrator']").count()) === 7);
+  check("Administrator expands to its sections on a phone", (await mp.locator("aside").last().locator("a[href^='/administrator']").count()) === 8);
   await mp.locator("aside").last().locator("a[href='/administrator/users']").click(); await mp.waitForURL((u) => /unlock|administrator\/users/.test(u.pathname)); await unlockIf(mp); await mp.waitForURL("**/administrator/users"); await mp.waitForLoadState("networkidle").catch(() => {}); check("tapping a section navigates", mp.url().endsWith("/administrator/users"), mp.url());
   for (const [p, l] of [["/", "home"], ["/administrator", "dashboard"], ["/administrator/departments", "departments"], ["/administrator/users", "users and access"], ["/administrator/users/import", "bulk add"], ["/administrator/users/org", "branches and teams"], ["/administrator/users/audit", "audit log"], ["/administrator/inventory", "application inventory"], ["/administrator/access", "access"], ["/administrator/activity", "activity"], ["/administrator/notifications", "notifications"], [deptUrl.replace(BASE, ""), "department detail"]]) await noOverflow(p, l);
   check("no script errors on the phone layout", mErr.length === 0, mErr.join(" | "));

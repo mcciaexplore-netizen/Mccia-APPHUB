@@ -95,7 +95,8 @@ const visit = async (page, p, pw) => {
 };
 const toast = (page, t) => page.getByText(t).first().waitFor({ timeout: 20000 }).then(() => true).catch(() => false);
 const main = (page) => page.locator("main").first().innerText();
-const tabs = (page) => page.locator('nav[aria-label="Administrator sections"] a').allInnerTexts();
+// The sections of Administrator are listed once, in the sidebar's Administrator menu (there is no row of tabs on the page).
+const tabs = async (page) => (await page.locator("aside").first().locator("a[href^='/administrator']").allInnerTexts()).map((t) => t.trim());
 const subtabs = (page) => page.locator('nav[aria-label="Users and access pages"] a').allInnerTexts();
 const sidebarHasAdministrator = async (page) => (await page.locator("aside").first().getByRole("button", { name: "Administrator" }).count()) > 0;
 
@@ -125,7 +126,8 @@ try {
   check("the Super Admin is shown as a main admin, without the 'password in settings' note", /Main admin/i.test(superRowText) && !/password in settings/i.test(superRowText), superRowText.replace(/\s+/g, " ").slice(0, 120));
   check("while the Support Admin keeps 'Main admin · password in settings'", /Main admin · password in settings/i.test(await A.locator("tr", { hasText: envAdmin.name }).first().innerText()));
   check("a main admin's status cannot be clicked to deactivate them, and there is no Delete button on their row", (await A.locator("tr", { hasText: sup.name }).first().getByRole("button", { name: /Delete/ }).count()) === 0 && (await A.locator("tr", { hasText: sup.name }).first().getByTitle("Click to deactivate").count()) === 0);
-  check("all six tabs of Administrator, as before", JSON.stringify(await tabs(A)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Applications", "Application categories", "Approvals", "Notifications Panel", "Activity log"]), (await tabs(A)).join("|"));
+  check("the sections are listed once, in the sidebar, with no second row of the same links on the page", (await A.locator('nav[aria-label="Administrator sections"]').count()) === 0 && (await tabs(A)).length === 8);
+  check("all eight sections of Administrator, as before", JSON.stringify(await tabs(A)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Applications", "Application categories", "Approvals", "Notifications Panel", "Activity log"]), (await tabs(A)).join("|"));
   check("the four pages inside Users & Access, as before", JSON.stringify(await subtabs(A)) === JSON.stringify(["People", "Branches & teams", "Audit log", "By application & templates"]), (await subtabs(A)).join("|"));
   const roleOptions = await A.locator("select[aria-label], select").evaluateAll((els) => els.flatMap((e) => [...e.options].map((o) => o.textContent)));
   check("the role filter lists User, Team manager, Admin, Super admin and Support admin", ["User", "Team manager", "Admin", "Super admin", "Support admin"].every((t) => roleOptions.includes(t)), roleOptions.join(","));
@@ -234,7 +236,7 @@ try {
   const op = await visit(O, "/administrator/users", PW);
   check("the People address is not open to them", op === "/administrator", op);
   check("their tabs are the Dashboard, Departments, Users & Access and the Notifications Panel", JSON.stringify(await tabs(O)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Notifications Panel"]), (await tabs(O)).join("|"));
-  check("and Users & Access opens on the first page they may use, not People", (await O.locator('nav[aria-label="Administrator sections"] a', { hasText: "Users & Access" }).getAttribute("href")) === "/administrator/users/org");
+  check("and Users & Access opens on the first page they may use, not People", (await O.locator("aside").first().locator("a[href^='/administrator']", { hasText: "Users & Access" }).getAttribute("href")) === "/administrator/users/org");
   await visit(O, "/administrator/users/org", PW);
   check("inside Users & Access they have Branches & teams and Audit log only", JSON.stringify(await subtabs(O)) === JSON.stringify(["Branches & teams", "Audit log"]), (await subtabs(O)).join("|"));
   check("the audit log opens", (await visit(O, "/administrator/users/audit", PW)) === "/administrator/users/audit");

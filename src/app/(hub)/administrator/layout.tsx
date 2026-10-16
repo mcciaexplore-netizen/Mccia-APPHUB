@@ -1,14 +1,12 @@
 import { requireAdministrator } from "@/lib/permissions";
-import { adminTabsFor } from "@/lib/admin-tabs";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
-import { AdminNav } from "./AdminNav";
 
 export default async function AdministratorLayout({ children }: { children: React.ReactNode }) {
-  const me = await requireAdministrator();
+  await requireAdministrator();
+  // The sections of Administrator are listed once, in the sidebar's Administrator menu; there is no second row of the same links here.
   return (
     <ConfirmProvider>
-      <h1 className="text-3xl sm:text-4xl">Administrator</h1>
-      <AdminNav tabs={adminTabsFor(me)} />
+      <h1 className="mb-8 text-3xl sm:text-4xl">Administrator</h1>
       {children}
     </ConfirmProvider>
   );

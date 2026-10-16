@@ -41,6 +41,7 @@ const ADMIN_LINKS = [
   { href: "/administrator/departments", label: "Application categories", Icon: Layers },
   { href: "/administrator/approvals", label: "Approvals", Icon: ClipboardCheck },
   { href: "/administrator/notifications", label: "Notifications Panel", Icon: Bell },
+  { href: "/administrator/activity", label: "Activity log", Icon: Activity },
 ] as const;
 
 export function Sidebar({
