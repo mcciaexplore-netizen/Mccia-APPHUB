@@ -16,10 +16,10 @@ What was run, on what, with what result. Everything below was run against a **sc
 | Approvals integration (database) | `npm run test:integration` | **202 / 202** (the earlier 108, plus return for corrections and resubmitting, the first approver raising his own request, the first-approver/DG rule, and HR amounts with budgets) |
 | Hub in a browser | `npm run test:e2e` | **227 / 227** (the earlier 186 checks, ported to the new screens, plus new ones) |
 | Users & Access in a browser | `npm run test:e2e:people` | **112 / 112** |
-| Approval System in a browser | `npm run test:e2e:approvals` | **91 / 91** (regression) |
+| Approval System in a browser | `npm run test:e2e:approvals` | **93 / 93** (regression) |
 | Approval System request flow | `npm run test:e2e:approvals:flow` | **146 / 146** (the earlier 104, plus returning, correcting and resubmitting in the browser, returning from the inbox, HR with an amount, and the rule check) |
-| Roles in a browser | `npm run test:e2e:roles` | **98 / 98** (Support Admin sets an Admin's areas and roles; Super Admin; Admins with different areas see and open only theirs; plain users and Admins with nothing on are kept out) |
-| **Total checks** | | **1,222** |
+| Roles in a browser | `npm run test:e2e:roles` | **95 / 95** (Support Admin sets an Admin's areas and roles; Super Admin; Admins with different areas see and open only theirs; plain users and Admins with nothing on are kept out) |
+| **Total checks** | | **1,221** |
 
 All browser suites write only rows with test names (`ZZ…`, `zz-…`, `ZZP…`, `zzp-…`), remove them afterwards, remove the audit entries they caused, and
 confirm that existing departments, applications, branches, teams, people and access are exactly as before.

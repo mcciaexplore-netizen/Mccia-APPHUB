@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { Activity, AppWindow, Bell, Building2, ChevronDown, ClipboardCheck, ClipboardList, Layers, LayoutDashboard, ShieldCheck, UsersRound, Users, Wallet, UserCheck, X } from "lucide-react";
+import { Activity, AppWindow, Bell, Building2, ChevronDown, ClipboardCheck, ClipboardList, Layers, LayoutDashboard, ShieldCheck, UsersRound, Users, X } from "lucide-react";
 import { lockAdmin } from "@/actions/auth";
 import { Icon } from "@/components/Icon";
 import { isSafetyWeek, playSafetyMascot } from "@/components/SafetyMascot";
 import type { Role } from "@/db/schema";
 import { adminTabsFor } from "@/lib/admin-tabs";
 import { canAdminister } from "@/lib/rbac";
-import { APP_ENTRY, appOwning, approvalsApps, parseApp, type AppKey } from "@/lib/approvals/approvals.manifest";
 
 export type SidebarDept = { id: string; name: string; icon: string };
 export type SidebarUser = { name: string; role: Role; adminAreas?: readonly string[] };
@@ -30,9 +29,6 @@ function Item({ href, active, onNavigate, children }: { href: string; active: bo
   );
 }
 
-/** The two applications under Approval System, in the order they are listed. */
-const APPROVAL_APPS: { key: AppKey; Icon: typeof Wallet }[] = [{ key: "hr", Icon: UserCheck }, { key: "exp", Icon: Wallet }];
-
 const ADMIN_LINKS = [
   { href: "/administrator", label: "Dashboard", Icon: LayoutDashboard, exact: true },
   { href: "/administrator/org-departments", label: "Departments", Icon: Building2 },
@@ -45,18 +41,14 @@ const ADMIN_LINKS = [
 ] as const;
 
 export function Sidebar({
-  user, departments, approvalApps, onNavigate, onClose,
+  user, departments, showApprovals, onNavigate, onClose,
 }: {
-  user: SidebarUser | null; departments: SidebarDept[]; approvalApps: readonly AppKey[]; onNavigate: () => void; onClose: () => void;
+  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; onNavigate: () => void; onClose: () => void;
 }) {
   const pathname = usePathname();
   const params = useSearchParams();
   const d = params.get("d");
-  // Approval System opens with two applications under it; the one you are in is marked (a request page says which with ?app=).
   const inApprovals = pathname === "/approvals" || pathname.startsWith("/approvals/");
-  const [approvalsOpen, setApprovalsOpen] = useState(inApprovals);
-  const approvalsId = useId();
-  const currentApp = inApprovals ? appOwning(pathname) ?? parseApp(params.get("app")) : null;
   const onHome = pathname === "/";
   const inAdmin = pathname.startsWith("/administrator");
   const [adminOpen, setAdminOpen] = useState(inAdmin);
@@ -87,33 +79,11 @@ export function Sidebar({
             <span className="flex-1 py-2">{dep.name}</span>
           </Item>
         ))}
-        {/* Approval System is a feature of the hub, not an application in a department: a dropdown whose two entries open the applications. */}
-        {approvalApps.length > 0 && (
-          <div>
-            <button
-              type="button"
-              onClick={() => setApprovalsOpen((o) => !o)}
-              aria-expanded={approvalsOpen || inApprovals}
-              aria-controls={approvalsId}
-              className={`${ROW} w-[calc(100%-1.5rem)] text-left ${rowTone(inApprovals)}`}
-            >
-              <ClipboardList size={20} /> <span className="flex-1 py-2">Approval System</span>
-              <ChevronDown size={16} className={`transition-transform duration-200 ${approvalsOpen || inApprovals ? "rotate-180" : ""}`} />
-            </button>
-            {(approvalsOpen || inApprovals) && (
-              <div id={approvalsId} className="ml-8 mr-3 mt-0.5 space-y-0.5 border-l border-line pl-2">
-                {APPROVAL_APPS.filter((a) => approvalApps.includes(a.key)).map(({ key, Icon: AppIcon }) => {
-                  const active = currentApp === key;
-                  const title = approvalsApps.find((a) => a.key === key)!.title;
-                  return (
-                    <Link key={key} href={APP_ENTRY[key]} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`${SUB} ${subTone(active)}`}>
-                      <AppIcon size={15} className="shrink-0" /> <span className="flex-1 whitespace-nowrap py-2">{title}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+        {/* Approval System is a feature of the hub, not an application in a department: one link, to its own section (the forms). */}
+        {showApprovals && (
+          <Item href="/approvals" active={inApprovals} onNavigate={onNavigate}>
+            <ClipboardList size={20} /> <span className="flex-1 py-2">Approval System</span>
+          </Item>
         )}
         {user?.role === "dept_lead" && (
           <>

@@ -294,7 +294,7 @@ try {
       await signIn(X, ENV_EXP.email, ENV_EXP.pw);
       check("so does Expenditure", new URL(X.url()).pathname === "/");
       check("neither has Administrator in the sidebar, and its address sends them home", !(await sidebarHasAdministrator(H)) && !(await sidebarHasAdministrator(X)) && (await H.goto(BASE + "/administrator").then(() => new URL(H.url()).pathname)) === "/");
-      check("both have the Approval System", (await H.locator("aside").first().getByRole("button", { name: "Approval System" }).count()) > 0);
+      check("both have the Approval System", (await H.locator("aside").first().locator('a[href="/approvals"]').count()) > 0);
       const hrId = (await sql`select id from users where lower(email) = ${ENV_HR.email}`)[0].id;
       await visit(A, "/administrator/users", ADMIN_PW);
       const hrRow = await A.locator("tr", { hasText: ENV_HR.email }).first().innerText();
@@ -332,35 +332,25 @@ try {
     console.log("   (skipped: needs HR_ADMIN_*, EXPENDITURE_ADMIN_* and SUPER_ADMIN_* set to zzr-... test addresses with passwords)");
   }
 
-  section("7d. The Approval Forms are for everyone; the sidebar's Approval System follows what is ticked");
-  const aprItem = (page) => page.locator("aside").first().getByRole("button", { name: "Approval System" });
-  const aprLinks = async (page) => (await page.locator("aside").first().locator("a[href^='/approvals/']").allInnerTexts()).map((t) => t.trim()).join("|");
+  section("7d. The Approval Forms are for everyone, in the Approval System section; the access box lists its two applications");
+  const aprLink = (page) => page.locator("aside").first().locator('a[href="/approvals"]');
+  const cards = (page) => page.locator('section[aria-labelledby="approval-forms-title"]');
   await U.goto(BASE + "/");
-  const formCards = U.locator('section[aria-labelledby="approval-forms-title"]');
-  check("a plain user nobody ticked anything for has the Approval Forms on their home page: HR Approval Form and Expenditure Approval Form", (await formCards.count()) === 1 && (await formCards.getByRole("link", { name: /HR Approval Form/ }).getAttribute("href")) === "/approvals/hr/new" && (await formCards.getByRole("link", { name: /Expenditure Approval Form/ }).getAttribute("href")) === "/approvals/expenses/new");
-  check("the Super Admin (the DG), who has no applications, has them too", await (async () => { await S.goto(BASE + "/"); return (await S.locator('section[aria-labelledby="approval-forms-title"]').getByRole("link").count()) === 2; })());
-  await U.goto(BASE + "/");
-  await formCards.getByRole("link", { name: /HR Approval Form/ }).click();
+  check("a plain user nobody ticked anything for has Approval System in the sidebar as one link, not a dropdown, and the home page has no form cards", (await aprLink(U).count()) === 1 && (await U.locator("aside").first().getByRole("button", { name: "Approval System" }).count()) === 0 && (await cards(U).count()) === 0);
+  await aprLink(U).click();
+  await U.waitForURL(/\/approvals$/, { timeout: 20000 }).catch(() => {});
+  check("it opens the Approval System page with HR Approval Form and Expenditure Approval Form", (await cards(U).count()) === 1 && (await cards(U).getByRole("link", { name: /HR Approval Form/ }).getAttribute("href")) === "/approvals/hr/new" && (await cards(U).getByRole("link", { name: /Expenditure Approval Form/ }).getAttribute("href")) === "/approvals/expenses/new");
+  check("the Super Admin (the DG), who has no applications, has the same page", await (async () => { await S.goto(BASE + "/approvals"); return (await cards(S).getByRole("link").count()) === 2; })());
+  await cards(U).getByRole("link", { name: /HR Approval Form/ }).click();
   await U.waitForURL(/\/approvals\/hr\/new/, { timeout: 20000 }).catch(() => {});
   check("the HR card opens the HR form", new URL(U.url()).pathname === "/approvals/hr/new" && (await U.locator("main form").count()) >= 1);
-  check("the Expenses and DG Expenditure forms, and the bare /approvals address, open for them too", (await U.goto(BASE + "/approvals/expenses/new")).status() === 200 && (await U.goto(BASE + "/approvals/expenditures/new")).status() === 200 && (await U.goto(BASE + "/approvals").then(() => new URL(U.url()).pathname)) === "/approvals/expenses/new");
-  await U.goto(BASE + "/");
-  check("with nothing ticked they have no Approval System item in the sidebar (the cards are their way in)", (await aprItem(U).count()) === 0);
+  check("the Expenses and DG Expenditure forms open for them too", (await U.goto(BASE + "/approvals/expenses/new")).status() === 200 && (await U.goto(BASE + "/approvals/expenditures/new")).status() === 200);
   await visit(A, `/administrator/users/${plain.id}`, ADMIN_PW);
   check("the Application access box lists HR Approval and Expenditure Approval under the category Approval System, and no single 'Approvals'", (await A.locator("main label", { hasText: "HR Approval" }).count()) >= 1 && (await A.locator("main label", { hasText: "Expenditure Approval" }).count()) >= 1 && /Approval System/.test(await main(A)) && (await A.locator("main label", { hasText: /^\s*Approvals\s*$/ }).count()) === 0);
   await A.locator("main label", { hasText: "HR Approval" }).getByRole("checkbox").first().check();
   await A.getByRole("button", { name: "Save access" }).click();
   check("ticking HR Approval is saved", await toast(A, "Access saved") && await poll(async () => (await sql`select count(*)::int n from user_app_access ua join apps a on a.id = ua.app_id where ua.user_id = ${plain.id} and a.url = '/approvals/hr/new'`)[0].n === 1));
-  await U.goto(BASE + "/");
-  await aprItem(U).click();
-  check("they then see Approval System in the sidebar with HR Approval only", (await aprLinks(U)) === "HR Approval", await aprLinks(U));
-  await A.locator("main label", { hasText: "Expenditure Approval" }).getByRole("checkbox").first().check();
-  await A.getByRole("button", { name: "Save access" }).click();
-  check("ticking Expenditure Approval as well is saved", await toast(A, "Access saved") && await poll(async () => (await sql`select count(*)::int n from user_app_access ua join apps a on a.id = ua.app_id where ua.user_id = ${plain.id} and a.url in ('/approvals/hr/new', '/approvals/expenses/new')`)[0].n === 2));
-  await U.goto(BASE + "/");
-  if ((await aprLinks(U)) === "") await aprItem(U).click();
-  check("and both applications are listed", (await aprLinks(U)) === "HR Approval|Expenditure", await aprLinks(U));
-  check("the Support Admin has the cards and both applications too", (await A.goto(BASE + "/").then(() => A.locator('section[aria-labelledby="approval-forms-title"]').getByRole("link").count())) === 2 && (await A.goto(BASE + "/approvals/hr/new")).status() === 200);
+  check("the Support Admin has the same page", (await A.goto(BASE + "/approvals").then(() => cards(A).getByRole("link").count())) === 2);
 
   section("8. Console and untouched data");
   check("no browser console or page errors on any screen", consoleErrors.length === 0 && pageErrors.length === 0, [...consoleErrors, ...pageErrors].join(" | "));

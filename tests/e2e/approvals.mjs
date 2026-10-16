@@ -136,14 +136,17 @@ try {
   const A = admin.page;
   await signIn(A, ADMIN_EMAIL, ADMIN_PW);
   check("/approvals opens for the head admin", (await status(A, "/approvals")) === 200);
-  check("opening /approvals lands straight on the Expenses form (no landing page)", new URL(A.url()).pathname === "/approvals/expenses/new" && (await A.locator("main h2").first().innerText()) === "Expenses", A.url());
-  check("it opens inside the hub: the hub sidebar is still there and the application is titled Expenditure", (await A.locator("main h1").first().innerText()) === "Expenditure" && (await A.locator("aside:visible nav", { hasText: "Administrator" }).count()) >= 1);
-  check("the hub sidebar's Approval System dropdown lists HR Approval and Expenditure, and marks the one you are in", (await hubApps(A).allInnerTexts()).map((t) => t.trim()).join("|") === "HR Approval|Expenditure" && (await hubApps(A).nth(1).getAttribute("aria-current")) === "page");
+  check("opening /approvals shows the Approval System page: the two form cards, HR Approval Form and Expenditure Approval Form", new URL(A.url()).pathname === "/approvals" && (await A.locator("main h1").first().innerText()) === "Approval System" && (await A.getByRole("link", { name: /HR Approval Form/ }).getAttribute("href")) === "/approvals/hr/new" && (await A.getByRole("link", { name: /Expenditure Approval Form/ }).getAttribute("href")) === "/approvals/expenses/new", A.url());
+  check("it opens inside the hub: the sidebar is still there, and its Approval System item is one link (no dropdown) that marks the page you are on", (await A.locator("aside:visible nav", { hasText: "Administrator" }).count()) >= 1 && (await A.locator('aside:visible nav a[href="/approvals"]').first().getAttribute("aria-current")) === "page" && (await A.locator("aside:visible nav button", { hasText: "Approval System" }).count()) === 0);
+  await A.getByRole("link", { name: /Expenditure Approval Form/ }).click();
+  await A.waitForURL(/\/approvals\/expenses\/new$/);
+  check("the Expenditure card opens the Expenses form, inside the application titled Expenditure", (await A.locator("main h1").first().innerText()) === "Expenditure" && (await A.locator("main h2").first().innerText()) === "Expenses");
   const expMenu = await fullMenu(A);
   check("Expenditure shows Expenses and Approvals (with All Pending, My Requests, Rejected Expenses)", ["Expenses", "Approvals", "Approved Expenses", "All Pending", "My Requests", "Rejected Expenses"].every((t) => expMenu.includes(t)), expMenu.replace(/\s+/g, " ").slice(0, 160));
-  await hubApps(A).nth(0).click();
+  await A.goto(BASE + "/approvals");
+  await A.getByRole("link", { name: /HR Approval Form/ }).click();
   await A.waitForURL(/\/approvals\/hr\/new$/);
-  check("clicking HR Approval in the dropdown opens it beside the sidebar, titled HR Approval (not DG Approval)", (await A.locator("main h1").first().innerText()) === "HR Approval" && (await hubApps(A).nth(0).getAttribute("aria-current")) === "page");
+  check("the HR card opens the HR form beside the sidebar, titled HR Approval (not DG Approval)", (await A.locator("main h1").first().innerText()) === "HR Approval");
   const menu = await fullMenu(A);
   for (const label of ["Hr", "Expenditures", "All_Budgets", "Administration"]) check(`HR Approval shows ${label}`, menu.includes(label));
   check("nothing in the application is still called DG Approval", !/DG Approval/.test(menu));
@@ -166,14 +169,15 @@ try {
   section("4. Approvals in the hub: a sidebar item, not an application");
   await A.goto(BASE + "/");
   const hubMenu = await A.locator("aside:visible nav").first().innerText();
-  check("the hub sidebar has an Approval System dropdown, not a link", /Approval System/.test(hubMenu) && (await A.locator("aside:visible nav button", { hasText: "Approval System" }).count()) === 1 && (await A.locator("aside:visible nav a", { hasText: "Approval System" }).count()) === 0);
+  check("the hub sidebar has one Approval System link, not a dropdown", /Approval System/.test(hubMenu) && (await A.locator("aside:visible nav a", { hasText: "Approval System" }).count()) === 1 && (await A.locator("aside:visible nav button", { hasText: "Approval System" }).count()) === 0);
   check("a department holding only an old Approvals card is not listed", !hubMenu.includes("ZZ Apr Dept"), hubMenu.replace(/\s+/g, " ").slice(0, 120));
   check("an old Approvals card cannot be launched", (await A.request.get(`${BASE}/go/${card.id}`, { maxRedirects: 0 })).status() === 404);
-  await A.locator("aside:visible nav button", { hasText: "Approval System" }).click();
-  check("clicking it drops down HR Approval and Expenditure", (await hubApps(A).allInnerTexts()).map((t) => t.trim()).join("|") === "HR Approval|Expenditure");
-  await hubApps(A).nth(1).click();
+  await A.locator("aside:visible nav a", { hasText: "Approval System" }).click();
+  await A.waitForURL(/\/approvals$/);
+  check("clicking it opens the Approval System page, with the two form cards", (await A.getByRole("link", { name: /Approval Form/ }).count()) === 2);
+  await A.getByRole("link", { name: /Expenditure Approval Form/ }).click();
   await A.waitForURL(/\/approvals\/expenses\/new$/);
-  check("choosing Expenditure opens the application in the same tab, on the Expenses form", await poll(async () => new URL(A.url()).pathname === "/approvals/expenses/new" && (await A.locator("main h2").first().innerText()) === "Expenses"), A.url());
+  check("choosing the Expenditure card opens the application in the same tab, on the Expenses form", await poll(async () => new URL(A.url()).pathname === "/approvals/expenses/new" && (await A.locator("main h2").first().innerText()) === "Expenses"), A.url());
 
   section("5. Branches: add, reject duplicates and blanks, deactivate, audit");
   await A.goto(BASE + "/approvals/admin/branches");
@@ -244,9 +248,11 @@ try {
   await M.goto(BASE + "/");
   check("and the hub shows them the Approval System item", (await M.locator("aside:visible nav").first().innerText()).includes("Approval System"));
   await M.goto(BASE + "/approvals");
+  check("the Approval System page gives them the two form cards", (await M.getByRole("link", { name: /Approval Form/ }).count()) === 2);
+  await M.getByRole("link", { name: /Expenditure Approval Form/ }).click();
   const tabLinks = (p) => tabs(p).locator("a").allInnerTexts();
   await tabs(M).waitFor();
-  check("they land in Expenditure, which holds just the Expenses form (no Approvals, no lists, no Administration)", JSON.stringify(await tabLinks(M)) === JSON.stringify(["Expenses"]) && (await pagesRow(M).count()) === 0, (await tabLinks(M)).join("|"));
+  check("the Expenditure card takes them to Expenditure, which holds just the Expenses form (no Approvals, no lists, no Administration)", JSON.stringify(await tabLinks(M)) === JSON.stringify(["Expenses"]) && (await pagesRow(M).count()) === 0, (await tabLinks(M)).join("|"));
   await M.goto(BASE + "/approvals/hr/new");
   await tabs(M).waitFor();
   check("HR Approval shows them the HR and Expenditure forms and nothing else", JSON.stringify(await tabLinks(M)) === JSON.stringify(["HR", "Expenditure"]) && (await pagesRow(M).count()) === 0 && !/Event Approvals|DG APPROVALS|Administration|All_Budgets/.test(await tabs(M).innerText()), (await tabLinks(M)).join("|"));
@@ -286,11 +292,13 @@ try {
   check("taking it away closes the page again", (await status(M, "/approvals/budgets")) === 404);
   check("and the lists and the export close with it: forms only again", (await status(M, "/approvals/hr/all")) === 404 && (await M.request.get(`${BASE}/api/approvals/requests/export?screen=hr/all`)).status() === 403 && (await status(M, "/approvals/hr/new")) === 200);
 
-  section("10. The forms are for everyone who signs in; a person with nothing ticked just has no Approval System item in the sidebar");
+  section("10. The forms are for everyone who signs in, through the Approval System page; nothing has to be ticked");
   const out = await newSession();
   await signIn(out.page, OUTSIDER.email, OUTSIDER.pw);
   check("a second ordinary person, with neither application ticked, can open /approvals and both forms", (await status(out.page, "/approvals")) === 200 && (await status(out.page, "/approvals/hr/new")) === 200 && (await status(out.page, "/approvals/expenses/new")) === 200 && (await status(out.page, "/approvals/expenditures/new")) === 200);
-  check("with nothing ticked the forms are all they have: no Approval System item in the sidebar, no lists", (await out.page.locator("aside").first().getByRole("button", { name: "Approval System" }).count()) === 0 && (await status(out.page, "/approvals/hr/all")) === 404);
+  check("with nothing ticked the forms are all they have: no dropdown in the sidebar, no lists", (await out.page.locator("aside").first().getByRole("button", { name: "Approval System" }).count()) === 0 && (await status(out.page, "/approvals/hr/all")) === 404);
+  await out.page.goto(BASE + "/approvals");
+  check("and the Approval System page, with its two form cards, is theirs like anyone's", (await out.page.getByRole("link", { name: /Approval Form/ }).count()) === 2);
   check("the API answers them (they read the dropdown lists)", (await out.page.request.get(`${BASE}/api/approvals/masters/categories`)).status() === 200);
   check("but the admin pages stay closed to them", (await status(out.page, "/approvals/admin/categories")) === 404);
 

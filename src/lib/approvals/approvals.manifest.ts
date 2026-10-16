@@ -167,7 +167,7 @@ export const allNavItems = (): NavItem[] =>
   approvalsApps.flatMap((a) => a.nav).flatMap((e) => (isGroup(e) ? e.items : [e])).filter((i) => i.href);
 
 /** Which of the two applications owns a page: the one holding its longest matching link, or null for pages in neither (a request). */
-export function appOwning(pathname: string): AppKey | null {
+function appOwning(pathname: string): AppKey | null {
   let best: { key: AppKey; len: number } | null = null;
   for (const app of approvalsApps) {
     for (const e of app.nav) {
@@ -194,7 +194,7 @@ export const APP_ENTRY: Record<AppKey, string> = { hr: "/approvals/hr/new", exp:
 /** Which application a request belongs to: HR requests and expenditure of the threshold and above are HR Approval; expenses below it are Expenditure. */
 export const appForType = (type: "hr" | "expenditure_large" | "expenditure_small"): AppKey => (type === "expenditure_small" ? "exp" : "hr");
 
-export const parseApp = (v: string | null | undefined): AppKey | null => (v === "hr" || v === "exp" ? v : null);
+const parseApp = (v: string | null | undefined): AppKey | null => (v === "hr" || v === "exp" ? v : null);
 
 /**
  * Which application a page is showing. A page in a menu belongs to its application; a request page says which with ?app= (the links to it

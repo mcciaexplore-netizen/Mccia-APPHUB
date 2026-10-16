@@ -453,7 +453,7 @@ try {
   const ac = await browser.newContext({ viewport: { width: 1300, height: 1000 } }); const ap = await ac.newPage();
   await signIn(ap, ashaEmail, ashaPw);
   check("a person created by bulk add chooses their own password from the link, then signs in", new URL(ap.url()).pathname === "/", ap.url());
-  const sidebarNames = (await ap.locator("aside:visible nav a").allInnerTexts()).map((s) => s.trim());
+  const sidebarNames = (await ap.locator("aside:visible nav a").allInnerTexts()).map((s) => s.trim()).filter((s) => s !== "Approval System"); // Approval System is the one link that is not a department
   const hubText = await ap.locator("main").innerText();
   check("the user's sidebar lists only departments where they have an app", sidebarNames.length === 1 && sidebarNames[0] === "ZZ Dept A2", sidebarNames.join(" | "));
   check("the hub shows only the applications assigned to them", hubText.includes("ZZ App Uno") && !hubText.includes("ZZ Hidden App") && !hubText.includes("<img"), hubText.slice(0, 120));

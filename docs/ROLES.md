@@ -40,11 +40,10 @@ Only the Support Admin manages people, roles and access; the Super Admin cannot.
 
 ## The Approval Forms, and HR Approval / Expenditure Approval
 
-- **The forms are for everyone who signs in.** The top of the home page has two cards, **HR Approval Form** and **Expenditure Approval Form**; nothing has to be ticked. HR Approval Form opens the HR form; Expenditure Approval Form opens the Expenses form (below ₹10,000), which points to the DG Expenditure form for ₹10,000 and above. The Super Admin (the DG) has them too.
-- In the **Application access** box of a person's profile, the category **Approval System** lists **HR Approval** and **Expenditure Approval**, ticked like any other application. For now a tick decides whether the **Approval System** item (with that application's pages) appears in that person's sidebar. It does not control the forms.
-- People with approval duties (a first approver, the DG, a viewer, the Approvals admin) and the HR, Expenditure and Super Admin main accounts, and the Support Admin, always have both applications in the sidebar.
+- **The forms are for everyone who signs in.** The sidebar's **Approval System** is one link; it opens a page with two cards, **HR Approval Form** and **Expenditure Approval Form**; nothing has to be ticked. HR Approval Form opens the HR form; Expenditure Approval Form opens the Expenses form (below ₹10,000), which points to the DG Expenditure form for ₹10,000 and above. The Super Admin (the DG) has them too. An approver with something waiting is told so on that page.
+- In the **Application access** box of a person's profile, the category **Approval System** lists **HR Approval** and **Expenditure Approval**, ticked like any other application. For now a tick controls nothing.
 - A person added later has neither ticked. When the ticks were introduced everyone who was active got both (migration 0012).
-- These two rows are never shown as cards on the home page and are not in the Applications list (they are not links to somewhere else).
+- These two rows are never shown as cards on the hub's home page and are not in the Applications list (they are not links to somewhere else).
 
 ## Setting people up
 

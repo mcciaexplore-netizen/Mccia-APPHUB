@@ -22,6 +22,7 @@ export function ModuleMenu({
   const pathname = usePathname();
   const appParam = useSearchParams().get("app");
   const app = approvalsApps.find((a) => a.key === resolveApp(pathname, appParam, roles, apps))!;
+  if (pathname === "/approvals") return null; // the Approval System's own page (the form cards) has no application menu
 
   // Only what this person's roles allow, and no section left empty. A section left with a single page (a plain requester's one form)
   // becomes that page's own tab, so there is no row of pages with one link in it.

@@ -5,19 +5,18 @@ import Link from "next/link";
 import { Bell, Menu } from "lucide-react";
 import { SafetyMascot } from "@/components/SafetyMascot";
 import { Sidebar, type SidebarDept, type SidebarUser } from "@/components/Sidebar";
-import type { AppKey } from "@/lib/approvals/approvals.manifest";
 import { UserMenu } from "@/components/UserMenu";
 
 export function HubShell({
-  user, departments, approvalApps, unread, children,
+  user, departments, showApprovals, unread, children,
 }: {
-  user: SidebarUser | null; departments: SidebarDept[]; /** The Approval System applications this person may open; the item is not shown when there are none. */ approvalApps: readonly AppKey[]; /** Unread notifications; the bell is shown when this is given. */ unread?: number; children: React.ReactNode;
+  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; /** Unread notifications; the bell is shown when this is given. */ unread?: number; children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
   const sidebar = (
     <Suspense fallback={<div className="h-full w-60 border-r border-line bg-white" />}>
-      <Sidebar user={user} departments={departments} approvalApps={approvalApps} onNavigate={close} onClose={close} />
+      <Sidebar user={user} departments={departments} showApprovals={showApprovals} onNavigate={close} onClose={close} />
     </Suspense>
   );
 

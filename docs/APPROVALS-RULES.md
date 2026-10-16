@@ -50,7 +50,7 @@ Lists: in Expenditure an approver's own page is **Waiting for Me** (only the exp
 
 ## Who may open the two applications
 
-The forms to raise a request (HR, Expenses, DG Expenditure) are open to everyone who signs in, through the two cards at the top of the home page. HR Approval and Expenditure Approval are also applications in the hub (category Approval System) that the Support Admin ticks per person; for now a tick only decides whether that application's item shows in the person's sidebar. See `docs/ROLES.md`.
+The forms to raise a request (HR, Expenses, DG Expenditure) are open to everyone who signs in, through the two cards on the Approval System page (the sidebar's Approval System link). HR Approval and Expenditure Approval are also applications in the hub (category Approval System) that the Support Admin can tick per person; for now a tick controls nothing. See `docs/ROLES.md`.
 
 ## Putting it live (order matters)
 
