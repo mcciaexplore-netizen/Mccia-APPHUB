@@ -7,7 +7,7 @@ import {
 } from "@/db/approvals-schema";
 import { assessBudget, decisionMode, type BudgetAssessment, type DecisionMode } from "./calc";
 import { budgetPosition } from "./budget-position";
-import { REVIEW_KEYS, type ReviewItem } from "./approvals.manifest";
+import { REVIEW_KEYS, isDgOnly, type ReviewItem } from "./approvals.manifest";
 import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
 import type { SortKey } from "./list-params";
 
@@ -55,6 +55,8 @@ export type ListFilter = {
   rejectedByMe?: boolean;
   /** Only requests this person approved at some step. */
   approvedByMe?: boolean;
+  /** Only requests that have reached this person's step (waiting for them, or already decided by them). */
+  reachedMe?: boolean;
   sort?: SortKey;
   dir?: "asc" | "desc";
   page?: number;
@@ -79,6 +81,8 @@ export type RequestRow = {
   /** Which step it is at, of how many: a decision before the last one is a recommendation. */
   currentStep: number;
   totalSteps: number;
+  /** Waiting for the person asking, so Approve and Reject can be shown on the row. */
+  mineToDecide: boolean;
 };
 
 const categoryName = sql<string | null>`coalesce(${aprHrCategories.name}, ${aprCategories.name})`;
@@ -124,6 +128,9 @@ function conditions(user: ApprovalsUser, f: ListFilter): SQL | undefined {
     f.rejectedByMe
       ? sql`exists (select 1 from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id} and s.status = 'rejected')`
       : undefined,
+    f.reachedMe
+      ? sql`exists (select 1 from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id} and s.status in ('pending', 'approved', 'rejected', 'returned'))`
+      : undefined,
     f.approvedByMe
       ? sql`exists (select 1 from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id} and s.status = 'approved')`
       : undefined,
@@ -155,6 +162,7 @@ export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Pro
         categoryName, branchName: aprBranches.name, amountPaise: aprRequests.amountPaise, requestedAt: aprRequests.requestedAt, decidedAt: aprRequests.decidedAt,
         approverName, overBudget: aprRequests.overBudget, vendorName: aprExpenditureDetails.vendorName, taxInvoiceDate: aprExpenditureDetails.taxInvoiceDate,
         currentStep: aprRequests.currentStep, totalSteps: aprRequests.totalSteps,
+        mineToDecide: sql<boolean>`(${aprRequests.status} = 'pending' and ${aprRequests.currentApproverUserId} = ${user.id})`,
       })
       .from(aprRequests)
       .leftJoin(aprHrDetails, eq(aprHrDetails.requestId, aprRequests.id))
@@ -192,6 +200,11 @@ export async function reviewItemsFor(user: ApprovalsUser): Promise<ReviewItem[]>
   ]);
   const named = new Set(steps.map((s) => (s.type === "hr" ? "hr" : "expenditure")));
   const count = (k: "hr" | "expenditure") => waiting.filter((w) => (w.type === "hr") === (k === "hr")).reduce((a, w) => a + w.n, 0);
+  // The Director General has one place, what was recommended to them, with a tab each for HR and Expenditure.
+  if (isDgOnly(user.roles)) {
+    const counts = { hr: count("hr"), expenditure: count("expenditure") };
+    return [{ key: "recommendation", waiting: counts.hr + counts.expenditure, counts }];
+  }
   return REVIEW_KEYS.filter((k) => oversees || named.has(k) || count(k) > 0).map((key) => ({ key, waiting: count(key) }));
 }
 

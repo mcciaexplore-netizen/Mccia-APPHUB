@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { Activity, Bell, ChevronDown, ClipboardCheck, ClipboardList, LayoutDashboard, ShieldCheck, UserCheck, UsersRound, Users, Wallet, X } from "lucide-react";
+import { Activity, Bell, ChevronDown, ClipboardCheck, ClipboardList, Inbox, LayoutDashboard, ShieldCheck, UserCheck, UsersRound, Users, Wallet, X } from "lucide-react";
 import { lockAdmin } from "@/actions/auth";
 import { Icon } from "@/components/Icon";
 import { isSafetyWeek, playSafetyMascot } from "@/components/SafetyMascot";
 import type { Role } from "@/db/schema";
 import { adminTabsFor } from "@/lib/admin-tabs";
 import { canAdminister } from "@/lib/rbac";
-import { REVIEW_LABEL, type ReviewItem } from "@/lib/approvals/approvals.manifest";
+import { REVIEW_LABEL, reviewHref, type ReviewItem } from "@/lib/approvals/approvals.manifest";
 
 export type SidebarDept = { id: string; name: string; icon: string };
 export type SidebarUser = { name: string; role: Role; adminAreas?: readonly string[] };
@@ -91,8 +91,8 @@ export function Sidebar({
                 {review.map((r) => {
                   const active = pathname.startsWith(`/approvals/review/${r.key}/`);
                   return (
-                    <Link key={r.key} href={`/approvals/review/${r.key}/pending`} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`${SUB} ${subTone(active)}`}>
-                      {r.key === "hr" ? <UserCheck size={15} className="shrink-0" /> : <Wallet size={15} className="shrink-0" />}
+                    <Link key={r.key} href={reviewHref(r.key)} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`${SUB} ${subTone(active)}`}>
+                      {r.key === "hr" ? <UserCheck size={15} className="shrink-0" /> : r.key === "expenditure" ? <Wallet size={15} className="shrink-0" /> : <Inbox size={15} className="shrink-0" />}
                       <span className="flex-1 whitespace-nowrap py-2">{REVIEW_LABEL[r.key]}</span>
                       {r.waiting > 0 && <span className="rounded-pill bg-brand-red px-1.5 text-[0.68rem] font-bold leading-5 text-white">{r.waiting > 99 ? "99+" : r.waiting}</span>}
                     </Link>

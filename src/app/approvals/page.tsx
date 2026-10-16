@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ApprovalFormCards } from "@/components/ApprovalFormCards";
-import { REVIEW_LABEL } from "@/lib/approvals/approvals.manifest";
+import { REVIEW_LABEL, reviewHref } from "@/lib/approvals/approvals.manifest";
 import { requirePage } from "@/lib/approvals/guard";
 import { reviewItemsFor } from "@/lib/approvals/request-queries";
 
@@ -23,7 +23,7 @@ export default async function Page() {
         <p className="apr-notice mt-4" role="status">
           {total} {total === 1 ? "request is" : "requests are"} waiting for your decision:{" "}
           {waiting.map((r, i) => (
-            <span key={r.key}>{i > 0 && ", "}<Link href={`/approvals/review/${r.key}/pending`} className="apr-link">{REVIEW_LABEL[r.key]} ({r.waiting})</Link></span>
+            <span key={r.key}>{i > 0 && ", "}<Link href={reviewHref(r.key)} className="apr-link">{REVIEW_LABEL[r.key]} ({r.waiting})</Link></span>
           ))}
         </p>
       )}

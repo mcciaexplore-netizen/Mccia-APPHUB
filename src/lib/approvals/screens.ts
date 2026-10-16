@@ -1,5 +1,5 @@
 import type { AprRequestStatus, AprRequestType } from "@/db/approvals-schema";
-import { parseReviewPath, type ReviewKey, type ReviewTab } from "./approvals.manifest";
+import { parseRecommendationPath, parseReviewPath, type ReviewKey, type ReviewTab } from "./approvals.manifest";
 
 /**
  * The list screens in the sidebar, as data. Each one is the same table with a different starting filter, so one component renders
@@ -23,6 +23,8 @@ export type ListScreen = {
   rejectedByMe?: boolean;
   /** Only requests this person approved (at any step, whether or not they went on to a later one). */
   approvedByMe?: boolean;
+  /** Only requests that have reached this person's step: waiting for them, or already decided by them. */
+  reachedMe?: boolean;
   /** Show the Branch column (expenditure lists). */
   branch?: boolean;
   /** Show vendor and tax invoice date (the below-threshold approved list). */
@@ -93,8 +95,19 @@ export function reviewScreen(key: ReviewKey, tab: ReviewTab, decides: boolean): 
     : { ...common, title: "Rejected", intro: "Requests that were rejected.", statuses: ["rejected"] };
 }
 
+/** What was recommended to the Director General, one tab for HR and one for Expenditure: everything that reached their step, with the buttons on what still waits. */
+export function recommendationScreen(key: ReviewKey): ListScreen {
+  return {
+    title: key === "hr" ? "Recommended: HR" : "Recommended: Expenditure",
+    intro: "What was recommended to you for the final decision. Approve or Reject what is still waiting, or open a request to see its files and budget first; the others show how you decided.",
+    types: REVIEW_TYPES[key], reachedMe: true, quickDecide: true, branch: true, categories: key === "hr" ? "hr" : "expense",
+  };
+}
+
 /** The screen for a path, whichever kind it is: one of the fixed lists, or one of the Pending / Approved / Rejected lists of HR and Expenditure. */
 export function resolveScreen(slug: string[], decides: boolean): ListScreen | undefined {
   const review = parseReviewPath(slug);
-  return review ? reviewScreen(review.key, review.tab, decides) : screenFor(slug);
+  if (review) return reviewScreen(review.key, review.tab, decides);
+  const recommended = parseRecommendationPath(slug);
+  return recommended ? recommendationScreen(recommended) : screenFor(slug);
 }

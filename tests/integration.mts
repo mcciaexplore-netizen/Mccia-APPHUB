@@ -620,14 +620,20 @@ try {
 
   // The HR and Expenditure places under Approval System: who has which, and what the three lists hold
   const itemKeys = async (a: Actor) => (await Q.reviewItemsFor(a)).map((i) => i.key).join();
-  check("the HR reviewer has the HR place only, the DG both, an overseer both, and someone who approves nothing none", (await itemKeys(mainHr)) === "hr" && (await itemKeys(dgActor)) === "hr,expenditure" && (await itemKeys(viewer)) === "hr,expenditure" && (await itemKeys(req)) === "");
+  check("the HR reviewer has the HR place only, the DG has one place called Recommendation, an overseer has HR and Expenditure, and someone who approves nothing has none", (await itemKeys(mainHr)) === "hr" && (await itemKeys(dgActor)) === "recommendation" && (await itemKeys(viewer)) === "hr,expenditure" && (await itemKeys(req)) === "");
+  check("the DG's Recommendation place says how many wait in each of its two tabs", (await Q.reviewItemsFor(dgActor))[0]?.counts !== undefined && (await Q.reviewItemsFor(dgActor))[0].waiting === Object.values((await Q.reviewItemsFor(dgActor))[0].counts!).reduce((a, n) => a + n, 0));
   const reviewHr = await R.submitHrRequest(hr({ lastName: "ReviewList" }), submitter);
+  const reviewHrNotYet = await R.submitHrRequest(hr({ lastName: "ReviewNotYet" }), submitter); // still with the HR reviewer: it has not reached the DG
   const waitFor = async (a: Actor) => (await Q.reviewItemsFor(a)).find((i) => i.key === "hr")?.waiting ?? 0;
   check("a request waiting for the HR reviewer is counted in their HR place and is in their Pending list", (await waitFor(mainHr)) >= 1 && (await Q.listRequests(mainHr, { types: ["hr"], statuses: ["pending"], waitingForMe: true })).rows.some((r) => r.id === reviewHr.id));
   await R.decideRequest(reviewHr.id, { action: "approve", comment: null }, mainHr);
   check("once the reviewer recommends it, it is in their Approved list (approved at their step) and no longer Pending for them", (await Q.listRequests(mainHr, { types: ["hr"], approvedByMe: true })).rows.some((r) => r.id === reviewHr.id) && !(await Q.listRequests(mainHr, { types: ["hr"], waitingForMe: true })).rows.some((r) => r.id === reviewHr.id));
   check("it is waiting for the DG now, so it is in the DG's Pending, not yet in their Approved", (await Q.listRequests(dgActor, { types: ["hr"], waitingForMe: true })).rows.some((r) => r.id === reviewHr.id) && !(await Q.listRequests(dgActor, { types: ["hr"], approvedByMe: true })).rows.some((r) => r.id === reviewHr.id));
+  const dgRow = (await Q.listRequests(dgActor, { types: ["hr"], reachedMe: true })).rows.find((r) => r.id === reviewHr.id);
+  check("it is in what was recommended to the DG, with the buttons because it still waits for them", !!dgRow && dgRow.mineToDecide === true && dgRow.status === "pending");
+  check("the HR reviewer's own list shows it with no buttons (it no longer waits for them)", (await Q.listRequests(mainHr, { types: ["hr"], approvedByMe: true })).rows.find((r) => r.id === reviewHr.id)?.mineToDecide === false);
   await R.decideRequest(reviewHr.id, { action: "reject", comment: "Not needed" }, dgActor);
+  check("once decided it stays in what was recommended to the DG, now without the buttons, and a request that never reached them is not there", (await Q.listRequests(dgActor, { types: ["hr"], reachedMe: true })).rows.find((r) => r.id === reviewHr.id)?.mineToDecide === false && !(await Q.listRequests(dgActor, { types: ["hr"], reachedMe: true })).rows.some((r) => r.id === reviewHrNotYet.id));
   check("a rejection by the DG is in their Rejected list and not in their Approved list; HR's Approved list still shows what HR recommended", (await Q.listRequests(dgActor, { types: ["hr"], rejectedByMe: true })).rows.some((r) => r.id === reviewHr.id) && !(await Q.listRequests(dgActor, { types: ["hr"], approvedByMe: true })).rows.some((r) => r.id === reviewHr.id) && (await Q.listRequests(mainHr, { types: ["hr"], approvedByMe: true })).rows.some((r) => r.id === reviewHr.id));
 
   for (const k of ["SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD", "HR_ADMIN_EMAIL", "HR_ADMIN_PASSWORD", "HR_ADMIN_NAME", "EXPENDITURE_ADMIN_EMAIL", "EXPENDITURE_ADMIN_PASSWORD"]) delete process.env[k];

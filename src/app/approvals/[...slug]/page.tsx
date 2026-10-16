@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { ListScreenView } from "@/components/approvals/ListScreenView";
 import { Placeholder } from "@/components/approvals/Placeholder";
+import { RecommendationTabs } from "@/components/approvals/RecommendationTabs";
 import { ReviewTabs } from "@/components/approvals/ReviewTabs";
-import { FULL_ACCESS_ROLES, allNavItems, canSee, parseReviewPath } from "@/lib/approvals/approvals.manifest";
+import { FULL_ACCESS_ROLES, allNavItems, canSee, parseRecommendationPath, parseReviewPath } from "@/lib/approvals/approvals.manifest";
 import { requirePage } from "@/lib/approvals/guard";
 import { hasAnyRole } from "@/lib/approvals/host-adapter";
 import { parseListParams } from "@/lib/approvals/list-params";
@@ -17,15 +18,28 @@ import { resolveScreen } from "@/lib/approvals/screens";
  *
  * The Pending, Approved and Rejected lists of HR and of Expenditure (/approvals/review/hr/pending, ...) are the approver's own place to
  * work, opened from the sidebar under Approval System. Only someone who approves that kind of request, or oversees them all, may open them.
+ * The Director General has one place instead, Recommendation (/approvals/review/recommendation/hr and .../expenditure): what was recommended to them.
  */
 export default async function Page({ params, searchParams }: { params: Promise<{ slug: string[] }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { slug } = await params;
   const path = `/approvals/${slug.join("/")}`;
   const review = parseReviewPath(slug);
+  const recommended = parseRecommendationPath(slug);
   const item = allNavItems().find((i) => i.href === path);
-  if (!item && !review && !resolveScreen(slug, false)) notFound();
+  if (!item && !review && !recommended && !resolveScreen(slug, false)) notFound();
   const user = await requirePage(...FULL_ACCESS_ROLES);
   if (item && !canSee(item, user.roles)) notFound();
+  if (recommended) {
+    // The Director General's place: what was recommended to them, a tab each for HR and Expenditure.
+    const mine = (await reviewItemsFor(user)).find((i) => i.key === "recommendation");
+    if (!mine?.counts) notFound();
+    return (
+      <>
+        <RecommendationTabs active={recommended} counts={mine.counts} />
+        <ListScreenView slug={slug.join("/")} screen={resolveScreen(slug, true)!} params={parseListParams(await searchParams)} user={user} />
+      </>
+    );
+  }
   if (review) {
     const mine = (await reviewItemsFor(user)).find((i) => i.key === review.key);
     if (!mine) notFound();

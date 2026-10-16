@@ -15,8 +15,8 @@ import { scrub } from "../src/lib/scrub";
 import { xlsxToTable } from "../src/lib/xlsx-read";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
-  FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, parseReviewPath, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
-import { resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
+  FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
+import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import {
   assessBudget, budgetWarning, commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, percentUsed, planProblemMessage, planSteps, STATUS_LABEL, utilisationLevel, wrongFormMessage,
@@ -116,6 +116,9 @@ eq("review: for an approver, Approved and Rejected are what they approved and wh
 eq("review: for someone who only oversees, the three lists are every request of that kind by its status, with no buttons", [reviewScreen("expenditure", "pending", false).statuses, reviewScreen("expenditure", "approved", false).statuses, reviewScreen("expenditure", "rejected", false).statuses, reviewScreen("expenditure", "pending", false).quickDecide ?? false, reviewScreen("expenditure", "pending", false).waitingForMe ?? false], [["pending"], ["approved"], ["rejected"], false, false]);
 eq("review: a path resolves to its list, and the fixed lists still resolve", [resolveScreen(["review", "hr", "approved"], true)?.title, resolveScreen(["inbox"], true)?.title, resolveScreen(["review", "nope", "approved"], true)], ["Approved", "Recommended Queue", undefined]);
 
+eq("review: the Director General's Recommendation place has a tab each for HR and Expenditure, and nothing else is one", [parseRecommendationPath(["review", "recommendation", "hr"]), parseRecommendationPath(["review", "recommendation", "expenditure"]), parseRecommendationPath(["review", "recommendation"]), parseRecommendationPath(["review", "recommendation", "events"]), parseRecommendationPath(["review", "hr", "pending"])], ["hr", "expenditure", null, null, null]);
+eq("review: what was recommended to the DG is everything that reached their step, with the buttons on what waits", [recommendationScreen("hr").reachedMe, recommendationScreen("hr").quickDecide, recommendationScreen("hr").statuses, recommendationScreen("hr").types, recommendationScreen("expenditure").types, resolveScreen(["review", "recommendation", "expenditure"], true)?.reachedMe], [true, true, undefined, ["hr"], ["expenditure_large", "expenditure_small"], true]);
+eq("review: where each place opens", [reviewHref("hr"), reviewHref("expenditure"), reviewHref("recommendation")], ["/approvals/review/hr/pending", "/approvals/review/expenditure/pending", "/approvals/review/recommendation/hr"]);
 // Approvals: the form layout the Support Admin sets (names, order, hidden fields, extra fields) and the answers to the extra fields.
 const row = (o: Partial<FormFieldRow> & { key: string }): FormFieldRow => ({ form: "hr", label: o.key, builtin: true, kind: "text", required: false, hidden: false, sortOrder: 0, options: [], ...o });
 eq("form fields: with nothing set, every form has its own fields in the default order, none hidden", FORM_KEYS.map((f) => [mergeFields(f, []).map((x) => x.key).join(), mergeFields(f, []).some((x) => x.hidden)]), FORM_KEYS.map((f) => [BUILTIN[f].map((d) => d.key).join(), false]));

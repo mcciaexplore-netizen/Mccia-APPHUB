@@ -186,12 +186,24 @@ function appOwning(pathname: string): AppKey | null {
  */
 export type ReviewKey = "hr" | "expenditure";
 export const REVIEW_KEYS: readonly ReviewKey[] = ["hr", "expenditure"];
-export const REVIEW_LABEL: Record<ReviewKey, string> = { hr: "HR", expenditure: "Expenditure" };
+export const REVIEW_LABEL: Record<ReviewKey | "recommendation", string> = { hr: "HR", expenditure: "Expenditure", recommendation: "Recommendation" };
 export const REVIEW_TABS = ["pending", "approved", "rejected"] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
 export const REVIEW_TAB_LABEL: Record<ReviewTab, string> = { pending: "Pending", approved: "Approved", rejected: "Rejected" };
-/** What the sidebar needs for one of them: which, and how many requests wait for this person there. */
-export type ReviewItem = { key: ReviewKey; waiting: number };
+/**
+ * What the sidebar needs for one of them: which, and how many requests wait for this person there. The Director General has one place,
+ * "recommendation" (what was recommended to them), with a tab each for HR and Expenditure; `counts` is what waits in each tab.
+ */
+export type ReviewItem = { key: ReviewKey | "recommendation"; waiting: number; counts?: Record<ReviewKey, number> };
+/** Where a place opens: an approver's on its Pending list, the Director General's on the HR tab of what was recommended to them. */
+export const reviewHref = (key: ReviewItem["key"]) => (key === "recommendation" ? "/approvals/review/recommendation/hr" : `/approvals/review/${key}/pending`);
+
+/** The tab of the Director General's Recommendation place a path names, or null. */
+export function parseRecommendationPath(parts: readonly string[]): ReviewKey | null {
+  const [head, place, key, ...rest] = parts;
+  if (head !== "review" || place !== "recommendation" || rest.length > 0) return null;
+  return REVIEW_KEYS.find((x) => x === key) ?? null;
+}
 
 /** The place and list a path under /approvals/review/ names, or null. */
 export function parseReviewPath(parts: readonly string[]): { key: ReviewKey; tab: ReviewTab } | null {

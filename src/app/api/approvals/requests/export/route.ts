@@ -32,7 +32,7 @@ export const GET = route({ roles: [...FULL_ACCESS_ROLES] }, async ({ req, user }
   const rows: RequestRow[] = [];
   for (let page = 1; page <= 25; page++) {
     const r = await listRequests(user, {
-      types: screen.types, statuses: p.status ? [p.status as never] : screen.statuses, mine: screen.mine, waitingForMe: screen.waitingForMe, decidedByMe: screen.decidedByMe, recommendedByMe: screen.recommendedByMe, rejectedByMe: screen.rejectedByMe, approvedByMe: screen.approvedByMe,
+      types: screen.types, statuses: p.status ? [p.status as never] : screen.statuses, mine: screen.mine, waitingForMe: screen.waitingForMe, decidedByMe: screen.decidedByMe, recommendedByMe: screen.recommendedByMe, rejectedByMe: screen.rejectedByMe, approvedByMe: screen.approvedByMe, reachedMe: screen.reachedMe,
       q: p.q, from: p.from, to: p.to, categoryId: p.categoryId, branchId: p.branchId, sort: p.sort, dir: p.dir, page, pageSize: 200,
     });
     rows.push(...r.rows);
