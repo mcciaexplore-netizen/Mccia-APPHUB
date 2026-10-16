@@ -71,7 +71,7 @@ function filterSql(f: Partial<PeopleFilters>): SQL[] {
 }
 
 export type PersonRow = {
-  id: string; name: string; email: string; designation: string | null; role: Role; isActive: boolean; status: AccountStatus; mainAdmin: boolean;
+  id: string; name: string; email: string; designation: string | null; role: Role; isActive: boolean; status: AccountStatus; mainAdmin: boolean; passwordInSettings: boolean;
   department: string | null; branch: string | null; team: string | null; manager: string | null; lastLoginAt: Date | null; createdAt: Date;
   apps: { id: string; name: string; active: boolean }[];
 };
@@ -122,10 +122,12 @@ export async function listPeople(actor: Actor, f: PeopleFilters, pageSize = PEOP
   for (const g of grants) (byUser.get(g.userId) ?? byUser.set(g.userId, []).get(g.userId)!).push({ id: g.id, name: g.name, active: g.active });
 
   const rows = base.map((b): PersonRow => {
-    const mainAdmin = isEnvAdmin(b.email);
+    // A main admin is the account set in the environment (the Support Admin) and the Super Admin: neither can be deactivated or deleted here.
+    const passwordInSettings = isEnvAdmin(b.email);
+    const mainAdmin = passwordInSettings || b.role === "super_admin";
     return {
-      id: b.id, name: b.name, email: b.email, designation: b.designation, role: b.role, isActive: b.isActive, mainAdmin,
-      status: accountStatus({ isActive: b.isActive, hasPassword: b.hasPassword, mainAdmin }),
+      id: b.id, name: b.name, email: b.email, designation: b.designation, role: b.role, isActive: b.isActive, mainAdmin, passwordInSettings,
+      status: accountStatus({ isActive: b.isActive, hasPassword: b.hasPassword, passwordInSettings }),
       department: b.department, branch: b.branch, team: b.team, manager: b.manager, lastLoginAt: b.lastLoginAt, createdAt: b.createdAt,
       apps: byUser.get(b.id) ?? [],
     };
@@ -156,7 +158,7 @@ export async function peopleIds(actor: Actor, spec: TargetSpec): Promise<string[
 }
 
 export type PersonDetail = {
-  id: string; name: string; email: string; designation: string | null; phone: string | null; role: Role; adminAreas: string[]; isActive: boolean; status: AccountStatus; mainAdmin: boolean;
+  id: string; name: string; email: string; designation: string | null; phone: string | null; role: Role; adminAreas: string[]; isActive: boolean; status: AccountStatus; mainAdmin: boolean; passwordInSettings: boolean;
   departmentId: string | null; branchId: string | null; teamId: string | null; managerId: string | null;
   department: string | null; branch: string | null; team: string | null; manager: string | null;
   lastLoginAt: Date | null; createdAt: Date; appIds: string[];
@@ -186,10 +188,11 @@ export async function getPerson(actor: User, id: string): Promise<PersonDetail |
     db.select({ delivery: userInvites.delivery, expiresAt: userInvites.expiresAt, usedAt: userInvites.usedAt }).from(userInvites).where(eq(userInvites.userId, id)).orderBy(desc(userInvites.createdAt)).limit(1),
     db.select({ app: apps.name, at: activityLog.openedAt }).from(activityLog).leftJoin(apps, eq(apps.id, activityLog.appId)).where(and(eq(activityLog.userId, id), eq(activityLog.action, "launch"))).orderBy(desc(activityLog.openedAt)).limit(8),
   ]);
-  const mainAdmin = isEnvAdmin(u.email);
+  const passwordInSettings = isEnvAdmin(u.email);
+  const mainAdmin = passwordInSettings || u.role === "super_admin";
   return {
-    id: u.id, name: u.name, email: u.email, designation: u.designation, phone: u.phone, role: u.role, adminAreas: u.adminAreas, isActive: u.isActive, mainAdmin,
-    status: accountStatus({ isActive: u.isActive, hasPassword: !!u.passwordHash, mainAdmin }),
+    id: u.id, name: u.name, email: u.email, designation: u.designation, phone: u.phone, role: u.role, adminAreas: u.adminAreas, isActive: u.isActive, mainAdmin, passwordInSettings,
+    status: accountStatus({ isActive: u.isActive, hasPassword: !!u.passwordHash, passwordInSettings }),
     departmentId: u.homeDepartmentId, branchId: u.branchId, teamId: u.teamId, managerId: u.reportingManagerId,
     department: row.department, branch: row.branch, team: row.team, manager: row.manager,
     lastLoginAt: u.lastLoginAt, createdAt: u.createdAt, appIds: grants.map((g) => g.appId), launches,

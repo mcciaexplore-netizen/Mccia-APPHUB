@@ -75,8 +75,9 @@ export const canImportUsers = (a: Actor) => hasArea(a, "import");
 export const canUpdateByImport = (a: Actor, target: Pick<Target, "role">) => isSuper(a) || (hasArea(a, "import") && reachableByAdmin(target));
 /** Only the Support Admin changes roles, never their own and never another Support Admin's. */
 export const canChangeRole = (a: Actor, target: Pick<Target, "id" | "role">) => isSupport(a) && target.id !== a.id && target.role !== "head_admin";
+/** Nobody deactivates themselves, and the Super Admin is a main admin: their role must be changed first. */
 export const canDeactivate = (a: Actor, target: Pick<Target, "id" | "role">) =>
-  target.id !== a.id && (isSuper(a) || (hasArea(a, "people") && reachableByAdmin(target)));
+  target.id !== a.id && target.role !== "super_admin" && (isSuper(a) || (hasArea(a, "people") && reachableByAdmin(target)));
 /** Whether `actor` may edit this person's details (name, department, team and so on). */
 export const canEditPerson = (a: Actor, target: Pick<Target, "id" | "role">) => isSuper(a) || (hasArea(a, "people") && reachableByAdmin(target));
 

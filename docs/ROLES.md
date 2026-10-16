@@ -21,6 +21,10 @@ Five kinds of person, and what each can do. The rules live in one file, `src/lib
 | Audit log | See and export who changed what |
 | Activity log | See and export which applications were opened |
 
+## Main admins
+
+The Support Admin and the Super Admin are both **main admins**: the directory marks them "Main admin", and neither can be deactivated or deleted through the screens. If the DG ever changes, change the Super Admin's role first, then deactivate them. The Support Admin's password lives in the environment settings (`HEAD_ADMIN_PASSWORD`); the Super Admin has a normal password (set through a setup link) and can change it.
+
 Whatever is ticked, an Admin can **never**: change a role, change what an Admin may open, delete a person, or see or touch the Support Admin, the Super Admin or another Admin (not in the directory, not by address, not through an import). They are also not Approval System admins: that module keeps its own roles (the Approvals admin is still the Support Admin).
 
 ## Setting people up

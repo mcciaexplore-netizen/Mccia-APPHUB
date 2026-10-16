@@ -121,6 +121,10 @@ try {
   const dir = await main(A);
   check("the Support Admin is labelled as such in the directory", /Support admin/.test(dir), dir.replace(/\s+/g, " ").slice(0, 120));
   check("and sees everyone: the Super Admin and every Admin", [sup, adm, none, org].every((p) => dir.includes(p.name)));
+  const superRowText = await A.locator("tr", { hasText: sup.name }).first().innerText();
+  check("the Super Admin is shown as a main admin, without the 'password in settings' note", /Main admin/i.test(superRowText) && !/password in settings/i.test(superRowText), superRowText.replace(/\s+/g, " ").slice(0, 120));
+  check("while the Support Admin keeps 'Main admin · password in settings'", /Main admin · password in settings/i.test(await A.locator("tr", { hasText: envAdmin.name }).first().innerText()));
+  check("a main admin's status cannot be clicked to deactivate them, and there is no Delete button on their row", (await A.locator("tr", { hasText: sup.name }).first().getByRole("button", { name: /Delete/ }).count()) === 0 && (await A.locator("tr", { hasText: sup.name }).first().getByTitle("Click to deactivate").count()) === 0);
   check("all six tabs of Administrator, as before", JSON.stringify(await tabs(A)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Applications", "Notifications Panel", "Activity log"]), (await tabs(A)).join("|"));
   check("the four pages inside Users & Access, as before", JSON.stringify(await subtabs(A)) === JSON.stringify(["People", "Branches & teams", "Audit log", "By application & templates"]), (await subtabs(A)).join("|"));
   const roleOptions = await A.locator("select[aria-label], select").evaluateAll((els) => els.flatMap((e) => [...e.options].map((o) => o.textContent)));
@@ -173,6 +177,11 @@ try {
   check("and sees all six tabs", JSON.stringify(await tabs(S)) === JSON.stringify(["Dashboard", "Departments", "Users & Access", "Applications", "Notifications Panel", "Activity log"]), (await tabs(S)).join("|"));
   check("and the whole directory, the Support Admin included", /Support admin/.test(await main(S)) && (await main(S)).includes(adm.name));
   check("the Applications and audit pages open", (await visit(S, "/administrator/inventory", PW)) === "/administrator/inventory" && (await visit(S, "/administrator/users/audit", PW)) === "/administrator/users/audit");
+  await visit(A, `/administrator/users/${sup.id}`, ADMIN_PW);
+  await A.getByRole("heading", { name: sup.name }).waitFor({ timeout: 30000 }).catch(() => {});
+  const supProfile = await main(A);
+  const supFacts = { mainLabel: /main admin/i.test(supProfile), inSettings: /password in settings/i.test(supProfile), link: await A.getByRole("button", { name: "Send setup link" }).count(), reset: await A.getByRole("button", { name: /Reset password/ }).count(), deactivate: await A.getByRole("button", { name: "Deactivate" }).count(), del: await A.getByRole("button", { name: "Delete" }).count() };
+  check("the Super Admin's profile has the Main admin label, setup link and password reset, but no Deactivate or Delete", supFacts.mainLabel && !supFacts.inSettings && supFacts.link === 1 && supFacts.reset === 1 && supFacts.deactivate === 0 && supFacts.del === 0, JSON.stringify(supFacts));
   await visit(S, `/administrator/users/${plain.id}`, PW);
   check("a profile opens with the Role box disabled and a note saying only the Support Admin changes roles", (await S.getByLabel("Role").isDisabled()) && /Only the Support Admin can change a role/.test(await main(S)));
   await S.getByLabel("Name", { exact: true }).fill("ZZR Plain One Renamed");

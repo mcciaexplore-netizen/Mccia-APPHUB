@@ -359,6 +359,10 @@ try {
   check("the Super Admin opens every application without any grant, like the Support Admin", (await getAccessibleApps(superAdmin)).some((a) => a.id === aOps.id) && (await getLaunchTarget(superAdmin, aOps.id)) !== null);
   check("an Admin is an ordinary user for applications: only what is ticked for them", (await getAccessibleApps(admPeople)).length === 0 && (await getLaunchTarget(admPeople, aOps.id)) === null);
   const everyone = await listPeople(admin, pf({}));
+  const superRow = (await listPeople(admin, pf({}), 500)).rows.find((r) => r.id === superAdmin.id);
+  check("the Super Admin is a main admin in the directory, but their password is not in the settings", superRow?.mainAdmin === true && superRow.passwordInSettings === false && superRow.status === "active");
+  check("a plain user and an Admin are not main admins", (await listPeople(admin, pf({}), 500)).rows.filter((r) => [plain.id, admPeople.id, admNone.id].includes(r.id)).every((r) => !r.mainAdmin));
+  check("the profile says the same", (await getPerson(admin, superAdmin.id))?.mainAdmin === true && (await getPerson(admin, superAdmin.id))?.passwordInSettings === false);
   check("the Super Admin sees the same directory as the Support Admin", (await listPeople(superAdmin, pf({}))).total === everyone.total && everyone.total > 10);
   const seen = await listPeople(admPeople, pf({}), 500);
   check("an Admin with Users & access sees plain users and Team managers, and themselves", seen.total > 5 && seen.rows.every((r) => r.role === "member" || r.role === "dept_lead" || r.id === admPeople.id) && seen.rows.some((r) => r.id === admPeople.id));

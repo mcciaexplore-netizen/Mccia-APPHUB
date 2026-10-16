@@ -166,7 +166,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
                 <td>
                   <Link href={`${base}/${u.id}`} className="font-bold text-ink hover:text-primary">{u.name}</Link>{u.designation && <span className="text-xs text-muted"> · {u.designation}</span>}
                   <span className="block text-xs text-muted">{u.email}</span>
-                  {u.mainAdmin && <span className="badge badge-neutral mt-1">Main admin · password in settings</span>}
+                  {u.mainAdmin && <span className="badge badge-neutral mt-1">Main admin{u.passwordInSettings ? " · password in settings" : ""}</span>}
                 </td>
                 <td><span className={roleBadge[u.role]}>{roleLabel[u.role]}</span></td>
                 <td className="text-xs">
@@ -199,7 +199,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
                 <td>
                   <div className="flex justify-end gap-1.5">
                     <Link className="chip !p-1.5 text-muted" aria-label={`Manage access for ${u.name}`} title="Open profile and access" href={`${base}/${u.id}`}><ShieldCheck size={14} /></Link>
-                    {caps.invite && !u.mainAdmin && (
+                    {caps.invite && !u.passwordInSettings && (
                       <button className="chip !p-1.5 text-muted" aria-label={`Reset password for ${u.name}`} title="Reset password or send a setup link" onClick={() => setResetting({ id: u.id, name: u.name })}><KeyRound size={14} /></button>
                     )}
                     {caps.remove && !u.mainAdmin && u.id !== meId && (

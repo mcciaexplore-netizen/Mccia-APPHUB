@@ -140,7 +140,7 @@ export async function setPersonActive(id: string, active: boolean) {
     const [u] = await db.select({ name: users.name, email: users.email, role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, id));
     if (!u) throw new UserError("User not found.");
     if (!canEditPerson(admin, { id, role: u.role })) throw new UserError("You cannot change that person's account.");
-    if (!active && (isEnvAdmin(u.email) || !canDeactivate(admin, { id, role: u.role }))) throw new UserError("The main admin cannot be deactivated.");
+    if (!active && (isEnvAdmin(u.email) || !canDeactivate(admin, { id, role: u.role }))) throw new UserError("A main admin cannot be deactivated. To stop a Super Admin signing in, first change their role.");
     if (u.isActive === !!active) return;
     await db.update(users).set({ isActive: !!active }).where(eq(users.id, id));
     await writeAudit(admin, [{ action: active ? "user.activate" : "user.deactivate", targetType: "user", targetId: id, targetLabel: u.name }]);
@@ -158,6 +158,7 @@ export async function deletePerson(id: string) {
     if (!u) throw new UserError("User not found.");
     if (id === admin.id) throw new UserError("You cannot delete your own account.");
     if (isEnvAdmin(u.email)) throw new UserError("The main admin is set in the environment settings and cannot be deleted.");
+    if (u.role === "super_admin") throw new UserError("The Super Admin is a main admin and cannot be deleted. If the DG has changed, first change their role.");
     if (u.role === "head_admin") {
       const [{ n }] = await db.select({ n: count() }).from(users).where(and(eq(users.role, "head_admin"), eq(users.isActive, true), ne(users.id, id)));
       if (n === 0) throw new UserError("There must always be at least one active Support Admin.");

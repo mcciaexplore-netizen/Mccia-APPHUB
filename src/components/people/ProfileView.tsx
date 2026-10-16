@@ -97,19 +97,19 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
           <h2 className="text-2xl">{person.name}</h2>
           <p className="text-sm text-muted">{person.email}</p>
           <p className="mt-2 flex flex-wrap items-center gap-2"><span className={roleBadge[person.role]}>{roleLabel[person.role]}</span><span className={STATUS_BADGE[person.status]}>{STATUS_LABEL[person.status]}</span>
-            {person.mainAdmin && <span className="badge badge-neutral">Main admin · password in settings</span>}</p>
+            {person.mainAdmin && <span className="badge badge-neutral">Main admin{person.passwordInSettings ? " · password in settings" : ""}</span>}</p>
         </div>
-        {(caps.invite || caps.toggleActive || caps.remove) && !person.mainAdmin && (
+        {((caps.invite && !person.passwordInSettings) || (caps.toggleActive && !person.mainAdmin) || (caps.remove && !person.mainAdmin)) && (
           <div className="flex flex-wrap gap-2">
-            {caps.invite && <button className="btn btn-ghost btn-sm" disabled={pending || !person.isActive} onClick={setupLink}><Mail size={14} /> Send setup link</button>}
-            {caps.invite && <button className="btn btn-ghost btn-sm" aria-label={`Reset password for ${person.name}`} onClick={() => setResetting(true)}><KeyRound size={14} /> Reset password</button>}
-            {caps.toggleActive && !self && (
+            {caps.invite && !person.passwordInSettings && <button className="btn btn-ghost btn-sm" disabled={pending || !person.isActive} onClick={setupLink}><Mail size={14} /> Send setup link</button>}
+            {caps.invite && !person.passwordInSettings && <button className="btn btn-ghost btn-sm" aria-label={`Reset password for ${person.name}`} onClick={() => setResetting(true)}><KeyRound size={14} /> Reset password</button>}
+            {caps.toggleActive && !self && !person.mainAdmin && (
               <button className="btn btn-ghost btn-sm" disabled={pending} onClick={async () => {
                 if (person.isActive && !(await confirm({ title: "Deactivate this user?", confirmLabel: "Deactivate", danger: true, message: `${person.name} will be signed out at once and cannot open anything until you activate them again. Their access settings are kept.` }))) return;
                 start(async () => { const r = await setPersonActive(person.id, !person.isActive); if (r.ok) { toast.success(person.isActive ? "User deactivated and signed out" : "User activated"); refresh(); } else toast.error(r.error); });
               }}><Power size={14} /> {person.isActive ? "Deactivate" : "Activate"}</button>
             )}
-            {caps.remove && !self && (
+            {caps.remove && !self && !person.mainAdmin && (
               <button className="btn btn-danger btn-sm" disabled={pending} onClick={async () => {
                 if (!(await confirm({ title: "Delete this user?", confirmLabel: "Delete", danger: true, message: `${person.name} (${person.email}) will be removed for good, with their password and their access to applications. Their past activity stays in the log as an unknown user. To stop someone signing in but keep the account, deactivate them instead.` }))) return;
                 start(async () => { const r = await deletePerson(person.id); if (r.ok) { toast.success("User deleted"); router.push(base); router.refresh(); } else toast.error(r.error); });
