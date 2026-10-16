@@ -15,8 +15,9 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-// "member" is the plain User role; "dept_lead" is reserved for a future Department Admin (no UI yet).
-export const roleEnum = pgEnum("role", ["head_admin", "dept_lead", "member"]);
+// head_admin is the Support Admin (the account set in the environment); super_admin is the Super Admin (the DG); admin is an Admin whose
+// areas of Administrator are switched on one by one (users.admin_areas); member is the plain User; dept_lead is the Team manager (kept, but nobody needs it).
+export const roleEnum = pgEnum("role", ["head_admin", "dept_lead", "member", "super_admin", "admin"]);
 // Only "approved" users may sign in. An admin moves people between pending, approved and rejected.
 export const userStatusEnum = pgEnum("user_status", ["pending", "approved", "rejected"]);
 export const activityActionEnum = pgEnum("activity_action", ["login", "launch"]);
@@ -65,6 +66,8 @@ export const users = pgTable(
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   role: roleEnum("role").notNull().default("member"),
+  // For an Admin only: the parts of Administrator the Support Admin has switched on for them (see ADMIN_AREAS in src/lib/rbac.ts). Empty for everyone else.
+  adminAreas: text("admin_areas").array().notNull().default(sql`'{}'::text[]`),
   homeDepartmentId: uuid("home_department_id").references(() => departments.id, {
     onDelete: "set null",
   }),

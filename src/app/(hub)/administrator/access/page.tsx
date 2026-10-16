@@ -1,7 +1,7 @@
 import { asc, count } from "drizzle-orm";
 import { db } from "@/db";
 import { accessTemplateApps, accessTemplates, userAppAccess } from "@/db/schema";
-import { requireHeadAdmin } from "@/lib/permissions";
+import { requireArea } from "@/lib/permissions";
 import { getCatalog } from "@/lib/catalog";
 import { AccessManager } from "./AccessManager";
 
@@ -9,7 +9,7 @@ export const metadata = { title: "Access by application · MCCIA App Hub" };
 
 /** Access by application, and access templates. Changing a person's access (one person or many) is done in Users & Access. */
 export default async function Page({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  await requireHeadAdmin();
+  await requireArea("people");
   const { tab } = await searchParams;
   const [catalog, perApp, templates, templateApps] = await Promise.all([
     getCatalog(),

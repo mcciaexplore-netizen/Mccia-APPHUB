@@ -11,7 +11,7 @@ import { domainsLabel, isEmailAllowed } from "@/lib/domains";
 import { type ImportRow, MAX_IMPORT_ROWS } from "@/lib/import-parse";
 import { deliverInvite, hashToken } from "@/lib/invites";
 import { managerChainReaches } from "@/lib/org";
-import { canImportUsers, type Actor } from "@/lib/rbac";
+import { canImportUsers, canUpdateByImport, type Actor } from "@/lib/rbac";
 import { UserError } from "@/lib/user-error";
 import { emailSchema } from "@/lib/validation";
 
@@ -64,7 +64,7 @@ const ROLE_WORDS: Record<string, "member" | "dept_lead"> = {
   "team manager": "dept_lead", team_manager: "dept_lead", manager: "dept_lead", dept_lead: "dept_lead", "team lead": "dept_lead",
 };
 
-async function analyse(rows: ImportRow[], policy: ImportPolicy) {
+async function analyse(rows: ImportRow[], policy: ImportPolicy, actor: Actor) {
   if (rows.length === 0) throw new UserError("There are no people to check.");
   if (rows.length > MAX_IMPORT_ROWS) throw new UserError(`At most ${MAX_IMPORT_ROWS} people at a time.`);
 
@@ -79,7 +79,7 @@ async function analyse(rows: ImportRow[], policy: ImportPolicy) {
     db.select({ id: teams.id, name: teams.name, branchId: teams.branchId, isActive: teams.isActive }).from(teams),
     db.select({ id: apps.id, name: apps.name, departmentId: apps.departmentId, dept: departments.name }).from(apps).innerJoin(departments, eq(departments.id, apps.departmentId)).where(and(eq(apps.isActive, true), eq(departments.isActive, true))),
     emails.length || managerEmails.length
-      ? db.select({ id: users.id, email: users.email, name: users.name, isActive: users.isActive, status: users.status }).from(users).where(inArray(users.email, [...new Set([...emails, ...managerEmails])]))
+      ? db.select({ id: users.id, email: users.email, name: users.name, isActive: users.isActive, status: users.status, role: users.role }).from(users).where(inArray(users.email, [...new Set([...emails, ...managerEmails])]))
       : Promise.resolve([]),
     managerNames.length
       ? db.select({ id: users.id, email: users.email, name: users.name }).from(users).where(and(eq(users.isActive, true), eq(users.status, "approved"), inArray(sql`lower(${users.name})`, managerNames)))
@@ -201,6 +201,8 @@ async function analyse(rows: ImportRow[], policy: ImportPolicy) {
 
     const existing = email ? userByEmail.get(email) : undefined;
     let action: RowAction = "create";
+    // An Admin may only touch plain users: a row naming the Support Admin, the Super Admin or another Admin is refused.
+    if (existing && policy.existing === "update" && !canUpdateByImport(actor, existing)) errors.push("You cannot change that person's account.");
     if (existing) {
       if (policy.existing === "skip") { action = "skip"; check.status = "exists"; warnings.push("This person already has an account. Nothing will change."); }
       else { action = "update"; warnings.push("This person already has an account. Their department, branch, team, manager and designation will be updated, and the applications added. Role, password and status are never changed."); }
@@ -267,8 +269,8 @@ export type ImportSummary = { total: number; valid: number; needsCorrection: num
 
 /** Reads every row and reports. Writes nothing. */
 export async function checkImport(actor: Actor, rows: ImportRow[], policy: ImportPolicy) {
-  if (!canImportUsers(actor)) throw new UserError("Only the super administrator can add people in bulk.");
-  const { checks, order } = await analyse(rows, policy);
+  if (!canImportUsers(actor)) throw new UserError("You are not allowed to add people in bulk.");
+  const { checks, order } = await analyse(rows, policy, actor);
   const count = (s: RowStatus) => checks.filter((c) => c.status === s).length;
   const summary: ImportSummary = {
     total: checks.length, valid: count("valid"), needsCorrection: count("needs_correction"), invalid: count("invalid"), duplicate: count("duplicate"), exists: count("exists"),
@@ -287,9 +289,9 @@ export const BATCH_ROWS = 25;
  * Everything is re-checked here against the live data: nothing the browser says about a row is trusted.
  */
 export async function commitBatch(actor: Actor & { name: string }, rows: ImportRow[], policy: ImportPolicy, only: number[], opts: { invite: boolean }): Promise<RowOutcome[]> {
-  if (!canImportUsers(actor)) throw new UserError("Only the super administrator can add people in bulk.");
+  if (!canImportUsers(actor)) throw new UserError("You are not allowed to add people in bulk.");
   if (only.length === 0 || only.length > BATCH_ROWS) throw new UserError(`Send between 1 and ${BATCH_ROWS} rows at a time.`);
-  const { checks, plans } = await analyse(rows, policy);
+  const { checks, plans } = await analyse(rows, policy, actor);
   const checkOf = new Map(checks.map((c) => [c.row, c]));
   const results: RowOutcome[] = [];
   const audit: AuditEntry[] = [];

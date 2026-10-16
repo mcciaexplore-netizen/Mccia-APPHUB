@@ -6,7 +6,7 @@ import { activityLog, apps, branches, departments, teams, userAppAccess, userInv
 import { accountStatus, type AccountStatus } from "@/lib/account-status";
 import { isEnvAdmin } from "@/lib/auth";
 import { MAX_PEOPLE } from "@/lib/access-ops";
-import { canViewPerson, isSuper, isTeamManager, type Actor } from "@/lib/rbac";
+import { canViewPerson, hasArea, isAdminRole, isSuper, isTeamManager, type Actor } from "@/lib/rbac";
 import { UserError } from "@/lib/user-error";
 
 /**
@@ -33,7 +33,7 @@ export function parsePeopleFilters(sp: Record<string, string | string[] | undefi
   const sort = g("sort");
   return {
     q: g("q") || undefined, branchId: id("branch"), departmentId: id("dept"), teamId: id("team"), managerId: id("manager"), appId: id("app"),
-    role: role === "head_admin" || role === "dept_lead" || role === "member" ? role : undefined,
+    role: role === "head_admin" || role === "super_admin" || role === "admin" || role === "dept_lead" || role === "member" ? role : undefined,
     status: status === "active" || status === "inactive" || status === "pending" ? status : undefined,
     sort: (SORTS as readonly string[]).includes(sort ?? "") ? (sort as PeopleSort) : "name",
     dir: g("dir") === "desc" ? "desc" : "asc",
@@ -44,6 +44,8 @@ export function parsePeopleFilters(sp: Record<string, string | string[] | undefi
 /** The rule every query starts from: which people this actor may see at all. */
 function scope(actor: Actor): SQL | undefined {
   if (isSuper(actor)) return undefined;
+  // An Admin with Users & access sees plain users (and Team managers) and themselves: never the Support Admin, the Super Admin or another Admin.
+  if (isAdminRole(actor)) return hasArea(actor, "people") ? or(inArray(users.role, ["member", "dept_lead"]), eq(users.id, actor.id)) : sql`false`;
   if (!isTeamManager(actor)) return sql`false`;
   const reach = [eq(users.reportingManagerId, actor.id)];
   if (actor.teamId) reach.push(eq(users.teamId, actor.teamId));
@@ -154,7 +156,7 @@ export async function peopleIds(actor: Actor, spec: TargetSpec): Promise<string[
 }
 
 export type PersonDetail = {
-  id: string; name: string; email: string; designation: string | null; phone: string | null; role: Role; isActive: boolean; status: AccountStatus; mainAdmin: boolean;
+  id: string; name: string; email: string; designation: string | null; phone: string | null; role: Role; adminAreas: string[]; isActive: boolean; status: AccountStatus; mainAdmin: boolean;
   departmentId: string | null; branchId: string | null; teamId: string | null; managerId: string | null;
   department: string | null; branch: string | null; team: string | null; manager: string | null;
   lastLoginAt: Date | null; createdAt: Date; appIds: string[];
@@ -186,7 +188,7 @@ export async function getPerson(actor: User, id: string): Promise<PersonDetail |
   ]);
   const mainAdmin = isEnvAdmin(u.email);
   return {
-    id: u.id, name: u.name, email: u.email, designation: u.designation, phone: u.phone, role: u.role, isActive: u.isActive, mainAdmin,
+    id: u.id, name: u.name, email: u.email, designation: u.designation, phone: u.phone, role: u.role, adminAreas: u.adminAreas, isActive: u.isActive, mainAdmin,
     status: accountStatus({ isActive: u.isActive, hasPassword: !!u.passwordHash, mainAdmin }),
     departmentId: u.homeDepartmentId, branchId: u.branchId, teamId: u.teamId, managerId: u.reportingManagerId,
     department: row.department, branch: row.branch, team: row.team, manager: row.manager,

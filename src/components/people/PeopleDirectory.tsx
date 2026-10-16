@@ -12,7 +12,7 @@ import { STATUS_BADGE, STATUS_LABEL } from "@/lib/account-status";
 import { formatIST, roleBadge, roleLabel } from "@/lib/format";
 import type { PeopleFilters, PersonRow } from "@/lib/people";
 
-type Capabilities = { create: boolean; importPeople: boolean; toggleActive: boolean; remove: boolean; invite: boolean; assign: boolean };
+type Capabilities = { create: boolean; importPeople: boolean; changeRole: boolean; toggleActive: boolean; remove: boolean; invite: boolean; assign: boolean };
 export type DirectoryProps = {
   /** Where the profile pages live: /administrator/users or /team. */
   base: string;
@@ -117,7 +117,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
         {select("Filter by department", "dept", filters.departmentId, options.departments, "All departments")}
         {select("Filter by team", "team", filters.teamId, options.teams, "All teams")}
         <select className="input !w-auto !py-2" aria-label="Filter by role" value={filters.role ?? ""} onChange={(e) => setParam("role", e.target.value)}>
-          <option value="">All roles</option><option value="member">User</option><option value="dept_lead">Team manager</option><option value="head_admin">Head admin</option>
+          <option value="">All roles</option><option value="member">User</option><option value="dept_lead">Team manager</option><option value="admin">Admin</option><option value="super_admin">Super admin</option><option value="head_admin">Support admin</option>
         </select>
         <select className="input !w-auto !py-2" aria-label="Filter by status" value={filters.status ?? ""} onChange={(e) => setParam("status", e.target.value)}>
           <option value="">Any status</option><option value="active">Active</option><option value="pending">Pending invitation</option><option value="inactive">Inactive</option>
@@ -179,7 +179,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
                   )}
                 </td>
                 <td>
-                  {u.role === "head_admin" ? <span className="text-xs text-muted">All applications</span>
+                  {u.role === "head_admin" || u.role === "super_admin" ? <span className="text-xs text-muted">All applications</span>
                     : u.apps.length === 0 ? <span className="text-subtle">None</span>
                     : <span className="flex flex-wrap gap-1.5">
                         {u.apps.slice(0, 3).map((a) => <span key={a.id} className={`badge ${a.active ? "" : "badge-neutral line-through"}`} title={a.active ? undefined : "Inactive"}>{a.name}</span>)}
@@ -234,7 +234,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
       </nav>
 
       {adding && (
-        <AddPersonDialog options={options} catalog={catalog} domains={domains} onClose={() => setAdding(false)}
+        <AddPersonDialog options={options} catalog={catalog} domains={domains} canPromote={caps.changeRole} onClose={() => setAdding(false)}
           onDone={(r) => {
             setAdding(false);
             if (r.delivery === "manual" || r.delivery === "failed") setLinks([{ id: r.id, name: r.name, email: r.email, ok: true, delivery: r.delivery, link: r.link, message: r.delivery === "failed" ? "The email could not be sent. Pass the link on yourself." : "No email is set up. Pass the link on yourself." }]);

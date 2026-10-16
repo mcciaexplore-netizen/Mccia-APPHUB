@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Download } from "lucide-react";
 import { auditActions, listAudit, type AuditFilters } from "@/lib/audit";
 import { formatIST } from "@/lib/format";
-import { requireHeadAdmin } from "@/lib/permissions";
+import { requireArea } from "@/lib/permissions";
 
 export const metadata = { title: "Audit log · MCCIA App Hub" };
 
@@ -22,7 +22,7 @@ function detail(action: string, d: unknown): string {
 }
 
 export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireHeadAdmin();
+  await requireArea("audit");
   const sp = await searchParams;
   const f: AuditFilters = { q: g(sp, "q") || undefined, action: g(sp, "action") || undefined, from: g(sp, "from") || undefined, to: g(sp, "to") || undefined, page: Math.max(1, Number(g(sp, "page")) || 1) };
   const [data, actions] = await Promise.all([listAudit(f), auditActions()]);

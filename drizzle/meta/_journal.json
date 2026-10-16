@@ -71,6 +71,13 @@
       "when": 1792070966243,
       "tag": "0009_approvals_return_hr_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792127634760,
+      "tag": "0010_roles_super_admin_admin",
+      "breakpoints": true
     }
   ]
 }

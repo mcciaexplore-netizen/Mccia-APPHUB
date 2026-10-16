@@ -22,7 +22,7 @@ export default async function ApprovalsLayout({ children }: { children: React.Re
   const user = await requirePage();
   const [departments, unread, waiting] = await Promise.all([getVisibleDepartments(hubUser), unreadCount(user.id), waitingCount(user)]);
   return (
-    <HubShell user={{ name: hubUser.name, role: hubUser.role }} departments={departments} showApprovals>
+    <HubShell user={{ name: hubUser.name, role: hubUser.role, adminAreas: hubUser.adminAreas }} departments={departments} showApprovals>
       <ConfirmProvider>
         <div className="apr-root">
           <Suspense fallback={null}>

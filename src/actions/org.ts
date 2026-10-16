@@ -13,7 +13,7 @@ const name = z.string().trim().min(1, "Name is required").max(80);
 const optionalId = uuid.nullish().transform((v) => v ?? null);
 
 export async function createBranch(input: unknown) {
-  return adminAction(async (admin) => {
+  return adminAction("org", async (admin) => {
     const n = name.parse(input);
     const [b] = await db.insert(branches).values({ name: n }).returning({ id: branches.id });
     await writeAudit(admin, [{ action: "branch.create", targetType: "branch", targetId: b.id, targetLabel: n }]);
@@ -21,7 +21,7 @@ export async function createBranch(input: unknown) {
 }
 
 export async function renameBranch(id: string, input: unknown) {
-  return adminAction(async (admin) => {
+  return adminAction("org", async (admin) => {
     const n = name.parse(input);
     const [cur] = await db.select({ name: branches.name }).from(branches).where(eq(branches.id, uuid.parse(id)));
     if (!cur) throw new UserError("Branch not found.");
@@ -31,7 +31,7 @@ export async function renameBranch(id: string, input: unknown) {
 }
 
 export async function setBranchActive(id: string, active: boolean) {
-  return adminAction(async (admin) => {
+  return adminAction("org", async (admin) => {
     const [cur] = await db.select({ name: branches.name }).from(branches).where(eq(branches.id, uuid.parse(id)));
     if (!cur) throw new UserError("Branch not found.");
     await db.update(branches).set({ isActive: !!active }).where(eq(branches.id, id));
@@ -41,7 +41,7 @@ export async function setBranchActive(id: string, active: boolean) {
 
 /** Only an unused branch can be deleted. Deactivating hides it from new choices and keeps the people in it. */
 export async function deleteBranch(id: string) {
-  return adminAction(async (admin) => {
+  return adminAction("org", async (admin) => {
     const [cur] = await db.select({ name: branches.name }).from(branches).where(eq(branches.id, uuid.parse(id)));
     if (!cur) throw new UserError("Branch not found.");
     const [[u], [t]] = await Promise.all([
@@ -58,7 +58,7 @@ export async function deleteBranch(id: string) {
 const teamInput = z.object({ name, branchId: optionalId });
 
 export async function createTeam(input: unknown) {
-  return adminAction(async (admin) => {
+  return adminAction("org", async (admin) => {
     const v = teamInput.parse(input);
     const [t] = await db.insert(teams).values({ name: v.name, branchId: v.branchId }).returning({ id: teams.id });
     await writeAudit(admin, [{ action: "team.create", targetType: "team", targetId: t.id, targetLabel: v.name }]);
@@ -66,7 +66,7 @@ export async function createTeam(input: unknown) {
 }
 
 export async function updateTeam(id: string, input: unknown) {
-  return adminAction(async (admin) => {
+  return adminAction("org", async (admin) => {
     const v = teamInput.parse(input);
     const [cur] = await db.select({ name: teams.name, branchId: teams.branchId }).from(teams).where(eq(teams.id, uuid.parse(id)));
     if (!cur) throw new UserError("Team not found.");
@@ -76,7 +76,7 @@ export async function updateTeam(id: string, input: unknown) {
 }
 
 export async function setTeamActive(id: string, active: boolean) {
-  return adminAction(async (admin) => {
+  return adminAction("org", async (admin) => {
     const [cur] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, uuid.parse(id)));
     if (!cur) throw new UserError("Team not found.");
     await db.update(teams).set({ isActive: !!active }).where(eq(teams.id, id));
@@ -85,7 +85,7 @@ export async function setTeamActive(id: string, active: boolean) {
 }
 
 export async function deleteTeam(id: string) {
-  return adminAction(async (admin) => {
+  return adminAction("org", async (admin) => {
     const [cur] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, uuid.parse(id)));
     if (!cur) throw new UserError("Team not found.");
     const [u] = await db.select({ n: count() }).from(users).where(eq(users.teamId, id));

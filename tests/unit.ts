@@ -5,10 +5,12 @@ import { parseCsv, toCsv } from "../src/lib/csv";
 import { accountStatus } from "../src/lib/account-status";
 import { COLUMNS, MAX_IMPORT_ROWS, TEMPLATE_CSV, tableToRows } from "../src/lib/import-parse";
 import {
-  ASSIGNABLE_ROLES, canChangeRole, canDeactivate, canManageAccess, canViewPerson, capabilities, firstUngrantable, grantableApps, isStaff, wouldCreateCycle,
+  ADMIN_AREAS, ASSIGNABLE_ROLES, PROMOTABLE_ROLES, canAdminister, canChangeRole, canDeactivate, canEditPerson, canImportUsers, canManageAccess, canUpdateByImport, canViewPerson, capabilities,
+  firstUngrantable, grantableApps, hasArea, isStaff, wouldCreateCycle,
   type Actor, type Target,
 } from "../src/lib/rbac";
 import { isPublicAddress } from "../src/lib/net-guard";
+import { adminTabsFor, peopleTabsFor } from "../src/lib/admin-tabs";
 import { scrub } from "../src/lib/scrub";
 import { xlsxToTable } from "../src/lib/xlsx-read";
 import { isEmailAllowed } from "../src/lib/domains";
@@ -209,6 +211,49 @@ eq("rbac: head_admin can never be assigned through the screens", [...ASSIGNABLE_
 eq("rbac: the screens show buttons from one capabilities() answer: everything for the super administrator, only assigning for a team manager, nothing for a user", [
   Object.values(capabilities(ADMIN)).every(Boolean), Object.entries(capabilities(TM)).filter(([, v]) => v).map(([k]) => k), Object.values(capabilities(USER)).some(Boolean),
 ], [true, ["assign"], false]);
+// The new roles: the Super Admin (the DG), the Support Admin (head_admin) and an Admin with areas switched on one by one.
+const SUPER: Actor = { id: "s", role: "super_admin", teamId: null };
+const adminWith = (...areas: string[]): Actor => ({ id: "ad", role: "admin", teamId: null, adminAreas: areas });
+const A_PEOPLE = adminWith("people"), A_NONE = adminWith(), A_AUDIT = adminWith("audit"), A_IMPORT = adminWith("import");
+const mk = (role: Target["role"], id = "x"): Target => person({ id, role });
+eq("rbac: the Super Admin has the same reach as the Support Admin over people, access, import and organisation", [
+  canManageAccess(SUPER, mk("member")), canManageAccess(SUPER, mk("admin")), canImportUsers(SUPER), canDeactivate(SUPER, { id: "x", role: "member" }), canEditPerson(SUPER, mk("admin")),
+  hasArea(SUPER, "audit"), hasArea(SUPER, "apps"), canAdminister(SUPER),
+], [true, true, true, true, true, true, true, true]);
+eq("rbac: only the Support Admin changes roles: not the Super Admin, not an Admin, never their own, never a Support Admin's", [
+  canChangeRole(ADMIN, { id: "x", role: "member" }), canChangeRole(ADMIN, { id: "x", role: "admin" }), canChangeRole(ADMIN, { id: "x", role: "super_admin" }),
+  canChangeRole(SUPER, { id: "x", role: "member" }), canChangeRole(A_PEOPLE, { id: "x", role: "member" }), canChangeRole(ADMIN, { id: "a", role: "head_admin" }), canChangeRole(ADMIN, { id: "h", role: "head_admin" }),
+], [true, true, true, false, false, false, false]);
+eq("rbac: an Admin with nothing switched on can do nothing and cannot even open Administrator", [
+  canAdminister(A_NONE), isStaff(A_NONE), canManageAccess(A_NONE, mk("member")), canImportUsers(A_NONE), Object.values(capabilities(A_NONE)).some(Boolean),
+], [false, false, false, false, false]);
+eq("rbac: an Admin can open Administrator as soon as one area is on, and has exactly that area", [
+  canAdminister(A_AUDIT), hasArea(A_AUDIT, "audit"), hasArea(A_AUDIT, "people"), hasArea(A_AUDIT, "apps"), Object.entries(capabilities(A_AUDIT)).filter(([, v]) => v).map(([k]) => k),
+], [true, true, false, false, ["viewAudit"]]);
+eq("rbac: an Admin with Users & access reaches plain users and Team managers, never another Admin, the Super Admin or the Support Admin, and not themselves", [
+  canManageAccess(A_PEOPLE, mk("member")), canManageAccess(A_PEOPLE, mk("dept_lead")), canManageAccess(A_PEOPLE, mk("admin")), canManageAccess(A_PEOPLE, mk("super_admin")),
+  canManageAccess(A_PEOPLE, mk("head_admin")), canManageAccess(A_PEOPLE, mk("member", "ad")),
+], [true, true, false, false, false, false]);
+eq("rbac: an Admin can edit, deactivate and send links to plain users only, and never delete anyone", [
+  canEditPerson(A_PEOPLE, mk("member")), canEditPerson(A_PEOPLE, mk("admin")), canEditPerson(A_PEOPLE, mk("super_admin")), canEditPerson(A_PEOPLE, mk("head_admin")),
+  canDeactivate(A_PEOPLE, { id: "x", role: "member" }), canDeactivate(A_PEOPLE, { id: "x", role: "admin" }), canDeactivate(A_PEOPLE, { id: "x", role: "head_admin" }), canDeactivate(A_PEOPLE, { id: "ad", role: "member" }),
+  capabilities(A_PEOPLE).remove, capabilities(A_PEOPLE).changeRole,
+], [true, false, false, false, true, false, false, false, false, false]);
+eq("rbac: without Users & access an Admin edits nobody, even with other areas on", [canEditPerson(A_AUDIT, mk("member")), canManageAccess(A_AUDIT, mk("member")), canDeactivate(A_IMPORT, { id: "x", role: "member" })], [false, false, false]);
+eq("rbac: bulk add needs its own area", [canImportUsers(A_IMPORT), canImportUsers(A_PEOPLE), canImportUsers(A_NONE)], [true, false, false]);
+eq("rbac: an import may update plain users for an Admin with Bulk add, anyone for the top roles, and nothing without the area", [canUpdateByImport(A_IMPORT, mk("member")), canUpdateByImport(A_IMPORT, mk("admin")), canUpdateByImport(A_IMPORT, mk("super_admin")), canUpdateByImport(A_PEOPLE, mk("member")), canUpdateByImport(SUPER, mk("admin")), canUpdateByImport(ADMIN, mk("super_admin"))], [true, false, false, false, true, true]);
+eq("rbac: an Admin with Users & access may hand out any application, one without may hand out none", [grantableApps(A_PEOPLE, new Set(["app1"])), [...(grantableApps(A_NONE, new Set(["app1"])) ?? ["x"])]], [null, []]);
+eq("rbac: Admin and Super Admin can be given through the screens, only by the Support Admin (and the Support Admin role never)", [[...PROMOTABLE_ROLES], [...ASSIGNABLE_ROLES].includes("head_admin" as never)], [["admin", "super_admin"], false]);
+eq("rbac: the areas an Admin can be given", [...ADMIN_AREAS], ["people", "import", "org", "apps", "audit", "activity"]);
+eq("rbac: a plain user and a Team manager never open Administrator", [canAdminister(USER), canAdminister(TM)], [false, false]);
+eq("tabs: the Support Admin and the Super Admin see every tab, as before", [adminTabsFor(ADMIN).map((t) => t.label), adminTabsFor(SUPER).map((t) => t.label)],
+  [["Dashboard", "Departments", "Users & Access", "Applications", "Notifications Panel", "Activity log"], ["Dashboard", "Departments", "Users & Access", "Applications", "Notifications Panel", "Activity log"]]);
+eq("tabs: an Admin sees the Dashboard and only the tabs of the areas switched on", [adminTabsFor(A_NONE).map((t) => t.label), adminTabsFor(adminWith("people")).map((t) => t.label), adminTabsFor(adminWith("apps", "activity")).map((t) => t.label)],
+  [["Dashboard"], ["Dashboard", "Users & Access", "Notifications Panel"], ["Dashboard", "Departments", "Applications", "Notifications Panel", "Activity log"]]);
+eq("tabs: Users & Access opens on the first page of it the Admin may use", [adminTabsFor(A_IMPORT).find((t) => t.label === "Users & Access")?.href, adminTabsFor(A_AUDIT).find((t) => t.label === "Users & Access")?.href, adminTabsFor(adminWith("org")).find((t) => t.label === "Users & Access")?.href],
+  ["/administrator/users/import", "/administrator/users/audit", "/administrator/users/org"]);
+eq("tabs: inside Users & Access the Support Admin sees all four pages and an Admin only their own", [peopleTabsFor(ADMIN).map((t) => t.label), peopleTabsFor(adminWith("org", "audit")).map((t) => t.label)],
+  [["People", "Branches & teams", "Audit log", "By application & templates"], ["Branches & teams", "Audit log"]]);
 const own = new Set(["app1", "app2"]);
 eq("rbac: a team manager can hand out only the applications they hold", [
   grantableApps(ADMIN, own), firstUngrantable(grantableApps(TM, own), ["app1", "app2"]), firstUngrantable(grantableApps(TM, own), ["app1", "app9"]), firstUngrantable(grantableApps(USER, own), ["app1"]),
@@ -282,7 +327,7 @@ eq("guards: the reviewed list holds only actions that really exist", [...SELF_CH
 // routes go through its own route() wrapper, which does it centrally, so they are covered by its own tests.
 const appDir = new URL("../src/app/", import.meta.url);
 const routeFiles = (readdirSync(appDir, { recursive: true }) as string[]).filter((f) => /(^|\/)route\.ts$/.test(f) && !/^(api\/approvals|approvals)\//.test(f));
-const openRoutes = routeFiles.filter((f) => !/\b(assertHeadAdmin|getCurrentUser|requireUser|requireHeadAdmin)\(/.test(readFileSync(new URL(f, appDir), "utf8")));
+const openRoutes = routeFiles.filter((f) => !/\b(assertHeadAdmin|assertArea|getCurrentUser|requireUser|requireHeadAdmin|requireArea|requireAdministrator)\(/.test(readFileSync(new URL(f, appDir), "utf8")));
 eq(`guards: all ${routeFiles.length} route handlers outside the Approval System check who is asking`, openRoutes, []);
 
 // The application check must never be steered at an internal network

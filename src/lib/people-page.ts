@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { accessTemplateApps, accessTemplates, apps, branches, departments, teams, userAppAccess, users, type User } from "@/db/schema";
 import type { DirectoryProps } from "@/components/people/PeopleDirectory";
@@ -7,14 +7,14 @@ import { domainsLabel } from "@/lib/domains";
 import { getCatalog } from "@/lib/catalog";
 import { listAudit } from "@/lib/audit";
 import { getPerson, listPeople, parsePeopleFilters } from "@/lib/people";
-import { canManageAccess, capabilities, isSuper } from "@/lib/rbac";
+import { canDeactivate, canEditPerson, canGrantAny, canManageAccess, capabilities, hasArea, isSuper } from "@/lib/rbac";
 
 type SP = Record<string, string | string[] | undefined>;
 
 /** The applications this person may hand out: all of them for the super administrator, only the ones they hold for a team manager. */
 async function grantableCatalog(actor: Pick<User, "id" | "role">) {
   const catalog = await getCatalog();
-  if (isSuper(actor)) return catalog;
+  if (canGrantAny(actor)) return catalog;
   const own = new Set((await db.select({ appId: userAppAccess.appId }).from(userAppAccess).where(eq(userAppAccess.userId, actor.id))).map((r) => r.appId));
   const appsList = catalog.apps.filter((a) => own.has(a.id));
   const deps = new Set(appsList.map((a) => a.departmentId));
@@ -31,9 +31,11 @@ const loadOptions = async () => {
   return { branches: brs, departments: deps, teams: tms, apps: appList };
 };
 
-/** Who can be picked as a reporting manager: every active person. */
-const loadManagers = () =>
-  db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(and(eq(users.isActive, true), eq(users.status, "approved"))).orderBy(asc(users.name)).limit(5000);
+/** Who can be picked as a reporting manager: every active person for the two top roles; plain users and Team managers for an Admin (who never sees the others). */
+const loadManagers = (actor: Pick<User, "role">) =>
+  db.select({ id: users.id, name: users.name, email: users.email }).from(users)
+    .where(and(eq(users.isActive, true), eq(users.status, "approved"), isSuper(actor) ? undefined : inArray(users.role, ["member", "dept_lead"])))
+    .orderBy(asc(users.name)).limit(5000);
 
 async function loadTemplates(allowed?: Set<string>) {
   const [list, rows] = await Promise.all([db.select().from(accessTemplates).orderBy(asc(accessTemplates.name)), db.select().from(accessTemplateApps)]);
@@ -43,12 +45,12 @@ async function loadTemplates(allowed?: Set<string>) {
 /** Everything the directory screen needs, for the administrator (/administrator/users) or a team manager (/team). */
 export async function loadDirectory(actor: User, sp: SP, base: string): Promise<DirectoryProps> {
   const filters = parsePeopleFilters(sp);
-  const full = isSuper(actor);
+  const full = canGrantAny(actor);
   const [result, options, catalog, managers] = await Promise.all([
     listPeople(actor, filters),
     loadOptions(),
     grantableCatalog(actor),
-    full ? loadManagers() : Promise.resolve([]),
+    full ? loadManagers(actor) : Promise.resolve([]),
   ]);
   const templates = await loadTemplates(full ? undefined : new Set(catalog.apps.map((a) => a.id)));
   return {
@@ -61,13 +63,13 @@ export async function loadDirectory(actor: User, sp: SP, base: string): Promise<
 export async function loadProfile(actor: User, id: string, base: string) {
   const person = await getPerson(actor, id);
   if (!person) return null;
-  const full = isSuper(actor);
+  const full = canGrantAny(actor);
   const [options, managers, catalog, names, auditRows] = await Promise.all([
     loadOptions(),
-    full ? loadManagers() : Promise.resolve([]),
+    full ? loadManagers(actor) : Promise.resolve([]),
     grantableCatalog(actor),
     db.select({ id: apps.id, name: apps.name }).from(apps),
-    full ? listAudit({ page: 1, targetId: id }, 10) : Promise.resolve(null),
+    hasArea(actor, "audit") ? listAudit({ page: 1, targetId: id }, 10) : Promise.resolve(null),
   ]);
   const templates = await loadTemplates(full ? undefined : new Set(catalog.apps.map((a) => a.id)));
   const inCatalog = new Set(catalog.apps.map((a) => a.id));
@@ -75,7 +77,8 @@ export async function loadProfile(actor: User, id: string, base: string) {
   return {
     base, person, catalog, templates, meId: actor.id,
     options: { branches: options.branches, departments: options.departments, teams: options.teams, managers },
-    caps: capabilities(actor),
+    // What the buttons on this one person's page show: the actor's general abilities, narrowed to what they may do to THIS person.
+    caps: { ...capabilities(actor), editPerson: canEditPerson(actor, person), invite: canEditPerson(actor, person), toggleActive: canDeactivate(actor, person) },
     accessEditable: canManageAccess(actor, { id: person.id, role: person.role, teamId: person.teamId, reportingManagerId: person.managerId }),
     appNames: person.appIds.map((a) => nameOf.get(a) ?? "").filter(Boolean).sort(),
     otherApps: person.appIds.filter((a) => !inCatalog.has(a)).length,

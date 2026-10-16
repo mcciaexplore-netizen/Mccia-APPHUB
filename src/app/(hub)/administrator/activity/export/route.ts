@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { assertHeadAdmin } from "@/lib/permissions";
+import { assertArea } from "@/lib/permissions";
 import { listRows, parseFilters } from "@/lib/activity";
 import { formatIST } from "@/lib/format";
 import { toCsv } from "@/lib/csv";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   // Head admin with Administrator unlocked, checked here as well as in the proxy.
   try {
-    await assertHeadAdmin();
+    await assertArea("activity");
   } catch {
     return new NextResponse("Forbidden", { status: 403 });
   }

@@ -2,14 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { listAudit } from "@/lib/audit";
 import { toCsv } from "@/lib/csv";
 import { formatIST } from "@/lib/format";
-import { assertHeadAdmin } from "@/lib/permissions";
+import { assertArea } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
 /** The audit log as a CSV file, with the page's filters. Head admin with Administrator unlocked, checked here as well as in the proxy. */
 export async function GET(req: NextRequest) {
   try {
-    await assertHeadAdmin();
+    await assertArea("audit");
   } catch {
     return new NextResponse("Forbidden", { status: 403 });
   }

@@ -1,7 +1,8 @@
 import "server-only";
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
-import { assertHeadAdmin, assertStaff } from "@/lib/permissions";
+import { assertArea, assertHeadAdmin, assertStaff } from "@/lib/permissions";
+import type { AdminArea } from "@/lib/rbac";
 import { UserError } from "@/lib/user-error";
 import type { User } from "@/db/schema";
 
@@ -31,11 +32,19 @@ async function guarded<T>(who: () => Promise<User>, fn: (actor: User) => Promise
   }
 }
 
-/** Runs a head-admin-only mutation with uniform auth, validation and error handling. */
-export const adminAction = <T = undefined>(fn: (admin: User) => Promise<T>) => guarded(assertHeadAdmin, fn);
+/**
+ * Runs an administrator mutation with uniform auth, validation and error handling. With an area, an Admin who has been given that area
+ * may run it as well as the two top roles; without one, only the Support Admin and the Super Admin can. Anything finer (whose account it
+ * touches, what may be changed) is decided by the function it calls, using src/lib/rbac.ts.
+ */
+export function adminAction<T = undefined>(fn: (admin: User) => Promise<T>): Promise<Result<T>>;
+export function adminAction<T = undefined>(area: AdminArea, fn: (admin: User) => Promise<T>): Promise<Result<T>>;
+export function adminAction<T = undefined>(a: AdminArea | ((admin: User) => Promise<T>), fn?: (admin: User) => Promise<T>): Promise<Result<T>> {
+  return typeof a === "function" ? guarded(assertHeadAdmin, a) : guarded(() => assertArea(a), fn!);
+}
 
 /**
- * Runs a mutation that team managers may also use (the head admin, unlocked, or a team manager). It only proves who is asking:
+ * Runs a mutation that team managers may also use (an administrator with Users & access, unlocked, or a team manager). It only proves who is asking:
  * what that person may touch is decided by the functions it calls, using src/lib/rbac.ts.
  */
 export const staffAction = <T = undefined>(fn: (actor: User) => Promise<T>) => guarded(assertStaff, fn);

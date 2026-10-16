@@ -1,17 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { and, eq, ne } from "drizzle-orm";
+import { eq, inArray, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { apps, departments, userAppAccess, users } from "@/db/schema";
-import { requireHeadAdmin } from "@/lib/permissions";
+import { requireArea } from "@/lib/permissions";
+import { isSuper } from "@/lib/rbac";
 import { AppAccessEditor } from "./AppAccessEditor";
 
 export const metadata = { title: "App access · MCCIA App Hub" };
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
-  await requireHeadAdmin();
+  const me = await requireArea("people");
   const { id } = await params;
   if (!z.string().uuid().safeParse(id).success) notFound();
   const [app] = await db
@@ -20,9 +21,9 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (!app) notFound();
 
   const [people, granted] = await Promise.all([
-    // Head admins already see every app, so they are not listed.
+    // The Support Admin and the Super Admin already see every app, so they are not listed. An Admin reaches only plain users.
     db.select({ id: users.id, name: users.name, email: users.email, designation: users.designation, isActive: users.isActive })
-      .from(users).where(and(ne(users.role, "head_admin"))).orderBy(users.name),
+      .from(users).where(isSuper(me) ? notInArray(users.role, ["head_admin", "super_admin"]) : inArray(users.role, ["member", "dept_lead"])).orderBy(users.name),
     db.select({ userId: userAppAccess.userId }).from(userAppAccess).where(eq(userAppAccess.appId, id)),
   ]);
 

@@ -13,14 +13,14 @@ async function nextOrder() {
 }
 
 export async function createDepartment(input: unknown) {
-  return adminAction(async () => {
+  return adminAction("apps", async () => {
     const v = departmentInput.parse(input);
     await db.insert(departments).values({ name: v.name, slug: slugify(v.name), icon: v.icon, sortOrder: v.sortOrder || (await nextOrder()) });
   });
 }
 
 export async function updateDepartment(id: string, input: unknown) {
-  return adminAction(async () => {
+  return adminAction("apps", async () => {
     const v = departmentInput.parse(input);
     await db.update(departments).set({ name: v.name, slug: slugify(v.name), icon: v.icon }).where(eq(departments.id, uuid.parse(id)));
   });
@@ -28,13 +28,13 @@ export async function updateDepartment(id: string, input: unknown) {
 
 /** Departments are never hard-deleted so the activity log keeps its history. */
 export async function setDepartmentActive(id: string, active: boolean) {
-  return adminAction(async () => {
+  return adminAction("apps", async () => {
     await db.update(departments).set({ isActive: !!active }).where(eq(departments.id, uuid.parse(id)));
   });
 }
 
 export async function moveDepartment(id: string, dir: "up" | "down") {
-  return adminAction(async () => {
+  return adminAction("apps", async () => {
     uuid.parse(id);
     const list = await db.select({ id: departments.id }).from(departments).orderBy(asc(departments.sortOrder), asc(departments.name));
     const i = list.findIndex((d) => d.id === id);

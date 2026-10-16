@@ -1,11 +1,11 @@
 import { Bell } from "lucide-react";
-import { requireHeadAdmin } from "@/lib/permissions";
+import { requireAdministrator } from "@/lib/permissions";
 
 export const metadata = { title: "Notifications · MCCIA App Hub" };
 
 /** Placeholder: the section exists and is reachable; notifications themselves are not built yet. */
 export default async function Page() {
-  await requireHeadAdmin();
+  await requireAdministrator();
   return (
     <div className="glass mx-auto max-w-xl p-8 text-center">
       <div className="icon-tile mx-auto mb-4"><Bell size={18} /></div>

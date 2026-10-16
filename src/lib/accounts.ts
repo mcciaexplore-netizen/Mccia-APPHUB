@@ -10,7 +10,7 @@ import { INVITE_HOURS } from "@/lib/invites";
  * Used by both the single "Add user" form and the bulk import, so they can never drift apart.
  */
 export type NewAccount = {
-  name: string; email: string; role: Extract<Role, "member" | "dept_lead">;
+  name: string; email: string; role: Exclude<Role, "head_admin">;
   departmentId: string | null; branchId: string | null; teamId: string | null; managerId: string | null; designation: string | null;
   appIds: string[];
   /** A scrypt hash when the administrator chose to set the password; null when the person will choose their own. Never plaintext. */

@@ -7,10 +7,13 @@ import { Activity, AppWindow, Bell, Building2, ChevronDown, ClipboardList, Layou
 import { lockAdmin } from "@/actions/auth";
 import { Icon } from "@/components/Icon";
 import { isSafetyWeek, playSafetyMascot } from "@/components/SafetyMascot";
+import type { Role } from "@/db/schema";
+import { adminTabsFor } from "@/lib/admin-tabs";
+import { canAdminister } from "@/lib/rbac";
 import { APP_ENTRY, appOwning, approvalsApps, parseApp, type AppKey } from "@/lib/approvals/approvals.manifest";
 
 export type SidebarDept = { id: string; name: string; icon: string };
-export type SidebarUser = { name: string; role: "head_admin" | "dept_lead" | "member" };
+export type SidebarUser = { name: string; role: Role; adminAreas?: readonly string[] };
 
 /** One row of the sidebar: a line icon and a label; the page you are on is a soft teal pill. */
 const ROW = "mx-3 my-0.5 flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors duration-200";
@@ -119,7 +122,7 @@ export function Sidebar({
             </Item>
           </>
         )}
-        {user?.role === "head_admin" && (
+        {user && canAdminister(user) && (
           <div>
             <button
               type="button"
@@ -133,10 +136,10 @@ export function Sidebar({
             </button>
             {(adminOpen || inAdmin) && (
               <div id={submenuId} className="ml-8 mr-3 mt-0.5 space-y-0.5 border-l border-line pl-2">
-                {ADMIN_LINKS.map(({ href, label, Icon: LinkIcon, ...rest }) => {
+                {ADMIN_LINKS.flatMap((l) => { const t = adminTabsFor(user).find((x) => x.label === l.label); return t ? [{ ...l, to: t.href }] : []; }).map(({ href, to, label, Icon: LinkIcon, ...rest }) => {
                   const active = "exact" in rest ? pathname === href : pathname.startsWith(href) || (href === "/administrator/users" && pathname.startsWith("/administrator/access"));
                   return (
-                    <Link key={href} href={href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`${SUB} ${subTone(active)}`}>
+                    <Link key={href} href={to} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`${SUB} ${subTone(active)}`}>
                       <LinkIcon size={15} className="shrink-0" /> <span className="flex-1 whitespace-nowrap py-2">{label}</span>
                     </Link>
                   );

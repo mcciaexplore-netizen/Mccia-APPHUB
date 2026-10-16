@@ -21,7 +21,7 @@ async function loadApp(id: string) {
 }
 
 export async function createApp(input: unknown) {
-  return adminAction(async (admin) => {
+  return adminAction("apps", async (admin) => {
     const v = appInput.parse(input);
     const [a] = await db.insert(apps).values({ ...v, sortOrder: await nextOrder(v.departmentId) }).returning({ id: apps.id });
     await writeAudit(admin, [{ action: "app.create", targetType: "app", targetId: a.id, targetLabel: v.name, details: { status: v.status ?? "active", visible: v.isActive ?? true } }]);
@@ -29,7 +29,7 @@ export async function createApp(input: unknown) {
 }
 
 export async function updateApp(id: string, input: unknown) {
-  return adminAction(async (admin) => {
+  return adminAction("apps", async (admin) => {
     const v = appInput.parse(input);
     const cur = await loadApp(id);
     const sortOrder = cur.departmentId === v.departmentId ? cur.sortOrder : await nextOrder(v.departmentId);
@@ -46,7 +46,7 @@ export async function updateApp(id: string, input: unknown) {
 
 /** Apps are never hard-deleted so the activity log keeps its history. */
 export async function setAppActive(id: string, active: boolean) {
-  return adminAction(async (admin) => {
+  return adminAction("apps", async (admin) => {
     const cur = await loadApp(id);
     await db.update(apps).set({ isActive: !!active }).where(eq(apps.id, cur.id));
     await writeAudit(admin, [{ action: active ? "app.show" : "app.hide", targetType: "app", targetId: cur.id, targetLabel: cur.name }]);
@@ -55,7 +55,7 @@ export async function setAppActive(id: string, active: boolean) {
 
 /** What the administrator says the application is: working, still being tested, or down. Shown on its card; "unavailable" cannot be opened. */
 export async function setAppStatus(id: string, status: AppStatus) {
-  return adminAction(async (admin) => {
+  return adminAction("apps", async (admin) => {
     if (!["active", "testing", "unavailable"].includes(status)) throw new UserError("Choose Active, Under testing or Unavailable.");
     const cur = await loadApp(id);
     if (cur.status === status) return;
@@ -65,7 +65,7 @@ export async function setAppStatus(id: string, status: AppStatus) {
 }
 
 export async function moveApp(id: string, dir: "up" | "down") {
-  return adminAction(async () => {
+  return adminAction("apps", async () => {
     const cur = await loadApp(id);
     const list = await db.select({ id: apps.id }).from(apps).where(eq(apps.departmentId, cur.departmentId)).orderBy(asc(apps.sortOrder), asc(apps.name));
     const i = list.findIndex((a) => a.id === cur.id);
@@ -81,7 +81,7 @@ export async function moveApp(id: string, dir: "up" | "down") {
  * activity history as "Deleted application". To hide an application without losing any of that, deactivate it instead.
  */
 export async function deleteApp(id: string) {
-  return adminAction(async (admin) => {
+  return adminAction("apps", async (admin) => {
     const cur = await loadApp(id);
     const [{ n }] = await db.select({ n: count() }).from(userAppAccess).where(eq(userAppAccess.appId, cur.id));
     await db.delete(apps).where(eq(apps.id, cur.id));
@@ -101,7 +101,7 @@ async function checkOne(adminId: string, id: string): Promise<CheckOutcome> {
 
 /** Checks that one application's address answers over a valid secure connection. This proves the link works, not the application's features. */
 export async function checkApp(id: string) {
-  return adminAction(async (admin) => {
+  return adminAction("apps", async (admin) => {
     const r = await checkOne(admin.id, id);
     await writeAudit(admin, [{ action: "app.check", targetType: "app", targetId: r.id, targetLabel: r.name, details: { ok: r.ok, httpStatus: r.httpStatus } }]);
     return r;
@@ -110,7 +110,7 @@ export async function checkApp(id: string) {
 
 /** The same for every external application, a few at a time. */
 export async function checkAllApps() {
-  return adminAction(async (admin): Promise<CheckOutcome[]> => {
+  return adminAction("apps", async (admin): Promise<CheckOutcome[]> => {
     const list = await db.select({ id: apps.id, url: apps.url }).from(apps);
     const todo = list.filter((a) => !a.url.startsWith("/")).slice(0, 200);
     const out: CheckOutcome[] = [];

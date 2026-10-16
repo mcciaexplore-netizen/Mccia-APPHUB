@@ -3,13 +3,14 @@ import { redirect } from "next/navigation";
 import { AlertCircle, Lock } from "lucide-react";
 import { logout, unlockAdmin } from "@/actions/auth";
 import { requireUser } from "@/lib/permissions";
+import { canAdminister } from "@/lib/rbac";
 import { safeNext } from "@/lib/session";
 
 export const metadata = { title: "Unlock Administrator · MCCIA App Hub" };
 
 export default async function UnlockPage({ searchParams }: { searchParams: Promise<{ error?: string; next?: string }> }) {
   const user = await requireUser();
-  if (user.role !== "head_admin") redirect("/");
+  if (!canAdminister(user)) redirect("/");
   const { error, next } = await searchParams;
 
   return (

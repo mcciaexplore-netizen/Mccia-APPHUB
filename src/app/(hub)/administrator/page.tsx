@@ -7,7 +7,7 @@ import { CountUp } from "@/components/CountUp";
 import { listAudit } from "@/lib/audit";
 import { formatIST } from "@/lib/format";
 import { adminSummary } from "@/lib/people";
-import { requireHeadAdmin } from "@/lib/permissions";
+import { requireAdministrator } from "@/lib/permissions";
 
 export const metadata = { title: "Administrator · MCCIA App Hub" };
 
@@ -24,7 +24,7 @@ function Card({ label, value, href, tone }: { label: string; value: number; href
 
 /** The administrator's home: real counts only, what needs attention, and the latest changes. Nothing here is estimated. */
 export default async function Page() {
-  await requireHeadAdmin();
+  await requireAdministrator();
   const [s, recent, latest, list] = await Promise.all([
     adminSummary(),
     listAudit({ page: 1 }, 8),

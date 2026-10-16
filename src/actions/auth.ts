@@ -10,6 +10,7 @@ import { authenticate, checkPassword, isEnvAdmin, recordLogin, userFingerprint }
 import { clientIp } from "@/lib/ip";
 import { hashPassword, passwordSchema } from "@/lib/passwords";
 import { getCurrentUser } from "@/lib/permissions";
+import { canAdminister } from "@/lib/rbac";
 import { ADMIN_COOKIE, ADMIN_IDLE, SESSION_COOKIE, SESSION_MAX_AGE, cookieOptions, safeNext, sign } from "@/lib/session";
 
 const isHttps = async () => (await headers()).get("x-forwarded-proto") === "https" || process.env.NODE_ENV === "production";
@@ -38,7 +39,7 @@ export async function unlockAdmin(formData: FormData) {
   const target = next.startsWith("/administrator") ? next : "/administrator/departments";
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role !== "head_admin") redirect("/");
+  if (!canAdminister(user)) redirect("/");
   if (!(await checkPassword(user, String(formData.get("password") ?? "")))) redirect(back("/unlock", next));
   (await cookies()).set(ADMIN_COOKIE, sign(user.id, "", "admin", ADMIN_IDLE), cookieOptions(undefined, await isHttps()));
   redirect(target);

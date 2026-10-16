@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { activityLog } from "@/db/schema";
 import { getCurrentUser } from "@/lib/permissions";
 import { getLaunchTarget } from "@/lib/access";
+import { isSuper } from "@/lib/rbac";
 import { clientIp } from "@/lib/ip";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ appI
   const target = await getLaunchTarget(user, appId);
   if (!target) return new NextResponse("Not found", { status: 404 });
   // An application marked unavailable cannot be opened (the head admin still can, to test it). Nothing is logged: nothing was opened.
-  if (target.status === "unavailable" && user.role !== "head_admin") {
+  if (target.status === "unavailable" && !isSuper(user)) {
     return new NextResponse("This application is unavailable right now. Please try again later or ask your administrator.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "600" } });
   }
 

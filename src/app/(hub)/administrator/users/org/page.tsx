@@ -1,13 +1,13 @@
 import { asc, count } from "drizzle-orm";
 import { db } from "@/db";
 import { branches, teams, users } from "@/db/schema";
-import { requireHeadAdmin } from "@/lib/permissions";
+import { requireArea } from "@/lib/permissions";
 import { OrgManager } from "./OrgManager";
 
 export const metadata = { title: "Branches & teams · MCCIA App Hub" };
 
 export default async function Page() {
-  await requireHeadAdmin();
+  await requireArea("org");
   const [brs, tms, byBranch, byTeam, teamsPerBranch] = await Promise.all([
     db.select().from(branches).orderBy(asc(branches.name)),
     db.select().from(teams).orderBy(asc(teams.name)),

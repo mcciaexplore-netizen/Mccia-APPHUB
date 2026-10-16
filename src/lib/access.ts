@@ -5,20 +5,21 @@ import { db } from "@/db";
 import { apps, departments, userAppAccess, type User } from "@/db/schema";
 import { isApprovalsUrl } from "@/lib/approvals/approvals.manifest";
 import { hideApprovalsCard } from "@/lib/approvals/flags";
+import { isSuper } from "@/lib/rbac";
 
 /** What the hub is allowed to know about an app. The URL is deliberately absent. */
 export type HubApp = { id: string; name: string; description: string | null; icon: string; departmentId: string; status: "active" | "testing" | "unavailable" };
 export type HubDepartment = { id: string; name: string; icon: string };
 
 /**
- * Apps this user may open: active apps in active departments. Head admins get all of them; everyone else
+ * Apps this user may open: active apps in active departments. The Support Admin and the Super Admin get all of them; everyone else (an Admin included)
  * only the apps an admin has ticked for them. This is the single source of truth for hub visibility.
  */
 export const getAccessibleApps = cache(async (user: Pick<User, "id" | "role">): Promise<HubApp[]> => {
   const cols = { id: apps.id, name: apps.name, description: apps.description, icon: apps.icon, departmentId: apps.departmentId, status: apps.status };
   const live = and(eq(apps.isActive, true), eq(departments.isActive, true), hideApprovalsCard());
   const base = db.select(cols).from(apps).innerJoin(departments, eq(departments.id, apps.departmentId));
-  if (user.role === "head_admin") return base.where(live).orderBy(asc(apps.sortOrder), asc(apps.name));
+  if (isSuper(user)) return base.where(live).orderBy(asc(apps.sortOrder), asc(apps.name));
   return db
     .select(cols)
     .from(apps)
@@ -49,9 +50,9 @@ export const getVisibleDepartments = cache(async (user: Pick<User, "id" | "role"
       .from(departments)
       .where(eq(departments.isActive, true))
       .orderBy(asc(departments.sortOrder), asc(departments.name)),
-    user.role === "head_admin" ? Promise.resolve([] as HubApp[]) : getAccessibleApps(user),
+    isSuper(user) ? Promise.resolve([] as HubApp[]) : getAccessibleApps(user),
   ]);
-  if (user.role === "head_admin") {
+  if (isSuper(user)) {
     const leftover = await approvalsOnlyDepartments();
     return deps.filter((d) => !leftover.has(d.id));
   }
@@ -67,7 +68,7 @@ export async function getLaunchTarget(user: Pick<User, "id" | "role">, appId: st
   const cols = { id: apps.id, url: apps.url, departmentId: apps.departmentId, status: apps.status };
   const live = and(eq(apps.id, appId), eq(apps.isActive, true), eq(departments.isActive, true), hideApprovalsCard());
   const base = db.select(cols).from(apps).innerJoin(departments, eq(departments.id, apps.departmentId));
-  const [row] = user.role === "head_admin"
+  const [row] = isSuper(user)
     ? await base.where(live)
     : await db
         .select(cols)

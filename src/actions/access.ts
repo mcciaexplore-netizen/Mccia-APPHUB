@@ -23,7 +23,7 @@ const appNames = async (ids: string[]) => (ids.length ? (await db.select({ name:
 
 /** Per-app screen: add and remove users in bulk, all in one statement. */
 export async function changeAppUsers(appId: string, input: unknown) {
-  return adminAction(async (admin) => {
+  return adminAction("people", async (admin) => {
     const id = uuid.parse(appId);
     const v = z.object({ add: uuidList, remove: uuidList }).parse(input);
     return applyAppUserChange(admin, { appId: id, add: v.add, remove: v.remove, source: "application" });
@@ -36,7 +36,7 @@ const templateInput = z.object({
 });
 
 export async function createTemplate(input: unknown) {
-  return adminAction(async (admin) => {
+  return adminAction("people", async (admin) => {
     const v = templateInput.parse(input);
     const appIds = [...new Set(v.appIds)];
     await assertAppsExist(appIds);
@@ -47,7 +47,7 @@ export async function createTemplate(input: unknown) {
 }
 
 export async function updateTemplate(id: string, input: unknown) {
-  return adminAction(async (admin) => {
+  return adminAction("people", async (admin) => {
     const tid = uuid.parse(id);
     const v = templateInput.parse(input);
     const appIds = [...new Set(v.appIds)];
@@ -61,7 +61,7 @@ export async function updateTemplate(id: string, input: unknown) {
 }
 
 export async function deleteTemplate(id: string) {
-  return adminAction(async (admin) => {
+  return adminAction("people", async (admin) => {
     const tid = uuid.parse(id);
     const [t] = await db.select({ name: accessTemplates.name }).from(accessTemplates).where(eq(accessTemplates.id, tid));
     await db.delete(accessTemplates).where(eq(accessTemplates.id, tid));

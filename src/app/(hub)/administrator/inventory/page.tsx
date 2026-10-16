@@ -2,7 +2,7 @@ import { asc, count, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { appChecks, apps, departments, userAppAccess } from "@/db/schema";
 import { isApprovalsUrl } from "@/lib/approvals/approvals.manifest";
-import { requireHeadAdmin } from "@/lib/permissions";
+import { requireArea } from "@/lib/permissions";
 import { InventoryView } from "./InventoryView";
 
 export const metadata = { title: "Application inventory · MCCIA App Hub" };
@@ -10,7 +10,7 @@ export const metadata = { title: "Application inventory · MCCIA App Hub" };
 export const maxDuration = 60;
 
 export default async function Page() {
-  await requireHeadAdmin();
+  await requireArea("apps");
   const [list, latest, access, deps] = await Promise.all([
     db.select({
       id: apps.id, name: apps.name, description: apps.description, url: apps.url, icon: apps.icon, status: apps.status, isActive: apps.isActive,

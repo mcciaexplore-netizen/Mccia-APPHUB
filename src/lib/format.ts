@@ -4,5 +4,5 @@ const fmt = new Intl.DateTimeFormat("en-IN", {
 });
 export const formatIST = (d: Date | string | null | undefined) => (d ? fmt.format(new Date(d)) : "Never");
 
-export const roleLabel = { head_admin: "Head admin", dept_lead: "Team manager", member: "User" } as const;
-export const roleBadge = { head_admin: "badge", dept_lead: "badge badge-purple", member: "badge badge-neutral" } as const;
+export const roleLabel = { head_admin: "Support admin", super_admin: "Super admin", admin: "Admin", dept_lead: "Team manager", member: "User" } as const;
+export const roleBadge = { head_admin: "badge", super_admin: "badge", admin: "badge badge-amber", dept_lead: "badge badge-purple", member: "badge badge-neutral" } as const;

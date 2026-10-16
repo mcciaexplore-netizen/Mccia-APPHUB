@@ -13,7 +13,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     <div>
       <h1 className="mb-8 text-3xl sm:text-4xl">Department activity</h1>
       {user.role === "dept_lead" && !scope ? (
-        <div className="alert"><Inbox size={18} className="mt-0.5 shrink-0" /><span>No home department is set for your account. Contact the head admin.</span></div>
+        <div className="alert"><Inbox size={18} className="mt-0.5 shrink-0" /><span>No home department is set for your account. Contact the Support Admin.</span></div>
       ) : (
         <ActivityView filters={parseFilters(sp)} basePath="/activity" scopeDeptId={scope ?? undefined} isAdmin={false} searchParams={sp} />
       )}

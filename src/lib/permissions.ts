@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users, type User } from "@/db/schema";
 import { userFingerprint } from "@/lib/auth";
+import { canAdminister, hasArea, isSuper, isTeamManager, type AdminArea } from "@/lib/rbac";
 import { ADMIN_COOKIE, SESSION_COOKIE, verify } from "@/lib/session";
 
 /**
@@ -33,43 +34,68 @@ export async function requireUser(): Promise<User> {
   return u;
 }
 
-/** Head admin who has unlocked Administrator. */
+/** The Support Admin or the Super Admin, who has unlocked Administrator. For what only the two top roles may open. */
 export async function requireHeadAdmin(): Promise<User> {
   const u = await requireUser();
-  if (u.role !== "head_admin") redirect("/");
+  if (!isSuper(u)) redirect("/");
   if (!(await adminUnlocked(u))) redirect("/unlock");
   return u;
 }
 
-/** Department leads may view their department's activity. */
+/** Anyone who may open Administrator at all (a top role, or an Admin with at least one area), who has unlocked it. */
+export async function requireAdministrator(): Promise<User> {
+  const u = await requireUser();
+  if (!canAdminister(u)) redirect("/");
+  if (!(await adminUnlocked(u))) redirect("/unlock");
+  return u;
+}
+
+/** One area of Administrator: the two top roles always, an Admin only when it is switched on for them. Anyone else goes back to where they may be. */
+export async function requireArea(area: AdminArea): Promise<User> {
+  const u = await requireAdministrator();
+  if (!hasArea(u, area)) redirect("/administrator");
+  return u;
+}
+
+/** Department leads may view their department's activity; so may an Admin who has been given the Activity log. */
 export async function requireActivityViewer(): Promise<User> {
   const u = await requireUser();
-  if (u.role === "member") redirect("/");
+  if (!(isSuper(u) || isTeamManager(u) || hasArea(u, "activity"))) redirect("/");
   return u;
 }
 
 /** For server actions: throw instead of redirecting so the client gets a clean error. Every admin action calls this. */
 export async function assertHeadAdmin(): Promise<User> {
   const u = await getCurrentUser();
-  if (!u || u.role !== "head_admin" || !(await adminUnlocked(u))) throw new Error("Not allowed");
+  if (!u || !isSuper(u) || !(await adminUnlocked(u))) throw new Error("Not allowed");
   return u;
 }
 
-/** For actions open to team managers as well as the head admin: a head admin must have unlocked Administrator; a team manager needs nothing more. */
+/** The same for one area of Administrator (see requireArea). */
+export async function assertArea(area: AdminArea): Promise<User> {
+  const u = await getCurrentUser();
+  if (!u || !hasArea(u, area) || !(await adminUnlocked(u))) throw new Error("Not allowed");
+  return u;
+}
+
+/**
+ * For actions open to team managers as well as the administrators: a top role or an Admin with Users & access must have unlocked
+ * Administrator; a team manager needs nothing more.
+ */
 export async function assertStaff(): Promise<User> {
   const u = await getCurrentUser();
   if (!u) throw new Error("Not allowed");
-  if (u.role === "head_admin") {
+  if (isSuper(u) || hasArea(u, "people")) {
     if (!(await adminUnlocked(u))) throw new Error("Not allowed");
     return u;
   }
-  if (u.role === "dept_lead") return u;
+  if (isTeamManager(u)) return u;
   throw new Error("Not allowed");
 }
 
-/** Pages for team managers (the head admin uses Administrator instead). */
+/** Pages for team managers (the administrators use Administrator instead). */
 export async function requireTeamManager(): Promise<User> {
   const u = await requireUser();
-  if (u.role !== "dept_lead") redirect("/");
+  if (!isTeamManager(u)) redirect("/");
   return u;
 }

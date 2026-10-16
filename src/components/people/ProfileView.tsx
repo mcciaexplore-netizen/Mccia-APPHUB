@@ -8,10 +8,11 @@ import { AccessTree } from "@/components/AccessTree";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { LinksDialog, ResetDialog, type Catalog, type Manager, type Option, type Template } from "@/components/people/PeopleDialogs";
 import { useToast } from "@/components/Toast";
-import { deletePerson, sendSetupLink, setPersonAccess, setPersonActive, updatePerson, type LinkResult } from "@/actions/people";
+import { deletePerson, sendSetupLink, setAdminAreas, setPersonAccess, setPersonActive, updatePerson, type LinkResult } from "@/actions/people";
 import { STATUS_BADGE, STATUS_LABEL } from "@/lib/account-status";
 import { formatIST, roleBadge, roleLabel } from "@/lib/format";
 import type { PersonDetail } from "@/lib/people";
+import { ADMIN_AREAS, AREA_LABEL, type AdminArea } from "@/lib/rbac";
 
 export type ProfileCaps = { editPerson: boolean; changeRole: boolean; toggleActive: boolean; remove: boolean; invite: boolean };
 export type AuditLine = { id: number; at: Date; actorName: string; action: string; details: unknown };
@@ -25,6 +26,7 @@ function describe(a: AuditLine): string {
   if (a.action === "access.change") return [d.added?.length ? `added ${d.added.join(", ")}` : "", d.removed?.length ? `removed ${d.removed.join(", ")}` : ""].filter(Boolean).join("; ") || "changed access";
   if (a.action === "user.update" && d.changes) return `changed ${Object.keys(d.changes).join(", ")}`;
   if (a.action === "user.invite") return `sent a setup link (${d.delivery ?? "created"})`;
+  if (a.action === "user.admin_areas") return "changed what this Admin may open";
   return a.action.replace(/^user\./, "").replace(/_/g, " ");
 }
 
@@ -44,8 +46,10 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
 
   const [f, setF] = useState({
     name: person.name, designation: person.designation ?? "", departmentId: person.departmentId ?? "", branchId: person.branchId ?? "",
-    teamId: person.teamId ?? "", managerId: person.managerId ?? "", role: person.role === "dept_lead" ? "dept_lead" : "member",
+    teamId: person.teamId ?? "", managerId: person.managerId ?? "", role: person.role,
   });
+  const [areas, setAreas] = useState<string[]>(person.adminAreas);
+  const areasChanged = areas.length !== person.adminAreas.length || areas.some((a) => !person.adminAreas.includes(a));
   const set = (k: keyof typeof f, v: string) => setF((s) => ({ ...s, [k]: v }));
   const inCatalog = new Set(catalog.apps.map((a) => a.id));
   const initialApps = person.appIds.filter((id) => inCatalog.has(id));
@@ -54,7 +58,8 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
   const [tpl, setTpl] = useState("");
   const dirtyApps = apps.length !== saved.length || apps.some((id) => !saved.includes(id));
   const refresh = () => router.refresh();
-  const isHeadAdmin = person.role === "head_admin";
+  const isHeadAdmin = person.role === "head_admin"; // the Support Admin: their role is never changed here
+  const seesAll = isHeadAdmin || person.role === "super_admin"; // can open every application
   const self = person.id === meId;
   const template = templates.find((t) => t.id === tpl);
 
@@ -68,6 +73,10 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
       if (r.ok) { toast.success("Details saved"); refresh(); } else toast.error(r.error);
     });
   };
+  const saveAreas = () => start(async () => {
+    const r = await setAdminAreas(person.id, areas);
+    if (r.ok) { toast.success("What this Admin may open is saved and recorded in the audit log"); refresh(); } else toast.error(r.error);
+  });
   const saveAccess = () => start(async () => {
     const r = await setPersonAccess(person.id, apps);
     if (r.ok) { setSaved(apps); toast.success(r.data.changed.length ? "Access saved and recorded in the audit log" : "Nothing to change"); refresh(); } else toast.error(r.error);
@@ -122,11 +131,12 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
             <Field label="Reporting manager"><select className="input" value={f.managerId} onChange={(e) => set("managerId", e.target.value)} disabled={!caps.editPerson}><option value="">None</option>{options.managers.filter((m) => m.id !== person.id).map((d) => <option key={d.id} value={d.id}>{d.name} ({d.email})</option>)}</select></Field>
             <Field label="Role">
               {isHeadAdmin ? <input className="input" value={roleLabel[person.role]} disabled aria-label="Role" /> : (
-                <select className="input" value={f.role} onChange={(e) => set("role", e.target.value)} disabled={!caps.changeRole || self} aria-label="Role"><option value="member">User</option><option value="dept_lead">Team manager</option></select>
+                <select className="input" value={f.role} onChange={(e) => set("role", e.target.value)} disabled={!caps.changeRole || self} aria-label="Role"><option value="member">User</option><option value="dept_lead">Team manager</option><option value="admin">Admin</option><option value="super_admin">Super admin</option></select>
               )}
             </Field>
           </div>
-          {!caps.editPerson && <p className="text-xs text-subtle">Only the head admin can change these details.</p>}
+          {!caps.editPerson && <p className="text-xs text-subtle">You cannot change these details.</p>}
+          {caps.editPerson && !caps.changeRole && <p className="text-xs text-subtle">Only the Support Admin can change a role.</p>}
           {caps.editPerson && <button className="btn btn-primary btn-sm" disabled={pending}>Save details</button>}
         </form>
 
@@ -149,10 +159,37 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
         </aside>
       </div>
 
+      {person.role === "admin" && (
+        <section className="glass !rounded-md space-y-4 p-5 sm:p-6" aria-label="What this Admin may open">
+          <div>
+            <h3 className="text-lg">What this Admin may open</h3>
+            <p className="mt-1 text-sm text-muted">An Admin can use only the parts of Administrator ticked here. Whatever is ticked, an Admin can never change roles, delete people, or touch the Support Admin, the Super Admin or another Admin.</p>
+          </div>
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {ADMIN_AREAS.map((a: AdminArea) => (
+              <li key={a}>
+                <label className="flex items-start gap-2.5 text-sm">
+                  <input type="checkbox" className="mt-1 accent-[var(--c-primary)]" checked={areas.includes(a)} disabled={!caps.changeRole || pending}
+                    onChange={(e) => setAreas((cur) => (e.target.checked ? [...cur, a] : cur.filter((x) => x !== a)))} />
+                  <span><b>{AREA_LABEL[a].title}</b><span className="block text-xs text-muted">{AREA_LABEL[a].hint}</span></span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          {caps.changeRole ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <button className="btn btn-primary btn-sm" disabled={pending || !areasChanged} onClick={saveAreas}>Save what they may open</button>
+              <button className="btn btn-ghost btn-sm" disabled={pending || !areasChanged} onClick={() => setAreas(person.adminAreas)}>Discard changes</button>
+              <span className="text-sm text-muted">{areas.length === 0 ? "Nothing ticked: they cannot open Administrator yet" : `${areas.length} of ${ADMIN_AREAS.length} ticked`}</span>
+            </div>
+          ) : <p className="text-xs text-subtle">Only the Support Admin can change this.</p>}
+        </section>
+      )}
+
       <section className="glass !rounded-md space-y-4 p-5 sm:p-6" aria-label="Application access">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-lg">Application access</h3>
-          {templates.length > 0 && !isHeadAdmin && accessEditable && (
+          {templates.length > 0 && !seesAll && accessEditable && (
             <div className="flex flex-wrap items-center gap-2">
               <select className="input !w-auto min-w-44 !py-1.5" value={tpl} onChange={(e) => setTpl(e.target.value)} aria-label="Start from a template"><option value="">Start from a template…</option>{templates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.appIds.length} apps)</option>)}</select>
               <button className="btn btn-ghost btn-sm" disabled={!template} onClick={() => template && setApps([...new Set([...apps, ...template.appIds])])}>Add its apps</button>
@@ -160,7 +197,7 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
             </div>
           )}
         </div>
-        {isHeadAdmin ? <p className="text-sm text-muted">Head admins can open every application, so there is nothing to assign.</p>
+        {seesAll ? <p className="text-sm text-muted">The Support Admin and the Super Admin can open every application, so there is nothing to assign.</p>
         : !accessEditable ? (
           appNames.length === 0 ? <p className="text-sm text-subtle">No applications assigned.</p>
           : <p className="flex flex-wrap gap-1.5">{appNames.map((n) => <span key={n} className="badge">{n}</span>)}</p>

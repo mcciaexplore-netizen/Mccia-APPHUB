@@ -10,7 +10,7 @@ export default async function HubLayout({ children }: { children: React.ReactNod
   const departments = await getVisibleDepartments(user);
 
   return (
-    <HubShell user={{ name: user.name, role: user.role }} departments={departments} showApprovals={approvalsEnabled()}>
+    <HubShell user={{ name: user.name, role: user.role, adminAreas: user.adminAreas }} departments={departments} showApprovals={approvalsEnabled()}>
       {children}
     </HubShell>
   );

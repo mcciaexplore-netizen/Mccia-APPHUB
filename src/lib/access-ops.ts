@@ -3,7 +3,7 @@ import { eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, userAppAccess, users, type User } from "@/db/schema";
 import { writeAudit, type AuditEntry } from "@/lib/audit";
-import { canManageAccess, firstUngrantable, grantableApps, isSuper } from "@/lib/rbac";
+import { canGrantAny, canManageAccess, firstUngrantable, grantableApps } from "@/lib/rbac";
 import { UserError } from "@/lib/user-error";
 
 /**
@@ -56,7 +56,7 @@ async function context(actor: Actor, req: AccessRequest) {
   for (const t of targets) {
     if (!canManageAccess(actor, t)) throw new UserError(`You are not allowed to change access for ${t.name}.`);
   }
-  const grantable = grantableApps(actor, isSuper(actor) ? new Set() : await ownApps(actor));
+  const grantable = grantableApps(actor, canGrantAny(actor) ? new Set() : await ownApps(actor));
   if (firstUngrantable(grantable, appIds)) throw new UserError("You can only give or take away applications that you can open yourself.");
   return { userIds, appIds, targets, names, grantable, appName: (id: string): NamedApp => ({ id, name: names.get(id) ?? "Deleted application" }) };
 }
@@ -172,7 +172,7 @@ export async function applyAppUserChange(actor: Actor, req: AppUsersRequest): Pr
   if (!app) throw new UserError("That application no longer exists. Reload and try again.");
   if (targets.length !== everyone.length) throw new UserError("One or more users no longer exist. Reload and try again.");
   for (const t of targets) if (!canManageAccess(actor, t)) throw new UserError(`You are not allowed to change access for ${t.name}.`);
-  if (firstUngrantable(grantableApps(actor, isSuper(actor) ? new Set() : await ownApps(actor)), [app.id])) throw new UserError("You can only give or take away applications that you can open yourself.");
+  if (firstUngrantable(grantableApps(actor, canGrantAny(actor) ? new Set() : await ownApps(actor)), [app.id])) throw new UserError("You can only give or take away applications that you can open yourself.");
 
   const A = sql`${app.id}`;
   const del = remove.length ? sql`del as (delete from user_app_access where app_id = ${A} and user_id in (${list(remove)}) returning user_id, app_id)` : null;

@@ -347,6 +347,61 @@ try {
   check("creating the same email again returns nothing and changes nothing", (await createAccount(admin, { ...baseAccount, inviteTokenHash: hashToken("another-token") })) === null && (await invitesOf(madeId!)) === 1 && (await grantRows(madeId!)).length === 2);
   const failing = await createAccount(admin, { ...baseAccount, email: "zz-hub-atomic2@example.com", managerId: randomUUID(), inviteTokenHash: hashToken("third-token") }).then(() => "created", () => "refused");
   check("if any part fails (here, a manager that does not exist) nothing at all is created", failing === "refused" && (await db.select({ n: count() }).from(S.users).where(eq(S.users.email, "zz-hub-atomic2@example.com")))[0].n === 0 && (await db.select({ n: count() }).from(S.userInvites).where(eq(S.userInvites.tokenHash, hashToken("third-token"))))[0].n === 0);
+
+  // ------------------------------------------------------------------------------------------------ 11. Super Admin, Support Admin and Admins
+  console.log("\n== 11. Roles: Super Admin, Support Admin (head_admin), and Admins with areas ==");
+  const superAdmin = await mkUser("Super Admin", { role: "super_admin" });
+  const admPeople = await mkUser("Admin People", { role: "admin", adminAreas: ["people"] });
+  const admNone = await mkUser("Admin None", { role: "admin" });
+  const admImport = await mkUser("Admin Import", { role: "admin", adminAreas: ["import"] });
+  const admAudit = await mkUser("Admin Audit", { role: "admin", adminAreas: ["audit"] });
+  const grantsOf = (u: string) => grantRows(u);
+  check("the Super Admin opens every application without any grant, like the Support Admin", (await getAccessibleApps(superAdmin)).some((a) => a.id === aOps.id) && (await getLaunchTarget(superAdmin, aOps.id)) !== null);
+  check("an Admin is an ordinary user for applications: only what is ticked for them", (await getAccessibleApps(admPeople)).length === 0 && (await getLaunchTarget(admPeople, aOps.id)) === null);
+  const everyone = await listPeople(admin, pf({}));
+  check("the Super Admin sees the same directory as the Support Admin", (await listPeople(superAdmin, pf({}))).total === everyone.total && everyone.total > 10);
+  const seen = await listPeople(admPeople, pf({}), 500);
+  check("an Admin with Users & access sees plain users and Team managers, and themselves", seen.total > 5 && seen.rows.every((r) => r.role === "member" || r.role === "dept_lead" || r.id === admPeople.id) && seen.rows.some((r) => r.id === admPeople.id));
+  check("and never the Support Admin, the Super Admin or another Admin", !seen.rows.some((r) => [admin.id, superAdmin.id, admNone.id, admImport.id, admAudit.id].includes(r.id)));
+  check("an Admin without Users & access sees nobody", (await listPeople(admNone, pf({}))).total === 0 && (await listPeople(admAudit, pf({}))).total === 0);
+  check("the role filter knows the new roles", parsePeopleFilters({ role: "admin" }).role === "admin" && parsePeopleFilters({ role: "super_admin" }).role === "super_admin");
+  check("an Admin cannot open the profile of the Super Admin, the Support Admin or another Admin", (await getPerson(admPeople, superAdmin.id)) === null && (await getPerson(admPeople, admin.id)) === null && (await getPerson(admPeople, admAudit.id)) === null);
+  check("but can open a plain user's profile and their own", (await getPerson(admPeople, plain.id)) !== null && (await getPerson(admPeople, admPeople.id)) !== null);
+  check("the profile carries an Admin's areas", JSON.stringify((await getPerson(admin, admAudit.id))?.adminAreas) === JSON.stringify(["audit"]));
+  const reach = await peopleIds(admPeople, { filters: { q: "ZZH" } });
+  check("a selection by filter never reaches an account the Admin may not manage", reach.includes(plain.id) && !reach.some((id) => [superAdmin.id, admin.id, admAudit.id, admNone.id].includes(id)));
+
+  const gave = await applyAccess(admPeople, { userIds: [plain.id], appIds: [aOps.id], mode: "add", source: "test" });
+  check("an Admin with Users & access gives a plain user any application, even one they do not hold", gave.changed.length === 1 && (await grantsOf(plain.id)).includes(aOps.id));
+  check("the audit entry names the Admin who did it", (await db.select().from(S.accessAudit).where(eq(S.accessAudit.targetId, plain.id))).some((a) => a.actorId === admPeople.id));
+  check("an Admin cannot change the access of the Super Admin, the Support Admin or another Admin", (await refused(() => applyAccess(admPeople, { userIds: [superAdmin.id], appIds: [aOps.id], mode: "add", source: "test" }))) !== null
+    && (await refused(() => applyAccess(admPeople, { userIds: [admin.id], appIds: [aOps.id], mode: "add", source: "test" }))) !== null
+    && (await refused(() => applyAccess(admPeople, { userIds: [admAudit.id], appIds: [aOps.id], mode: "add", source: "test" }))) !== null);
+  check("nor their own", (await refused(() => applyAccess(admPeople, { userIds: [admPeople.id], appIds: [aOps.id], mode: "add", source: "test" }))) !== null);
+  check("an Admin without Users & access cannot change anyone's access", (await refused(() => applyAccess(admNone, { userIds: [plain.id], appIds: [aTally.id], mode: "add", source: "test" }))) !== null && (await refused(() => applyAccess(admAudit, { userIds: [plain.id], appIds: [aTally.id], mode: "add", source: "test" }))) !== null);
+  check("the per-application screen applies the same rule", (await refused(() => applyAppUserChange(admPeople, { appId: aTally.id, add: [superAdmin.id], remove: [], source: "test" }))) !== null && (await applyAppUserChange(admPeople, { appId: aTally.id, add: [plain.id], remove: [], source: "test" })).changed.length === 1);
+  check("the Super Admin may change anyone's access, as the Support Admin may", (await applyAccess(superAdmin, { userIds: [plain.id], appIds: [aLedger.id], mode: "add", source: "test" })).changed.length === 1);
+
+  const impRows: ImportRow[] = [
+    R(1, { name: "ZZH Imp Fresh", email: "zz-hub-imp-fresh@example.com" }),
+    R(2, { name: "ZZH Existing Super", email: superAdmin.email }),
+    R(3, { name: "ZZH Existing Plain", email: plain.email }),
+  ];
+  check("bulk add needs its own area: Users & access alone is not enough", (await refused(() => checkImport(admPeople, impRows, { existing: "skip" }))) !== null && (await refused(() => checkImport(admNone, impRows, { existing: "skip" }))) !== null);
+  const impChk = await checkImport(admImport, impRows, { existing: "update" });
+  check("an Admin with Bulk add may import, and update plain users", impChk.checks.find((c) => c.row === 1)?.action === "create" && impChk.checks.find((c) => c.row === 3)?.action === "update");
+  check("but a row naming the Super Admin is refused, so an update can never reach that account", impChk.checks.find((c) => c.row === 2)?.action === "none" && /cannot change that person/.test(impChk.checks.find((c) => c.row === 2)?.errors.join(" ") ?? ""), impChk.checks.find((c) => c.row === 2));
+  const impTop = await checkImport(superAdmin, impRows, { existing: "update" });
+  check("the Super Admin may update any account in an import", impTop.checks.find((c) => c.row === 2)?.action === "update");
+  const impOut = await commitBatch(admImport as never, impRows, { existing: "update" }, [1, 2, 3], { invite: false });
+  check("committing as that Admin creates the new person, updates the plain user and leaves the Super Admin alone", impOut.find((o) => o.row === 1)?.outcome === "created" && impOut.find((o) => o.row === 3)?.outcome === "updated" && impOut.find((o) => o.row === 2)?.outcome === "invalid", impOut.map((o) => `${o.row}:${o.outcome}`).join());
+  check("an account made by an Admin's import is a plain user", (await db.select().from(S.users).where(eq(S.users.email, "zz-hub-imp-fresh@example.com")))[0]?.role === "member");
+
+  const adminAccount = await createAccount(admin, { ...baseAccount, name: "ZZH Made Admin", email: "zz-hub-made-admin@example.com", role: "admin", appIds: [], inviteTokenHash: null });
+  const madeAdmin = (await db.select().from(S.users).where(eq(S.users.id, adminAccount!)))[0];
+  check("an account can be created as an Admin, with no areas switched on", madeAdmin.role === "admin" && madeAdmin.adminAreas.length === 0);
+  const [areasSaved] = await db.update(S.users).set({ adminAreas: ["people", "audit"] }).where(eq(S.users.id, madeAdmin.id)).returning();
+  check("an Admin's areas are stored as a list", JSON.stringify(areasSaved.adminAreas) === JSON.stringify(["people", "audit"]));
 } finally {
   await cleanup().catch((e) => console.error("cleanup failed", e));
   const left = await db.select({ n: count() }).from(S.users).where(like(S.users.email, "zz-hub-%"));

@@ -16,7 +16,7 @@ import { deliverInvite, hashToken, sendInvite } from "@/lib/invites";
 import { checkOrg } from "@/lib/org";
 import { hashPassword, passwordSchema } from "@/lib/passwords";
 import { parsePeopleFilters, peopleIds } from "@/lib/people";
-import { ASSIGNABLE_ROLES, canChangeRole, canDeactivate, canManageAccess } from "@/lib/rbac";
+import { ADMIN_AREAS, ASSIGNABLE_ROLES, canChangeRole, canDeactivate, canEditPerson, canManageAccess, isSupport, PROMOTABLE_ROLES } from "@/lib/rbac";
 import { emailSchema, uuid, uuidList } from "@/lib/validation";
 
 /**
@@ -26,7 +26,12 @@ import { emailSchema, uuid, uuidList } from "@/lib/validation";
 
 const optionalText = (max: number) => z.string().trim().max(max).nullish().transform((v) => v || null);
 const optionalId = uuid.nullish().transform((v) => v ?? null);
-const role = z.enum(ASSIGNABLE_ROLES);
+const role = z.enum([...ASSIGNABLE_ROLES, ...PROMOTABLE_ROLES]);
+const PROMOTED = new Set<string>(PROMOTABLE_ROLES);
+/** Making someone an Admin or Super Admin is the Support Admin's alone. */
+function checkMayGiveRole(admin: Pick<User, "role">, wanted: string) {
+  if (PROMOTED.has(wanted) && !isSupport(admin)) throw new UserError("Only the Support Admin can make someone an Admin or a Super Admin.");
+}
 
 function checkDomain(email: string) {
   if (!isEmailAllowed(email)) throw new UserError(`Email must end with ${domainsLabel()}`);
@@ -63,8 +68,9 @@ export type AddResult = { id: string; delivery: "sent" | "failed" | "manual" | "
 
 /** One person. They choose their own password from a one-time link, unless the administrator deliberately sets one. */
 export async function addPerson(input: unknown) {
-  return adminAction(async (admin): Promise<AddResult> => {
+  return adminAction("people", async (admin): Promise<AddResult> => {
     const v = newPerson.parse(input);
+    checkMayGiveRole(admin, v.role);
     checkDomain(v.email);
     if (isEnvAdmin(v.email)) throw new UserError("That address is the main admin, which is set in the environment settings.");
     const org = await checkOrg({ departmentId: v.departmentId, branchId: v.branchId, teamId: v.teamId, managerId: v.managerId }, null);
@@ -103,17 +109,18 @@ const personEdit = z.object({
 
 /** Name, designation, department, branch, team, reporting manager and (for the super administrator) role. Email never changes. */
 export async function updatePerson(id: string, input: unknown) {
-  return adminAction(async (admin) => {
+  return adminAction("people", async (admin) => {
     uuid.parse(id);
     const v = personEdit.parse(input);
     const [cur] = await db.select().from(users).where(eq(users.id, id));
     if (!cur) throw new UserError("User not found.");
+    if (!canEditPerson(admin, cur)) throw new UserError("You cannot change that person's details.");
     const org = await checkOrg(
       { departmentId: v.departmentId, branchId: v.branchId, teamId: v.teamId, managerId: v.managerId }, id,
       { departmentId: cur.homeDepartmentId, branchId: cur.branchId, teamId: cur.teamId, managerId: cur.reportingManagerId },
     );
-    const newRole = v.role ?? (cur.role === "head_admin" ? "head_admin" : cur.role);
-    if (newRole !== cur.role && !canChangeRole(admin, cur)) throw new UserError("That person's role cannot be changed here.");
+    const newRole = v.role ?? cur.role;
+    if (newRole !== cur.role && !canChangeRole(admin, cur)) throw new UserError("That person's role cannot be changed here. Only the Support Admin changes roles.");
     const before = await orgNames({ departmentId: cur.homeDepartmentId, branchId: cur.branchId, teamId: cur.teamId, managerId: cur.reportingManagerId });
     const after = await orgNames(org);
     const changes: Record<string, { from: unknown; to: unknown }> = {};
@@ -121,17 +128,18 @@ export async function updatePerson(id: string, input: unknown) {
     note("name", cur.name, v.name); note("designation", cur.designation, v.designation); note("role", cur.role, newRole);
     for (const k of ["department", "branch", "team", "manager"] as const) note(k, before[k], after[k]);
     if (Object.keys(changes).length === 0) return;
-    await db.update(users).set({ name: v.name, designation: v.designation, homeDepartmentId: org.departmentId, branchId: org.branchId, teamId: org.teamId, reportingManagerId: org.managerId, role: newRole }).where(eq(users.id, id));
+    await db.update(users).set({ name: v.name, designation: v.designation, homeDepartmentId: org.departmentId, branchId: org.branchId, teamId: org.teamId, reportingManagerId: org.managerId, role: newRole, adminAreas: newRole === "admin" ? cur.adminAreas : [] }).where(eq(users.id, id));
     await writeAudit(admin, [{ action: "user.update", targetType: "user", targetId: id, targetLabel: v.name, details: { changes } }]);
   });
 }
 
 /** A deactivated person is signed out at once and can be activated again. */
 export async function setPersonActive(id: string, active: boolean) {
-  return adminAction(async (admin) => {
+  return adminAction("people", async (admin) => {
     uuid.parse(id);
     const [u] = await db.select({ name: users.name, email: users.email, role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, id));
     if (!u) throw new UserError("User not found.");
+    if (!canEditPerson(admin, { id, role: u.role })) throw new UserError("You cannot change that person's account.");
     if (!active && (isEnvAdmin(u.email) || !canDeactivate(admin, { id, role: u.role }))) throw new UserError("The main admin cannot be deactivated.");
     if (u.isActive === !!active) return;
     await db.update(users).set({ isActive: !!active }).where(eq(users.id, id));
@@ -141,7 +149,7 @@ export async function setPersonActive(id: string, active: boolean) {
 
 /**
  * Permanently removes a person: their account, password and access. Their activity stays in the history as an unknown user.
- * The main admin, yourself and the last head admin cannot be deleted. Deactivating is the reversible alternative.
+ * The main admin, yourself and the last Support Admin cannot be deleted. Deactivating is the reversible alternative.
  */
 export async function deletePerson(id: string) {
   return adminAction(async (admin) => {
@@ -152,20 +160,44 @@ export async function deletePerson(id: string) {
     if (isEnvAdmin(u.email)) throw new UserError("The main admin is set in the environment settings and cannot be deleted.");
     if (u.role === "head_admin") {
       const [{ n }] = await db.select({ n: count() }).from(users).where(and(eq(users.role, "head_admin"), eq(users.isActive, true), ne(users.id, id)));
-      if (n === 0) throw new UserError("There must always be at least one active head admin.");
+      if (n === 0) throw new UserError("There must always be at least one active Support Admin.");
     }
     await db.delete(users).where(eq(users.id, id));
     await writeAudit(admin, [{ action: "user.delete", targetType: "user", targetId: id, targetLabel: u.name, details: { email: u.email, role: u.role } }]);
   });
 }
 
+const areaList = z.array(z.enum(ADMIN_AREAS)).max(ADMIN_AREAS.length);
+
+/**
+ * What an Admin may open in Administrator: the ticks the Support Admin sets for them. Only the Support Admin does this, and only for an
+ * Admin. It is recorded in the audit log with what was switched on and off.
+ */
+export async function setAdminAreas(id: string, areas: unknown) {
+  return adminAction(async (admin) => {
+    if (!isSupport(admin)) throw new UserError("Only the Support Admin can change what an Admin may do.");
+    uuid.parse(id);
+    const next = [...new Set(areaList.parse(areas))].sort((a, b) => ADMIN_AREAS.indexOf(a) - ADMIN_AREAS.indexOf(b));
+    const [u] = await db.select({ name: users.name, role: users.role, adminAreas: users.adminAreas }).from(users).where(eq(users.id, id));
+    if (!u) throw new UserError("User not found.");
+    if (u.role !== "admin") throw new UserError("Only an Admin has areas to switch on. Make them an Admin first.");
+    const before = u.adminAreas;
+    const added = next.filter((a) => !before.includes(a));
+    const removed = before.filter((a) => !(next as string[]).includes(a));
+    if (added.length === 0 && removed.length === 0) return;
+    await db.update(users).set({ adminAreas: next }).where(eq(users.id, id));
+    await writeAudit(admin, [{ action: "user.admin_areas", targetType: "user", targetId: id, targetLabel: u.name, details: { added, removed, before, after: next } }]);
+  });
+}
+
 /** For someone who cannot receive email: the administrator types a password. It is hashed at once and never recorded anywhere. */
 export async function setPersonPassword(id: string, password: unknown) {
-  return adminAction(async (admin) => {
+  return adminAction("people", async (admin) => {
     uuid.parse(id);
     const pw = passwordSchema.parse(password);
-    const [u] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, id));
+    const [u] = await db.select({ name: users.name, email: users.email, role: users.role }).from(users).where(eq(users.id, id));
     if (!u) throw new UserError("User not found.");
+    if (!canEditPerson(admin, { id, role: u.role })) throw new UserError("You cannot change that person's password.");
     if (isEnvAdmin(u.email)) throw new UserError("The main admin's password is set in the environment settings (HEAD_ADMIN_PASSWORD).");
     await db.update(users).set({ passwordHash: await hashPassword(pw) }).where(eq(users.id, id)); // also signs them out everywhere
     await writeAudit(admin, [{ action: "user.password_set", targetType: "user", targetId: id, targetLabel: u.name }]);
@@ -175,8 +207,9 @@ export async function setPersonPassword(id: string, password: unknown) {
 export type LinkResult = { id: string; name: string; email: string; ok: boolean; delivery: "sent" | "failed" | "manual" | null; link: string | null; message: string };
 
 async function inviteOne(admin: User, id: string): Promise<LinkResult> {
-  const [u] = await db.select({ id: users.id, name: users.name, email: users.email, isActive: users.isActive }).from(users).where(eq(users.id, id));
+  const [u] = await db.select({ id: users.id, name: users.name, email: users.email, isActive: users.isActive, role: users.role }).from(users).where(eq(users.id, id));
   if (!u) return { id, name: "", email: "", ok: false, delivery: null, link: null, message: "User not found." };
+  if (!canEditPerson(admin, u)) return { id, name: u.name, email: u.email, ok: false, delivery: null, link: null, message: "You cannot send a setup link to that person." };
   try {
     const r = await sendInvite(u, admin.id);
     await writeAudit(admin, [{ action: "user.invite", targetType: "user", targetId: id, targetLabel: u.name, details: { delivery: r.delivery } }]);
@@ -188,12 +221,12 @@ async function inviteOne(admin: User, id: string): Promise<LinkResult> {
 
 /** A fresh one-time link for one person (new account, or a forgotten password). Any older link stops working. */
 export async function sendSetupLink(id: string) {
-  return adminAction(async (admin) => inviteOne(admin, uuid.parse(id)));
+  return adminAction("people", async (admin) => inviteOne(admin, uuid.parse(id)));
 }
 
 /** The same for several people at once: the directory's bulk action for people still pending. */
 export async function sendSetupLinks(ids: unknown) {
-  return adminAction(async (admin): Promise<LinkResult[]> => {
+  return adminAction("people", async (admin): Promise<LinkResult[]> => {
     const list = [...new Set(uuidList.min(1, "Select at least one person").max(200, "Choose at most 200 people at a time").parse(ids))];
     const out: LinkResult[] = [];
     for (let i = 0; i < list.length; i += 5) out.push(...(await Promise.all(list.slice(i, i + 5).map((id) => inviteOne(admin, id)))));
@@ -265,12 +298,12 @@ const policy = z.object({ existing: z.enum(["skip", "update"]) });
 
 /** Reads every row and reports what is wrong or what would happen. Writes nothing. */
 export async function checkImportAction(rows: unknown, existing: unknown) {
-  return adminAction(async (admin) => checkImport(admin, importRows.parse(rows), policy.parse({ existing }) as ImportPolicy));
+  return adminAction("import", async (admin) => checkImport(admin, importRows.parse(rows), policy.parse({ existing }) as ImportPolicy));
 }
 
 /** Creates the accounts for some of the rows (the caller sends the whole file each time, plus the row numbers to do now). */
 export async function commitImportAction(rows: unknown, existing: unknown, only: unknown, invite: unknown) {
-  return adminAction(async (admin) => commitBatch(
+  return adminAction("import", async (admin) => commitBatch(
     admin, importRows.parse(rows), policy.parse({ existing }) as ImportPolicy,
     z.array(z.number().int()).min(1).max(BATCH_ROWS).parse(only), { invite: z.boolean().parse(invite) },
   ));

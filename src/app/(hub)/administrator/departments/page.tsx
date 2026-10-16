@@ -1,13 +1,13 @@
 import { asc, count } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, departments, users } from "@/db/schema";
-import { requireHeadAdmin } from "@/lib/permissions";
+import { requireArea } from "@/lib/permissions";
 import { DepartmentsList } from "./DepartmentsList";
 
 export const metadata = { title: "Departments · MCCIA App Hub" };
 
 export default async function Page() {
-  await requireHeadAdmin();
+  await requireArea("apps");
   const [deps, appCounts, userCounts] = await Promise.all([
     db.select().from(departments).orderBy(asc(departments.sortOrder), asc(departments.name)),
     db.select({ id: apps.departmentId, n: count() }).from(apps).groupBy(apps.departmentId),

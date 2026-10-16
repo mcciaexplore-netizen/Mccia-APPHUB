@@ -1,19 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { db } from "@/db";
 import { apps, departments, userAppAccess, users } from "@/db/schema";
 import { Icon } from "@/components/Icon";
 import { roleBadge, roleLabel } from "@/lib/format";
-import { requireHeadAdmin } from "@/lib/permissions";
+import { requireArea } from "@/lib/permissions";
+import { hasArea, isSuper } from "@/lib/rbac";
 import { uuid } from "@/lib/validation";
 import { DepartmentApps } from "./DepartmentApps";
 
 export const metadata = { title: "Department · MCCIA App Hub" };
 
 export default async function Page({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
-  await requireHeadAdmin();
+  const me = await requireArea("apps");
   const { id } = await params;
   const { tab } = await searchParams;
   if (!uuid.safeParse(id).success) notFound();
@@ -23,7 +24,10 @@ export default async function Page({ params, searchParams }: { params: Promise<{
 
   const [deptApps, members, grants] = await Promise.all([
     db.select().from(apps).where(eq(apps.departmentId, id)).orderBy(asc(apps.sortOrder), asc(apps.name)),
-    db.select().from(users).where(eq(users.homeDepartmentId, id)).orderBy(asc(users.name)),
+    // Who is in the department: everyone for the two top roles; plain users for an Admin with Users & access; nobody for an Admin without it.
+    isSuper(me) || hasArea(me, "people")
+      ? db.select().from(users).where(isSuper(me) ? eq(users.homeDepartmentId, id) : and(eq(users.homeDepartmentId, id), inArray(users.role, ["member", "dept_lead"]))).orderBy(asc(users.name))
+      : Promise.resolve([] as (typeof users.$inferSelect)[]),
     // Which of this department's apps each user can open.
     db.select({ userId: userAppAccess.userId, appId: apps.id, name: apps.name })
       .from(userAppAccess).innerJoin(apps, and(eq(apps.id, userAppAccess.appId), eq(apps.departmentId, id))),
@@ -76,13 +80,13 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                       <td><b>{u.name}</b>{u.designation && <span className="text-xs text-muted"> · {u.designation}</span>}<span className="block text-xs text-muted">{u.email}</span></td>
                       <td><span className={roleBadge[u.role]}>{roleLabel[u.role]}</span></td>
                       <td>
-                        {u.role === "head_admin" ? <span className="text-xs text-muted">All applications</span>
+                        {isSuper(u) ? <span className="text-xs text-muted">All applications</span>
                           : list.length ? <span className="flex flex-wrap gap-1.5">{list.map((n) => <span key={n} className="badge">{n}</span>)}</span>
                           : <span className="text-subtle">None</span>}
                       </td>
                       <td>
                         <div className="flex justify-end gap-1.5">
-                          {u.role !== "head_admin" && (
+                          {!isSuper(u) && (
                             <Link className="chip !p-1.5 text-muted" aria-label={`Manage access for ${u.name}`} title="Manage access" href={`/administrator/access/user/${u.id}`}><ShieldCheck size={14} /></Link>
                           )}
                         </div>

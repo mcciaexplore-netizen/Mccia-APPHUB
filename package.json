@@ -20,6 +20,7 @@
     "test:e2e": "node tests/e2e/suite.mjs",
     "test:e2e:people": "node tests/e2e/people.mjs",
     "test:e2e:mascot": "node tests/e2e/mascot.mjs",
+    "test:e2e:roles": "node tests/e2e/roles.mjs",
     "test:load:seed": "tsx --require ./tests/stub-server-only.cjs tests/load/seed.mts",
     "test:load": "node tests/load/run.mjs",
     "test:load:write": "tsx --require ./tests/stub-server-only.cjs tests/load/write-load.mts",
