@@ -186,7 +186,7 @@ function appOwning(pathname: string): AppKey | null {
  */
 export type ReviewKey = "hr" | "expenditure";
 export const REVIEW_KEYS: readonly ReviewKey[] = ["hr", "expenditure"];
-export const REVIEW_LABEL: Record<ReviewKey | "recommendation", string> = { hr: "HR", expenditure: "Expenditure", recommendation: "Recommendation" };
+export const REVIEW_LABEL: Record<ReviewKey | "recommendation", string> = { hr: "HR", expenditure: "Expenditure", recommendation: "Recommended" };
 export const REVIEW_TABS = ["pending", "approved", "rejected"] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
 export const REVIEW_TAB_LABEL: Record<ReviewTab, string> = { pending: "Pending", approved: "Approved", rejected: "Rejected" };
@@ -198,7 +198,7 @@ export type ReviewItem = { key: ReviewKey | "recommendation"; waiting: number; c
 /** Where a place opens: an approver's on its Pending list, the Director General's on the HR tab of what was recommended to them. */
 export const reviewHref = (key: ReviewItem["key"]) => (key === "recommendation" ? "/approvals/review/recommendation/hr" : `/approvals/review/${key}/pending`);
 
-/** The tab of the Director General's Recommendation place a path names, or null. */
+/** The tab of the Director General's Recommended place a path names, or null. */
 export function parseRecommendationPath(parts: readonly string[]): ReviewKey | null {
   const [head, place, key, ...rest] = parts;
   if (head !== "review" || place !== "recommendation" || rest.length > 0) return null;

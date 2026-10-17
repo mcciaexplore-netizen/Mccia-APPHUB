@@ -25,10 +25,11 @@ const isRole = (r: string): r is ApprovalsRole => (ALL_ROLES as readonly string[
 
 /**
  * Module roles. requester: everyone. approvals_admin: the hub's head admin (the Support Admin), or granted in the module. viewer: granted, and
- * implied for admins. approver and dg are not granted: a person is an approver when named on step 1 of an active routing rule, and a dg
- * (the Super Admin, the final approver) when named on a later step, so the rules and the roles can never disagree.
+ * implied for admins. approver and dg are not granted: a person is an approver when named on step 1 of an active routing rule, and a dg when
+ * named on a later step. The hub's Super Admin (the Director General) is a dg whether or not the rules name them yet, so their
+ * Recommended place under Approval System is there from the first sign-in; what reaches them to decide still follows the rules.
  */
-async function rolesFor(userId: string, isHeadAdmin: boolean): Promise<ApprovalsRole[]> {
+async function rolesFor(userId: string, isHeadAdmin: boolean, isSuperAdmin: boolean): Promise<ApprovalsRole[]> {
   const [granted, steps] = await Promise.all([
     db.select({ role: aprUserRoles.role }).from(aprUserRoles).where(eq(aprUserRoles.userId, userId)),
     db
@@ -39,6 +40,7 @@ async function rolesFor(userId: string, isHeadAdmin: boolean): Promise<Approvals
   const roles = new Set<ApprovalsRole>(["requester"]);
   for (const g of granted) if (isRole(g.role)) roles.add(g.role);
   if (isHeadAdmin) roles.add("approvals_admin");
+  if (isSuperAdmin) roles.add("dg");
   if (roles.has("approvals_admin")) roles.add("viewer");
   for (const s of steps) roles.add(s.stepNo === 1 ? "approver" : "dg");
   return [...roles];
@@ -49,7 +51,7 @@ export const resolveAccess = cache(async (): Promise<Access> => {
   const host = await hostCurrentUser();
   if (!host) return { status: "anonymous" };
   const isHeadAdmin = host.role === "head_admin";
-  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles: await rolesFor(host.id, isHeadAdmin) } };
+  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles: await rolesFor(host.id, isHeadAdmin, host.role === "super_admin") } };
 });
 
 /** Everyone who can sign in to the hub, for the Name dropdown and the approver pickers. There is no second user table. */

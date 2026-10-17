@@ -511,14 +511,14 @@ try {
   check("the Expenditure approver has no HR place: its address is not found", (await status(S.page, "/approvals/review/hr/pending")) === 404);
   const hr16 = await submitWith(R.page, { kind: "hr", firstName: "Hal", lastName: "Review", hrCategoryId: hrCat.id, custom: {} });
   await D.page.goto(BASE + "/approvals");
-  check("the DG has one place under Approval System, called Recommendation, and not HR or Expenditure", (await D.page.locator('aside a[href="/approvals/review/recommendation/hr"]').count()) >= 1 && (await place(D.page, "hr").count()) === 0 && (await place(D.page, "expenditure").count()) === 0);
+  check("the DG has one place under Approval System, called Recommended, and not HR or Expenditure", (await D.page.locator('aside a[href="/approvals/review/recommendation/hr"]').count()) >= 1 && (await place(D.page, "hr").count()) === 0 && (await place(D.page, "expenditure").count()) === 0);
   await D.page.locator('aside a[href="/approvals/review/recommendation/hr"]').first().click();
   await D.page.waitForURL(/\/approvals\/review\/recommendation\/hr/);
-  check("it has two tabs, HR and Expenditure", (await D.page.locator('nav[aria-label="Recommendation lists"] a').allInnerTexts()).map((t) => t.replace(/\s*\d+$/, "").trim()).join("|") === "HR|Expenditure");
+  check("it has two tabs, HR and Expenditure", (await D.page.locator('nav[aria-label="Recommended lists"] a').allInnerTexts()).map((t) => t.replace(/\s*\d+$/, "").trim()).join("|") === "HR|Expenditure");
   check("an HR request recommended to the DG is in the HR tab, with Approve and Reject on its row", hr16.status === 201 && (await D.page.locator("main").first().innerText()).includes(hr16.json.requestNo) && (await D.page.locator("tr", { hasText: hr16.json.requestNo }).getByRole("button", { name: /Approve/ }).count()) === 1);
   check("the DG's decision keeps it in the list, now with its new status and no buttons", (await post(D.page, `/api/approvals/requests/${hr16.json.id}/decision`, { action: "reject", comment: "no" })).status() === 200 && (await (async () => { await D.page.goto(BASE + "/approvals/review/recommendation/hr"); const row = D.page.locator("tr", { hasText: hr16.json.requestNo }); return (await row.count()) === 1 && /Rejected/i.test(await row.innerText()) && (await row.getByRole("button").count()) === 0; })()));
   await D.page.goto(BASE + "/approvals/review/recommendation/expenditure");
-  check("the Expenditure tab opens, and the old HR and Expenditure addresses are not the DG's", (await D.page.locator('nav[aria-label="Recommendation lists"]').count()) === 1 && (await status(D.page, "/approvals/review/hr/pending")) === 404);
+  check("the Expenditure tab opens, and the old HR and Expenditure addresses are not the DG's", (await D.page.locator('nav[aria-label="Recommended lists"]').count()) === 1 && (await status(D.page, "/approvals/review/hr/pending")) === 404);
   await A.page.goto(BASE + "/approvals");
   check("the Support Admin, who oversees everything, has both places", (await place(A.page, "hr").count()) >= 1 && (await place(A.page, "expenditure").count()) >= 1);
   await A.page.goto(BASE + "/approvals/review/hr/rejected");

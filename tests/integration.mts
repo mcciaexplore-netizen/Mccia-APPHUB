@@ -620,8 +620,8 @@ try {
 
   // The HR and Expenditure places under Approval System: who has which, and what the three lists hold
   const itemKeys = async (a: Actor) => (await Q.reviewItemsFor(a)).map((i) => i.key).join();
-  check("the HR reviewer has the HR place only, the DG has one place called Recommendation, an overseer has HR and Expenditure, and someone who approves nothing has none", (await itemKeys(mainHr)) === "hr" && (await itemKeys(dgActor)) === "recommendation" && (await itemKeys(viewer)) === "hr,expenditure" && (await itemKeys(req)) === "");
-  check("the DG's Recommendation place says how many wait in each of its two tabs", (await Q.reviewItemsFor(dgActor))[0]?.counts !== undefined && (await Q.reviewItemsFor(dgActor))[0].waiting === Object.values((await Q.reviewItemsFor(dgActor))[0].counts!).reduce((a, n) => a + n, 0));
+  check("the HR reviewer has the HR place only, the DG has one place called Recommended, an overseer has HR and Expenditure, and someone who approves nothing has none", (await itemKeys(mainHr)) === "hr" && (await itemKeys(dgActor)) === "recommendation" && (await itemKeys(viewer)) === "hr,expenditure" && (await itemKeys(req)) === "");
+  check("the DG's Recommended place says how many wait in each of its two tabs", (await Q.reviewItemsFor(dgActor))[0]?.counts !== undefined && (await Q.reviewItemsFor(dgActor))[0].waiting === Object.values((await Q.reviewItemsFor(dgActor))[0].counts!).reduce((a, n) => a + n, 0));
   const reviewHr = await R.submitHrRequest(hr({ lastName: "ReviewList" }), submitter);
   const reviewHrNotYet = await R.submitHrRequest(hr({ lastName: "ReviewNotYet" }), submitter); // still with the HR reviewer: it has not reached the DG
   const waitFor = async (a: Actor) => (await Q.reviewItemsFor(a)).find((i) => i.key === "hr")?.waiting ?? 0;

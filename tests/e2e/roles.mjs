@@ -358,6 +358,13 @@ try {
   await U.waitForURL(/\/approvals$/, { timeout: 20000 }).catch(() => {});
   check("it opens the Approval System page with HR Approval Form and Expenditure Approval Form", (await cards(U).count()) === 1 && (await cards(U).getByRole("link", { name: /HR Approval Form/ }).getAttribute("href")) === "/approvals/hr/new" && (await cards(U).getByRole("link", { name: /Expenditure Approval Form/ }).getAttribute("href")) === "/approvals/expenses/new");
   check("the Super Admin (the DG), who has no applications, has the same page", await (async () => { await S.goto(BASE + "/approvals"); return (await cards(S).getByRole("link").count()) === 2; })());
+  check("the Super Admin has Recommended under Approval System even though no rule names them yet, and no HR or Expenditure place", (await S.locator('aside a[href="/approvals/review/recommendation/hr"]').first().innerText()).includes("Recommended") && (await S.locator('aside a[href="/approvals/review/hr/pending"]').count()) === 0 && (await S.locator('aside a[href="/approvals/review/expenditure/pending"]').count()) === 0);
+  await S.locator('aside a[href="/approvals/review/recommendation/hr"]').first().click();
+  await S.waitForURL(/recommendation\/hr/, { timeout: 20000 }).catch(() => {});
+  check("clicking it shows two tabs, HR and Expenditure, with the list under them (empty until something is recommended to them)", (await S.locator('nav[aria-label="Recommended lists"] a').allInnerTexts()).map((t) => t.replace(/\s*\d+$/, "").trim()).join("|") === "HR|Expenditure" && /No requests here yet/.test(await S.locator("main").first().innerText()));
+  await S.locator('nav[aria-label="Recommended lists"] a', { hasText: "Expenditure" }).click();
+  await S.waitForURL(/recommendation\/expenditure/, { timeout: 20000 }).catch(() => {});
+  check("the Expenditure tab opens its own list", (await S.locator('nav[aria-label="Recommended lists"] a[aria-current="page"]').innerText()).includes("Expenditure"));
   await cards(U).getByRole("link", { name: /HR Approval Form/ }).click();
   await U.waitForURL(/\/approvals\/hr\/new/, { timeout: 20000 }).catch(() => {});
   check("the HR card opens the HR form", new URL(U.url()).pathname === "/approvals/hr/new" && (await U.locator("main form").count()) >= 1);

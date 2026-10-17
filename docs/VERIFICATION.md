@@ -18,8 +18,8 @@ What was run, on what, with what result. Everything below was run against a **sc
 | Users & Access in a browser | `npm run test:e2e:people` | **112 / 112** |
 | Approval System in a browser | `npm run test:e2e:approvals` | **85 / 85** (regression) |
 | Approval System request flow | `npm run test:e2e:approvals:flow` | **167 / 167** (the earlier 104, plus returning, correcting and resubmitting in the browser, returning from the inbox, HR with an amount, and the rule check) |
-| Roles in a browser | `npm run test:e2e:roles` | **110 / 110** (Support Admin sets an Admin's areas and roles; Super Admin; Admins with different areas see and open only theirs; plain users and Admins with nothing on are kept out) |
-| **Total checks** | | **1,279** |
+| Roles in a browser | `npm run test:e2e:roles` | **113 / 113** (Support Admin sets an Admin's areas and roles; Super Admin; Admins with different areas see and open only theirs; plain users and Admins with nothing on are kept out) |
+| **Total checks** | | **1,282** |
 
 All browser suites write only rows with test names (`ZZ…`, `zz-…`, `ZZP…`, `zzp-…`), remove them afterwards, remove the audit entries they caused, and
 confirm that existing departments, applications, branches, teams, people and access are exactly as before.
