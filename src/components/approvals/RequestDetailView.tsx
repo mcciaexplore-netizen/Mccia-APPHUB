@@ -42,9 +42,9 @@ function Files({ items }: { items: AttachmentRow[] }) {
 /** Everything about one request, read only, with the approver's controls when it is waiting for them. */
 export function RequestDetailView({ d }: { d: RequestDetail }) {
   const e = d.expenditure;
-  const b = e ?? d.hr?.budget ?? null; // an HR request that carries an amount has a budget too
+  const b = e?.budget ?? d.hr?.budget ?? null; // an HR request that carries an amount has a budget too
   const name = d.hr ? `${d.hr.firstName} ${d.hr.lastName}` : d.requesterName;
-  const warning = b ? budgetWarning(b.now) : null;
+  const warning = d.overBudget && b && b.afterPaise != null ? budgetWarning({ noBudget: false, allocatedPaise: b.allocatedPaise, availablePaise: b.availablePaise, afterPaise: b.afterPaise, excessPaise: Math.max(0, -b.afterPaise), overBudget: true }) : null;
 
   return (
     <div className="space-y-8">
@@ -81,8 +81,6 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
           <Item label="Date of Request">{formatDateTime(d.requestedAt)}</Item>
           <Item label="Financial year">{d.financialYear}</Item>
           <Item label="Amount">{money(d.amountPaise)}</Item>
-          {d.hr?.branchName && <Item label="Branch Name">{d.hr.branchName}</Item>}
-          {d.hr?.budgetCategoryName && <Item label="Budget category">{d.hr.budgetCategoryName}</Item>}
           {d.hr && <Item label="Description"><span className="whitespace-pre-wrap">{d.hr.description}</span></Item>}
           {e && <Item label="Vendor Name"><span className="whitespace-pre-wrap">{e.vendorName}</span></Item>}
           {e && d.type === "expenditure_small" && <Item label="Date of expense">{isoToDisplay(e.expenseDate)}</Item>}
@@ -97,25 +95,16 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
         <section aria-labelledby="req-budget">
           <h2 id="req-budget" className="mb-3">Budget</h2>
           {warning && d.status === "pending" && <p className="apr-notice mb-3 max-w-2xl">{warning}</p>}
+          <p className="mb-2 max-w-2xl text-sm text-[var(--z-muted)]">The figures the requester gave when raising this request.</p>
           <div className="table-wrap max-w-2xl">
             <table>
-              <thead><tr><th></th><th className="text-right">Allocated</th><th className="text-right">Used (approved)</th><th className="text-right">Waiting</th><th className="text-right">Left</th></tr></thead>
+              <thead><tr><th className="text-right">Budget allocated</th><th className="text-right">Budget used</th><th className="text-right">Available</th><th className="text-right">Left after this request</th></tr></thead>
               <tbody>
                 <tr>
-                  <td className="font-bold">When submitted</td>
-                  <td className="text-right">{b.snapshot.allocatedPaise == null ? "No budget" : money(b.snapshot.allocatedPaise)}</td>
-                  <td className="text-right">{b.snapshot.allocatedPaise == null || b.snapshot.availablePaise == null ? "—" : money(b.snapshot.allocatedPaise - b.snapshot.availablePaise)}</td>
-                  <td className="text-right">—</td>
-                  <td className={`text-right ${b.snapshot.availablePaise != null && b.snapshot.availablePaise < (d.amountPaise ?? 0) ? "zf-neg" : ""}`}>
-                    {b.snapshot.availablePaise == null ? "—" : `${money(b.snapshot.availablePaise)} → ${money(b.snapshot.afterPaise)} after this request`}
-                  </td>
-                </tr>
-                <tr>
-                  <td className="font-bold">Now</td>
-                  <td className="text-right">{b.now.noBudget ? "No budget" : money(b.now.allocatedPaise)}</td>
-                  <td className="text-right">{money(b.now.spentPaise)}</td>
-                  <td className="text-right">{money(b.now.pendingPaise)}</td>
-                  <td className="text-right">{b.now.noBudget ? "—" : money(b.now.allocatedPaise! - b.now.spentPaise)}</td>
+                  <td className="text-right">{b.allocatedPaise == null ? "—" : money(b.allocatedPaise)}</td>
+                  <td className="text-right">{b.usedPaise == null ? "—" : money(b.usedPaise)}</td>
+                  <td className="text-right">{b.availablePaise == null ? "—" : money(b.availablePaise)}</td>
+                  <td className={`text-right ${b.afterPaise != null && b.afterPaise < 0 ? "zf-neg" : ""}`}>{b.afterPaise == null ? "—" : money(b.afterPaise)}</td>
                 </tr>
               </tbody>
             </table>

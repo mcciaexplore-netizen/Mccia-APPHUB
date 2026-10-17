@@ -1,5 +1,5 @@
 /**
- * Integration test of the Approvals server code against a real Postgres: submitting, routing, deciding, budgets, files, visibility,
+ * Integration test of the Approvals server code against a real Postgres: submitting, routing, deciding, the budget the requester types, files, visibility,
  * lists and reports, calling the module's own functions directly (no browser, no web server).
  *
  * It WRITES to the database, so point it at a scratch database, never the live one:
@@ -28,7 +28,6 @@ const S = await import("../src/lib/approvals/request-schemas");
 const R = await import("../src/lib/approvals/requests");
 const Q = await import("../src/lib/approvals/request-queries");
 const F = await import("../src/lib/approvals/files");
-const B = await import("../src/lib/approvals/budget-position");
 const Rep = await import("../src/lib/approvals/reports");
 const N = await import("../src/lib/approvals/notify");
 const Rules = await import("../src/lib/approvals/rules");
@@ -67,7 +66,6 @@ const cleanup = async () => {
   }
   await db.delete(T.aprApproverRules);
   await db.delete(users).where(like(users.email, "zz-int-%"));
-  await db.delete(T.aprBudgets).where(sql`${T.aprBudgets.branchId} in (select id from apr_branches where name like 'ZZ%')`);
   await db.delete(T.aprCategories).where(like(T.aprCategories.name, "ZZ%"));
   await db.delete(T.aprHrCategories).where(like(T.aprHrCategories.name, "ZZ%"));
   await db.delete(T.aprBranches).where(like(T.aprBranches.name, "ZZ%"));
@@ -94,11 +92,9 @@ try {
   const viewer = await person("viewer", ["viewer"]);
   const [branch] = await db.insert(T.aprBranches).values({ name: "ZZ Int Branch" }).returning();
   const [cat] = await db.insert(T.aprCategories).values({ name: "ZZ Int Category" }).returning();
-  const [catNo] = await db.insert(T.aprCategories).values({ name: "ZZ Int No Budget" }).returning();
   const [hrCat] = await db.insert(T.aprHrCategories).values({ name: "ZZ Int HR" }).returning();
   const [pubType] = await db.insert(T.aprPublicationTypes).values({ name: "ZZ Int Type" }).returning();
   const [pub] = await db.insert(T.aprPublications).values({ name: "ZZ Int Pub", publicationTypeId: pubType.id }).returning();
-  await db.insert(T.aprBudgets).values({ financialYear: FY, branchId: branch.id, categoryId: cat.id, allocatedPaise: 5_000_000 });
   // Seed-like rules: HR and large expenditure have an empty Reviewer step and the DG on step 2; small has the below-10k approver on step 1.
   await db.insert(T.aprApproverRules).values([
     { requestType: "hr", stepNo: 1, stepLabel: "Reviewer", approverUserIds: [] },
@@ -111,10 +107,11 @@ try {
   check("settings fall back to the 10,000 default", settings.thresholdPaise === 1_000_000, settings.thresholdPaise);
 
   const hr = (extra: object = {}) => S.hrRequestInput.parse({ firstName: "Asha", lastName: "Patil", hrCategoryId: hrCat.id, ...extra });
-  const large = (amountPaise: number, extra: object = {}) => S.largeExpenditureInput.parse({ employeeUserId: req.id, categoryId: cat.id, branchId: branch.id, amountPaise, vendorName: "V", ...extra });
-  const smallIn = (amountPaise: number, extra: object = {}) => S.smallExpenditureInput.parse({ employeeUserId: req.id, email: req.email, categoryId: cat.id, branchId: branch.id, amountPaise, vendorName: "Vendor", ...extra });
+  // The requester types the budget: allocated, and how much of it is used. By default a roomy one, so a request is not over budget unless a test says so.
+  const ROOMY = { budgetAllocatedPaise: 100_000_000, budgetUsedPaise: 0 };
+  const large = (amountPaise: number, extra: object = {}) => S.largeExpenditureInput.parse({ employeeUserId: req.id, categoryId: cat.id, branchId: branch.id, amountPaise, vendorName: "V", ...ROOMY, ...extra });
+  const smallIn = (amountPaise: number, extra: object = {}) => S.smallExpenditureInput.parse({ employeeUserId: req.id, email: req.email, categoryId: cat.id, branchId: branch.id, amountPaise, vendorName: "Vendor", ...ROOMY, ...extra });
   const row = async (id: string) => (await db.select().from(T.aprRequests).where(eq(T.aprRequests.id, id)))[0];
-  const position = () => B.budgetPosition(FY, branch.id, cat.id);
 
   /* ------------------------------------------------------------------ HR, with a file */
   const body = Buffer.from("%PDF-1.4 integration test file");
@@ -156,49 +153,43 @@ try {
   check("the history reads submitted, assigned, viewed, approved", JSON.stringify(actions) === JSON.stringify(["submitted", "assigned", "viewed", "approved"]), actions);
   check("it can no longer be withdrawn", (await refused(() => R.withdrawRequest(hrMade.id, null, req)))?.status === 409);
 
-  /* ------------------------------------------------------------------ the 10,000 rule and budgets */
+  /* ------------------------------------------------------------------ the 10,000 rule and the typed budget */
   check("10,000 on the below-10k form is refused", (await refused(() => R.submitExpenditure("small", smallIn(1_000_000), req)))?.status === 422);
   check("9,999.99 on the DG form is refused", (await refused(() => R.submitExpenditure("large", large(999_999), req)))?.status === 422);
   check("nothing was saved by the refused ones", (await db.select().from(T.aprRequests).where(eq(T.aprRequests.type, "expenditure_small"))).length === 0);
 
-  let p = await position();
-  check("budget starts at 50,000 with nothing spent", p.allocatedPaise === 5_000_000 && p.spentPaise === 0 && p.pendingPaise === 0);
-  const big = await R.submitExpenditure("large", large(1_500_000, { natureOfExpenditure: "ZZ nature" }), req);
+  check("the budget figures are required on the expenditure forms, and cannot be negative", !S.largeExpenditureInput.safeParse({ employeeUserId: req.id, categoryId: cat.id, branchId: branch.id, amountPaise: 1_500_000 }).success && !S.smallExpenditureInput.safeParse({ employeeUserId: req.id, email: req.email, categoryId: cat.id, branchId: branch.id, amountPaise: 100_000, vendorName: "V" }).success && !S.largeExpenditureInput.safeParse({ employeeUserId: req.id, categoryId: cat.id, branchId: branch.id, amountPaise: 1_500_000, budgetAllocatedPaise: -1, budgetUsedPaise: 0 }).success);
+  const big = await R.submitExpenditure("large", large(1_500_000, { natureOfExpenditure: "ZZ nature", budgetAllocatedPaise: 5_000_000, budgetUsedPaise: 0 }), req);
   const bigRow = await row(big.id);
   const [bigD] = await db.select().from(T.aprExpenditureDetails).where(eq(T.aprExpenditureDetails.requestId, big.id));
-  check("a 15,000 request is pending with an EXP number and not over budget", bigRow.status === "pending" && big.requestNo === `EXP-${FY}-0001` && !bigRow.overBudget, big.requestNo);
-  check("the budget picture at submission is stored", Number(bigD.budgetAllocatedPaise) === 5_000_000 && Number(bigD.budgetAvailablePaise) === 5_000_000 && Number(bigD.budgetRemainingPaise) === 3_500_000);
-  p = await position();
-  check("pending counts as pending, not spent", p.spentPaise === 0 && p.pendingPaise === 1_500_000);
-  check("approving uses it up", (await R.decideRequest(big.id, { action: "approve", comment: null }, dg)).status === "approved" && (await position()).spentPaise === 1_500_000);
+  check("a 15,000 request against a 50,000 budget is pending with an EXP number and not over budget", bigRow.status === "pending" && big.requestNo === `EXP-${FY}-0001` && !bigRow.overBudget, big.requestNo);
+  check("the budget the requester typed is stored with what follows from it: available, and what is left after this request", Number(bigD.budgetAllocatedPaise) === 5_000_000 && Number(bigD.budgetAvailablePaise) === 5_000_000 && Number(bigD.budgetRemainingPaise) === 3_500_000);
+  check("the DG approves it", (await R.decideRequest(big.id, { action: "approve", comment: null }, dg)).status === "approved");
 
-  const over = await R.submitExpenditure("large", large(4_000_000), req);
-  check("40,000 against 35,000 left is accepted but flagged", (await row(over.id)).overBudget === true);
+  const over = await R.submitExpenditure("large", large(4_000_000, { budgetAllocatedPaise: 5_000_000, budgetUsedPaise: 1_500_000 }), req);
+  check("40,000 against 35,000 left (50,000 allocated, 15,000 used) is accepted but flagged", (await row(over.id)).overBudget === true);
   const overDetail = await Q.getRequestDetail(over.id, dg);
-  check("the approver is told a comment is needed", overDetail?.can.commentToApprove === true && overDetail.expenditure?.now.overBudget === true && overDetail.expenditure.now.excessPaise === 500_000, JSON.stringify(overDetail?.expenditure?.now));
+  check("the approver is told a comment is needed, and the page shows the figures the requester gave", overDetail?.can.commentToApprove === true && overDetail.expenditure?.budget.allocatedPaise === 5_000_000 && overDetail.expenditure.budget.usedPaise === 1_500_000 && overDetail.expenditure.budget.availablePaise === 3_500_000 && overDetail.expenditure.budget.afterPaise === -500_000, JSON.stringify(overDetail?.expenditure?.budget));
   check("approving over budget without a comment is refused", (await refused(() => R.decideRequest(over.id, { action: "approve", comment: null }, dg)))?.status === 422);
   check("with a comment it goes through", (await R.decideRequest(over.id, { action: "approve", comment: "one-off" }, dg)).status === "approved");
-  p = await position();
-  check("spent is now 55,000, past the 50,000 allocated", p.spentPaise === 5_500_000);
 
-  const noBudget = await R.submitExpenditure("large", large(1_200_000, { categoryId: catNo.id }), req);
-  check("a request with no budget at all is accepted and flagged", (await row(noBudget.id)).overBudget === true && (await db.select().from(T.aprExpenditureDetails).where(eq(T.aprExpenditureDetails.requestId, noBudget.id)))[0].budgetAllocatedPaise === null);
-  await R.decideRequest(noBudget.id, { action: "reject", comment: "no budget" }, dg);
+  const spentOut = await R.submitExpenditure("large", large(1_200_000, { budgetAllocatedPaise: 1_000_000, budgetUsedPaise: 1_500_000 }), req);
+  check("a budget that is already used up (used more than allocated) is accepted and flagged", (await row(spentOut.id)).overBudget === true);
+  await R.decideRequest(spentOut.id, { action: "reject", comment: "no budget" }, dg);
 
   const rej = await R.submitExpenditure("large", large(1_200_000), req);
   await R.decideRequest(rej.id, { action: "reject", comment: "not needed" }, dg);
   const rejRow = await row(rej.id);
-  check("a rejected request records the comment and leaves the budget alone", rejRow.status === "rejected" && rejRow.decisionComment === "not needed" && (await position()).spentPaise === 5_500_000);
+  check("a rejected request records the comment", rejRow.status === "rejected" && rejRow.decisionComment === "not needed");
   check("its remaining steps are marked skipped, not left waiting", (await db.select().from(T.aprRequestSteps).where(eq(T.aprRequestSteps.requestId, rej.id))).every((s) => s.status !== "waiting" && s.status !== "pending"));
 
   /* ------------------------------------------------------------------ expenses below 10,000 */
-  const sm = await R.submitExpenditure("small", smallIn(500_000, { expenseDate: "2026-04-10", taxInvoiceDate: "2026-04-09", publicationTypeId: pubType.id, publicationId: pub.id }), req);
+  const sm = await R.submitExpenditure("small", smallIn(500_000, { budgetAllocatedPaise: 1_000_000, budgetUsedPaise: 800_000, expenseDate: "2026-04-10", taxInvoiceDate: "2026-04-09", publicationTypeId: pubType.id, publicationId: pub.id }), req);
   const smRow = await row(sm.id);
   check("a 5,000 expense gets an EXB number and goes to the below-10k approver", sm.requestNo === `EXB-${FY}-0001` && smRow.currentApproverUserId === small.id, sm.requestNo);
   check("the DG cannot decide it", (await refused(() => R.decideRequest(sm.id, { action: "approve", comment: null }, dg)))?.status === 403);
-  check("the category is already overspent, so this expense is flagged and its approver needs a comment", smRow.overBudget === true && (await refused(() => R.decideRequest(sm.id, { action: "approve", comment: null }, small)))?.status === 422);
+  check("the budget typed (10,000 allocated, 8,000 used) is not enough for 5,000, so this expense is flagged and its approver needs a comment", smRow.overBudget === true && (await refused(() => R.decideRequest(sm.id, { action: "approve", comment: null }, small)))?.status === 422);
   check("with a comment its approver can approve it", (await R.decideRequest(sm.id, { action: "approve", comment: "within the group's overall budget" }, small)).status === "approved");
-  check("approved expenses count against the same budget (60,000 spent)", (await position()).spentPaise === 6_000_000);
   check("a publication from another type is refused", (await refused(async () => {
     const [t2] = await db.insert(T.aprPublicationTypes).values({ name: "ZZ Int Type Two" }).returning();
     return R.submitExpenditure("small", smallIn(100_000, { publicationTypeId: t2.id, publicationId: pub.id }), req);
@@ -239,7 +230,6 @@ try {
   check("the requester can withdraw while pending", (await row(wd.id)).status === "withdrawn");
   check("the approver was told", (await N.recentNotifications(dg.id)).some((n) => /withdrawn/.test(n.title)));
   check("a withdrawn request cannot be decided", (await refused(() => R.decideRequest(wd.id, { action: "approve", comment: null }, dg)))?.status === 409);
-  check("withdrawn requests use no budget", (await position()).spentPaise === 6_000_000);
 
   /* ------------------------------------------------------------------ hardening: who may even ask, and races */
   const hidden = await R.submitHrRequest(hr({ lastName: "Hidden" }), req);
@@ -320,11 +310,7 @@ try {
   check("an HR row carries the HR category and the full name", hrRowList.categoryName === "ZZ Int HR" && hrRowList.name === "Asha Patil" && hrRowList.branchName === null);
 
   /* ------------------------------------------------------------------ reports */
-  const util = (await B.utilisation(FY)).find((r) => r.branchId === branch.id && r.categoryId === cat.id);
-  check("budget utilisation: allocated, spent, pending, remaining, percent", util?.allocatedPaise === 5_000_000 && util.spentPaise === 6_000_000 && util.remainingPaise === -1_000_000 && util.percent === 120, JSON.stringify(util));
-  await R.submitExpenditure("large", large(1_100_000, { categoryId: catNo.id }), req);
-  const utilNo = (await B.utilisation(FY)).find((r) => r.categoryId === catNo.id);
-  check("a category with a waiting request but no budget still appears, with no percent", utilNo?.allocatedPaise === null && utilNo.percent === null && utilNo.pendingPaise === 1_100_000 && utilNo.remainingPaise === null, JSON.stringify(utilNo));
+  await R.submitExpenditure("large", large(1_100_000), req);
   const hrr = await Rep.hrReport({});
   const zz = hrr.byCategory.find((c) => c.name === "ZZ Int HR");
   check("HR report counts by category and outcome", !!zz && zz.total >= 5 && zz.approved >= 2 && zz.approved + zz.rejected >= 3 && zz.pending >= 1 && zz.approved + zz.rejected + zz.pending <= zz.total, JSON.stringify(zz));
@@ -379,7 +365,6 @@ try {
 
   /* ------------------------------------------------------------------ the first approver raising a request himself: the DG decides */
   const [cat2] = await db.insert(T.aprCategories).values({ name: "ZZ Int Category Two" }).returning();
-  await db.insert(T.aprBudgets).values({ financialYear: FY, branchId: branch.id, categoryId: cat2.id, allocatedPaise: 10_000_000 });
   const mine = await R.submitExpenditure("small", smallIn(500_000, { employeeUserId: first.id, email: first.email, categoryId: cat2.id }), first);
   const mineRow = await row(mine.id);
   check("a small request raised by the first approver goes to the DG, as step 1 of 1", mineRow.status === "pending" && mineRow.currentApproverUserId === dg.id && mineRow.totalSteps === 1);
@@ -394,12 +379,11 @@ try {
   await R.withdrawRequest(byDg.id, null, dg);
 
   /* ------------------------------------------------------------------ return for corrections, correct, resubmit */
-  const pos2 = () => B.budgetPosition(FY, branch.id, cat2.id);
-  const large2 = (amountPaise: number, extra: object = {}) => S.largeExpenditureInput.parse({ employeeUserId: req.id, categoryId: cat2.id, branchId: branch.id, amountPaise, vendorName: "V", ...extra });
+  const large2 = (amountPaise: number, extra: object = {}) => S.largeExpenditureInput.parse({ employeeUserId: req.id, categoryId: cat2.id, branchId: branch.id, amountPaise, vendorName: "V", ...ROOMY, ...extra });
   const fix = (kind: "large" | "small" | "hr", extra: object = {}) =>
     S.resubmitInput.parse(kind === "hr"
       ? { kind, firstName: "Asha", lastName: "Patil", hrCategoryId: hrCat.id, keepAttachmentIds: [], ...extra }
-      : { kind, employeeUserId: req.id, email: req.email, categoryId: cat2.id, branchId: branch.id, amountPaise: 2_500_000, vendorName: "Fixed Vendor", keepAttachmentIds: [], ...extra });
+      : { kind, employeeUserId: req.id, email: req.email, categoryId: cat2.id, branchId: branch.id, amountPaise: 2_500_000, vendorName: "Fixed Vendor", ...ROOMY, keepAttachmentIds: [], ...extra });
   const stepsOf = (id: string) => db.select().from(T.aprRequestSteps).where(eq(T.aprRequestSteps.requestId, id)).orderBy(T.aprRequestSteps.stepNo);
   const eventsOf = async (id: string) => (await db.select().from(T.aprApprovalEvents).where(eq(T.aprApprovalEvents.requestId, id)).orderBy(T.aprApprovalEvents.id)).map((e) => e.action);
 
@@ -407,7 +391,7 @@ try {
   const f1 = await F.startUpload(req, { fileName: "zz-first.pdf", size: pdf1.length });
   await F.putChunk(req, f1.fileId, 0, pdf1);
   const rq = await R.submitExpenditure("large", large2(2_000_000, { supportingDocs: { fileId: f1.fileId } }), req);
-  check("a 20,000 request waits for the first approver", (await row(rq.id)).currentApproverUserId === first.id && (await pos2()).pendingPaise === 2_000_000);
+  check("a 20,000 request waits for the first approver", (await row(rq.id)).currentApproverUserId === first.id);
   check("returning needs a comment", (await refused(() => R.decideRequest(rq.id, { action: "return", comment: null }, first)))?.status === 422);
   check("the DG cannot return it while it is not theirs yet", (await refused(() => R.decideRequest(rq.id, { action: "return", comment: "x" }, dg)))?.status === 403);
   check("the person who raised it cannot return it", (await refused(() => R.decideRequest(rq.id, { action: "return", comment: "x" }, req)))?.status === 403);
@@ -417,7 +401,7 @@ try {
   check("it is returned, keeps its step and its approver, and later steps still wait", retRow.status === "returned" && retRow.currentStep === 1 && retRow.currentApproverUserId === first.id && retSteps[0].status === "returned" && retSteps[1].status === "waiting");
   check("the comment is on the step and the history says returned", retSteps[0].comment === "Quotation missing, please attach it" && (await eventsOf(rq.id)).includes("returned"));
   check("the requester was told", (await N.recentNotifications(req.id)).some((n) => /returned for corrections/.test(n.title) && n.body === "Quotation missing, please attach it"));
-  check("a returned request is not waiting for anyone and uses no budget", (await pos2()).pendingPaise === 0 && (await Q.listRequests(first, { waitingForMe: true })).rows.every((r) => r.id !== rq.id));
+  check("a returned request is not waiting for anyone", (await Q.listRequests(first, { waitingForMe: true })).rows.every((r) => r.id !== rq.id));
   const retDetail = await Q.getRequestDetail(rq.id, req);
   check("the requester can edit and withdraw, and sees who returned it and why", retDetail?.can.edit === true && retDetail.can.withdraw === true && retDetail.can.decide === false && retDetail.returned?.byName === first.name && retDetail.returned.comment === "Quotation missing, please attach it");
   check("the approver sees it returned but cannot decide or edit it", (await Q.getRequestDetail(rq.id, first))?.can.edit === false && (await Q.getRequestDetail(rq.id, first))?.can.decide === false);
@@ -446,7 +430,6 @@ try {
   const backSteps = await stepsOf(rq.id);
   check("it is pending again, at the same step, with the same number and the same approver", backRow.status === "pending" && backRow.currentStep === 1 && backRow.currentApproverUserId === first.id && backRow.requestNo === rq.requestNo && backSteps[0].status === "pending" && backSteps[1].status === "waiting");
   check("the new amount and details are saved, and the old step comment is cleared", backRow.amountPaise === 2_500_000 && backSteps[0].comment === null && (await db.select().from(T.aprExpenditureDetails).where(eq(T.aprExpenditureDetails.requestId, rq.id)))[0].vendorName === "Fixed Vendor");
-  check("it counts as pending in the budget again, at the new amount", (await pos2()).pendingPaise === 2_500_000);
   const evs = await eventsOf(rq.id);
   check("the history keeps the round trip", evs.filter((a) => a === "returned").length === 1 && evs.filter((a) => a === "resubmitted").length === 1 && evs.indexOf("returned") < evs.indexOf("resubmitted"), evs.join());
   check("the first approver was told it was corrected", (await N.recentNotifications(first.id)).some((n) => /corrected/.test(n.title)));
@@ -458,7 +441,7 @@ try {
   check("the DG returns it", (await R.decideRequest(rq.id, { action: "return", comment: "Split the vendor name" }, dg)).status === "returned");
   check("the correction goes back to the DG, at step 2", (await R.resubmitRequest(rq.id, fix("large", { vendorName: "Split Vendor" }), req)).requestNo === rq.requestNo && (await row(rq.id)).currentStep === 2 && (await row(rq.id)).currentApproverUserId === dg.id);
   check("the step the first approver approved stays approved", (await stepsOf(rq.id))[0].status === "approved" && (await stepsOf(rq.id))[1].status === "pending");
-  check("the DG approves and it is fully approved, using the budget", (await R.decideRequest(rq.id, { action: "approve", comment: null }, dg)).status === "approved" && (await pos2()).spentPaise === 3_000_000);
+  check("the DG approves and it is fully approved", (await R.decideRequest(rq.id, { action: "approve", comment: null }, dg)).status === "approved");
   check("an approved request cannot be edited or returned", (await refused(() => R.resubmitRequest(rq.id, fix("large"), req)))?.status === 409 && (await refused(() => R.decideRequest(rq.id, { action: "return", comment: "x" }, dg)))?.status === 409);
 
   // Replacing and removing files, withdrawing while returned.
@@ -491,43 +474,33 @@ try {
   check("the HR reviewer's earlier approval is kept", (await stepsOf(hq.id))[0].status === "approved");
   await R.decideRequest(hq.id, { action: "approve", comment: null }, dg);
 
-  /* ------------------------------------------------------------------ HR requests with an amount follow the budget rules */
-  const hrNoBranch = await refused(() => R.submitHrRequest(hr({ amountPaise: 500_000 }), req));
-  check("an HR amount without a branch and a category is refused, and says what is missing", hrNoBranch?.status === 422 && /branch and a category/.test(hrNoBranch.message), hrNoBranch);
+  /* ------------------------------------------------------------------ HR requests with an amount carry the typed budget */
+  const hrNoBudget = await refused(() => R.submitHrRequest(hr({ amountPaise: 500_000 }), req));
+  check("an HR amount without the budget allocated and used is refused, and says what is missing", hrNoBudget?.status === 422 && /budget allocated and the budget used/.test(hrNoBudget.message), hrNoBudget);
   check("nothing half-saved is left by it", (await db.select().from(T.aprRequests).where(eq(T.aprRequests.status, "draft"))).length === 0);
-  const hrNoAmount = await R.submitHrRequest(hr({ lastName: "Plain", branchId: branch.id, budgetCategoryId: cat2.id }), req);
+  const hrNoAmount = await R.submitHrRequest(hr({ lastName: "Plain", budgetAllocatedPaise: 1_000_000, budgetUsedPaise: 0 }), req);
   const hrNoAmountDetails = (await db.select().from(T.aprHrDetails).where(eq(T.aprHrDetails.requestId, hrNoAmount.id)))[0];
-  check("without an amount no budget is attached, even if one was chosen", hrNoAmountDetails.branchId === null && hrNoAmountDetails.budgetCategoryId === null && (await row(hrNoAmount.id)).overBudget === false);
-  const before = await pos2();
-  const hrMoney = await R.submitHrRequest(hr({ lastName: "Money", amountPaise: 4_000_000, branchId: branch.id, budgetCategoryId: cat2.id }), req);
+  check("without an amount no budget is attached, even if one was typed", hrNoAmountDetails.budgetAllocatedPaise === null && (await row(hrNoAmount.id)).overBudget === false);
+  const hrMoney = await R.submitHrRequest(hr({ lastName: "Money", amountPaise: 4_000_000, budgetAllocatedPaise: 10_000_000, budgetUsedPaise: 2_000_000 }), req);
   const hrMoneyRow = await row(hrMoney.id);
   const hrMoneyDetails = (await db.select().from(T.aprHrDetails).where(eq(T.aprHrDetails.requestId, hrMoney.id)))[0];
-  check("an HR request with an amount stores its branch, category and the budget picture", hrMoneyDetails.branchId === branch.id && hrMoneyDetails.budgetCategoryId === cat2.id && hrMoneyDetails.budgetAvailablePaise === 10_000_000 - before.spentPaise);
-  check("it is not over budget, and it shows as pending against that budget", hrMoneyRow.overBudget === false && (await pos2()).pendingPaise === before.pendingPaise + 4_000_000);
-  check("the branch filter finds an HR request that carries a branch, as well as the expenditures", (await Q.listRequests(viewer, { branchId: branch.id })).rows.some((r) => r.id === hrMoney.id));
+  check("an HR request with an amount stores the budget it was given, what is available and what is left; no branch or category", Number(hrMoneyDetails.budgetAllocatedPaise) === 10_000_000 && Number(hrMoneyDetails.budgetAvailablePaise) === 8_000_000 && Number(hrMoneyDetails.budgetRemainingPaise) === 4_000_000 && hrMoneyDetails.branchId === null && hrMoneyDetails.budgetCategoryId === null);
+  check("it is not over budget", hrMoneyRow.overBudget === false);
   const hrMoneyDetail = await Q.getRequestDetail(hrMoney.id, satav);
-  check("the detail page carries the budget for an HR request", hrMoneyDetail?.hr?.budget?.snapshot.allocatedPaise === 10_000_000 && hrMoneyDetail.hr.branchName === "ZZ Int Branch" && hrMoneyDetail.hr.budgetCategoryName === "ZZ Int Category Two");
+  check("the detail page carries the budget for an HR request", hrMoneyDetail?.hr?.budget?.allocatedPaise === 10_000_000 && hrMoneyDetail.hr.budget.usedPaise === 2_000_000 && hrMoneyDetail.hr.budget.availablePaise === 8_000_000 && hrMoneyDetail.hr.budget.afterPaise === 4_000_000);
   await R.decideRequest(hrMoney.id, { action: "approve", comment: null }, satav);
   await R.decideRequest(hrMoney.id, { action: "approve", comment: null }, dg);
-  check("once approved it counts as spent", (await pos2()).spentPaise === before.spentPaise + 4_000_000);
-  const hrOver = await R.submitHrRequest(hr({ lastName: "Over", amountPaise: 9_000_000, branchId: branch.id, budgetCategoryId: cat2.id }), req);
+  const hrOver = await R.submitHrRequest(hr({ lastName: "Over", amountPaise: 9_000_000, budgetAllocatedPaise: 10_000_000, budgetUsedPaise: 2_000_000 }), req);
   check("an HR amount beyond what is left is flagged, not blocked", (await row(hrOver.id)).overBudget === true);
-  // An old request with no financial year stored is judged on the year it was raised in, not waved through
-  await db.update(T.aprRequests).set({ financialYear: null }).where(eq(T.aprRequests.id, hrOver.id));
-  await db.update(T.aprRequests).set({ overBudget: false }).where(eq(T.aprRequests.id, hrOver.id));
-  const noYearNoComment = await refused(() => R.decideRequest(hrOver.id, { action: "approve", comment: null }, satav));
-  check("a request with no stored financial year is still checked against the budget when it is decided", noYearNoComment?.status === 422 && /over budget/.test(noYearNoComment.message), noYearNoComment);
   const hrOverNoComment = await refused(() => R.decideRequest(hrOver.id, { action: "approve", comment: null }, satav));
   check("approving it needs a comment, as for an expenditure", hrOverNoComment?.status === 422 && /over budget/.test(hrOverNoComment.message), hrOverNoComment);
   check("with a comment it goes through", (await R.decideRequest(hrOver.id, { action: "approve", comment: "approved by exception" }, satav)).status === "pending");
   await R.decideRequest(hrOver.id, { action: "return", comment: "reduce the amount" }, dg);
-  await R.resubmitRequest(hrOver.id, fix("hr", { lastName: "Over", amountPaise: 100_000, branchId: branch.id, budgetCategoryId: cat2.id }), req);
-  check("correcting the amount re-checks the budget", (await row(hrOver.id)).overBudget === false && (await row(hrOver.id)).amountPaise === 100_000);
+  await R.resubmitRequest(hrOver.id, fix("hr", { lastName: "Over", amountPaise: 100_000, budgetAllocatedPaise: 10_000_000, budgetUsedPaise: 2_000_000 }), req);
+  check("correcting the amount re-checks it against the budget typed", (await row(hrOver.id)).overBudget === false && (await row(hrOver.id)).amountPaise === 100_000);
   await R.decideRequest(hrOver.id, { action: "return", comment: "no amount after all" }, dg);
-  check("correcting an HR request to have no amount drops its budget", (await R.resubmitRequest(hrOver.id, fix("hr", { lastName: "Over" }), req)) && (await db.select().from(T.aprHrDetails).where(eq(T.aprHrDetails.requestId, hrOver.id)))[0].branchId === null);
+  check("correcting an HR request to have no amount drops its budget", (await R.resubmitRequest(hrOver.id, fix("hr", { lastName: "Over" }), req)) && (await db.select().from(T.aprHrDetails).where(eq(T.aprHrDetails.requestId, hrOver.id)))[0].budgetAllocatedPaise === null);
   await R.withdrawRequest(hrOver.id, null, req);
-  const util2 = (await B.utilisation(FY)).find((u) => u.branchId === branch.id && u.categoryId === cat2.id);
-  check("budget utilisation includes approved HR amounts", util2?.spentPaise === 500_000 + 2_500_000 + 350_000 + 4_000_000, util2?.spentPaise);
 
   /* ------------------------------------------------------------------ the main accounts fill empty approver rules, once */
   const EnvRules = await import("../src/lib/approvals/env-rules");
@@ -559,6 +532,17 @@ try {
   await db.update(T.aprApproverRules).set({ approverUserIds: [anotherApprover.id] }).where(and(eq(T.aprApproverRules.requestType, "expenditure_large"), eq(T.aprApproverRules.stepNo, 1)));
   await EnvRules.ensureRulesSeeded();
   check("a rule that already has someone is never overwritten, only the empty ones are filled", (await seededRule("expenditure_large", 1))?.approverUserIds[0] === anotherApprover.id && (await seededRule("hr", 1))?.approverUserIds[0] === hrId);
+  // The sidebar's dropdown check fills the empty rules too: the HR and Expenditure accounts have their place at first sign-in, without anyone opening the Rules screen
+  const rulesBefore = await db.select().from(T.aprApproverRules);
+  await db.delete(T.aprApproverRules);
+  await db.delete(T.aprSettings).where(eq(T.aprSettings.key, MARKER));
+  const placesOf = async (id: string, name: string, email: string) => (await Q.reviewItemsFor({ id, name, email, roles: ["requester"] })).map((i) => i.key).join();
+  check("the HR account has its HR place the first time the sidebar is built, with nothing opened or sent before", (await placesOf(hrId!, "ZZ Int Main HR", "zz-int-main-hr@example.com")) === "hr");
+  check("and the Expenditure account has Expenditure", (await placesOf(expId!, "ZZ Int Main Exp", "zz-int-main-exp@example.com")) === "expenditure");
+  check("the rules were filled from the accounts by that first look", (await db.select().from(T.aprApproverRules)).length === 5 && (await markerRows()).length === 1);
+  check("an ordinary person still gets no place", (await placesOf((await person("noplace", [])).id, "ZZ No Place", "zz-int-noplace@example.com")) === "");
+  await db.delete(T.aprApproverRules);
+  await db.insert(T.aprApproverRules).values(rulesBefore);
   // an HR request now goes to the HR account first and then the Super Admin, through the real submit
   const mainHr: Actor = { id: hrId!, name: "ZZ Int Main HR", email: "zz-int-main-hr@example.com", roles: ["requester", "approver"] };
   const submitter = await person("mainsubmitter", []);

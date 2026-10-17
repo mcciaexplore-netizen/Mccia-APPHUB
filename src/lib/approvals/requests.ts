@@ -8,8 +8,7 @@ import {
 import { ensureRulesSeeded } from "./env-rules";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
-import { assessBudget, commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, REQUEST_PREFIX, TYPE_LABEL, wrongFormMessage, type BudgetAssessment, type ExpenditureForm } from "./calc";
-import { budgetPosition } from "./budget-position";
+import { assessBudget, commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, TYPE_LABEL, wrongFormMessage, type BudgetAssessment, type ExpenditureForm } from "./calc";
 import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { resolveCustomAnswers } from "./form-config";
 import type { CustomAnswers } from "./form-fields";
@@ -29,6 +28,9 @@ import { getSettings } from "./settings";
  *    gets it; the other is told the request was already decided.
  * Every action writes a row to apr_approval_events (the request's history) and tells the people concerned.
  */
+
+/** The letters each kind of request starts its number with. */
+const REQUEST_PREFIX = { hr: "HR", expenditure_large: "EXP", expenditure_small: "EXB" } as const;
 
 type Slot = (typeof aprAttachmentSlot.enumValues)[number];
 type Prepared = {
@@ -145,29 +147,30 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
 
 /* ---------------------------------------------------------------- submit */
 
-/** HR requests with an amount name the budget they are spent from; this checks the choice and works out where the budget stands. */
-async function prepareHrBudget(input: { amountPaise: number | null; branchId: string | null; budgetCategoryId: string | null }, financialYear: string): Promise<{ budget: BudgetAssessment | null }> {
+/**
+ * The budget a request is raised against is the one the requester types: the budget allocated and how much of it is used. Neither the
+ * branch nor the category decides it. What is left is the allocated figure minus the used one; a request for more than that is flagged
+ * (never blocked), and its approver must write a comment to approve it.
+ */
+const typedBudget = (allocatedPaise: number, usedPaise: number, amountPaise: number): BudgetAssessment => assessBudget({ allocatedPaise, spentPaise: usedPaise, pendingPaise: 0 }, amountPaise);
+
+/** An HR request with an amount must say what the budget is; one without an amount carries no budget. */
+function prepareHrBudget(input: { amountPaise: number | null; budgetAllocatedPaise: number | null; budgetUsedPaise: number | null }): { budget: BudgetAssessment | null } {
   if (input.amountPaise == null) return { budget: null };
-  if (!input.branchId || !input.budgetCategoryId) throw new ApprovalsError("An amount needs a branch and a category, so the budget can be checked. Choose both.", 422);
-  const [[branch], [category]] = await Promise.all([
-    db.select().from(aprBranches).where(eq(aprBranches.id, input.branchId)),
-    db.select().from(aprCategories).where(eq(aprCategories.id, input.budgetCategoryId)),
-  ]);
-  if (!branch?.active) throw new ApprovalsError("Pick an active branch.");
-  if (!category?.active) throw new ApprovalsError("Pick an active category for the budget.");
-  return { budget: assessBudget(await budgetPosition(financialYear, input.branchId, input.budgetCategoryId), input.amountPaise) };
+  if (input.budgetAllocatedPaise == null || input.budgetUsedPaise == null) throw new ApprovalsError("An amount needs the budget allocated and the budget used, so the request can be checked against the budget. Fill in both.", 422);
+  return { budget: typedBudget(input.budgetAllocatedPaise, input.budgetUsedPaise, input.amountPaise) };
 }
 
 const hrDetailsValues = (input: HrRequestInput, budget: BudgetAssessment | null) => ({
   firstName: input.firstName, lastName: input.lastName, hrCategoryId: input.hrCategoryId, description: input.description,
-  branchId: budget ? input.branchId : null, budgetCategoryId: budget ? input.budgetCategoryId : null,
+  branchId: null, budgetCategoryId: null,
   budgetAllocatedPaise: budget?.allocatedPaise ?? null, budgetAvailablePaise: budget?.availablePaise ?? null, budgetRemainingPaise: budget?.afterPaise ?? null,
 });
 
 export async function submitHrRequest(input: HrRequestInput, actor: ApprovalsUser) {
   const [category] = await db.select().from(aprHrCategories).where(eq(aprHrCategories.id, input.hrCategoryId));
   if (!category?.active) throw new ApprovalsError("Pick an active category.");
-  const { budget } = await prepareHrBudget(input, financialYearOf(input.requestedAt));
+  const { budget } = prepareHrBudget(input);
   const customValues = await resolveCustomAnswers("hr", input.custom);
   const name = `${input.firstName} ${input.lastName}`;
   return createRequest(actor, {
@@ -184,7 +187,7 @@ export async function submitHrRequest(input: HrRequestInput, actor: ApprovalsUse
 }
 
 /** Everything both expenditure forms check before a request is saved or corrected: the right form, live masters, the person, the budget. */
-async function prepareExpenditure(form: ExpenditureForm, input: LargeExpenditureInput | SmallExpenditureInput, financialYear: string) {
+async function prepareExpenditure(form: ExpenditureForm, input: LargeExpenditureInput | SmallExpenditureInput) {
   const settings = await getSettings();
   const wrong = wrongFormMessage(form, input.amountPaise, settings.thresholdPaise);
   if (wrong) throw new ApprovalsError(wrong, 422);
@@ -209,7 +212,7 @@ async function prepareExpenditure(form: ExpenditureForm, input: LargeExpenditure
     }
   }
 
-  const assessment = assessBudget(await budgetPosition(financialYear, input.branchId, input.categoryId), input.amountPaise);
+  const assessment = typedBudget(input.budgetAllocatedPaise, input.budgetUsedPaise, input.amountPaise);
   return { employee, assessment, small, large: form === "large" ? (input as LargeExpenditureInput) : null };
 }
 
@@ -234,7 +237,7 @@ const expenditureFiles = (large: LargeExpenditureInput | null, small: SmallExpen
 
 /** Both expenditure forms. The amount must match the form: 10,000 and above is "large" (DG), anything lower is "small". */
 export async function submitExpenditure(form: ExpenditureForm, input: LargeExpenditureInput | SmallExpenditureInput, actor: ApprovalsUser) {
-  const { employee, assessment, small, large } = await prepareExpenditure(form, input, financialYearOf(input.requestedAt));
+  const { employee, assessment, small, large } = await prepareExpenditure(form, input);
   const customValues = await resolveCustomAnswers(form, input.custom);
   return createRequest(actor, {
     customValues,
@@ -252,16 +255,6 @@ export async function submitExpenditure(form: ExpenditureForm, input: LargeExpen
 
 const outcomeLabel = { approved: "approved", rejected: "rejected", withdrawn: "withdrawn", returned: "returned for corrections, so it is waiting for the person who raised it" } as const;
 
-/** The branch and category a request's money comes from: an expenditure always has them, an HR request only when it carries an amount. */
-async function budgetKeyOf(requestId: string, type: AprRequestType): Promise<{ branchId: string; categoryId: string } | null> {
-  if (type === "hr") {
-    const [d] = await db.select({ branchId: aprHrDetails.branchId, categoryId: aprHrDetails.budgetCategoryId }).from(aprHrDetails).where(eq(aprHrDetails.requestId, requestId));
-    return d?.branchId && d.categoryId ? { branchId: d.branchId, categoryId: d.categoryId } : null;
-  }
-  const [d] = await db.select({ branchId: aprExpenditureDetails.branchId, categoryId: aprExpenditureDetails.categoryId }).from(aprExpenditureDetails).where(eq(aprExpenditureDetails.requestId, requestId));
-  return d ?? null;
-}
-
 export async function decideRequest(requestId: string, input: { action: "approve" | "reject" | "return"; comment: string | null }, actor: ApprovalsUser): Promise<{ status: AprRequestStatus }> {
   const [req] = await db.select().from(aprRequests).where(eq(aprRequests.id, requestId));
   // Someone who may not see the request is told it does not exist, whatever state it is in: no status leaks to people not involved.
@@ -274,13 +267,8 @@ export async function decideRequest(requestId: string, input: { action: "approve
   // It was this person's step but someone got there first (two clicks at the same moment): say so, rather than "not yours".
   if (step.status !== "pending") throw new ApprovalsError("Someone has already decided this request.", 409);
 
-  // Over budget is judged again now, as well as when it was submitted: the budget may have changed since.
-  let overBudget = req.overBudget;
-  const fy = req.financialYear ?? financialYearOf(req.requestedAt); // an old request without a stored year is judged on the year it was raised in
-  if (!overBudget && fy && req.amountPaise != null) {
-    const key = await budgetKeyOf(requestId, req.type);
-    if (key) overBudget = assessBudget(await budgetPosition(fy, key.branchId, key.categoryId), req.amountPaise).overBudget;
-  }
+  // Over budget is what was worked out from the figures the requester typed when the request was raised (or corrected).
+  const overBudget = req.overBudget;
   if (commentRequired(input.action, overBudget) && !input.comment) {
     throw new ApprovalsError(
       input.action === "reject" ? "Please write a comment explaining why you are rejecting this request."
@@ -393,7 +381,6 @@ export async function resubmitRequest(requestId: string, input: ResubmitInput, a
   if (input.kind !== expectedKind) throw new ApprovalsError("That form does not match this request.", 400);
   const [step] = await db.select().from(aprRequestSteps).where(and(eq(aprRequestSteps.requestId, requestId), eq(aprRequestSteps.stepNo, req.currentStep)));
   if (!step || step.status !== "returned") throw new ApprovalsError("This request is not waiting for corrections any more.", 409);
-  const fy = req.financialYear ?? financialYearOf(req.requestedAt);
 
   // What the form says, checked exactly as when a request is first raised. The date of request and the financial year stay as they were.
   let requesterName: string;
@@ -405,7 +392,7 @@ export async function resubmitRequest(requestId: string, input: ResubmitInput, a
   if (input.kind === "hr") {
     const [category] = await db.select().from(aprHrCategories).where(eq(aprHrCategories.id, input.hrCategoryId));
     if (!category?.active) throw new ApprovalsError("Pick an active category.");
-    const { budget } = await prepareHrBudget(input, fy);
+    const { budget } = prepareHrBudget(input);
     requesterName = `${input.firstName} ${input.lastName}`;
     requesterEmail = input.email ?? actor.email;
     overBudget = budget?.overBudget ?? false;
@@ -415,7 +402,7 @@ export async function resubmitRequest(requestId: string, input: ResubmitInput, a
     ];
     writeDetails = () => db.update(aprHrDetails).set(hrDetailsValues(input, budget)).where(eq(aprHrDetails.requestId, requestId));
   } else {
-    const { employee, assessment, small, large } = await prepareExpenditure(input.kind, input, fy);
+    const { employee, assessment, small, large } = await prepareExpenditure(input.kind, input);
     requesterName = employee.name;
     requesterEmail = input.email ?? employee.email;
     overBudget = assessment.overBudget;

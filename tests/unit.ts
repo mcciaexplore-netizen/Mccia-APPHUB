@@ -19,7 +19,7 @@ import {
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import {
-  assessBudget, budgetWarning, commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, percentUsed, planProblemMessage, planSteps, STATUS_LABEL, utilisationLevel, wrongFormMessage,
+  assessBudget, budgetWarning, commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, planProblemMessage, planSteps, STATUS_LABEL, wrongFormMessage,
   type RuleLike,
 } from "../src/lib/approvals/calc";
 import { decisionInput, fileUploadStart, hrRequestInput, isAllowedFileName, largeExpenditureInput, mimeFor, safeFileName, smallExpenditureInput } from "../src/lib/approvals/request-schemas";
@@ -148,8 +148,10 @@ eq("budget: spending exactly what is left is not over budget", assessBudget(pos(
 eq("budget: one paisa over is over budget, by one paisa", [assessBudget(pos(1_000_000, 400_000), 600_001).overBudget, assessBudget(pos(1_000_000, 400_000), 600_001).excessPaise], [true, 1]);
 eq("budget: no budget row is flagged like over budget", assessBudget(pos(null), 500), { noBudget: true, allocatedPaise: null, availablePaise: null, afterPaise: null, excessPaise: 0, overBudget: true });
 eq("budget: pending requests do not reduce what is available", assessBudget(pos(1_000_000, 0, 900_000), 500_000).overBudget, false);
-eq("budget: warning text", [budgetWarning(assessBudget(pos(1_000_000), 1_250_000)), budgetWarning(assessBudget(pos(1_000_000), 100)), budgetWarning(assessBudget(pos(null), 100))?.startsWith("No budget allocated")],
-  ["This request exceeds the remaining budget by ₹2,500.00.", null, true]);
+eq("budget: warning text", [budgetWarning(assessBudget(pos(1_000_000), 1_250_000)), budgetWarning(assessBudget(pos(1_000_000), 100)), budgetWarning(assessBudget(pos(null), 100))?.startsWith("No budget was given")],
+  ["This request is ₹2,500.00 more than the budget left (allocated minus used). It can still be submitted and will be flagged.", null, true]);
+eq("budget: the budget the requester types is the allocated figure and how much is used; what is left is the difference, and a request beyond it is over", [assessBudget({ allocatedPaise: 5_000_000, spentPaise: 3_200_000, pendingPaise: 0 }, 1_800_000), assessBudget({ allocatedPaise: 5_000_000, spentPaise: 3_200_000, pendingPaise: 0 }, 1_800_001).overBudget, assessBudget({ allocatedPaise: 0, spentPaise: 0, pendingPaise: 0 }, 1).overBudget],
+  [{ noBudget: false, allocatedPaise: 5_000_000, availablePaise: 1_800_000, afterPaise: 0, excessPaise: 0, overBudget: false }, true, true]);
 
 // Approvals: the 10,000 rule. Exactly 10,000 is "large".
 eq("threshold: 9,999.99 is small, 10,000.00 is large", [formFor(999_999, 1_000_000), formFor(1_000_000, 1_000_000)], ["small", "large"]);
@@ -196,8 +198,6 @@ eq("comment: always needed to return a request for corrections", [commentRequire
 eq("status: a returned request has a label", STATUS_LABEL.returned, "Returned");
 eq("decisions: a step before the last recommends to the next approver, the last of several decides finally, a lone step just approves", [decisionMode(1, 2), decisionMode(2, 2), decisionMode(1, 1), decisionMode(1, 3), decisionMode(3, 3)], ["recommend", "final", "single", "recommend", "final"]);
 eq("decisions: the buttons say what they do", [MODE_WORDS.recommend.approve, MODE_WORDS.final.approve, MODE_WORDS.final.reject, MODE_WORDS.single.approve, MODE_WORDS.single.reject], ["Recommend to DG", "Final approve", "Final reject", "Approve", "Reject"]);
-eq("utilisation: percent and colours", [percentUsed(1000, 905), percentUsed(1000, 1000), percentUsed(1000, 1010), percentUsed(null, 5), percentUsed(0, 5), percentUsed(0, 0)], [91, 100, 101, null, 100, 0]);
-eq("utilisation: above 90 is amber, above 100 is red", [utilisationLevel(90), utilisationLevel(91), utilisationLevel(100), utilisationLevel(101), utilisationLevel(null)], ["ok", "warn", "warn", "over", "ok"]);
 eq("request number", [formatRequestNo("HR", "2026-27", 1), formatRequestNo("EXB", "2026-27", 123), formatRequestNo("EXP", "2027-28", 12345)], ["HR-2026-27-0001", "EXB-2026-27-0123", "EXP-2027-28-12345"]);
 
 // Approvals: file rules.
@@ -212,8 +212,9 @@ const hrOk = { firstName: " Asha ", lastName: "Patil", hrCategoryId: uid };
 eq("hr form: minimum fields pass and are trimmed", (() => { const r = hrRequestInput.safeParse(hrOk); return r.success ? [r.data.firstName, r.data.email, r.data.amountPaise, r.data.description] : r.error.issues[0].message; })(), ["Asha", null, null, null]);
 eq("hr form: name and category are required, email must be valid, amount must be positive", [hrRequestInput.safeParse({ ...hrOk, firstName: " " }).success, hrRequestInput.safeParse({ ...hrOk, hrCategoryId: "x" }).success, hrRequestInput.safeParse({ ...hrOk, email: "nope" }).success, hrRequestInput.safeParse({ ...hrOk, amountPaise: 0 }).success, hrRequestInput.safeParse({ ...hrOk, amountPaise: 12.5 }).success], [false, false, false, false, false]);
 eq("hr form: a blank email is fine", hrRequestInput.safeParse({ ...hrOk, email: "" }).success, true);
-const lg = { employeeUserId: uid, categoryId: uid, branchId: uid, amountPaise: 1_500_000 };
+const lg = { employeeUserId: uid, categoryId: uid, branchId: uid, amountPaise: 1_500_000, budgetAllocatedPaise: 5_000_000, budgetUsedPaise: 0 };
 eq("large form: minimum fields pass, amount is required", [largeExpenditureInput.safeParse(lg).success, largeExpenditureInput.safeParse({ ...lg, amountPaise: undefined }).success], [true, false]);
+eq("budget: both the allocated and the used budget are typed, in whole paise and not negative", [largeExpenditureInput.safeParse({ ...lg, budgetAllocatedPaise: undefined }).success, largeExpenditureInput.safeParse({ ...lg, budgetUsedPaise: undefined }).success, largeExpenditureInput.safeParse({ ...lg, budgetUsedPaise: -1 }).success, largeExpenditureInput.safeParse({ ...lg, budgetAllocatedPaise: 10.5 }).success, largeExpenditureInput.safeParse({ ...lg, budgetAllocatedPaise: 0 }).success], [false, false, false, false, true]);
 const sm = { ...lg, amountPaise: 500_000, email: "a@b.org", vendorName: "Vendor" };
 eq("small form: vendor name and email are required", [smallExpenditureInput.safeParse(sm).success, smallExpenditureInput.safeParse({ ...sm, vendorName: "" }).success, smallExpenditureInput.safeParse({ ...sm, email: "" }).success], [true, false, false]);
 eq("dates: the request date cannot be in the future, an ordinary past one is fine", [

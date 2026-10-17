@@ -48,6 +48,8 @@ const optionalEmail = z
 const requiredEmail = z.string().transform((s) => s.trim()).pipe(z.string().min(1, "Email is required").email("Enter a valid email address").max(200));
 
 const amountPaise = z.number().int("Amount can have at most 2 decimals").positive("Amount must be more than 0").max(1_000_000_000_000_00);
+/** A budget figure the requester types (the budget allocated, or how much of it is used): zero is allowed. */
+const budgetPaise = (what: string) => z.number().int(`${what} can have at most 2 decimals`).min(0, `${what} cannot be negative`).max(1_000_000_000_000_00);
 
 /** Date and time the request is raised: defaults to now on the form, and may be edited. Decides the financial year. */
 const requestedAt = z
@@ -77,9 +79,9 @@ export const hrRequestInput = z.object({
   requestedAt,
   amountPaise: amountPaise.nullish().transform((v) => v ?? null),
   description: optionalText(4000),
-  // Needed when there is an amount (the server checks that): the budget the money comes from.
-  branchId: idSchema.nullish().transform((v) => v ?? null),
-  budgetCategoryId: idSchema.nullish().transform((v) => v ?? null),
+  // Needed when there is an amount (the server checks that): the budget the requester says is allocated, and how much of it is used.
+  budgetAllocatedPaise: budgetPaise("Budget allocated").nullish().transform((v) => v ?? null),
+  budgetUsedPaise: budgetPaise("Budget used").nullish().transform((v) => v ?? null),
   fileUpload: optionalFile,
   fileUpload2: optionalFile,
 });
@@ -94,6 +96,9 @@ const common = {
   natureOfExpenditure: optionalText(2000),
   branchId: idSchema,
   amountPaise,
+  // The budget the requester says is allocated, and how much of it is used. The branch and category no longer decide the budget.
+  budgetAllocatedPaise: budgetPaise("Budget allocated"),
+  budgetUsedPaise: budgetPaise("Budget used"),
   vendorName: optionalText(500),
 };
 

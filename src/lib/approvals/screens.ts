@@ -48,7 +48,7 @@ const LIST_SCREENS: Record<string, ListScreen> = {
   "hr/rejected": { title: "Rejected HR Requests", intro: "HR requests that were rejected.", types: HR, statuses: ["rejected"], categories: "hr" },
 
   "expenditures/all": { title: "All Expenditures", intro: "Every expenditure request of ₹10,000 and above you are allowed to see.", types: LARGE, branch: true, categories: "expense", newHref: "/approvals/expenditures/new" },
-  "expenditures/approved": { title: "Approved Expenditure Requests", intro: "Expenditure requests that were approved. Their amounts count against the budget.", types: LARGE, statuses: ["approved"], branch: true, categories: "expense" },
+  "expenditures/approved": { title: "Approved Expenditure Requests", intro: "Expenditure requests that were approved.", types: LARGE, statuses: ["approved"], branch: true, categories: "expense" },
   "expenditures/pending": { title: "Pending Expenditure Requests", intro: "Expenditure requests still waiting for a decision.", types: LARGE, statuses: ["pending"], branch: true, categories: "expense" },
   "expenditures/rejected": { title: "Rejected Expenditure Requests", intro: "Expenditure requests that were rejected.", types: LARGE, statuses: ["rejected"], branch: true, categories: "expense" },
 

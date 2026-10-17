@@ -4,7 +4,7 @@ import { useState } from "react";
 import { GitMerge, Pencil } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { api, useAction } from "@/components/approvals/api";
-import { ActiveToggle, Field, SearchBox } from "@/components/approvals/ui";
+import { ActiveToggle, Field, SearchBox } from "@/components/approvals/shared-ui";
 import type { MasterRow } from "@/lib/approvals/masters";
 import type { MasterKind } from "@/lib/approvals/validation";
 
@@ -64,7 +64,7 @@ export function MasterManager({ kind, noun, items, parents }: Props) {
 
       {isCategory && duplicates > 0 && (
         <p className="apr-notice">
-          {duplicates} categories are flagged as possible duplicates. Use Merge to fold one into the other: requests, budgets and old names move across.
+          {duplicates} categories are flagged as possible duplicates. Use Merge to fold one into the other: requests and old names move across.
         </p>
       )}
 
@@ -178,8 +178,8 @@ function MergeDialog({ source, options, pending, onClose, onMerge }: {
     <Modal title="Merge categories" onClose={onClose}>
       <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (target) onMerge(target); }}>
         <p className="text-sm text-muted">
-          Merge <b>{source.name}</b> into the category below. Its requests and budgets move there, its name becomes an alias, and it becomes inactive.
-          Where both have a budget for the same year and branch, the amounts are added together. This cannot be undone.
+          Merge <b>{source.name}</b> into the category below. Its requests move there, its name becomes an alias, and it becomes inactive.
+          This cannot be undone.
         </p>
         <Field label="Keep this one">
           <select aria-label="Category to keep" className="input" value={target} onChange={(e) => setTarget(e.target.value)} required>

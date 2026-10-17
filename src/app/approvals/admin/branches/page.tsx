@@ -10,7 +10,7 @@ export default async function Page() {
   const items = await listMaster("branches", true);
   return (
     <>
-      <PageHeader title="Branches" intro="The Branch Name dropdown on the expenditure forms. Budgets are set per branch and category." />
+      <PageHeader title="Branches" intro="The Branch Name dropdown on the expenditure forms." />
       <MasterManager kind="branches" noun="branch" items={items} />
     </>
   );

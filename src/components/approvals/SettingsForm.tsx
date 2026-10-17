@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useToast } from "@/components/Toast";
 import { api, useAction } from "@/components/approvals/api";
-import { Field } from "@/components/approvals/ui";
+import { Field } from "@/components/approvals/shared-ui";
 import { formatINR, parseINR } from "@/lib/approvals/format";
 import type { ApprovalsSettings } from "@/lib/approvals/settings";
 

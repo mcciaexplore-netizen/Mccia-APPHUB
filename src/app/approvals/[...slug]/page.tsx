@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import { ListScreenView } from "@/components/approvals/ListScreenView";
-import { Placeholder } from "@/components/approvals/Placeholder";
 import { RecommendationTabs } from "@/components/approvals/RecommendationTabs";
 import { ReviewTabs } from "@/components/approvals/ReviewTabs";
 import { FULL_ACCESS_ROLES, allNavItems, canSee, parseRecommendationPath, parseReviewPath } from "@/lib/approvals/approvals.manifest";
@@ -54,5 +53,5 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   }
   const screen = resolveScreen(slug, false);
   if (screen) return <ListScreenView slug={slug.join("/")} screen={screen} params={parseListParams(await searchParams)} user={user} />;
-  return <Placeholder title={item!.label} />;
+  notFound();
 }

@@ -6,7 +6,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Activity, Bell, ChevronDown, ClipboardCheck, ClipboardList, Inbox, LayoutDashboard, ShieldCheck, UserCheck, UsersRound, Users, Wallet, X } from "lucide-react";
 import { lockAdmin } from "@/actions/auth";
 import { Icon } from "@/components/Icon";
-import { isSafetyWeek, playSafetyMascot } from "@/components/SafetyMascot";
 import type { Role } from "@/db/schema";
 import { adminTabsFor } from "@/lib/admin-tabs";
 import { canAdminister } from "@/lib/rbac";
@@ -73,7 +72,7 @@ export function Sidebar({
       <nav className="flex-1 overflow-y-auto pb-6 pt-3" aria-label="Departments">
         {departments.length === 0 && <p className="px-6 py-3 text-xs text-subtle">No departments yet</p>}
         {departments.map((dep) => (
-          <Item key={dep.id} href={`/?d=${dep.id}`} active={onHome && selected === dep.id} onNavigate={isSafetyWeek(dep.name) ? () => { onNavigate(); playSafetyMascot(); } : onNavigate}>
+          <Item key={dep.id} href={`/?d=${dep.id}`} active={onHome && selected === dep.id} onNavigate={onNavigate}>
             <Icon name={dep.icon} size={20} />
             <span className="flex-1 py-2">{dep.name}</span>
           </Item>

@@ -7,7 +7,7 @@ import { CountUp } from "@/components/CountUp";
 import { listAudit } from "@/lib/audit";
 import { formatIST } from "@/lib/format";
 import { approvalsEnabled } from "@/lib/approvals/flags";
-import { approvalsOverview } from "@/lib/approvals/summary";
+import { approvalsOverview } from "@/lib/approvals/admin-overview";
 import { noticeFeed } from "@/lib/notice-feed";
 import { adminSummary } from "@/lib/people";
 import { requireAdministrator } from "@/lib/permissions";
@@ -73,13 +73,13 @@ export default async function Page() {
 
       {approvals && (
         <section aria-label="Approvals" className="space-y-3">
-          <div className="flex items-center justify-between"><h2 className="text-xl">Approvals</h2><Link href="/administrator/approvals" className="text-sm text-primary hover:underline"><ClipboardCheck size={14} className="mr-1 inline" />HR and Expenditure approvals</Link></div>
+          <div className="flex items-center justify-between"><h2 className="text-xl">Approvals</h2><Link href="/approvals/admin/audit" className="text-sm text-primary hover:underline"><ClipboardCheck size={14} className="mr-1 inline" />HR and Expenditure approvals</Link></div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <Card label="Pending HR approvals" value={approvals.hr.pending} href="/approvals/hr/pending" tone="warn" />
-            <Card label="Pending expenditure approvals" value={approvals.large.pending + approvals.small.pending} href="/administrator/approvals" tone="warn" />
-            <Card label="Pending, all" value={approvals.hr.pending + approvals.large.pending + approvals.small.pending} href="/administrator/approvals" />
-            <Card label="Approved, all" value={approvals.hr.approved + approvals.large.approved + approvals.small.approved} href="/administrator/approvals" />
-            <Card label="Rejected, all" value={approvals.hr.rejected + approvals.large.rejected + approvals.small.rejected} href="/administrator/approvals" />
+            <Card label="Pending expenditure approvals" value={approvals.large.pending + approvals.small.pending} href="/approvals/admin/audit" tone="warn" />
+            <Card label="Pending, all" value={approvals.hr.pending + approvals.large.pending + approvals.small.pending} href="/approvals/admin/audit" />
+            <Card label="Approved, all" value={approvals.hr.approved + approvals.large.approved + approvals.small.approved} href="/approvals/admin/audit" />
+            <Card label="Rejected, all" value={approvals.hr.rejected + approvals.large.rejected + approvals.small.rejected} href="/approvals/admin/audit" />
           </div>
         </section>
       )}

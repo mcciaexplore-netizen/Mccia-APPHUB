@@ -1,7 +1,7 @@
 # Verification record
 
 What was run, on what, with what result. Everything below was run against a **scratch copy** of the code with its own local PostgreSQL 17
-(never the live database). Date: 2026-10-15.
+(never the live database). Date: 2026-10-17 (counts below are from the run after the requester-typed budget change).
 
 ## Suites
 
@@ -13,13 +13,13 @@ What was run, on what, with what result. Everything below was run against a **sc
 | Production build | `npm run build` | succeeds; all new routes present |
 | Unit | `npm run test:unit` | **181 / 181** (permissions matrix, now with the Super Admin and Admins with areas, import parsing, real Excel files, zip-bomb refusal, address safety, audit scrubbing, "every server action is guarded", "every route handler checks who is asking", plus the Approvals rules, including who decides when the first approver raises a request and the same-person check) |
 | Hub integration (database) | `npm run test:integration:hub` | **179 / 179** (the roles: what a Super Admin and an Admin with areas can see and change, bulk add limits; atomic access changes, team-manager limits, directory, bulk import and retry, one-time links, audit, revocation, deactivation, 200 × 4 grants) |
-| Approvals integration (database) | `npm run test:integration` | **220 / 220** (the earlier 108, plus return for corrections and resubmitting, the first approver raising his own request, the first-approver/DG rule, and HR amounts with budgets) |
+| Approvals integration (database) | `npm run test:integration` | **213 / 213** (the earlier 108, plus return for corrections and resubmitting, the first approver raising his own request, the first-approver/DG rule, and the budget the requester types, for expenditure and for HR amounts) |
 | Hub in a browser | `npm run test:e2e` | **225 / 225** (the earlier 186 checks, ported to the new screens, plus new ones) |
 | Users & Access in a browser | `npm run test:e2e:people` | **112 / 112** |
-| Approval System in a browser | `npm run test:e2e:approvals` | **85 / 85** (regression) |
-| Approval System request flow | `npm run test:e2e:approvals:flow` | **167 / 167** (the earlier 104, plus returning, correcting and resubmitting in the browser, returning from the inbox, HR with an amount, and the rule check) |
+| Approval System in a browser | `npm run test:e2e:approvals` | **71 / 71** (regression; the budget pages are gone, so their checks became checks that they are gone) |
+| Approval System request flow | `npm run test:e2e:approvals:flow` | **161 / 161** (the earlier 104, plus returning, correcting and resubmitting in the browser, returning from the inbox, HR with a typed budget, and the rule check) |
 | Roles in a browser | `npm run test:e2e:roles` | **113 / 113** (Support Admin sets an Admin's areas and roles; Super Admin; Admins with different areas see and open only theirs; plain users and Admins with nothing on are kept out) |
-| **Total checks** | | **1,282** |
+| **Total checks** | | **1,255** |
 
 All browser suites write only rows with test names (`ZZ…`, `zz-…`, `ZZP…`, `zzp-…`), remove them afterwards, remove the audit entries they caused, and
 confirm that existing departments, applications, branches, teams, people and access are exactly as before.

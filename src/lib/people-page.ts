@@ -6,7 +6,7 @@ import type { DirectoryProps } from "@/components/people/PeopleDirectory";
 import { domainsLabel } from "@/lib/domains";
 import { getCatalog } from "@/lib/catalog";
 import { listAudit } from "@/lib/audit";
-import { responsibilitiesFor } from "@/lib/approvals/responsibilities";
+import { responsibilitiesFor } from "@/lib/approvals/user-decisions";
 import { getPerson, listPeople, parsePeopleFilters } from "@/lib/people";
 import { canDeactivate, canEditPerson, canGrantAny, canManageAccess, capabilities, hasArea, isSuper } from "@/lib/rbac";
 

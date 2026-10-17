@@ -3,7 +3,7 @@
  * Pure data (no server code), so the client menus can import it too.
  *
  * Approval System is a built-in item in the hub's sidebar with two applications under it, like the two Zoho apps it replaces:
- * "HR Approval" (HR requests, expenditure of the threshold and above, budgets, the DG's inbox) and "Expenditure" (expenses below the
+ * "HR Approval" (HR requests, expenditure of the threshold and above, the DG's inbox) and "Expenditure" (expenses below the
  * threshold). Each application's menu is a row of section tabs with the pages of the chosen section under it.
  */
 
@@ -11,7 +11,7 @@ export type ApprovalsRole = "requester" | "approver" | "dg" | "viewer" | "approv
 export const ALL_ROLES: readonly ApprovalsRole[] = ["requester", "approver", "dg", "viewer", "approvals_admin"];
 
 /**
- * Full access to the Approval System: every page the person's roles allow (lists, timelines, reports, budgets, the inbox, setup).
+ * Full access to the Approval System: every page the person's roles allow (lists, timelines, reports, the inbox, setup).
  * Everyone else who signs in to the hub holds none of these roles and gets the forms only: they fill in a request and follow their own.
  * This is the one place that decides it; the menus, the pages and the export all ask here.
  */
@@ -19,7 +19,7 @@ export const FULL_ACCESS_ROLES: readonly ApprovalsRole[] = ["approver", "dg", "v
 export const hasFullAccess = (roles: readonly ApprovalsRole[]) => roles.some((r) => FULL_ACCESS_ROLES.includes(r));
 /**
  * The Director General and nothing else: they see the forms and their Recommended Queue (and what they decided or rejected), not the
- * all-requests lists, timelines, reports or budgets. Anyone who also reviews first (approver), oversees (viewer) or administers is not "only" the DG.
+ * all-requests lists, timelines or reports. Anyone who also reviews first (approver), oversees (viewer) or administers is not "only" the DG.
  */
 export const isDgOnly = (roles: readonly ApprovalsRole[]) => roles.includes("dg") && !roles.some((r) => r === "approver" || r === "viewer" || r === "approvals_admin");
 
@@ -40,7 +40,7 @@ export type AppKey = "hr" | "exp";
 export type NavApp = { key: AppKey; title: string; nav: NavEntry[] };
 
 const HANDLERS = ["approver", "dg"] as const; // people who are asked to decide requests
-const OVERSIGHT = ["viewer", "approvals_admin"] as const; // see every request and every budget, read only (an admin can also edit masters)
+const OVERSIGHT = ["viewer", "approvals_admin"] as const; // see every request, read only (an admin can also edit masters)
 const ADMIN = ["approvals_admin"] as const;
 
 /**
@@ -59,13 +59,12 @@ export const approvalsApps: NavApp[] = [
           { label: "HR", href: "/approvals/hr/new", form: true },
           { label: "All Hr", href: "/approvals/hr/all" },
           { label: "HR Approval Categories", href: "/approvals/admin/hr-categories", roles: ADMIN },
-          { label: "HR Approval Timeline", href: "/approvals/hr/timeline" },
-          { label: "Approval Timeline", href: "/approvals/timeline" },
-          { label: "HR Report", href: "/approvals/hr/report", roles: OVERSIGHT },
+          { label: "All Requests Timeline", href: "/approvals/timeline" },
+          { label: "HR Requests Report", href: "/approvals/hr/report", roles: OVERSIGHT },
           { label: "Approved HR requests", href: "/approvals/hr/approved" },
           { label: "Pending HR Request", href: "/approvals/hr/pending" },
           { label: "Rejected HR Requests", href: "/approvals/hr/rejected" },
-          { label: "Approval Time", href: "/approvals/hr/approval-time", roles: OVERSIGHT },
+          { label: "Processing Time Report", href: "/approvals/hr/approval-time", roles: OVERSIGHT },
         ],
       },
       {
@@ -76,13 +75,6 @@ export const approvalsApps: NavApp[] = [
           { label: "Approved Expenditure Requests", href: "/approvals/expenditures/approved" },
           { label: "Pending Expenditure Requests", href: "/approvals/expenditures/pending" },
           { label: "Rejected Expenditure Requests", href: "/approvals/expenditures/rejected" },
-        ],
-      },
-      {
-        label: "All_Budgets",
-        items: [
-          { label: "Budgets", href: "/approvals/budgets", roles: OVERSIGHT },
-          { label: "Budget Utilisation", href: "/approvals/budgets/utilisation", roles: OVERSIGHT },
         ],
       },
       { label: "Event Approvals", disabled: true },
@@ -99,14 +91,13 @@ export const approvalsApps: NavApp[] = [
       {
         label: "Administration",
         items: [
-          { label: "Setup", href: "/approvals/admin/setup", roles: ADMIN },
-          { label: "Expense Categories", href: "/approvals/admin/categories", roles: ADMIN },
-          { label: "Branches", href: "/approvals/admin/branches", roles: ADMIN },
-          { label: "Publications", href: "/approvals/admin/publications", roles: ADMIN },
-          { label: "Approver Rules", href: "/approvals/admin/rules", roles: ADMIN },
-          { label: "Roles and Access", href: "/approvals/admin/access", roles: ADMIN },
+          { label: "Expense Types", href: "/approvals/admin/categories", roles: ADMIN },
+          { label: "Office Branches", href: "/approvals/admin/branches", roles: ADMIN },
+          { label: "Publication Types", href: "/approvals/admin/publications", roles: ADMIN },
+          { label: "Who Approves What", href: "/approvals/admin/rules", roles: ADMIN },
+          { label: "User Permissions", href: "/approvals/admin/access", roles: ADMIN },
           { label: "Settings", href: "/approvals/admin/settings", roles: ADMIN },
-          { label: "Audit Log", href: "/approvals/admin/audit", roles: ADMIN },
+          { label: "Full Audit Log", href: "/approvals/admin/audit", roles: ADMIN },
         ],
       },
     ],

@@ -2,7 +2,7 @@
  * End-to-end test of the Approvals module in a real browser. Run: E2E_BASE_URL=http://localhost:3000 npm run test:e2e:approvals
  *
  * It WRITES to the database the site uses, but only rows whose names start with "ZZ"/"zz-": a test department holding an old-style app card
- * pointing at /approvals (to check it is hidden), two test people, a test branch, categories and budgets. Everything is removed when it finishes (and at the start, in case
+ * pointing at /approvals (to check it is hidden), two test people, a test branch and categories. Everything is removed when it finishes (and at the start, in case
  * an earlier run was interrupted), and the seeded masters are checked to be unchanged.
  * Optional: E2E_OFF_URL = a second server started with APPROVALS_ENABLED=false, to check that the module disappears.
  * Env: E2E_BROWSER = chromium (default) | firefox | webkit, E2E_CHROME_CHANNEL (default "chrome").
@@ -56,8 +56,6 @@ const removeTestData = async () => {
     await sql`delete from activity_log where user_id = ${id}`;
   }
   await sql`delete from users where email like 'zz-apr-%'`;
-  await sql`delete from apr_budgets where branch_id in (select id from apr_branches where name like 'ZZ%')`;
-  await sql`delete from apr_budgets where category_id in (select id from apr_categories where name like 'ZZ%')`;
   await sql`delete from apr_categories where name like 'ZZ%'`;
   await sql`delete from apr_branches where name like 'ZZ%'`;
   await sql`delete from apr_publications where name like 'ZZ%'`;
@@ -134,9 +132,12 @@ try {
   check("the HR card opens the HR form beside the sidebar, titled HR Approval (not DG Approval)", (await A.locator("main h1").first().innerText()) === "HR Approval");
   check("the HR form has no application menu either, and nothing in the application is still called DG Approval", (await menuRows(A).count()) === 0 && !/DG Approval/.test(await A.locator("main").first().innerText()));
   await A.goto(BASE + "/approvals/hr/new");
-  await A.goto(BASE + "/approvals/admin/setup");
+  check("the old Setup page is gone (404)", (await status(A, "/approvals/admin/setup")) === 404 && (await status(A, "/approvals/hr/timeline")) === 404);
+  await A.goto(BASE + "/approvals/admin/rules");
+  check("the Setup checklist is a collapsed section at the bottom of Approver Rules", (await A.locator("details", { hasText: "Setup checklist" }).count()) === 1 && (await A.locator("details", { hasText: "Setup checklist" }).evaluate((el) => el.open)) === false);
+  await A.locator("summary", { hasText: "Setup checklist" }).click();
   const home = await A.locator("main").first().innerText();
-  check("the admin's Setup page shows the checklist", /Setup/.test(home) && /Expense categories/.test(home));
+  check("opened, it shows the checklist", /Setup checklist/.test(home) && /Expense categories/.test(home));
   check("setup checklist counts the 40 seeded categories", /40 active/.test(home), home.match(/\d+ active/)?.[0]);
   check("setup checklist flags the kinds of request that still have no approver", /of 3 kinds of request have an approver/.test(home), home.match(/\d+ of \d+ kinds[^\n]*/)?.[0]);
 
@@ -176,33 +177,14 @@ try {
   check("the branch is now inactive in the database", (await sql`select active from apr_branches where id = ${branch.id}`)[0].active === false);
   await A.request.patch(`${BASE}/api/approvals/masters/branches/${branch.id}`, { data: { active: true } });
 
-  section("6. Budgets: set in rupees, stored as paise, replaced not duplicated, removed");
+  section("6. Categories, and no budget pages: the requester types the budget on the form");
   const cat = await (await A.request.post(`${BASE}/api/approvals/masters/categories`, { data: { name: "ZZ Cat A", duplicateGroup: "zz-dup" } })).json();
   const catB = await (await A.request.post(`${BASE}/api/approvals/masters/categories`, { data: { name: "ZZ Cat B", duplicateGroup: "zz-dup", aliases: ["ZZ Old Spelling"] } })).json();
   check("categories can be created through the API", cat.ok && catB.ok);
-  await A.goto(BASE + "/approvals/budgets?fy=2026-27");
-  await A.getByLabel("Branch", { exact: true }).selectOption({ label: "ZZ Branch One" });
-  await A.getByLabel("Category", { exact: true }).selectOption({ label: "ZZ Cat A" });
-  await A.getByPlaceholder("##,##,###.##").fill("12,34,567.00");
-  await A.getByRole("button", { name: "Save budget" }).click();
-  check("saving a budget shows a success message", await toast(A, "Budget saved"));
-  const row1 = (await sql`select * from apr_budgets where branch_id = ${branch.id} and category_id = ${cat.item.id}`);
-  check("the amount is stored as integer paise", row1.length === 1 && Number(row1[0].allocated_paise) === 123456700, row1[0]?.allocated_paise);
-  check("the table shows it with Indian grouping", await poll(async () => (await A.locator("main").first().innerText()).includes("12,34,567.00")));
-  await A.getByPlaceholder("##,##,###.##").fill("1,00,000");
-  await A.getByRole("button", { name: "Save budget" }).click();
-  await poll(async () => Number((await sql`select allocated_paise from apr_budgets where branch_id = ${branch.id} and category_id = ${cat.item.id}`)[0]?.allocated_paise) === 10000000);
-  const row2 = await sql`select allocated_paise from apr_budgets where branch_id = ${branch.id} and category_id = ${cat.item.id}`;
-  check("saving again replaces the amount (still one row)", row2.length === 1 && Number(row2[0].allocated_paise) === 10000000, JSON.stringify(row2));
-  const bad = [
-    ["a negative amount", { financialYear: "2026-27", branchId: branch.id, categoryId: cat.item.id, allocatedPaise: -1 }],
-    ["a fractional paise amount", { financialYear: "2026-27", branchId: branch.id, categoryId: cat.item.id, allocatedPaise: 10.5 }],
-    ["a financial year that does not add up (2026-28)", { financialYear: "2026-28", branchId: branch.id, categoryId: cat.item.id, allocatedPaise: 100 }],
-  ];
-  for (const [what, data] of bad) check(`${what} is refused`, (await A.request.post(`${BASE}/api/approvals/budgets`, { data })).status() === 400);
+  check("the Budgets and Budget Utilisation pages no longer exist, even for the Support Admin", (await status(A, "/approvals/budgets")) === 404 && (await status(A, "/approvals/budgets/utilisation")) === 404);
+  check("and neither does the budgets API", (await A.request.get(`${BASE}/api/approvals/budgets`)).status() === 404 && (await A.request.post(`${BASE}/api/approvals/budgets`, { data: { financialYear: "2026-27", branchId: branch.id, categoryId: cat.item.id, allocatedPaise: 100 } })).status() === 404);
 
-  section("7. Category merge: requests and budgets move, names become aliases, amounts add up");
-  await A.request.post(`${BASE}/api/approvals/budgets`, { data: { financialYear: "2026-27", branchId: branch.id, categoryId: catB.item.id, allocatedPaise: 5000000 } });
+  section("7. Category merge: requests move, names become aliases");
   const merge = await A.request.post(`${BASE}/api/approvals/category-merge`, { data: { sourceId: cat.item.id, targetId: catB.item.id } });
   check("merge succeeds", merge.status() === 200, merge.status());
   const [src] = await sql`select * from apr_categories where id = ${cat.item.id}`;
@@ -210,15 +192,8 @@ try {
   check("the source is inactive, points at the target and is no longer flagged", !src.active && src.merged_into_id === tgt.id && src.duplicate_group === null);
   check("the target keeps its alias and gains the source's name", tgt.aliases.includes("ZZ Old Spelling") && tgt.aliases.includes("ZZ Cat A"), tgt.aliases.join(" | "));
   check("the duplicate flag clears once only one is left", tgt.duplicate_group === null);
-  const merged = await sql`select category_id, allocated_paise from apr_budgets where branch_id = ${branch.id}`;
-  check("budgets for the same year and branch were added together", merged.length === 1 && merged[0].category_id === tgt.id && Number(merged[0].allocated_paise) === 15000000, JSON.stringify(merged));
   check("merging into a merged category is refused", (await A.request.post(`${BASE}/api/approvals/category-merge`, { data: { sourceId: cat.item.id, targetId: catB.item.id } })).status() === 409);
   check("merging a category into itself is refused", (await A.request.post(`${BASE}/api/approvals/category-merge`, { data: { sourceId: catB.item.id, targetId: catB.item.id } })).status() === 400);
-  await A.goto(BASE + "/approvals/budgets?fy=2026-27");
-  await A.getByRole("button", { name: /Remove budget for ZZ Branch One/ }).click();
-  await A.getByRole("button", { name: "Remove", exact: true }).click();
-  const stillThere = async () => (await sql`select count(*)::int n from apr_budgets where branch_id = ${branch.id}`)[0].n;
-  check("removing a budget asks first, then removes it", await poll(async () => (await stillThere()) === 0));
 
   section("8. An ordinary person with a hub login and no module role");
   const mem = await newSession();
@@ -237,19 +212,16 @@ try {
   check("the HR form has no menu around it either", (await menuRows(M).count()) === 0);
   const forms = [await status(M, "/approvals/hr/new"), await status(M, "/approvals/expenditures/new"), await status(M, "/approvals/expenses/new")];
   check("the three forms open for them", forms.every((s) => s === 200), forms.join(","));
-  const listPaths = ["/approvals/hr/all", "/approvals/hr/pending", "/approvals/expenditures/all", "/approvals/expenses/mine", "/approvals/inbox", "/approvals/my/completed", "/approvals/timeline", "/approvals/hr/timeline", "/approvals/hr/report", "/approvals/hr/approval-time", "/approvals/budgets/utilisation"];
+  const listPaths = ["/approvals/hr/all", "/approvals/hr/pending", "/approvals/expenditures/all", "/approvals/expenses/mine", "/approvals/inbox", "/approvals/my/completed", "/approvals/timeline", "/approvals/hr/timeline", "/approvals/hr/report", "/approvals/hr/approval-time"];
   const listStatuses = []; for (const p of listPaths) listStatuses.push(await status(M, p));
   check("every list, timeline and report is a 404 for them: forms only", listStatuses.every((s) => s === 404), listStatuses.join(","));
   check("the CSV export is closed to them (403)", (await M.request.get(`${BASE}/api/approvals/requests/export?screen=hr/all`)).status() === 403);
   check("admin pages are a 404 for them", (await status(M, "/approvals/admin/categories")) === 404 && (await status(M, "/approvals/admin/access")) === 404);
-  check("the budgets page is a 404 for them (viewers only)", (await status(M, "/approvals/budgets")) === 404);
   const read = await M.request.get(`${BASE}/api/approvals/masters/categories`);
   const readBody = await read.json();
   check("they can read the active categories (for dropdowns)", read.status() === 200 && readBody.items.length >= 40);
   check("inactive categories are not shown to them, even when asked for", !(await (await M.request.get(`${BASE}/api/approvals/masters/categories?all=1`)).json()).items.some((i) => i.name === "ZZ Cat A"));
   check("they cannot create a branch (403)", (await M.request.post(`${BASE}/api/approvals/masters/branches`, { data: { name: "ZZ Sneaky" } })).status() === 403);
-  check("they cannot change a budget (403)", (await M.request.post(`${BASE}/api/approvals/budgets`, { data: { financialYear: "2026-27", branchId: branch.id, categoryId: tgt.id, allocatedPaise: 1 } })).status() === 403);
-  check("they cannot read the budget table (403)", (await M.request.get(`${BASE}/api/approvals/budgets`)).status() === 403);
   check("they cannot merge categories or change roles (403)", (await M.request.post(`${BASE}/api/approvals/category-merge`, { data: { sourceId: tgt.id, targetId: tgt.id } })).status() === 403 && (await M.request.put(`${BASE}/api/approvals/roles`, { data: { userId: member.id, role: "approvals_admin", granted: true } })).status() === 403);
   check("no row was created by the refused calls", (await sql`select count(*)::int n from apr_branches where name = 'ZZ Sneaky'`)[0].n === 0);
 
@@ -258,15 +230,11 @@ try {
   const memRow = A.getByRole("row", { name: /ZZ Apr Member/ });
   await memRow.getByRole("switch", { name: /is a viewer/ }).click();
   check("the grant is stored", await poll(async () => (await sql`select count(*)::int n from apr_user_roles where user_id = ${member.id} and role = 'viewer'`)[0].n === 1));
-  check("the viewer can now open the budgets page", (await status(M, "/approvals/budgets")) === 200);
   check("and, with full access, the lists and the CSV export too", (await status(M, "/approvals/hr/all")) === 200 && (await status(M, "/approvals/expenses/approved")) === 200 && (await M.request.get(`${BASE}/api/approvals/requests/export?screen=hr/all`)).status() === 200);
   await M.goto(BASE + "/approvals/hr/new");
-  check("a viewer still cannot edit budgets (403)", (await M.request.post(`${BASE}/api/approvals/budgets`, { data: { financialYear: "2026-27", branchId: branch.id, categoryId: tgt.id, allocatedPaise: 1 } })).status() === 403);
-  check("the budgets page for a viewer has no edit form", (await M.locator("button", { hasText: "Save budget" }).count()) === 0);
   await A.goto(BASE + "/approvals/admin/access");
   await A.getByRole("row", { name: /ZZ Apr Member/ }).getByRole("switch", { name: /is a viewer/ }).click();
   await poll(async () => (await sql`select count(*)::int n from apr_user_roles where user_id = ${member.id} and role = 'viewer'`)[0].n === 0);
-  check("taking it away closes the page again", (await status(M, "/approvals/budgets")) === 404);
   check("and the lists and the export close with it: forms only again", (await status(M, "/approvals/hr/all")) === 404 && (await M.request.get(`${BASE}/api/approvals/requests/export?screen=hr/all`)).status() === 403 && (await status(M, "/approvals/hr/new")) === 200);
 
   section("10. The forms are for everyone who signs in, through the Approval System page; nothing has to be ticked");
@@ -291,7 +259,7 @@ try {
   check("a zero threshold is refused", badSettings.status() === 400);
   await A.goto(BASE + "/approvals/admin/audit");
   const audit = await A.locator("main").first().innerText();
-  check("the audit log lists the branch, budget, merge and role changes made above", /Added branch "ZZ Branch One"/.test(audit) && /Set budget 2026-27 \/ ZZ Branch One/.test(audit) && /Merged category "ZZ Cat A" into "ZZ Cat B"/.test(audit) && /viewer/.test(audit), audit.slice(0, 200).replace(/\s+/g, " "));
+  check("the audit log lists the branch, merge and role changes made above", /Added branch "ZZ Branch One"/.test(audit) && /Merged category "ZZ Cat A" into "ZZ Cat B"/.test(audit) && /viewer/.test(audit), audit.slice(0, 200).replace(/\s+/g, " "));
   check("the audit log names who did it", audit.includes(process.env.HEAD_ADMIN_NAME || ADMIN_EMAIL));
 
   section("13. Console, seeded data and the module switch");

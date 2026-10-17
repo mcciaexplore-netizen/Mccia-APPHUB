@@ -6,14 +6,14 @@ import { formatINR } from "./format";
 
 export type ExpenditureForm = "large" | "small";
 
-/** What the budget table says for one branch, category and financial year. `allocatedPaise` is null when no budget was ever set. */
+/** A budget as the requester typed it: `allocatedPaise` is the budget allocated and `spentPaise` how much of it is used. `allocatedPaise` is null when none was given. */
 export type BudgetPosition = { allocatedPaise: number | null; spentPaise: number; pendingPaise: number };
 
 export type BudgetAssessment = {
-  /** No budget row exists for this branch, category and year. */
+  /** No budget was given. */
   noBudget: boolean;
   allocatedPaise: number | null;
-  /** Allocated minus approved spend, before this request. Null when there is no budget. */
+  /** The budget allocated minus the budget used, before this request. Null when there is no budget. */
   availablePaise: number | null;
   /** Available minus this amount: what would be left. Negative when the request goes over. Null when there is no budget. */
   afterPaise: number | null;
@@ -23,7 +23,7 @@ export type BudgetAssessment = {
   overBudget: boolean;
 };
 
-/** Only approved requests use up budget; pending ones are shown for information (see BudgetPosition.pendingPaise). */
+/** What is left of a budget, and what would be left after a request for this amount. */
 export function assessBudget(position: BudgetPosition, amountPaise: number): BudgetAssessment {
   if (position.allocatedPaise == null) {
     return { noBudget: true, allocatedPaise: null, availablePaise: null, afterPaise: null, excessPaise: 0, overBudget: true };
@@ -42,8 +42,8 @@ export function assessBudget(position: BudgetPosition, amountPaise: number): Bud
 
 /** The warning shown under a form when a request is flagged. Null when there is nothing to warn about. */
 export function budgetWarning(a: BudgetAssessment): string | null {
-  if (a.noBudget) return "No budget allocated for this branch, category and year. The request can still be submitted and will be flagged.";
-  if (a.overBudget) return `This request exceeds the remaining budget by ${formatINR(a.excessPaise, { symbol: true })}.`;
+  if (a.noBudget) return "No budget was given. The request can still be submitted and will be flagged.";
+  if (a.overBudget) return `This request is ${formatINR(a.excessPaise, { symbol: true })} more than the budget left (allocated minus used). It can still be submitted and will be flagged.`;
   return null;
 }
 
@@ -139,19 +139,7 @@ export function commentRequired(action: "approve" | "reject" | "return", overBud
   return action !== "approve" || overBudget;
 }
 
-/** Percent of a budget used, as a whole number; null when there is no budget to compare with. */
-export function percentUsed(allocatedPaise: number | null, spentPaise: number): number | null {
-  if (allocatedPaise == null) return null;
-  if (allocatedPaise <= 0) return spentPaise > 0 ? 100 : 0;
-  return Math.round((spentPaise / allocatedPaise) * 100);
-}
-
-/** Utilisation colouring: above 90% is amber, above 100% is red. */
-export const utilisationLevel = (pct: number | null): "ok" | "warn" | "over" => (pct == null || pct <= 90 ? "ok" : pct <= 100 ? "warn" : "over");
-
 /* ---------------------------------------------------------------- request numbers */
-
-export const REQUEST_PREFIX = { hr: "HR", expenditure_large: "EXP", expenditure_small: "EXB" } as const;
 
 /** "EXP", "2026-27", 1 -> "EXP-2026-27-0001". The counter restarts every financial year. */
 export const formatRequestNo = (prefix: string, financialYear: string, n: number) => `${prefix}-${financialYear}-${String(n).padStart(4, "0")}`;

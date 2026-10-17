@@ -14,6 +14,9 @@ const options = (rows: MasterRow[]) => rows.map((r) => ({ value: r.id, label: r.
 const uuid = z.string().uuid();
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 const idOrEmpty = (v: string | string[] | undefined) => (uuid.safeParse(first(v)).success ? first(v) : "");
+const moneyOrEmpty = (v: string | string[] | undefined) => (/^[\d.,\s]{0,20}$/.test(first(v)) ? first(v) : "");
+/** A budget figure in paise as the money box shows it, or empty when there is none. */
+const money = (paise: number | null | undefined) => (paise == null ? "" : formatINR(paise));
 
 /** Everything an expenditure form needs, read once on the server so the form opens with its lists already filled. */
 export async function expenditureFormProps(
@@ -38,18 +41,17 @@ export async function expenditureFormProps(
     initial: {
       employeeId: idOrEmpty(search.employee), email: first(search.email).slice(0, 200), categoryId: idOrEmpty(search.category), branchId: idOrEmpty(search.branch),
       nature: first(search.nature).slice(0, 2000), vendor: first(search.vendor).slice(0, 500), amount: /^[\d.,\s]{0,20}$/.test(amount) ? amount : "",
+      budgetAllocated: moneyOrEmpty(search.allocated), budgetUsed: moneyOrEmpty(search.used),
     },
   };
 }
 
 export async function hrFormProps(user: ApprovalsUser, edit?: { requestId: string; values: EditValues }): Promise<HrFormProps> {
-  const [categories, branches, expenseCategories, fields] = await Promise.all([listMaster("hr-categories", false), listMaster("branches", false), listMaster("categories", false), getFormFields("hr")]);
+  const [categories, fields] = await Promise.all([listMaster("hr-categories", false), getFormFields("hr")]);
   const hr = edit?.values.hr;
   return {
     me: { name: user.name, email: user.email },
     categories: options(categories),
-    branches: options(branches),
-    expenseCategories: options(expenseCategories),
     fields,
     canAdd: hasRole(user, "approvals_admin"),
     now: new Date().toISOString(),
@@ -58,7 +60,7 @@ export async function hrFormProps(user: ApprovalsUser, edit?: { requestId: strin
           ...editInfo(edit.requestId, edit.values),
           initial: {
             first: hr.firstName, last: hr.lastName, email: edit.values.requesterEmail, categoryId: hr.hrCategoryId, description: hr.description ?? "",
-            amount: edit.values.amountPaise == null ? "" : formatINR(edit.values.amountPaise), branchId: hr.branchId ?? "", budgetCategoryId: hr.budgetCategoryId ?? "",
+            amount: edit.values.amountPaise == null ? "" : formatINR(edit.values.amountPaise), budgetAllocated: money(hr.budget?.allocatedPaise), budgetUsed: money(hr.budget?.usedPaise),
           },
         }
       : undefined,
@@ -83,7 +85,7 @@ export async function expenditureEditProps(user: ApprovalsUser, requestId: strin
     edit: editInfo(requestId, v),
     initial: {
       employeeId: person?.value ?? "", email: v.requesterEmail, categoryId: e.categoryId, branchId: e.branchId, nature: e.nature ?? "", vendor: e.vendorName ?? "",
-      amount: v.amountPaise == null ? "" : formatINR(v.amountPaise), expenseDate: e.expenseDate ?? "", taxInvoiceDate: e.taxInvoiceDate ?? "",
+      amount: v.amountPaise == null ? "" : formatINR(v.amountPaise), budgetAllocated: money(e.budget.allocatedPaise), budgetUsed: money(e.budget.usedPaise), expenseDate: e.expenseDate ?? "", taxInvoiceDate: e.taxInvoiceDate ?? "",
       pubTypeId: e.publicationTypeId ?? "", pubId: e.publicationId ?? "",
     },
   };

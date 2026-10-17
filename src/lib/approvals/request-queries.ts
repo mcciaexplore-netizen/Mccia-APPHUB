@@ -5,8 +5,8 @@ import {
   aprApprovalEvents, aprApproverRules, aprAttachments, aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprPublicationTypes,
   aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType,
 } from "@/db/approvals-schema";
-import { assessBudget, decisionMode, type BudgetAssessment, type DecisionMode } from "./calc";
-import { budgetPosition } from "./budget-position";
+import { decisionMode, type DecisionMode } from "./calc";
+import { ensureRulesSeeded } from "./env-rules";
 import { REVIEW_KEYS, isDgOnly, type ReviewItem } from "./approvals.manifest";
 import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
 import type { SortKey } from "./list-params";
@@ -191,8 +191,11 @@ export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Pro
  * The places an approver works under Approval System, with how many requests wait for them in each. HR for someone named on an HR step,
  * Expenditure for someone named on an expenditure step (either size); people who oversee everything (viewers, the Approvals admin) get both.
  * A person who approves nothing and oversees nothing gets none, and the sidebar shows no dropdown.
+ * The Approver Rules are filled from the HR, Expenditure and Super Admin accounts first (once, and only if they are still empty), so those
+ * accounts have their place from their first sign-in, without anyone having to open the Approver Rules screen or send a request first.
  */
 export async function reviewItemsFor(user: ApprovalsUser): Promise<ReviewItem[]> {
+  await ensureRulesSeeded();
   const oversees = hasAnyRole(user, ["viewer", "approvals_admin"]);
   const [steps, waiting] = await Promise.all([
     oversees ? Promise.resolve([] as { type: AprRequestType }[]) : db.select({ type: aprApproverRules.requestType }).from(aprApproverRules).where(and(eq(aprApproverRules.active, true), sql`${user.id}::uuid = any(${aprApproverRules.approverUserIds})`)),
@@ -220,11 +223,13 @@ export async function waitingCount(user: ApprovalsUser): Promise<number> {
 /* ---------------------------------------------------------------- one request */
 
 export type StepRow = { stepNo: number; stepLabel: string; approverName: string; status: "waiting" | "pending" | "approved" | "rejected" | "skipped" | "returned"; comment: string | null; decidedAt: Date | null };
-/** Where a request's budget stood when it was submitted, and where it stands now. */
-type BudgetView = {
-  snapshot: { allocatedPaise: number | null; availablePaise: number | null; afterPaise: number | null };
-  now: BudgetAssessment & { spentPaise: number; pendingPaise: number };
-};
+/** The budget a request was raised with: the two figures the requester typed (allocated and used), and what follows from them. */
+type BudgetView = { allocatedPaise: number | null; usedPaise: number | null; availablePaise: number | null; afterPaise: number | null };
+const budgetOf = (d: { budgetAllocatedPaise: number | null; budgetAvailablePaise: number | null; budgetRemainingPaise: number | null }): BudgetView => ({
+  allocatedPaise: d.budgetAllocatedPaise,
+  usedPaise: d.budgetAllocatedPaise != null && d.budgetAvailablePaise != null ? d.budgetAllocatedPaise - d.budgetAvailablePaise : null,
+  availablePaise: d.budgetAvailablePaise, afterPaise: d.budgetRemainingPaise,
+});
 export type EventRow = { id: number; action: string; stepNo: number | null; actorName: string; comment: string | null; fromStatus: string | null; toStatus: string | null; createdAt: Date };
 export type AttachmentRow = { id: string; slot: string; fileName: string; size: number; mime: string };
 
@@ -245,7 +250,7 @@ export type RequestDetail = {
   currentApproverUserId: string | null;
   /** The answers to the extra fields the Support Admin added to the form, with the name each had when it was answered. */
   custom: { label: string; value: string }[];
-  hr: { firstName: string; lastName: string; categoryName: string; description: string | null; branchName: string | null; budgetCategoryName: string | null; budget: BudgetView | null } | null;
+  hr: { firstName: string; lastName: string; categoryName: string; description: string | null; budget: BudgetView | null } | null;
   expenditure: {
     categoryName: string;
     branchName: string;
@@ -255,10 +260,7 @@ export type RequestDetail = {
     taxInvoiceDate: string | null;
     publicationType: string | null;
     publication: string | null;
-    /** What the budget looked like when the request was submitted. */
-    snapshot: { allocatedPaise: number | null; availablePaise: number | null; afterPaise: number | null };
-    /** What it looks like now. */
-    now: BudgetAssessment & { spentPaise: number; pendingPaise: number };
+    budget: BudgetView;
   } | null;
   steps: StepRow[];
   events: EventRow[];
@@ -303,21 +305,15 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
   ]);
 
   let expenditure: RequestDetail["expenditure"] = null;
-  let liveOver = false;
   if (exp) {
-    const [type, pub, position] = await Promise.all([
+    const [type, pub] = await Promise.all([
       exp.d.publicationTypeId ? db.select({ name: aprPublicationTypes.name }).from(aprPublicationTypes).where(eq(aprPublicationTypes.id, exp.d.publicationTypeId)).then((r) => r[0]?.name ?? null) : null,
       exp.d.publicationId ? db.select({ name: aprPublications.name }).from(aprPublications).where(eq(aprPublications.id, exp.d.publicationId)).then((r) => r[0]?.name ?? null) : null,
-      req.financialYear ? budgetPosition(req.financialYear, exp.d.branchId, exp.d.categoryId) : { allocatedPaise: null, spentPaise: 0, pendingPaise: 0 },
     ]);
-    const now = assessBudget(position, req.amountPaise ?? 0);
-    // While the request is pending it is not in "spent" yet, so this comparison is the real one; after a decision it is only a picture of now.
-    liveOver = req.status === "pending" && now.overBudget;
     expenditure = {
       categoryName: exp.categoryName, branchName: exp.branchName, nature: exp.d.natureOfExpenditure, vendorName: exp.d.vendorName,
       expenseDate: exp.d.expenseDate, taxInvoiceDate: exp.d.taxInvoiceDate, publicationType: type, publication: pub,
-      snapshot: { allocatedPaise: exp.d.budgetAllocatedPaise, availablePaise: exp.d.budgetAvailablePaise, afterPaise: exp.d.budgetRemainingPaise },
-      now: { ...now, spentPaise: position.spentPaise, pendingPaise: position.pendingPaise },
+      budget: budgetOf(exp.d),
     };
   }
 
@@ -325,21 +321,7 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
   let hr: RequestDetail["hr"] = null;
   if (hrRow) {
     const d = hrRow.d;
-    const [branchName, budgetCategoryName, position] = await Promise.all([
-      d.branchId ? db.select({ name: aprBranches.name }).from(aprBranches).where(eq(aprBranches.id, d.branchId)).then((r) => r[0]?.name ?? null) : null,
-      d.budgetCategoryId ? db.select({ name: aprCategories.name }).from(aprCategories).where(eq(aprCategories.id, d.budgetCategoryId)).then((r) => r[0]?.name ?? null) : null,
-      d.branchId && d.budgetCategoryId && req.financialYear ? budgetPosition(req.financialYear, d.branchId, d.budgetCategoryId) : null,
-    ]);
-    let budget: BudgetView | null = null;
-    if (position) {
-      const now = assessBudget(position, req.amountPaise ?? 0);
-      liveOver = req.status === "pending" && now.overBudget;
-      budget = {
-        snapshot: { allocatedPaise: d.budgetAllocatedPaise, availablePaise: d.budgetAvailablePaise, afterPaise: d.budgetRemainingPaise },
-        now: { ...now, spentPaise: position.spentPaise, pendingPaise: position.pendingPaise },
-      };
-    }
-    hr = { firstName: d.firstName, lastName: d.lastName, categoryName: hrRow.categoryName, description: d.description, branchName, budgetCategoryName, budget };
+    hr = { firstName: d.firstName, lastName: d.lastName, categoryName: hrRow.categoryName, description: d.description, budget: d.budgetAllocatedPaise != null ? budgetOf(d) : null };
   }
 
   const pending = req.status === "pending";
@@ -356,7 +338,7 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
       decide: mine,
       withdraw: (pending || req.status === "returned") && req.requesterUserId === user.id,
       edit: req.status === "returned" && req.requesterUserId === user.id,
-      commentToApprove: mine && (req.overBudget || liveOver),
+      commentToApprove: mine && req.overBudget,
       mode: decisionMode(req.currentStep, req.totalSteps),
     },
   };
@@ -377,10 +359,10 @@ export type EditValues = {
   requesterEmail: string;
   requestedAt: Date;
   amountPaise: number | null;
-  hr: { firstName: string; lastName: string; hrCategoryId: string; description: string | null; branchId: string | null; budgetCategoryId: string | null } | null;
+  hr: { firstName: string; lastName: string; hrCategoryId: string; description: string | null; budget: BudgetView | null } | null;
   expenditure: {
     categoryId: string; branchId: string; nature: string | null; vendorName: string | null; expenseDate: string | null; taxInvoiceDate: string | null;
-    publicationTypeId: string | null; publicationId: string | null;
+    publicationTypeId: string | null; publicationId: string | null; budget: BudgetView;
   } | null;
   attachments: AttachmentRow[];
   /** The answers to the extra fields, by field key. */
@@ -402,11 +384,11 @@ export async function getEditValues(requestId: string, user: ApprovalsUser): Pro
   const step = steps[0];
   return {
     type: req.type, requestNo: req.requestNo, requesterName: req.requesterName, requesterEmail: req.requesterEmail, requestedAt: req.requestedAt, amountPaise: req.amountPaise,
-    hr: hr ? { firstName: hr.firstName, lastName: hr.lastName, hrCategoryId: hr.hrCategoryId, description: hr.description, branchId: hr.branchId, budgetCategoryId: hr.budgetCategoryId } : null,
+    hr: hr ? { firstName: hr.firstName, lastName: hr.lastName, hrCategoryId: hr.hrCategoryId, description: hr.description, budget: hr.budgetAllocatedPaise != null ? budgetOf(hr) : null } : null,
     expenditure: exp
       ? {
           categoryId: exp.categoryId, branchId: exp.branchId, nature: exp.natureOfExpenditure, vendorName: exp.vendorName, expenseDate: exp.expenseDate, taxInvoiceDate: exp.taxInvoiceDate,
-          publicationTypeId: exp.publicationTypeId, publicationId: exp.publicationId,
+          publicationTypeId: exp.publicationTypeId, publicationId: exp.publicationId, budget: budgetOf(exp),
         }
       : null,
     attachments: attachments.map((a) => ({ id: a.id, slot: a.slot, fileName: a.fileName, size: a.size, mime: a.mime })),

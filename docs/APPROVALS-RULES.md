@@ -33,20 +33,23 @@ Lists: in Expenditure an approver's own page is **Waiting for Me** (only the exp
 
 | Action | Needs a comment | What happens |
 |---|---|---|
-| Approve / Recommend | only when over budget | Moves to the next step, or the request is approved |
+| Approve / Recommend | only when over the typed budget | Moves to the next step, or the request is approved |
 | Return for corrections | always | Status **Returned**; the requester is told; the request keeps its step and approver |
 | Reject | always | Rejected at once; later steps are marked not needed |
 
 - The requester opens **Edit and resubmit** (from the request page or the notification), changes the form (values and files) and resubmits. It goes back to the approver who returned it, at the same step, with the same request number. Approvals already given are kept. The history shows every round.
 - Only the person who raised the request can edit it, and only while it is Returned. The date of request stays as it was. An expenditure amount cannot move across the threshold while editing (that needs a new request through the other form). A returned request can still be withdrawn.
-- A returned request is waiting for nobody and uses no budget until it is resubmitted.
+- A returned request is waiting for nobody until it is resubmitted.
 - A pending request whose approver is away stays with that approver (it shows in their notifications). There is no reassign.
 
 ## Budgets
 
-- An expenditure, and an HR request that carries an amount, are checked against the budget of their branch and category. Approved requests use the budget; pending ones are shown for information.
-- Over budget is flagged, never blocked: the approver must write a comment to approve it.
-- An HR amount needs a branch and an expense category. Without an amount no budget is attached.
+The branch does not decide the budget. The person raising the request **types it on the form**:
+
+- **Budget Allocated** and **Budget Used** are typed (rupees, at most two decimals; 0 is fine for Used). **Available budget** (allocated minus used) and **Budget Remaining** (available minus this amount) are worked out on the screen and saved with the request. On the Expenditure form they sit under Difference; they are the same two typed boxes on the Expenses form and, once an amount is typed, on the HR form.
+- An expenditure always needs both. An HR request needs both only when it carries an amount; without an amount no budget is attached.
+- Over budget (the amount is more than what is left) is flagged, never blocked: the request shows an **Over budget** badge and the approver must write a comment to approve it.
+- There are no Budgets or Budget Utilisation pages and no per-branch budget tables any more; approving a request does not change anything stored elsewhere. The old `apr_budgets` table is left in the database, unused.
 
 ## Who may open the two applications
 

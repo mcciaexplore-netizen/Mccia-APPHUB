@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { isFinancialYear } from "./format";
 
 /** Names are trimmed and inner whitespace collapsed, so "Admin  Expenses " and "Admin Expenses" are the same. */
 const nameSchema = z
@@ -34,16 +33,6 @@ export const masterPatch = z
   .refine((v) => Object.keys(v).length > 0, "Nothing to change");
 
 export const categoryMerge = z.object({ sourceId: idSchema, targetId: idSchema });
-
-export const financialYearSchema = z.string().refine(isFinancialYear, "Use a financial year like 2026-27");
-
-export const budgetUpsert = z.object({
-  financialYear: financialYearSchema,
-  branchId: idSchema,
-  categoryId: idSchema,
-  allocatedPaise: z.number().int().min(0, "The budget cannot be negative").max(1_000_000_000_000_00),
-});
-export const budgetPatch = z.object({ allocatedPaise: budgetUpsert.shape.allocatedPaise });
 
 export const roleGrant = z.object({
   userId: idSchema,

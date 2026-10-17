@@ -89,9 +89,9 @@ HR and expenditure approvals (a replica of the two Zoho apps, now called **HR Ap
 **What it does**
 
 - Three request forms: **HR**, **Expenditure** (₹10,000 and above, approved by the DG) and **Expenses** (below ₹10,000). Amounts typed into the wrong form are stopped with a link to the right one, with the details carried over. The limit is a setting.
-- Budgets per branch, category and financial year (April to March). A request shows the budget live; going over (or having no budget) never blocks submission but flags the request "Over budget", and the approver must write a comment to approve it. Only **approved** requests use up budget.
+- The budget is typed by the requester on the form: **Budget Allocated** and **Budget Used**; what is available and what would remain after the request are worked out. Going over never blocks submission but flags the request "Over budget", and the approver must write a comment to approve it. There are no budget pages for the branch to fill in.
 - Approval: a request goes to the approvers named in **Approver Rules**, in order. A step with nobody named is skipped, so leaving "Reviewer" empty makes the DG the only approver. Nobody can approve their own request, and if two people click at once only the first decision counts. Everything that happens is recorded in the request's timeline.
-- Lists (search, date range, category, branch, status, sorting, paging, CSV export), the DG's inbox with quick Approve/Reject, reports (HR report, approval time, budget utilisation) and a notification bell. These are for people with full access (see "Who can do what"); a plain requester has the forms only. Approvers see their own requests and the ones routed to them; viewers, admins and the DG see everything.
+- Lists (search, date range, category, branch, status, sorting, paging, CSV export), the DG's inbox with quick Approve/Reject, reports (HR report, approval time) and a notification bell. These are for people with full access (see "Who can do what"); a plain requester has the forms only. Approvers see their own requests and the ones routed to them; viewers, admins and the DG see everything.
 - Attachments (PDF, JPG, PNG, Word, Excel, up to 10 MB each) are stored in Postgres and only served through a route that checks who may see the request.
 - Two applications under the **Approval System** dropdown in the hub sidebar: **HR Approval** (HR requests, expenditure of ₹10,000 and above, budgets, the DG's inbox, administration) and **Expenditure** (expenses below ₹10,000 and their approvals). Each opens in the main panel, beside the hub sidebar, with its own title, a bell, a row of section tabs and the pages of the chosen section underneath (the same pattern as the Administrator tabs).
 
@@ -116,7 +116,7 @@ npm run dev
 
 **Money and dates.** Money is stored as integer paise and shown with Indian grouping (12,34,567.00). Dates are stored in UTC and shown as dd-MMM-yyyy in Asia/Kolkata. The financial year runs April to March, judged in IST. Request numbers restart each financial year: `HR-2026-27-0001`, `EXP-2026-27-0001` (₹10,000 and above), `EXB-2026-27-0001` (below).
 
-**Tests.** `npm run test:unit` covers the rules (budget maths, routing, validation, dates). `npm run test:e2e:approvals` (module set-up and admin screens) and `npm run test:e2e:approvals:flow` (submit, approve, reject, budgets, files) drive a real browser against a running server; see the header of each file.
+**Tests.** `npm run test:unit` covers the rules (budget maths, routing, validation, dates). `npm run test:e2e:approvals` (module set-up and admin screens) and `npm run test:e2e:approvals:flow` (submit, approve, reject, the typed budget, files) drive a real browser against a running server; see the header of each file.
 
 ## Database portability
 

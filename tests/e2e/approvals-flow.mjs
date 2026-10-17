@@ -1,6 +1,6 @@
 /**
  * End-to-end test of the Approvals request flow in a real browser: submitting HR, expenditure and expense requests, routing, approving,
- * rejecting, budgets, over-budget handling, files, who can see what, lists, export, reports and notifications.
+ * rejecting, the budget the requester types, over-budget handling, files, who can see what, lists, export, reports and notifications.
  *
  * Run it against a TEST database (a Neon branch, for example), never the live one:
  *   E2E_FLOW_CONFIRM=yes E2E_BASE_URL=http://localhost:3000 npm run test:e2e:approvals:flow
@@ -92,7 +92,6 @@ const removeFlowData = async () => {
     for (const c of now) if (!savedCounters.some((s) => s.key === c.key)) await sql`delete from apr_counters where key = ${c.key}`;
   }
   await sql`delete from users where email like 'zz-flow-%'`;
-  await sql`delete from apr_budgets where branch_id in (select id from apr_branches where name like 'ZZ%')`;
   await sql`delete from apr_categories where name like 'ZZ%'`;
   await sql`delete from apr_hr_categories where name like 'ZZ%'`;
   await sql`delete from apr_branches where name like 'ZZ%'`;
@@ -132,10 +131,12 @@ const status = async (page, p) => (await page.goto(BASE + p)).status();
 const post = (page, url, data) => page.request.post(BASE + url, { data });
 const body = async (res) => { try { return await res.json(); } catch { return {}; } };
 
-const common = (branchId, categoryId) => ({ categoryId, branchId });
+// The requester types the budget: a roomy one by default, so a request is not over budget unless a test says so.
+const common = (branchId, categoryId) => ({ categoryId, branchId, budgetAllocatedPaise: 100000000, budgetUsedPaise: 0 });
+const tight = (allocated, used) => ({ budgetAllocatedPaise: allocated, budgetUsedPaise: used });
 
 try {
-  section("0. Setup: people, rules, a branch, categories and a budget");
+  section("0. Setup: people, rules, a branch and categories");
   const ids = {};
   for (const [k, p] of Object.entries(PEOPLE)) {
     const [u] = await sql`insert into users (name, email, password_hash, status) values (${p.name}, ${p.email}, ${hash(PW)}, 'approved') returning id`;
@@ -147,10 +148,8 @@ try {
   await sql`update apr_approver_rules set approver_user_ids = ${[ids.small]} where request_type = 'expenditure_small' and step_no = 1`;
   const [branch] = await sql`insert into apr_branches (name) values ('ZZ Flow Branch') returning id`;
   const [cat] = await sql`insert into apr_categories (name) values ('ZZ Flow Cat') returning id`;
-  const [catNoBudget] = await sql`insert into apr_categories (name) values ('ZZ Flow Cat No Budget') returning id`;
-  await sql`insert into apr_budgets (financial_year, branch_id, category_id, allocated_paise) values (${FY}, ${branch.id}, ${cat.id}, 5000000)`;
   const [hrCat] = await sql`select id from apr_hr_categories where name = 'Certificate'`;
-  check("test people, rules, branch, categories and a 50,000 budget are in place", !!(ids.req && ids.dg && ids.small && branch && cat && hrCat), `FY ${FY}`);
+  check("test people, rules, branch and categories are in place", !!(ids.req && ids.dg && ids.small && branch && cat && hrCat), `FY ${FY}`);
 
   const R = await newSession(), D = await newSession(), S = await newSession(), O = await newSession(), A = await newSession();
   await Promise.all([
@@ -163,12 +162,12 @@ try {
   await R.page.goto(BASE + "/approvals/hr/new");
   check("the HR form has its fields in the Zoho order", JSON.stringify(await labels(R.page)) === JSON.stringify(["Name", "Email", "Category", "Date of Request", "Amount", "Description", "File upload", "File upload"]), (await labels(R.page)).join(" | "));
   await R.page.goto(BASE + "/approvals/expenditures/new");
-  check("the DG expenditure form has its 13 fields in the Zoho order", JSON.stringify(await labels(R.page)) === JSON.stringify(["Name", "Email", "Date of Request", "Difference", "Category", "Nature of Expenditure", "Branch Name", "Budget Allocated", "Budget Remaining", "Amount", "Vendor Name", "Tax Invoice/Supporting Documents", "Quotation"]), (await labels(R.page)).join(" | "));
+  check("the DG expenditure form has its 14 fields in order (the budget allocated and used are typed)", JSON.stringify(await labels(R.page)) === JSON.stringify(["Name", "Email", "Date of Request", "Difference", "Category", "Nature of Expenditure", "Branch Name", "Budget Allocated", "Budget Used", "Budget Remaining", "Amount", "Vendor Name", "Tax Invoice/Supporting Documents", "Quotation"]), (await labels(R.page)).join(" | "));
   check("Submit and Reset are there", (await R.page.getByRole("button", { name: "Submit" }).count()) === 1 && (await R.page.getByRole("button", { name: "Reset" }).count()) === 1);
   await R.page.goto(BASE + "/approvals/expenses/new");
-  check("the below-10k form has its 17 fields in the Zoho order (two of them labelled Date)", JSON.stringify(await labels(R.page)) === JSON.stringify(["Name", "Email", "Date", "Category", "Nature of Expenditure", "Branch Name", "Available budget", "File upload", "Budget Remaining", "Date", "Type of Publication", "Publication", "Vendor Name", "Tax Invoice", "Quotation", "Date of Tax Invoice", "Amount"]), (await labels(R.page)).join(" | "));
+  check("the below-10k form has its 19 fields in order (two of them labelled Date; the budget allocated and used are typed)", JSON.stringify(await labels(R.page)) === JSON.stringify(["Name", "Email", "Date", "Category", "Nature of Expenditure", "Branch Name", "Budget Allocated", "Budget Used", "Available budget", "File upload", "Budget Remaining", "Date", "Type of Publication", "Publication", "Vendor Name", "Tax Invoice", "Quotation", "Date of Tax Invoice", "Amount"]), (await labels(R.page)).join(" | "));
   check("the Name is the signed-in person and the Email is already filled in from it", (await R.page.locator("#ex-email").inputValue()) === PEOPLE.req.email && (await R.page.locator("#ex-name").innerText()).includes(PEOPLE.req.name), await R.page.locator("#ex-email").inputValue());
-  check("the budget boxes show the ##,##,###.## placeholder with the rupee sign", (await R.page.locator("#ex-available").getAttribute("placeholder")) === "##,##,###.##" && (await R.page.locator("#ex-after").getAttribute("placeholder")) === "##,##,###.##");
+  check("the worked-out budget boxes show the ##,##,###.## placeholder with the rupee sign, and the two typed ones are boxes to fill", (await R.page.locator("#ex-alloc").isEditable()) && (await R.page.locator("#ex-used").isEditable()) && (await R.page.locator("#ex-available").getAttribute("placeholder")) === "##,##,###.##" && (await R.page.locator("#ex-after").getAttribute("placeholder")) === "##,##,###.##");
 
   section("2. + Add New is for admins only");
   await R.page.goto(BASE + "/approvals/hr/new");
@@ -246,51 +245,46 @@ try {
   const href = await R.page.getByRole("link", { name: "Open the Expenses form" }).getAttribute("href");
   check("the link opens the other form with the amount carried over", /\/approvals\/expenses\/new\?.*amount=9%2C999/.test(href ?? ""), href);
 
-  section("7. Expenditure of 15,000: budget used only when approved");
-  const live = async (page) => body(await page.request.get(`${BASE}/api/approvals/budget?branchId=${branch.id}&categoryId=${cat.id}&fy=${FY}`));
-  check("the live budget starts at 50,000 allocated, nothing spent", (await live(R.page)).allocatedPaise === 5000000 && (await live(R.page)).spentPaise === 0);
-  const big = await submitWith(R.page, { kind: "large", employeeUserId: ids.req, ...common(branch.id, cat.id), amountPaise: 1500000, vendorName: "ZZ Vendor", natureOfExpenditure: "ZZ test" });
+  section("7. Expenditure of 15,000 against the budget the requester typed");
+  const big = await submitWith(R.page, { kind: "large", employeeUserId: ids.req, ...common(branch.id, cat.id), ...tight(5000000, 0), amountPaise: 1500000, vendorName: "ZZ Vendor", natureOfExpenditure: "ZZ test" });
   check("a 15,000 request is accepted with an EXP number", big.status === 201 && /^EXP-\d{4}-\d{2}-\d{4}$/.test(big.json.requestNo), big.json.requestNo ?? big.json.error);
   const [bigRow] = await sql`select r.over_budget, r.current_approver_user_id, d.budget_allocated_paise, d.budget_available_paise, d.budget_remaining_paise from apr_requests r join apr_expenditure_details d on d.request_id = r.id where r.id = ${big.json.id}`;
   check("it is not over budget and its budget snapshot is stored", bigRow.over_budget === false && Number(bigRow.budget_allocated_paise) === 5000000 && Number(bigRow.budget_available_paise) === 5000000 && Number(bigRow.budget_remaining_paise) === 3500000, JSON.stringify(bigRow));
   check("it went to the DG", bigRow.current_approver_user_id === ids.dg);
-  check("pending does not reduce the budget", (await live(R.page)).spentPaise === 0 && (await live(R.page)).pendingPaise === 1500000);
   check("the requester cannot decide their own request", (await post(R.page, `/api/approvals/requests/${big.json.id}/decision`, { action: "approve" })).status() === 403);
   check("someone who has nothing to do with it cannot decide it (and is told it does not exist)", (await post(S.page, `/api/approvals/requests/${big.json.id}/decision`, { action: "approve" })).status() === 404);
   check("rejecting needs a comment", (await post(D.page, `/api/approvals/requests/${big.json.id}/decision`, { action: "reject" })).status() === 422);
   const okDecision = await post(D.page, `/api/approvals/requests/${big.json.id}/decision`, { action: "approve" });
   check("the DG approves without a comment (it is within budget)", okDecision.status() === 200);
-  check("approval uses up the budget: 15,000 spent", (await live(R.page)).spentPaise === 1500000);
   check("deciding again is refused with a clear message", await (async () => { const r = await post(D.page, `/api/approvals/requests/${big.json.id}/decision`, { action: "reject", comment: "x" }); return r.status() === 409 && /already been approved/.test((await body(r)).error); })());
 
   section("8. Over budget: flagged, never blocked, needs a comment to approve");
-  const over = await submitWith(R.page, { kind: "large", employeeUserId: ids.req, ...common(branch.id, cat.id), amountPaise: 4000000 });
+  const over = await submitWith(R.page, { kind: "large", employeeUserId: ids.req, ...common(branch.id, cat.id), ...tight(5000000, 1500000), amountPaise: 4000000 });
   check("a 40,000 request (35,000 left) is still accepted", over.status === 201, over.json.error);
   check("it is flagged over budget", (await sql`select over_budget from apr_requests where id = ${over.json.id}`)[0].over_budget === true);
   await D.page.goto(BASE + `/approvals/requests/${over.json.id}`);
-  check("the approver sees the Over budget badge and a warning", /over budget/i.test(await D.page.locator("main").first().innerText()) && (await D.page.locator("main").first().innerText()).includes("exceeds the remaining budget by ₹5,000.00"));
+  check("the approver sees the Over budget badge and a warning", /over budget/i.test(await D.page.locator("main").first().innerText()) && (await D.page.locator("main").first().innerText()).includes("₹5,000.00 more than the budget left"));
   const noComment = await post(D.page, `/api/approvals/requests/${over.json.id}/decision`, { action: "approve" });
   check("approving without a comment is refused", noComment.status() === 422 && /over budget/.test((await body(noComment)).error));
   check("approving with a comment works", (await post(D.page, `/api/approvals/requests/${over.json.id}/decision`, { action: "approve", comment: "Approved, one-off" })).status() === 200);
-  check("spent is now 55,000, more than the 50,000 allocated", (await live(R.page)).spentPaise === 5500000);
-  const noBud = await submitWith(R.page, { kind: "large", employeeUserId: ids.req, ...common(branch.id, catNoBudget.id), amountPaise: 1200000 });
-  check("a request with no budget at all is accepted and flagged", noBud.status === 201 && (await sql`select over_budget from apr_requests where id = ${noBud.json.id}`)[0].over_budget === true, noBud.json.error);
+  const noBud = await submitWith(R.page, { kind: "large", employeeUserId: ids.req, ...common(branch.id, cat.id), ...tight(1000000, 1500000), amountPaise: 1200000 });
+  check("a request whose budget is already used up is accepted and flagged", noBud.status === 201 && (await sql`select over_budget from apr_requests where id = ${noBud.json.id}`)[0].over_budget === true, noBud.json.error);
 
-  section("9. Rejected requests do not reduce the budget");
+  section("9. Rejected requests");
   const rej = await submitWith(R.page, { kind: "large", employeeUserId: ids.req, ...common(branch.id, cat.id), amountPaise: 1200000 });
   check("the 12,000 request was accepted", rej.status === 201);
   check("the DG rejects it with a comment", (await post(D.page, `/api/approvals/requests/${rej.json.id}/decision`, { action: "reject", comment: "Not needed" })).status() === 200);
-  check("spent is unchanged and the request is rejected", (await live(R.page)).spentPaise === 5500000 && (await sql`select status from apr_requests where id = ${rej.json.id}`)[0].status === "rejected");
+  check("the request is rejected", (await sql`select status from apr_requests where id = ${rej.json.id}`)[0].status === "rejected");
 
   section("10. Expenses below 10,000 go to their own approver");
-  const small = await submitWith(R.page, { kind: "small", employeeUserId: ids.req, email: PEOPLE.req.email, ...common(branch.id, cat.id), amountPaise: 500000, vendorName: "ZZ Small Vendor", expenseDate: "2026-04-10", taxInvoiceDate: "2026-04-09" });
+  const small = await submitWith(R.page, { kind: "small", employeeUserId: ids.req, email: PEOPLE.req.email, ...common(branch.id, cat.id), ...tight(1000000, 800000), amountPaise: 500000, vendorName: "ZZ Small Vendor", expenseDate: "2026-04-10", taxInvoiceDate: "2026-04-09" });
   check("a 5,000 expense is accepted with an EXB number", small.status === 201 && /^EXB-\d{4}-\d{2}-\d{4}$/.test(small.json.requestNo), small.json.requestNo ?? small.json.error);
   check("it went to the below-10k approver, not the DG", (await sql`select current_approver_user_id from apr_requests where id = ${small.json.id}`)[0].current_approver_user_id === ids.small);
   check("the DG cannot decide it", (await post(D.page, `/api/approvals/requests/${small.json.id}/decision`, { action: "approve" })).status() === 403);
   await S.page.goto(BASE + "/approvals/expenses/pending");
   check("the below-10k approver's own list (/approvals/expenses/pending) holds this expense", (await S.page.locator("main").first().innerText()).includes(small.json.requestNo));
   check("it is not an oversight page: the admin has no Waiting for Me, and sees every pending small expense under All Pending instead", (await status(A.page, "/approvals/expenses/pending")) === 404 && (await status(A.page, "/approvals/expenses/waiting")) === 200 && (await A.page.locator("main").first().innerText()).includes(small.json.requestNo));
-  check("the category is already overspent, so the expense is flagged and its approver needs a comment", (await sql`select over_budget from apr_requests where id = ${small.json.id}`)[0].over_budget === true && (await post(S.page, `/api/approvals/requests/${small.json.id}/decision`, { action: "approve" })).status() === 422);
+  check("the budget typed (10,000 allocated, 8,000 used) is not enough for 5,000, so the expense is flagged and its approver needs a comment", (await sql`select over_budget from apr_requests where id = ${small.json.id}`)[0].over_budget === true && (await post(S.page, `/api/approvals/requests/${small.json.id}/decision`, { action: "approve" })).status() === 422);
   check("with a comment the below-10k approver can approve it", (await post(S.page, `/api/approvals/requests/${small.json.id}/decision`, { action: "approve", comment: "within the overall budget" })).status() === 200);
   check("a future tax invoice date is refused", (await submitWith(R.page, { kind: "small", employeeUserId: ids.req, email: PEOPLE.req.email, ...common(branch.id, cat.id), amountPaise: 100000, vendorName: "V", taxInvoiceDate: "2099-01-01" })).status === 400);
   const noVendor = await submitWith(R.page, { kind: "small", employeeUserId: ids.req, email: PEOPLE.req.email, ...common(branch.id, cat.id), amountPaise: 100000, vendorName: "  " });
@@ -312,7 +306,6 @@ try {
   check("someone else cannot withdraw my request", (await post(O.page, `/api/approvals/requests/${wd.json.id}/withdraw`, {})).status() === 404);
   check("the requester can withdraw it while pending", (await post(R.page, `/api/approvals/requests/${wd.json.id}/withdraw`, {})).status() === 200);
   check("a withdrawn request cannot be decided", (await post(D.page, `/api/approvals/requests/${wd.json.id}/decision`, { action: "approve" })).status() === 409);
-  check("the budget is untouched by withdrawn requests", (await live(R.page)).spentPaise === 5500000 + 500000);
 
   section("13. Who sees what in the lists");
   // A plain requester holds no role that gives full access: they get the forms, the confirmation and their own request page, nothing else.
@@ -353,13 +346,10 @@ try {
   const sExport = await S.page.request.get(`${BASE}/api/approvals/requests/export?screen=hr/all`);
   check("export only holds what the person may see", sExport.status() === 200 && !(await sExport.text()).includes(hrReq.request_no));
 
-  section("14. Reports and budgets are for the DG, viewers and admins");
-  await A.page.goto(BASE + "/approvals/budgets/utilisation");
-  const util = await A.page.locator("main").first().innerText();
-  check("Budget Utilisation shows the branch, the category and 120% used (60,000 of 50,000)", util.includes("ZZ Flow Branch") && util.includes("ZZ Flow Cat") && /120%/.test(util), util.replace(/\s+/g, " ").slice(0, 200));
-  check("the overspent row is marked red", (await A.page.locator("tr[data-level=over]").count()) >= 1);
-  check("the oversight account can open the HR report and Approval Time, the DG alone cannot", (await status(A.page, "/approvals/hr/report")) === 200 && (await status(A.page, "/approvals/hr/approval-time")) === 200 && (await status(D.page, "/approvals/hr/report")) === 404 && (await status(D.page, "/approvals/budgets/utilisation")) === 404);
-  check("an ordinary requester gets a 404 for reports and budgets", (await status(R.page, "/approvals/hr/report")) === 404 && (await status(R.page, "/approvals/budgets/utilisation")) === 404 && (await status(R.page, "/approvals/budgets")) === 404);
+  section("14. Reports are for the DG, viewers and admins");
+  check("the oversight account can open the HR report and Approval Time, the DG alone cannot", (await status(A.page, "/approvals/hr/report")) === 200 && (await status(A.page, "/approvals/hr/approval-time")) === 200 && (await status(D.page, "/approvals/hr/report")) === 404);
+  check("an ordinary requester gets a 404 for the reports and for the budget pages that no longer exist", (await status(R.page, "/approvals/hr/report")) === 404 && (await status(R.page, "/approvals/budgets/utilisation")) === 404 && (await status(R.page, "/approvals/budgets")) === 404);
+  check("the Budgets and Budget Utilisation pages are gone, even for the Support Admin", (await status(A.page, "/approvals/budgets/utilisation")) === 404 && (await status(A.page, "/approvals/budgets")) === 404);
   await A.page.goto(BASE + `/approvals/timeline?id=${hrId}`);
   check("the Approval Timeline shows who did what", /Submitted by ZZ Flow Requester/.test(await A.page.locator("main").first().innerText()) && /Approved by ZZ Flow DG/.test(await A.page.locator("main").first().innerText()));
 
@@ -441,30 +431,28 @@ try {
   check("returning from the inbox works", await toast(dpage, "Request returned for corrections") && await poll(async () => (await sql`select status from apr_requests where id = ${ret2.json.id}`)[0].status === "returned"));
   check("the requester can withdraw a returned request", (await post(R.page, `/api/approvals/requests/${ret2.json.id}/withdraw`, {})).status() === 200 && (await sql`select status from apr_requests where id = ${ret2.json.id}`)[0].status === "withdrawn");
 
-  section("16d. HR requests with an amount follow the budget rules");
+  section("16d. HR requests with an amount follow the budget the requester types");
   await rr.goto(BASE + "/approvals/hr/new");
-  check("the HR form shows no branch or budget fields until an amount is typed", (await rr.locator("#hr-branch").count()) === 0);
+  check("the HR form shows no budget boxes until an amount is typed", (await rr.locator("#hr-allocated").count()) === 0 && (await rr.locator("#hr-used").count()) === 0 && (await rr.locator("#hr-branch").count()) === 0);
   await rr.locator("#hr-category").click();
   await rr.getByRole("option", { name: "Certificate", exact: true }).click();
   await rr.locator("#hr-amount").fill("1,000");
-  check("typing an amount shows Branch Name and Budget category", (await rr.locator("#hr-branch").count()) === 1 && (await rr.locator("#hr-budget-category").count()) === 1);
+  check("typing an amount shows Budget Allocated and Budget Used to fill in, and no branch or category to choose", (await rr.locator("#hr-allocated").isEditable()) && (await rr.locator("#hr-used").isEditable()) && (await rr.locator("#hr-branch").count()) === 0 && (await rr.locator("#hr-budget-category").count()) === 0);
   await rr.getByRole("button", { name: "Submit", exact: true }).click();
-  check("submitting without them shows an inline message and sends nothing", await rr.getByText("Choose a branch.").first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false) && (await rr.getByText("Choose the category the budget is kept under.").count()) >= 1);
-  await rr.locator("#hr-branch").click();
-  await rr.getByRole("option", { name: "ZZ Flow Branch", exact: true }).click();
-  await rr.locator("#hr-budget-category").click();
-  await rr.getByRole("option", { name: "ZZ Flow Cat", exact: true }).click();
-  check("the live budget appears for that branch and category", await poll(async () => (await rr.locator("#hr-available").inputValue()) !== ""));
+  check("submitting without them shows inline messages and sends nothing", await rr.getByText("Enter the budget allocated, with at most 2 decimals.").first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false) && (await rr.getByText("Enter the budget used so far (0 if none), with at most 2 decimals.").count()) >= 1);
+  await rr.locator("#hr-allocated").fill("500");
+  await rr.locator("#hr-used").fill("0");
+  check("the budget left is worked out from what was typed", await poll(async () => (await rr.locator("#hr-available").inputValue()) !== "" && (await rr.locator("#hr-after").inputValue()) !== ""));
   await rr.getByRole("button", { name: "Submit", exact: true }).click();
   await rr.waitForURL(/\/approvals\/requests\/[0-9a-f-]{36}/, { timeout: 30000 }).catch(() => {});
   const hrMoneyId = new URL(rr.url()).pathname.split("/").pop();
-  const [hrMoneyRow] = await sql`select r.status, r.over_budget, r.amount_paise, h.branch_id, h.budget_category_id from apr_requests r join apr_hr_details h on h.request_id = r.id where r.id = ${hrMoneyId}`;
-  check("the HR request keeps its amount, branch and category, and is over budget (the category is already overspent)", hrMoneyRow.status === "pending" && Number(hrMoneyRow.amount_paise) === 100000 && hrMoneyRow.branch_id === branch.id && hrMoneyRow.budget_category_id === cat.id && hrMoneyRow.over_budget === true, JSON.stringify(hrMoneyRow));
+  const [hrMoneyRow] = await sql`select r.status, r.over_budget, r.amount_paise, h.budget_allocated_paise, h.budget_available_paise from apr_requests r join apr_hr_details h on h.request_id = r.id where r.id = ${hrMoneyId}`;
+  check("the HR request keeps its amount and the typed budget, and is over budget (1,000 against 500)", hrMoneyRow.status === "pending" && Number(hrMoneyRow.amount_paise) === 100000 && Number(hrMoneyRow.budget_allocated_paise) === 50000 && Number(hrMoneyRow.budget_available_paise) === 50000 && hrMoneyRow.over_budget === true, JSON.stringify(hrMoneyRow));
   check("its page shows the budget and the over-budget badge", /Budget/.test(await rr.locator("main").first().innerText()) && /over budget/i.test(await rr.locator("main").first().innerText()));
   check("the DG needs a comment to approve it, as for an expenditure", (await post(D.page, `/api/approvals/requests/${hrMoneyId}/decision`, { action: "approve" })).status() === 422);
   check("an HR request without an amount still needs nothing extra", (await submitWith(R.page, { kind: "hr", firstName: "ZZ", lastName: "NoAmount", hrCategoryId: hrCat.id })).status === 201);
-  const noBranch = await submitWith(R.page, { kind: "hr", firstName: "ZZ", lastName: "NoBranch", hrCategoryId: hrCat.id, amountPaise: 100000 });
-  check("an amount without a branch is refused by the server too", noBranch.status === 422 && /branch and a category/.test(noBranch.json.error), noBranch.json.error);
+  const noBudget = await submitWith(R.page, { kind: "hr", firstName: "ZZ", lastName: "NoBudget", hrCategoryId: hrCat.id, amountPaise: 100000 });
+  check("an amount without the budget typed is refused by the server too", noBudget.status === 422 && /budget allocated and the budget used/.test(noBudget.json.error), noBudget.json.error);
 
   section("16e. The first approver and the DG cannot be the same person");
   const hrRule1 = (await sql`select id from apr_approver_rules where request_type = 'hr' and step_no = 1`)[0];
@@ -505,7 +493,7 @@ try {
   check("the request is in Pending, with Approve and Reject on its row", (await S.page.locator("main").first().innerText()).includes(small16.json.requestNo) && (await S.page.locator("tr", { hasText: small16.json.requestNo }).getByRole("button", { name: "Approve" }).count()) === 1 && (await S.page.locator("tr", { hasText: small16.json.requestNo }).getByRole("button", { name: "Reject" }).count()) === 1);
   await S.page.goto(BASE + "/approvals/review/expenditure/approved");
   check("it is not in Approved yet", !(await S.page.locator("main").first().innerText()).includes(small16.json.requestNo));
-  check("the approver decides it from the request page (a comment, because the budget is used up)", (await post(S.page, `/api/approvals/requests/${small16.json.id}/decision`, { action: "approve", comment: "fine" })).status() === 200);
+  check("the approver decides it from the request page (with a comment)", (await post(S.page, `/api/approvals/requests/${small16.json.id}/decision`, { action: "approve", comment: "fine" })).status() === 200);
   await S.page.goto(BASE + "/approvals/review/expenditure/approved");
   check("and now it is in Approved", (await S.page.locator("main").first().innerText()).includes(small16.json.requestNo));
   check("the Expenditure approver has no HR place: its address is not found", (await status(S.page, "/approvals/review/hr/pending")) === 404);

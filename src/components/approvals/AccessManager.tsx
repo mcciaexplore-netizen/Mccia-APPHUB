@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api, useAction } from "@/components/approvals/api";
-import { SearchBox } from "@/components/approvals/ui";
+import { SearchBox } from "@/components/approvals/shared-ui";
 import type { RoleRow } from "@/lib/approvals/roles";
 
 function Switch({ on, locked, label, onChange }: { on: boolean; locked?: boolean; label: string; onChange: (next: boolean) => void }) {

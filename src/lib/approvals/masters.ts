@@ -1,8 +1,8 @@
 import "server-only";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  aprBranches, aprBudgets, aprCategories, aprExpenditureDetails, aprHrCategories, aprPublicationTypes, aprPublications,
+  aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprPublicationTypes, aprPublications,
 } from "@/db/approvals-schema";
 import { recordAudit, type AuditEntity } from "./audit";
 import { ApprovalsError } from "./errors";
@@ -129,9 +129,8 @@ const union = (...lists: string[][]) => {
 };
 
 /**
- * Folds one category into another: requests and budgets move to the target, the source's name and aliases become aliases of the target,
- * and the source is deactivated. Where both have a budget for the same year and branch, the amounts are added together. The statements
- * run in an order that is safe to repeat, so a merge that stopped half way can simply be run again.
+ * Folds one category into another: requests move to the target, the source's name and aliases become aliases of the target, and the
+ * source is deactivated. The statements run in an order that is safe to repeat, so a merge that stopped half way can simply be run again.
  */
 export async function mergeCategories(sourceId: string, targetId: string, actor: ApprovalsUser): Promise<MasterRow> {
   if (sourceId === targetId) throw new ApprovalsError("Pick two different categories.");
@@ -142,22 +141,6 @@ export async function mergeCategories(sourceId: string, targetId: string, actor:
   if (target.mergedIntoId || !target.active) throw new ApprovalsError(`"${target.name}" is inactive, so nothing can be merged into it.`, 409);
 
   await db.update(aprExpenditureDetails).set({ categoryId: targetId }).where(eq(aprExpenditureDetails.categoryId, sourceId));
-
-  const sourceBudgets = await db.select().from(aprBudgets).where(eq(aprBudgets.categoryId, sourceId));
-  for (const b of sourceBudgets) {
-    const [existing] = await db
-      .select({ id: aprBudgets.id })
-      .from(aprBudgets)
-      .where(and(eq(aprBudgets.financialYear, b.financialYear), eq(aprBudgets.branchId, b.branchId), eq(aprBudgets.categoryId, targetId)));
-    if (existing) {
-      // One statement, so the amount is never counted twice or lost.
-      await db.execute(sql`
-        with moved as (delete from ${aprBudgets} where id = ${b.id} returning allocated_paise)
-        update ${aprBudgets} set allocated_paise = allocated_paise + (select allocated_paise from moved) where id = ${existing.id}`);
-    } else {
-      await db.update(aprBudgets).set({ categoryId: targetId }).where(eq(aprBudgets.id, b.id));
-    }
-  }
 
   const aliases = union(target.aliases, [source.name], source.aliases).filter((a) => a.toLowerCase() !== target.name.toLowerCase());
   await db.update(aprCategories).set({ aliases }).where(eq(aprCategories.id, targetId));

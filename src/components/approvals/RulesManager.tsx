@@ -1,7 +1,7 @@
 "use client";
 
 import { api, useAction } from "@/components/approvals/api";
-import { ActiveToggle } from "@/components/approvals/ui";
+import { ActiveToggle } from "@/components/approvals/shared-ui";
 import { formatINR } from "@/lib/approvals/format";
 import type { RuleRow } from "@/lib/approvals/rules";
 
