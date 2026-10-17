@@ -287,6 +287,7 @@ try {
     await A.getByRole("heading", { name: /./ }).first().waitFor({ timeout: 30000 }).catch(() => {});
     check("their profile has no setup link or password reset (the password is in the settings) and the Role box is fixed, but Deactivate and Delete are there", (await A.getByRole("button", { name: "Send setup link" }).count()) === 0 && (await A.getByRole("button", { name: /Reset password/ }).count()) === 0
       && (await A.getByRole("button", { name: "Deactivate" }).count()) === 1 && (await A.getByRole("button", { name: "Delete" }).count()) === 1 && (await A.getByLabel("Role").isDisabled()));
+    check("and it says why the Role box is greyed out", /put back at every sign-in/.test(await main(A)));
     await E.goto(BASE + "/change-password");
     check("they are told their password is changed in the settings", /environment settings/i.test(await E.locator("body").innerText()));
   } else {
@@ -313,8 +314,12 @@ try {
       check("the directory shows HR as a User, marked Main account · password in settings", /user/i.test(hrRow) && /main account · password in settings/i.test(hrRow), hrRow.replace(/\s+/g, " ").slice(0, 140));
       await visit(A, `/administrator/users/${hrId}`, ADMIN_PW);
       await A.getByRole("heading", { name: /./ }).first().waitFor({ timeout: 30000 }).catch(() => {});
-      check("HR's profile has no password reset or setup link and the Role box is fixed, but Deactivate and Delete are there; applications can still be assigned", (await A.getByRole("button", { name: /Reset password/ }).count()) === 0 && (await A.getByRole("button", { name: "Send setup link" }).count()) === 0
-        && (await A.getByRole("button", { name: "Deactivate" }).count()) === 1 && (await A.getByRole("button", { name: "Delete" }).count()) === 1 && (await A.getByLabel("Role").isDisabled()) && (await A.getByRole("button", { name: "Save access" }).count()) === 1);
+      check("HR's profile has no password reset or setup link, but Deactivate, Delete and the Role box work (the Support Admin can give HR another role); applications can still be assigned", (await A.getByRole("button", { name: /Reset password/ }).count()) === 0 && (await A.getByRole("button", { name: "Send setup link" }).count()) === 0
+        && (await A.getByRole("button", { name: "Deactivate" }).count()) === 1 && (await A.getByRole("button", { name: "Delete" }).count()) === 1 && (await A.getByLabel("Role").isEnabled()) && (await A.getByRole("button", { name: "Save access" }).count()) === 1);
+      await A.getByLabel("Role").selectOption("admin");
+      await A.getByRole("button", { name: "Save details" }).click();
+      check("the Support Admin can give HR another role, and it is stored", await toast(A, "Details saved") && await poll(async () => (await sql`select role from users where id = ${hrId}`)[0].role === "admin"));
+      await sql`update users set role = 'member', admin_areas = '{}' where id = ${hrId}`;
       // The rules are filled from the three accounts the first time: start from empty rules and no marker.
       await sql`update apr_approver_rules set approver_user_ids = '{}'`;
       await sql`delete from apr_settings where key = 'env_rules_seeded'`;

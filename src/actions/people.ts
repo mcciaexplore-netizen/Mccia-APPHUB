@@ -9,7 +9,7 @@ import { applyAccess, previewAccess, type AccessMode, MAX_PEOPLE } from "@/lib/a
 import { createAccount } from "@/lib/accounts";
 import { adminAction, staffAction, UserError } from "@/lib/action";
 import { writeAudit } from "@/lib/audit";
-import { isEnvAdmin } from "@/lib/auth";
+import { envRoleIsFixed, isEnvAdmin } from "@/lib/auth";
 import { domainsLabel, isEmailAllowed } from "@/lib/domains";
 import { BATCH_ROWS, checkImport, commitBatch, type ImportPolicy } from "@/lib/import";
 import { deliverInvite, hashToken, sendInvite } from "@/lib/invites";
@@ -121,7 +121,7 @@ export async function updatePerson(id: string, input: unknown) {
       { branchId: cur.branchId, teamId: cur.teamId, managerId: cur.reportingManagerId },
     );
     const newRole = v.role ?? cur.role;
-    if (newRole !== cur.role && isEnvAdmin(cur.email)) throw new UserError("This account's role is set in the environment settings and cannot be changed here.");
+    if (newRole !== cur.role && envRoleIsFixed(cur.email)) throw new UserError("This account is the Support Admin or the Super Admin set in the environment settings, so its role is put back at every sign-in. Change it there, in Vercel.");
     if (newRole !== cur.role && !canChangeRole(admin, cur)) throw new UserError("That person's role cannot be changed here. Only the Support Admin changes roles.");
     const before = await orgNames({ branchId: cur.branchId, teamId: cur.teamId, managerId: cur.reportingManagerId });
     const after = await orgNames(org);

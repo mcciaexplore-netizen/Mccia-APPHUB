@@ -462,7 +462,11 @@ try {
   check("all four count as environment accounts", [HR_EMAIL, EXP_EMAIL, SUPER_EMAIL, "zz-hub-env-admin@example.com"].every(isEnvAdmin));
   await db.update(S.users).set({ role: "admin", adminAreas: ["people"], isActive: false }).where(eq(S.users.id, hrUser!.id));
   const hrFixed = await authenticate(HR_EMAIL, "Env-hr-pass-1");
-  check("they cannot be locked out or promoted: signing in puts HR back to an ordinary, active user with no Admin areas", hrFixed?.role === "member" && hrFixed.isActive === true && hrFixed.adminAreas.length === 0);
+  check("they cannot be locked out: signing in switches HR on again, but keeps the role and Admin areas the Support Admin gave them", hrFixed?.role === "admin" && hrFixed.isActive === true && hrFixed.adminAreas.join() === "people");
+  await db.update(S.users).set({ role: "member", adminAreas: [] }).where(eq(S.users.id, hrUser!.id)); // back to an ordinary user for what follows
+  await db.update(S.users).set({ role: "member" }).where(eq(S.users.email, SUPER_EMAIL));
+  check("the Super Admin and the Support Admin are different: their role is put back at every sign-in", (await authenticate(SUPER_EMAIL, "Env-super-pass-1"))?.role === "super_admin");
+  check("which the profile knows, so the Role box is greyed out for them only", (await getPerson(admin, hrUser!.id))?.roleFixed === false && (await getPerson(admin, (await rowOf(SUPER_EMAIL))!.id))?.roleFixed === true);
   const hrPerson = await getPerson(admin, hrUser!.id);
   check("the directory marks HR as a main account whose password is in the settings", hrPerson?.mainAdmin === true && hrPerson.passwordInSettings === true && hrPerson.role === "member");
   check("the Support Admin can give HR applications on their profile, like anyone's", (await applyAccess(admin, { userIds: [hrUser!.id], appIds: [aTally.id], mode: "add", source: "test" })).changed.length === 1 && (await grantsOf(hrUser!.id)).includes(aTally.id));

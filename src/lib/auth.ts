@@ -54,7 +54,13 @@ export const envAccountEmail = (key: EnvKey): string | null => envAccounts().fin
 export const userFingerprint = (u: Pick<User, "email" | "passwordHash">) =>
   createHash("sha256").update(isEnvAdmin(u.email) ? `env:${envAccount(u.email)?.password ?? ""}` : (u.passwordHash ?? "")).digest("base64url").slice(0, 12);
 
-/** Makes sure a main account has a row (the first sign-in creates it), holds its role, and is active. */
+/**
+ * Whether the settings decide an account's role for good: the Support Admin and the Super Admin are those roles by definition, so signing in
+ * puts them back. HR and Expenditure start as ordinary users, and after that the Support Admin may give them another role.
+ */
+export const envRoleIsFixed = (email: string) => { const a = envAccount(email); return !!a && (a.key === "support" || a.key === "super"); };
+
+/** Makes sure a main account has a row (the first sign-in creates it), holds its role if the settings fix it, and is active. */
 async function ensureEnvAdmin(acc: EnvAccount): Promise<User> {
   const [u] = await db.select().from(users).where(eq(users.email, acc.email));
   if (!u) {
@@ -65,8 +71,9 @@ async function ensureEnvAdmin(acc: EnvAccount): Promise<User> {
     const [created] = await db.select().from(users).where(eq(users.email, acc.email));
     return created;
   }
-  if (u.role !== acc.role || !u.isActive || u.status !== "approved") {
-    const [fixed] = await db.update(users).set({ role: acc.role, adminAreas: [], isActive: true, status: "approved" }).where(eq(users.id, u.id)).returning();
+  const fixedRole = acc.key === "support" || acc.key === "super";
+  if ((fixedRole && u.role !== acc.role) || !u.isActive || u.status !== "approved") {
+    const [fixed] = await db.update(users).set({ ...(fixedRole ? { role: acc.role, adminAreas: [] } : {}), isActive: true, status: "approved" }).where(eq(users.id, u.id)).returning();
     return fixed;
   }
   return u;

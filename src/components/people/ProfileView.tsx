@@ -132,12 +132,15 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
             <Field label="Reporting manager"><select className="input" value={f.managerId} onChange={(e) => set("managerId", e.target.value)} disabled={!caps.editPerson}><option value="">None</option>{options.managers.filter((m) => m.id !== person.id).map((d) => <option key={d.id} value={d.id}>{d.name} ({d.email})</option>)}</select></Field>
             <Field label="Role">
               {isHeadAdmin ? <input className="input" value={roleLabel[person.role]} disabled aria-label="Role" /> : (
-                <select className="input" value={f.role} onChange={(e) => set("role", e.target.value)} disabled={!caps.changeRole || self || person.passwordInSettings} aria-label="Role"><option value="member">User</option><option value="dept_lead">Team manager</option><option value="admin">Admin</option><option value="super_admin">Super admin</option></select>
+                <select className="input" value={f.role} onChange={(e) => set("role", e.target.value)} disabled={!caps.changeRole || self || person.roleFixed} aria-label="Role"><option value="member">User</option><option value="dept_lead">Team manager</option><option value="admin">Admin</option><option value="super_admin">Super admin</option></select>
               )}
             </Field>
           </div>
           {!caps.editPerson && <p className="text-xs text-subtle">You cannot change these details.</p>}
           {caps.editPerson && !caps.changeRole && <p className="text-xs text-subtle">Only the Support Admin can change a role.</p>}
+          {caps.changeRole && !isHeadAdmin && self && <p className="text-xs text-subtle">You cannot change your own role.</p>}
+          {caps.changeRole && !isHeadAdmin && !self && person.roleFixed && <p className="text-xs text-subtle">This account is the Support Admin or the Super Admin set in the environment settings, so its role is put back at every sign-in. To change it, change it in Vercel.</p>}
+          {caps.changeRole && isHeadAdmin && <p className="text-xs text-subtle">A Support Admin&apos;s role cannot be changed here.</p>}
           {caps.editPerson && <button className="btn btn-primary btn-sm" disabled={pending}>Save details</button>}
         </form>
 

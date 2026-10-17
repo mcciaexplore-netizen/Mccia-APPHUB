@@ -4,7 +4,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { activityLog, apps, branches, teams, userAppAccess, userInvites, users, type Role, type User } from "@/db/schema";
 import { accountStatus, type AccountStatus } from "@/lib/account-status";
-import { isEnvAdmin } from "@/lib/auth";
+import { envRoleIsFixed, isEnvAdmin } from "@/lib/auth";
 import { MAX_PEOPLE } from "@/lib/access-ops";
 import { canViewPerson, hasArea, isAdminRole, isSuper, isTeamManager, type Actor } from "@/lib/rbac";
 import { UserError } from "@/lib/user-error";
@@ -155,7 +155,7 @@ export async function peopleIds(actor: Actor, spec: TargetSpec): Promise<string[
 }
 
 export type PersonDetail = {
-  id: string; name: string; email: string; designation: string | null; phone: string | null; role: Role; adminAreas: string[]; isActive: boolean; status: AccountStatus; mainAdmin: boolean; passwordInSettings: boolean;
+  id: string; name: string; email: string; designation: string | null; phone: string | null; role: Role; adminAreas: string[]; isActive: boolean; status: AccountStatus; mainAdmin: boolean; passwordInSettings: boolean; /** The settings put this account's role back at every sign-in (the Support Admin and the Super Admin). */ roleFixed: boolean;
   branchId: string | null; teamId: string | null; managerId: string | null;
   branch: string | null; team: string | null; manager: string | null;
   lastLoginAt: Date | null; createdAt: Date; appIds: string[];
@@ -187,7 +187,7 @@ export async function getPerson(actor: User, id: string): Promise<PersonDetail |
   const passwordInSettings = isEnvAdmin(u.email);
   const mainAdmin = passwordInSettings || u.role === "super_admin";
   return {
-    id: u.id, name: u.name, email: u.email, designation: u.designation, phone: u.phone, role: u.role, adminAreas: u.adminAreas, isActive: u.isActive, mainAdmin, passwordInSettings,
+    id: u.id, name: u.name, email: u.email, designation: u.designation, phone: u.phone, role: u.role, adminAreas: u.adminAreas, isActive: u.isActive, mainAdmin, passwordInSettings, roleFixed: envRoleIsFixed(u.email),
     status: accountStatus({ isActive: u.isActive, hasPassword: !!u.passwordHash, passwordInSettings }),
     branchId: u.branchId, teamId: u.teamId, managerId: u.reportingManagerId,
     branch: row.branch, team: row.team, manager: row.manager,
