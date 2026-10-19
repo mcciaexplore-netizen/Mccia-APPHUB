@@ -1,12 +1,21 @@
+import Link from "next/link";
 import { PeopleDirectory } from "@/components/people/PeopleDirectory";
-import { loadDirectory } from "@/lib/people-page";
+import { loadDirectory, VIEW_ONLY } from "@/lib/people-page";
 import { requireArea } from "@/lib/permissions";
 
-export const metadata = { title: "Users & Access · MCCIA App Hub" };
-// A change that touches hundreds of people, or a setup-link batch, is given room to finish.
-export const maxDuration = 60;
+export const metadata = { title: "Users · MCCIA App Hub" };
 
+/** Users: everyone, searchable and filterable, to look at. Changes are made in User Administration. */
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const me = await requireArea("people");
-  return <PeopleDirectory {...await loadDirectory(me, await searchParams, "/administrator/users")} />;
+  const props = await loadDirectory(me, await searchParams, "/administrator/users");
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted">Everyone who can sign in. Open a person to see their details and applications.</p>
+        <Link href="/administrator/manage" className="btn btn-primary btn-sm">Manage users</Link>
+      </div>
+      <PeopleDirectory {...props} caps={VIEW_ONLY} />
+    </div>
+  );
 }

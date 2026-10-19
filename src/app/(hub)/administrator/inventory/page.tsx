@@ -5,7 +5,7 @@ import { isApprovalsUrl } from "@/lib/approvals/approvals.manifest";
 import { requireArea } from "@/lib/permissions";
 import { InventoryView } from "./InventoryView";
 
-export const metadata = { title: "Application inventory · MCCIA App Hub" };
+export const metadata = { title: "Applications · MCCIA App Hub" };
 // "Check all" visits each external address, a few at a time.
 export const maxDuration = 60;
 

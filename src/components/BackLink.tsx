@@ -28,7 +28,7 @@ export function BackLink({ href, label = "Back", history = false }: { href: stri
  * The back link on Administrator's own section pages (Dashboard, Users, ...), which goes home. Pages inside a section that already have
  * their own back link (a person, a category, an application's access, bulk add) get none here, so there is never two.
  */
-const HAS_OWN_BACK = /^\/administrator\/(users\/import|users\/[0-9a-f-]{36}|departments\/[0-9a-f-]{36}|access\/app\/[0-9a-f-]{36})/;
+const HAS_OWN_BACK = /^\/administrator\/((users|manage)\/import|(users|manage)\/[0-9a-f-]{36}|departments\/[0-9a-f-]{36}|access\/app\/[0-9a-f-]{36})/;
 
 export function AdminBackLink() {
   const pathname = usePathname();

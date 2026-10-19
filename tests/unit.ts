@@ -104,7 +104,7 @@ eq("menu: admin-only item is hidden from a requester and shown to an admin", [ca
 eq("full access: a plain requester has none, each of the four roles has it", [hasFullAccess(["requester"]), ...FULL_ACCESS_ROLES.map((r) => hasFullAccess(["requester", r]))], [false, true, true, true, true]);
 const pagesOf = (roles: ApprovalsRole[], app: "hr" | "exp") =>
   approvalsApps.find((a) => a.key === app)!.nav.flatMap((e) => (isGroup(e) ? e.items : [e])).filter((i) => canSee(i, roles)).map((i) => i.label);
-eq("a plain requester sees the forms only: HR and Expenditure in HR Approval, Expenses in Expenditure", [pagesOf(["requester"], "hr"), pagesOf(["requester"], "exp")], [["HR", "Expenditure"], ["Expenses"]]);
+eq("a plain requester sees the forms and their own Approved Forms: HR, Expenditure and Approved Forms in HR Approval, Expenses in Expenditure", [pagesOf(["requester"], "hr"), pagesOf(["requester"], "exp")], [["HR", "Expenditure", "Approved Forms"], ["Expenses"]]);
 eq("menu: in Expenditure an approver is offered 'Waiting for Me', an oversight role 'All Pending', and nobody gets the old 'Pending' that showed everything to everyone", [pagesOf(["requester", "approver"], "exp").includes("Waiting for Me"), pagesOf(["requester", "approver"], "exp").includes("All Pending"), pagesOf(["requester", "viewer"], "exp").includes("All Pending"), pagesOf(["requester", "viewer"], "exp").includes("Waiting for Me"), pagesOf(["requester", "approvals_admin"], "exp").includes("Pending")], [true, false, true, false, false]);
 eq("screens: 'expenses/pending' is each approver's own list (only what waits for them, decided in place) and 'expenses/waiting' is the list of every pending small expense", [screenFor(["expenses", "pending"])?.waitingForMe, screenFor(["expenses", "pending"])?.quickDecide, screenFor(["expenses", "waiting"])?.waitingForMe, screenFor(["expenses", "waiting"])?.statuses, screenFor(["expenses", "waiting"])?.types], [true, true, undefined, ["pending"], ["expenditure_small"]]);
 eq("full access still has the forms, and more", [FULL_ACCESS_ROLES.every((r) => pagesOf(["requester", r], "hr").includes("HR") && pagesOf(["requester", r], "exp").includes("Expenses")), pagesOf(["requester", "viewer"], "hr").length > 2], [true, true]);
@@ -294,12 +294,12 @@ eq("rbac: an Admin with Users & access may hand out any application, one without
 eq("rbac: Admin and Super Admin can be given through the screens, only by the Support Admin (and the Support Admin role never)", [[...PROMOTABLE_ROLES], [...ASSIGNABLE_ROLES].includes("head_admin" as never)], [["admin", "super_admin"], false]);
 eq("rbac: the areas an Admin can be given", [...ADMIN_AREAS], ["people", "import", "org", "apps", "audit", "activity"]);
 eq("rbac: a plain user and a Team manager never open Administrator", [canAdminister(USER), canAdminister(TM)], [false, false]);
-eq("tabs: the Support Admin sees every tab: Dashboard, Users, Approval Forms, Notification Panel and Activity Log", adminTabsFor(ADMIN).map((t) => t.label),
-  ["Dashboard", "Users", "Approval Forms", "Notification Panel", "Activity Log"]);
-eq("tabs: an Admin sees the Dashboard, the Notification Panel and only the tabs of the areas switched on, never Approval Forms", [adminTabsFor(A_NONE).map((t) => t.label), adminTabsFor(adminWith("people")).map((t) => t.label), adminTabsFor(adminWith("apps", "activity")).map((t) => t.label)],
-  [["Dashboard", "Notification Panel"], ["Dashboard", "Users", "Notification Panel"], ["Dashboard", "Notification Panel", "Activity Log"]]);
-eq("tabs: Users opens on the first page of it the Admin may use", [adminTabsFor(A_IMPORT).find((t) => t.label === "Users")?.href, adminTabsFor(A_AUDIT).find((t) => t.label === "Users")?.href, adminTabsFor(adminWith("org")).find((t) => t.label === "Users")?.href],
-  ["/administrator/users/import", "/administrator/users/audit", "/administrator/users/org"]);
+eq("tabs: the Support Admin sees the five sections and, below them, Approval Forms and the Notification Panel", [adminTabsFor(ADMIN).filter((t) => t.group === "main").map((t) => t.label), adminTabsFor(ADMIN).filter((t) => t.group === "settings").map((t) => t.label)],
+  [["Dashboard", "Users", "Applications", "User Administration", "Activity Log"], ["Approval Forms", "Notification Panel"]]);
+eq("tabs: an Admin sees the Dashboard, the Notification Panel and only the sections of the areas switched on, never Approval Forms", [adminTabsFor(A_NONE).map((t) => t.label), adminTabsFor(adminWith("people")).map((t) => t.label), adminTabsFor(adminWith("apps", "activity")).map((t) => t.label)],
+  [["Dashboard", "Notification Panel"], ["Dashboard", "Users", "User Administration", "Notification Panel"], ["Dashboard", "Applications", "Activity Log", "Notification Panel"]]);
+eq("tabs: User Administration and the Activity Log open on the first page the Admin may use", [adminTabsFor(A_IMPORT).find((t) => t.label === "User Administration")?.href, adminTabsFor(adminWith("org")).find((t) => t.label === "User Administration")?.href, adminTabsFor(A_AUDIT).find((t) => t.label === "Activity Log")?.href],
+  ["/administrator/users/import", "/administrator/users/org", "/administrator/activity?tab=changes"]);
 const own = new Set(["app1", "app2"]);
 eq("rbac: a team manager can hand out only the applications they hold", [
   grantableApps(ADMIN, own), firstUngrantable(grantableApps(TM, own), ["app1", "app2"]), firstUngrantable(grantableApps(TM, own), ["app1", "app9"]), firstUngrantable(grantableApps(USER, own), ["app1"]),

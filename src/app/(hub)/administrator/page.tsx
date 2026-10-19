@@ -75,8 +75,8 @@ export default async function Page() {
         <section aria-label="Approvals" className="space-y-3">
           <div className="flex items-center justify-between"><h2 className="text-xl">Approvals</h2><Link href="/approvals/admin/audit" className="text-sm text-primary hover:underline"><ClipboardCheck size={14} className="mr-1 inline" />HR and Expenditure approvals</Link></div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <Card label="Pending HR approvals" value={approvals.hr.pending} href="/approvals/hr/pending" tone="warn" />
-            <Card label="Pending expenditure approvals" value={approvals.large.pending + approvals.small.pending} href="/approvals/admin/audit" tone="warn" />
+            <Card label="Pending HR approvals" value={approvals.hr.pending} href="/approvals/review/hr/pending" tone="warn" />
+            <Card label="Pending expenditure approvals" value={approvals.large.pending + approvals.small.pending} href="/approvals/review/expenditure/pending" tone="warn" />
             <Card label="Pending, all" value={approvals.hr.pending + approvals.large.pending + approvals.small.pending} href="/approvals/admin/audit" />
             <Card label="Approved, all" value={approvals.hr.approved + approvals.large.approved + approvals.small.approved} href="/approvals/admin/audit" />
             <Card label="Rejected, all" value={approvals.hr.rejected + approvals.large.rejected + approvals.small.rejected} href="/approvals/admin/audit" />
@@ -91,8 +91,8 @@ export default async function Page() {
             <ul className="space-y-2 text-sm">{attention.map((a) => <li key={a.text}><Link href={a.href} className="text-primary hover:underline">{a.text}</Link></li>)}</ul>
           )}
           <div className="flex flex-wrap gap-2 border-t border-line pt-4">
-            <Link href="/administrator/users/import" className="btn btn-primary btn-sm"><Upload size={14} /> Bulk add users</Link>
-            <Link href="/administrator/users" className="btn btn-ghost btn-sm"><Users size={14} /> Users &amp; Access</Link>
+            <Link href="/administrator/manage/import" className="btn btn-primary btn-sm"><Upload size={14} /> Bulk add users</Link>
+            <Link href="/administrator/manage" className="btn btn-ghost btn-sm"><Users size={14} /> User Administration</Link>
             <Link href="/administrator/departments" className="btn btn-ghost btn-sm"><Layers size={14} /> Application categories</Link>
             <Link href="/administrator/users/org" className="btn btn-ghost btn-sm"><Network size={14} /> Branches &amp; teams ({s.branches} · {s.teams})</Link>
             <Link href="/administrator/inventory" className="btn btn-ghost btn-sm"><ClipboardList size={14} /> Application inventory</Link>
@@ -100,7 +100,7 @@ export default async function Page() {
         </section>
         {recent && (
           <section className="glass !rounded-md space-y-3 p-5 sm:p-6" aria-label="Recent changes">
-            <div className="flex items-center justify-between"><h2 className="text-xl">Recent changes</h2><Link href="/administrator/users/audit" className="text-sm text-primary hover:underline"><ShieldCheck size={14} className="mr-1 inline" />Audit log</Link></div>
+            <div className="flex items-center justify-between"><h2 className="text-xl">Recent changes</h2><Link href="/administrator/activity?tab=changes" className="text-sm text-primary hover:underline"><ShieldCheck size={14} className="mr-1 inline" />Audit log</Link></div>
             {recent.rows.length === 0 ? <p className="text-sm text-muted">No changes recorded yet.</p> : (
               <ul className="divide-y divide-line text-sm">{recent.rows.map((r) => (
                 <li key={r.id} className="flex flex-wrap justify-between gap-2 py-2"><span><b>{r.actorName}</b> <span className="text-muted">{r.action}</span>{r.targetLabel && <> · {r.targetLabel}</>}</span><span className="text-xs text-muted">{formatIST(r.at)}</span></li>

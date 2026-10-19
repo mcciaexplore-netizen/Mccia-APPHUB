@@ -105,7 +105,7 @@ export function InventoryView({ rows, departments }: { rows: Row[]; departments:
                   <button className="chip !p-1.5 text-brand-red" aria-label={`Delete ${r.name}`} title="Delete" disabled={pending}
                     onClick={async () => {
                       if (!(await confirm({ title: "Delete this application?", confirmLabel: "Delete", danger: true,
-                        message: `“${r.name}” will be removed for good. Everyone loses access to it and any template drops it. Launches already logged stay in the activity log as a deleted application. To keep it but stop people opening it, set its label to Unavailable instead.` }))) return;
+                        message: `“${r.name}” will be removed for good. ${r.people === 0 ? "Nobody has been given it, so nobody loses access." : `${r.people} ${r.people === 1 ? "person loses" : "people lose"} access to it straight away.`} Any access template drops it. Launches already logged stay in the activity log as a deleted application. To keep it but stop people opening it, set its label to Unavailable instead.` }))) return;
                       start(async () => { const x = await deleteApp(r.id); if (x.ok) { toast.success("Application deleted"); router.refresh(); } else toast.error(x.error); });
                     }}><Trash2 size={14} /></button>
                 </div></td>

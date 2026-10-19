@@ -87,3 +87,6 @@ export async function loadProfile(actor: User, id: string, base: string) {
     audit: auditRows ? auditRows.rows.map((r) => ({ id: r.id, at: r.at, actorName: r.actorName, action: r.action, details: r.details })) : null,
   };
 }
+
+/** The buttons of the people screens all switched off: for the Users section, where people are looked at and changed elsewhere. */
+export const VIEW_ONLY = { create: false, importPeople: false, changeRole: false, toggleActive: false, remove: false, invite: false, assign: false } as const;

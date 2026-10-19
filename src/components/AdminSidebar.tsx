@@ -1,0 +1,50 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Activity, AppWindow, Bell, ClipboardCheck, LayoutDashboard, Settings2, UserCog, Users } from "lucide-react";
+import type { AdminTab } from "@/lib/admin-tabs";
+
+const ICON: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  Dashboard: LayoutDashboard, Users, Applications: AppWindow, "User Administration": UserCog, "Activity Log": Activity, "Approval Forms": ClipboardCheck, "Notification Panel": Bell,
+};
+
+const row = (active: boolean) =>
+  `flex min-h-10 items-center gap-3 border-l-2 px-4 text-sm transition-colors ${active ? "border-[#2a6b7c] bg-[#f0f7f9] font-semibold text-primary" : "border-transparent text-ink hover:bg-alt"}`;
+
+/** The Administrator sidebar: its sections, then the settings, then (for the Support Admin) the Approval System's settings. */
+export function AdminSidebar({ tabs, approvalSettings }: { tabs: AdminTab[]; approvalSettings: { label: string; href: string }[] }) {
+  const pathname = usePathname();
+  const tab = useSearchParams().get("tab");
+  const isActive = (t: { href: string; exact?: boolean }) => {
+    const [path, query] = t.href.split("?");
+    if (t.exact) return pathname === path;
+    if (query) return pathname === path && tab === new URLSearchParams(query).get("tab");
+    return pathname === path || pathname.startsWith(`${path}/`);
+  };
+  const line = (t: AdminTab | { label: string; href: string }, icon = true) => {
+    const Icon = icon ? ICON[t.label] ?? Settings2 : null;
+    const active = isActive(t);
+    return (
+      <li key={t.href}>
+        <Link href={t.href} aria-current={active ? "page" : undefined} className={row(active)}>
+          {Icon && <Icon size={16} className="shrink-0" />}<span className="py-2">{t.label}</span>
+        </Link>
+      </li>
+    );
+  };
+  const heading = "mt-3 border-t border-line px-4 pb-2 pt-4 text-[0.66rem] font-bold uppercase tracking-widest text-subtle";
+  return (
+    <nav aria-label="Administrator" className="rounded-[14px] border border-gray-200 bg-white py-3">
+      <ul>{tabs.filter((t) => t.group === "main").map((t) => line(t))}</ul>
+      <p className={heading}>Settings</p>
+      <ul>{tabs.filter((t) => t.group === "settings").map((t) => line(t))}</ul>
+      {approvalSettings.length > 0 && (
+        <>
+          <p className={heading}>Approval System settings</p>
+          <ul>{approvalSettings.map((t) => line(t, false))}</ul>
+        </>
+      )}
+    </nav>
+  );
+}
