@@ -24,5 +24,5 @@ export default async function HomePage() {
       : []),
   ];
   // Only ids, names, descriptions and icons are sent. App URLs never leave the server except through /go.
-  return <div className="page-enter"><HomeClient cards={cards} apps={apps.map(({ departmentId: _d, ...a }) => a)} isAdmin={isSuper(user)} /></div>;
+  return <div className="page-enter"><HomeClient name={user.name} cards={cards} apps={apps.map(({ departmentId: _d, ...a }) => a)} isAdmin={isSuper(user)} /></div>;
 }
