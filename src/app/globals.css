@@ -62,11 +62,11 @@
   --color-canvas: var(--c-canvas);
   --color-nav-active: var(--c-nav-active);
 
-  --radius-sm: 0px;
-  --radius-btn: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-pill: 0px;
+  --radius-sm: 6px;
+  --radius-btn: 10px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 99px;
 
   --shadow-card: 0 6px 24px rgba(15, 23, 42, 0.08);
   --shadow-card-hover: 0 14px 34px rgba(15, 23, 42, 0.13);
@@ -151,15 +151,23 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
   }
   .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none !important; }
   .btn-sm { padding: 0.45rem 0.9rem; font-size: 0.78rem; }
-  .btn-primary { background: var(--grad-primary); color: var(--c-white); box-shadow: var(--shadow-btn); }
-  .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: var(--shadow-btn-hover); }
-  .btn-ghost {
-    background: rgba(255, 255, 255, 0.6); border-color: var(--c-border);
-    color: var(--c-muted); backdrop-filter: blur(8px);
+  /* Buttons look raised: a top-to-bottom gradient, a light edge on top and a soft shadow under them; they lift on hover and press in on click. */
+  .btn-primary {
+    background: linear-gradient(180deg, #3a8ba0 0%, #2a6b7c 55%, #235c6b 100%); color: var(--c-white);
+    border-color: #215867; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 4px 12px rgba(42, 107, 124, 0.3);
   }
-  .btn-ghost:hover:not(:disabled) { border-color: var(--c-primary); color: var(--c-primary); transform: translateY(-2px); }
-  .btn-danger { background: var(--c-red-tint); border-color: var(--c-red-tint-border); color: var(--c-red); }
-  .btn-danger:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--c-red); }
+  .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 20px rgba(42, 107, 124, 0.38); }
+  .btn-ghost {
+    background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%); border-color: var(--c-border);
+    color: var(--c-muted); box-shadow: inset 0 1px 0 #fff, 0 2px 6px rgba(15, 23, 42, 0.08);
+  }
+  .btn-ghost:hover:not(:disabled) { border-color: var(--c-primary); color: var(--c-primary); transform: translateY(-2px); box-shadow: inset 0 1px 0 #fff, 0 6px 14px rgba(15, 23, 42, 0.12); }
+  .btn-danger {
+    background: linear-gradient(180deg, #fff5f5 0%, #fde2e2 100%); border-color: var(--c-red-tint-border); color: var(--c-red);
+    box-shadow: inset 0 1px 0 #fff, 0 2px 6px rgba(239, 68, 68, 0.12);
+  }
+  .btn-danger:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--c-red); box-shadow: inset 0 1px 0 #fff, 0 6px 14px rgba(239, 68, 68, 0.2); }
+  .btn:active:not(:disabled) { transform: translateY(0) scale(0.98); }
 
   .input {
     width: 100%; background: var(--c-white); border: 1px solid var(--c-border);
@@ -180,7 +188,7 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
   .badge-neutral { background: var(--c-alt); border-color: var(--c-border); color: var(--c-subtle); }
 
   .chip {
-    background: var(--c-white); border: 1px solid var(--c-border); border-radius: 0;
+    background: var(--c-white); border: 1px solid var(--c-border); border-radius: var(--radius-sm);
     padding: 0.25rem 0.6rem; font-size: 0.72rem; transition: all 0.2s var(--ease);
   }
   .chip:hover { background: var(--c-blue-tint); border-color: var(--c-blue-tint-border); }

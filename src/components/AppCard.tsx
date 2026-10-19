@@ -27,7 +27,7 @@ export function AppCard({ app, deptName, index = 0, canOpenUnavailable = false, 
 }) {
   const status = app.status ?? "active";
   const blocked = status === "unavailable" && !canOpenUnavailable;
-  const cls = `tile-${palette(app.id)} group flex min-h-44 animate-rise flex-col rounded-[10px] border border-gray-200 bg-white p-6 transition-all duration-200 ${blocked ? "opacity-55" : "hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-[0_6px_20px_rgba(15,23,42,0.08)]"}`;
+  const cls = `tile-${palette(app.id)} group flex min-h-44 animate-rise flex-col rounded-[14px] border border-gray-200 bg-white p-6 transition-all duration-200 ${blocked ? "opacity-55" : "hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-[0_6px_20px_rgba(15,23,42,0.08)]"}`;
   const note = deptName ?? (STATUS[status] || app.description);
   const inner = (
     <>

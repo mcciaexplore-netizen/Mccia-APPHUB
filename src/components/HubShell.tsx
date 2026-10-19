@@ -26,7 +26,7 @@ export function HubShell({ user, unread, children }: { user: ShellUser | null; /
 
   return (
     <div className="min-h-screen bg-canvas">
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-line bg-white px-4 sm:px-8">
+      <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-line bg-white px-5 sm:px-8 lg:px-12">
         <Link href="/" className="block leading-tight">
           <span className="block text-xl font-extrabold tracking-tight text-ink">MCCIA</span>
           <span className="block text-[0.62rem] font-bold uppercase tracking-widest text-primary">App Hub</span>
@@ -43,7 +43,7 @@ export function HubShell({ user, unread, children }: { user: ShellUser | null; /
           </div>
         ) : null}
       </header>
-      <main className="mx-auto max-w-7xl p-4 pt-6 sm:p-8">{children}</main>
+      <main className="px-5 py-6 sm:px-8 sm:py-8 lg:px-12">{children}</main>
     </div>
   );
 }

@@ -33,10 +33,10 @@ export function HomeClient({ name, cards, apps, isAdmin }: { name: string; cards
               <button type="button" aria-label="Close search" onClick={() => { setQ(""); setSearching(false); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-subtle hover:text-ink"><X size={15} /></button>
             </label>
           ) : (
-            <button type="button" aria-label="Search applications" onClick={() => setSearching(true)} className="grid h-10 w-10 shrink-0 place-items-center rounded-[6px] border border-gray-200 bg-white text-muted hover:text-primary"><Search size={16} /></button>
+            <button type="button" aria-label="Search applications" onClick={() => setSearching(true)} className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-gray-200 bg-gradient-to-b from-white to-slate-50 text-muted shadow-[0_2px_6px_rgba(15,23,42,0.08)] hover:text-primary"><Search size={16} /></button>
           )}
           <label className="sr-only" htmlFor="home-filter">Show</label>
-          <select id="home-filter" value={filter} onChange={(e) => setFilter(e.target.value as Filter)} className="input !h-10 !w-56 !rounded-[6px] !py-0">
+          <select id="home-filter" value={filter} onChange={(e) => setFilter(e.target.value as Filter)} className="input !h-10 !w-56 !py-0">
             <option value="all">All apps</option>
             <option value="hub">Hub features</option>
             <option value="apps">Applications</option>
