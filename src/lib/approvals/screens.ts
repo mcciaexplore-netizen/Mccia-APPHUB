@@ -68,6 +68,9 @@ const LIST_SCREENS: Record<string, ListScreen> = {
   "my/pending": { title: "Pending Approvals", intro: "Forms waiting for your decision.", statuses: ["pending"], waitingForMe: true, quickDecide: true, categories: "all" },
   "my/recommended": { title: "Recommended", intro: "Forms you recommended to the Director General, and where each one stands now.", recommendedByMe: true, categories: "all" },
   "my/rejected": { title: "Rejected Forms", intro: "Forms you rejected.", rejectedByMe: true, categories: "all" },
+  // The sidebar's "Approved Forms": a person's own requests that were approved, and for someone who decides, what they approved.
+  "my/approved": { title: "Approved Forms", intro: "Your requests that were approved.", mine: true, statuses: ["approved"], categories: "all" },
+  "decided/approved": { title: "Approved Forms", intro: "Requests you approved.", approvedByMe: true, categories: "all" },
   "my/completed": { title: "Completed by me", intro: "Requests you have already approved or rejected.", decidedByMe: true, categories: "all" },
 };
 

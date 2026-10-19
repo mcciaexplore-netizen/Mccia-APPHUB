@@ -2,11 +2,10 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { ListScreenView } from "@/components/approvals/ListScreenView";
 import { RecommendationTabs } from "@/components/approvals/RecommendationTabs";
-import { ReviewTabs } from "@/components/approvals/ReviewTabs";
 import { TableSkeleton } from "@/components/approvals/Skeletons";
-import { FULL_ACCESS_ROLES, allNavItems, canSee, parseRecommendationPath, parseReviewPath } from "@/lib/approvals/approvals.manifest";
+import { FULL_ACCESS_ROLES, REVIEW_LABEL, REVIEW_TAB_LABEL, allNavItems, canSee, parseRecommendationPath, parseReviewPath } from "@/lib/approvals/approvals.manifest";
 import { requirePage } from "@/lib/approvals/guard";
-import { hasAnyRole } from "@/lib/approvals/host-adapter";
+import { hasAnyRole, hasRole } from "@/lib/approvals/host-adapter";
 import { parseListParams } from "@/lib/approvals/list-params";
 import { reviewItemsFor } from "@/lib/approvals/request-queries";
 import { resolveScreen } from "@/lib/approvals/screens";
@@ -31,7 +30,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const recommended = parseRecommendationPath(slug);
   const item = allNavItems().find((i) => i.href === path);
   if (!item && !review && !recommended && !resolveScreen(slug, false)) notFound();
-  const user = await requirePage(...FULL_ACCESS_ROLES);
+  // A list open to every requester (their own Approved Forms) needs no more than being signed in; every other list needs full access.
+  const user = await (item?.roles?.includes("requester") ? requirePage() : requirePage(...FULL_ACCESS_ROLES));
   if (item && !canSee(item, user.roles)) notFound();
   if (recommended) {
     // The Director General's place: what was recommended to them, a tab each for HR and Expenditure.
@@ -45,16 +45,13 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     );
   }
   if (review) {
-    const mine = (await reviewItemsFor(user)).find((i) => i.key === review.key);
-    if (!mine) notFound();
+    // HR and Expenditure, each with Pending, Approved and Rejected (chosen in the Approval System sidebar). An approver opens the place the
+    // Approver Rules give them; the Director General opens both, as the final approver of each.
+    const items = await reviewItemsFor(user);
+    if (!items.some((i) => i.key === review.key) && !hasRole(user, "dg")) notFound();
     const decides = hasAnyRole(user, ["approver", "dg"]);
-    const screen = resolveScreen(slug, decides)!;
-    return (
-      <div className="page-enter">
-        <ReviewTabs place={review.key} active={review.tab} waiting={decides ? mine.waiting : 0} />
-        <Streamed><ListScreenView slug={slug.join("/")} screen={screen} params={parseListParams(await searchParams)} user={user} /></Streamed>
-      </div>
-    );
+    const screen = { ...resolveScreen(slug, decides)!, title: `${REVIEW_TAB_LABEL[review.tab]} ${REVIEW_LABEL[review.key]} Approvals` };
+    return <div className="page-enter"><Streamed><ListScreenView slug={slug.join("/")} screen={screen} params={parseListParams(await searchParams)} user={user} /></Streamed></div>;
   }
   const screen = resolveScreen(slug, false);
   if (screen) return <div className="page-enter"><Streamed><ListScreenView slug={slug.join("/")} screen={screen} params={parseListParams(await searchParams)} user={user} /></Streamed></div>;

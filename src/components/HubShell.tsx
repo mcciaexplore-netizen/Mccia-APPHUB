@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell } from "lucide-react";
@@ -27,9 +28,9 @@ export function HubShell({ user, unread, children }: { user: ShellUser | null; /
   return (
     <div className="min-h-screen bg-canvas">
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-line bg-white px-5 sm:px-8 lg:px-12">
-        <Link href="/" className="block leading-tight">
-          <span className="block text-xl font-extrabold tracking-tight text-ink">MCCIA</span>
-          <span className="block text-[0.62rem] font-bold uppercase tracking-widest text-primary">App Hub</span>
+        <Link href="/" className="flex items-center gap-3" aria-label="MCCIA App Hub, home">
+          <Image src="/mccia-logo.png" alt="MCCIA" width={134} height={36} priority className="h-8 w-auto" />
+          <span className="border-l border-line pl-3 text-[0.68rem] font-bold uppercase tracking-widest text-primary">App Hub</span>
         </Link>
         {user ? (
           <div className="flex items-center gap-3">

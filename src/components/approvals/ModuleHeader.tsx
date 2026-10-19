@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { NotificationBell } from "@/components/approvals/NotificationBell";
 import { REVIEW_LABEL, approvalsApps, parseRecommendationPath, parseReviewPath, resolveApp, type ApprovalsRole } from "@/lib/approvals/approvals.manifest";
@@ -20,10 +19,7 @@ export function ModuleHeader({ roles, unread }: { roles: ApprovalsRole[]; unread
   const title = review ? REVIEW_LABEL[review.key] : parseRecommendationPath(parts) ? REVIEW_LABEL.recommendation : app.title;
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <Link href="/approvals" className="text-sm text-muted hover:text-primary">← Approval System</Link>
-        <h1 className="text-2xl text-ink sm:text-3xl">{title}</h1>
-      </div>
+      <h1 className="text-2xl text-ink sm:text-3xl">{title}</h1>
       <NotificationBell initialUnread={unread} />
     </div>
   );

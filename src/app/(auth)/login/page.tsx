@@ -1,5 +1,6 @@
+import Image from "next/image";
 import { redirect } from "next/navigation";
-import { AlertCircle, LayoutGrid } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { login } from "@/actions/auth";
 import { getCurrentUser } from "@/lib/permissions";
 import { safeNext } from "@/lib/session";
@@ -14,7 +15,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <main className="grid min-h-screen place-items-center px-4 py-16">
       <div className="glass w-full max-w-md animate-rise p-6 text-center sm:p-10">
-        <div className="icon-tile mx-auto mb-5"><LayoutGrid size={18} /></div>
+        <Image src="/mccia-logo.png" alt="MCCIA" width={179} height={48} priority className="mx-auto mb-5 h-12 w-auto" />
         <h1 className="section-title">MCCIA App Hub</h1>
         <p className="mt-2 text-sm text-muted">Sign in to open your applications.</p>
 

@@ -87,6 +87,9 @@ export const approvalsApps: NavApp[] = [
           { label: "Recommended", href: "/approvals/my/recommended", roles: ["approver"] },
           { label: "Rejected Forms", href: "/approvals/my/rejected", roles: HANDLERS },
           { label: "Completed by me", href: "/approvals/my/completed", roles: HANDLERS },
+          // "Approved Forms" in the Approval System sidebar: everyone has their own approved requests; people who decide, what they approved.
+          { label: "Approved Forms", href: "/approvals/my/approved", roles: ["requester"] },
+          { label: "Approved Forms", href: "/approvals/decided/approved", roles: HANDLERS },
         ],
       },
       {
