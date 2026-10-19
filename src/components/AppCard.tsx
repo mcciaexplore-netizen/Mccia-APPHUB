@@ -22,7 +22,7 @@ const STATUS = {
 export function AppCard({ app, deptName, index = 0, canOpenUnavailable = false, href, cta }: { app: CardApp; deptName?: string; index?: number; canOpenUnavailable?: boolean; /** A page inside the hub to open directly, in the same tab (instead of an application, through /go). */ href?: string; /** The line under the status; defaults to "Open application". */ cta?: string }) {
   const status = app.status ?? "active";
   const blocked = status === "unavailable" && !canOpenUnavailable;
-  const cls = `tile-${palette(app.id)} group relative flex min-h-56 animate-rise flex-col overflow-hidden rounded-lg bg-white p-6 shadow-card transition-all duration-300 ${blocked ? "opacity-80" : "hover:-translate-y-1 hover:shadow-card-hover"}`;
+  const cls = `tile-${palette(app.id)} group relative flex min-h-56 animate-rise flex-col overflow-hidden rounded-none border border-gray-200 bg-white p-6 transition-all duration-300 ${blocked ? "opacity-80" : "hover:-translate-y-1"}`;
   const inner = (
     <>
       {deptName && <span className="text-xs font-semibold uppercase tracking-wide text-primary">{deptName}</span>}
@@ -32,7 +32,6 @@ export function AppCard({ app, deptName, index = 0, canOpenUnavailable = false, 
         <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted"><span aria-hidden className={`h-2 w-2 rounded-full ${STATUS[status].dot}`} />{STATUS[status].label}</span>
         <span className={`text-xs font-semibold ${blocked ? "text-subtle" : "text-primary"}`}>{blocked ? "Cannot be opened right now" : cta ?? "Open application"}</span>
       </span>
-      <span aria-hidden className="tile-blob absolute bottom-0 right-0 h-32 w-28 rounded-tl-[3.5rem]" />
       <span aria-hidden className="absolute bottom-9 right-14 grid h-[4.5rem] w-[4.5rem] place-items-center rounded-full bg-white text-[color:var(--tile-ink)] shadow-card transition-transform duration-300 group-hover:scale-105">
         <Icon name={app.icon} size={30} />
       </span>

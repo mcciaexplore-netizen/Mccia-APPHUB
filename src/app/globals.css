@@ -62,11 +62,11 @@
   --color-canvas: var(--c-canvas);
   --color-nav-active: var(--c-nav-active);
 
-  --radius-sm: 8px;
-  --radius-btn: 10px;
-  --radius-md: 12px;
-  --radius-lg: 20px;
-  --radius-pill: 99px;
+  --radius-sm: 0px;
+  --radius-btn: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-pill: 0px;
 
   --shadow-card: 0 6px 24px rgba(15, 23, 42, 0.08);
   --shadow-card-hover: 0 14px 34px rgba(15, 23, 42, 0.13);
@@ -180,7 +180,7 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
   .badge-neutral { background: var(--c-alt); border-color: var(--c-border); color: var(--c-subtle); }
 
   .chip {
-    background: var(--c-white); border: 1px solid var(--c-border); border-radius: 6px;
+    background: var(--c-white); border: 1px solid var(--c-border); border-radius: 0;
     padding: 0.25rem 0.6rem; font-size: 0.72rem; transition: all 0.2s var(--ease);
   }
   .chip:hover { background: var(--c-blue-tint); border-color: var(--c-blue-tint-border); }
