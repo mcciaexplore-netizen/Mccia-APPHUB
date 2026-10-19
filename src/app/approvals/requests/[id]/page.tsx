@@ -15,11 +15,11 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const detail = await getRequestDetail(id, user);
   if (!detail) notFound();
   // Noting that the approver opened it is a courtesy to the timeline: a failure here must never stop the page.
-  await recordViewed(id, user).catch(() => {});
+  const [, sp] = await Promise.all([recordViewed(id, user).catch(() => {}), searchParams]);
   // Right after submitting, the person who raised it sees a confirmation that stays on the page (a toast would be gone in seconds).
-  const justSubmitted = (await searchParams).submitted === "1" && detail.requesterUserId === user.id;
+  const justSubmitted = sp.submitted === "1" && detail.requesterUserId === user.id;
   return (
-    <>
+    <div className="page-enter">
       <PageHeader title="Request" />
       {justSubmitted && (
         <div role="status" className="mb-6 rounded-md border border-line bg-green-tint px-4 py-3 text-sm text-ink">
@@ -27,6 +27,6 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         </div>
       )}
       <RequestDetailView d={detail} />
-    </>
+    </div>
   );
 }

@@ -9,9 +9,9 @@ import { EmptyState, StatusPill } from "@/components/approvals/shared-ui";
 import { appForType } from "@/lib/approvals/approvals.manifest";
 import { formatDate, formatDateTime, formatINR, isoToDisplay } from "@/lib/approvals/format";
 import { toQueryString, type ListParams, type SortKey } from "@/lib/approvals/list-params";
-import { listMaster } from "@/lib/approvals/masters";
+import { listMasterCached } from "@/lib/approvals/masters";
 import { listRequests } from "@/lib/approvals/request-queries";
-import type { ListScreen } from "@/lib/approvals/screens";
+import { PAGE_SIZE, type ListScreen } from "@/lib/approvals/screens";
 import type { ApprovalsUser } from "@/lib/approvals/host-adapter";
 import type { AprRequestStatus } from "@/db/approvals-schema";
 import { decisionMode } from "@/lib/approvals/calc";
@@ -24,11 +24,11 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
   const [{ rows, total, page, pageSize }, hrCats, expCats, branches] = await Promise.all([
     listRequests(user, {
       types: screen.types, statuses: params.status ? [params.status as AprRequestStatus] : screen.statuses, mine: screen.mine, waitingForMe: screen.waitingForMe, decidedByMe: screen.decidedByMe, recommendedByMe: screen.recommendedByMe, rejectedByMe: screen.rejectedByMe, approvedByMe: screen.approvedByMe, reachedMe: screen.reachedMe,
-      q: params.q, from: params.from, to: params.to, categoryId: params.categoryId, branchId: params.branchId, sort: params.sort, dir: params.dir, page: params.page,
+      q: params.q, from: params.from, to: params.to, categoryId: params.categoryId, branchId: params.branchId, sort: params.sort, dir: params.dir, page: params.page, pageSize: PAGE_SIZE,
     }),
-    screen.categories !== "expense" ? listMaster("hr-categories", true) : Promise.resolve([]),
-    screen.categories !== "hr" ? listMaster("categories", true) : Promise.resolve([]),
-    screen.branch ? listMaster("branches", true) : Promise.resolve([]),
+    screen.categories !== "expense" ? listMasterCached("hr-categories", true) : Promise.resolve([]),
+    screen.categories !== "hr" ? listMasterCached("categories", true) : Promise.resolve([]),
+    screen.branch ? listMasterCached("branches", true) : Promise.resolve([]),
   ]);
   const categories = [...hrCats, ...expCats].map((c) => ({ id: c.id, name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
   const mixed = !screen.types || screen.types.length > 1;
@@ -62,7 +62,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
 
       {rows.length === 0 ? <EmptyState kind={empty} /> : (
       <div className="table-wrap">
-        <table>
+        <table className="apr-table">
           <thead>
             <tr>
               {th("Request No.", "requestNo")}
@@ -106,14 +106,15 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
       </div>
       )}
 
-      <nav className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--z-muted)]" aria-label="Pages">
-        <span>{total === 0 ? "0 requests" : `Showing ${from}–${Math.min(page * pageSize, total)} of ${total}`}</span>
-        <span className="flex items-center gap-2">
-          {page > 1 ? <Link href={pageHref(page - 1)} className="btn btn-ghost btn-sm">Previous</Link> : <span className="btn btn-ghost btn-sm opacity-50">Previous</span>}
-          <span>Page {page} of {pages}</span>
-          {page < pages ? <Link href={pageHref(page + 1)} className="btn btn-ghost btn-sm">Next</Link> : <span className="btn btn-ghost btn-sm opacity-50">Next</span>}
-        </span>
-      </nav>
+      {total > 0 && <p className="mt-3 text-sm text-[var(--z-muted)]">Showing {from}–{Math.min(page * pageSize, total)} of {total}</p>}
+      {/* Plain links, so paging needs no script; the filters and sort stay in the address. */}
+      {total > PAGE_SIZE && (
+        <nav className="mt-2 flex items-center justify-center gap-6 text-sm text-[var(--z-muted)]" aria-label="Pages">
+          {page > 1 ? <a href={pageHref(page - 1)} className="hover:text-[var(--z-accent)]">← Previous</a> : <span className="invisible">← Previous</span>}
+          <span>Page <b className="text-ink">{page}</b> of {pages}</span>
+          {page < pages ? <a href={pageHref(page + 1)} className="hover:text-[var(--z-accent)]">Next →</a> : <span className="invisible">Next →</span>}
+        </nav>
+      )}
     </>
   );
 }

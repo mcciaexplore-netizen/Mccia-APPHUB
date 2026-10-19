@@ -45,13 +45,13 @@ export async function StaffDashboard({ user }: { user: ApprovalsUser }) {
   return (
     <>
       <div className="grid gap-6 sm:grid-cols-2">
-        <article className="glass !rounded-md flex flex-col p-6">
+        <article className="card-lift glass !rounded-md flex flex-col p-6">
           <span className="mb-4 grid h-12 w-12 place-items-center rounded-md bg-blue-tint text-primary"><UserPlus size={24} aria-hidden /></span>
           <h2 className="text-xl text-ink">HR Request</h2>
           <p className="mt-1 flex-1 text-sm text-subtle">Raise a request for hiring, transfer, or any HR action</p>
           <Link href="/approvals/hr/new" className="btn btn-primary mt-5 self-start">Submit HR Request</Link>
         </article>
-        <article className="glass !rounded-md flex flex-col p-6">
+        <article className="card-lift glass !rounded-md flex flex-col p-6">
           <span className="mb-4 grid h-12 w-12 place-items-center rounded-md bg-blue-tint text-primary"><Receipt size={24} aria-hidden /></span>
           <h2 className="text-xl text-ink">Expense Request</h2>
           <p className="mt-1 flex-1 text-sm text-subtle">Submit an expense below ₹10,000 for direct approval</p>
@@ -96,12 +96,12 @@ export async function ApproverDashboard({ user }: { user: ApprovalsUser }) {
   return (
     <>
       {waiting > 0 ? (
-        <p className="apr-banner apr-banner-amber" role="status">
+        <p className="banner-in apr-banner apr-banner-amber" role="status">
           <span>You have <b>{waiting}</b> {waiting === 1 ? "request" : "requests"} waiting for your review</span>
           <Link href="/approvals/my/pending">Review all →</Link>
         </p>
       ) : (
-        <p className="apr-banner apr-banner-green" role="status"><CheckCircle2 size={18} aria-hidden /> You are all caught up. Nothing needs your attention right now.</p>
+        <p className="banner-in apr-banner apr-banner-green" role="status"><CheckCircle2 size={18} aria-hidden /> You are all caught up. Nothing needs your attention right now.</p>
       )}
 
       {rows.length > 0 && (
@@ -147,12 +147,12 @@ export async function DgDashboard({ user }: { user: ApprovalsUser }) {
   return (
     <>
       {waiting > 0 ? (
-        <p className="apr-banner apr-banner-purple" role="status">
+        <p className="banner-in apr-banner apr-banner-purple" role="status">
           <span>Recommended Queue — <b>{waiting}</b> {waiting === 1 ? "item" : "items"} awaiting your final decision</span>
           <Link href={queue}>Review all →</Link>
         </p>
       ) : (
-        <p className="apr-banner apr-banner-green" role="status"><CheckCircle2 size={18} aria-hidden /> Nothing is waiting for your final decision.</p>
+        <p className="banner-in apr-banner apr-banner-green" role="status"><CheckCircle2 size={18} aria-hidden /> Nothing is waiting for your final decision.</p>
       )}
 
       {rows.length > 0 && (
@@ -214,7 +214,7 @@ export async function ViewerDashboard() {
     <>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((s) => (
-          <Link key={s.label} href={s.href} className="glass glass-hover !rounded-md block p-5 text-center">
+          <Link key={s.label} href={s.href} className="card-lift glass glass-hover !rounded-md block p-5 text-center">
             <span className="big-number">{s.n}</span>
             <p className="label-xs mt-2">{s.label}</p>
             <p className="mt-0.5 text-xs text-subtle">HR requests</p>
@@ -257,13 +257,13 @@ export async function SupportAdminDashboard({ user }: { user: ApprovalsUser }) {
     <>
       <Section title="System Status">
         {incomplete && (
-          <Link href="/approvals/admin/rules" className="apr-banner apr-banner-red mb-4" role="alert">
+          <Link href="/approvals/admin/rules" className="banner-in apr-banner apr-banner-red mb-4" role="alert">
             ⚠️ Setup incomplete — some requests cannot be routed. Go to Who Approves What to fix this.
           </Link>
         )}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {people.map((p) => (
-            <Link key={p.label} href="/approvals/admin/rules" className="glass glass-hover !rounded-md block p-5">
+            <Link key={p.label} href="/approvals/admin/rules" className="card-lift glass glass-hover !rounded-md block p-5">
               <p className="label-xs">{p.label}</p>
               <p className="mt-2 flex items-center gap-2 font-bold text-ink">
                 <span className="apr-dot" style={{ background: p.name ? "#16a34a" : "#dc2626" }} aria-hidden />
@@ -271,7 +271,7 @@ export async function SupportAdminDashboard({ user }: { user: ApprovalsUser }) {
               </p>
             </Link>
           ))}
-          <Link href="/approvals/admin/settings" className="glass glass-hover !rounded-md block p-5">
+          <Link href="/approvals/admin/settings" className="card-lift glass glass-hover !rounded-md block p-5">
             <p className="label-xs">Approval Threshold</p>
             <p className="mt-2 font-bold text-ink">{formatINR(settings.thresholdPaise, { symbol: true })}</p>
             <p className="mt-0.5 text-xs text-subtle">Expenditure of this amount and above goes to the DG</p>
@@ -282,7 +282,7 @@ export async function SupportAdminDashboard({ user }: { user: ApprovalsUser }) {
       <Section title="Setup & Configuration">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {SETUP_CARDS.map((c) => (
-            <Link key={c.href} href={c.href} className="glass glass-hover !rounded-md flex flex-col gap-1.5 p-5">
+            <Link key={c.href} href={c.href} className="card-lift glass glass-hover !rounded-md flex flex-col gap-1.5 p-5">
               <c.Icon size={22} className="text-primary" aria-hidden />
               <span className="font-bold text-ink">{c.title}</span>
               <span className="flex-1 text-xs text-subtle">{c.text}</span>

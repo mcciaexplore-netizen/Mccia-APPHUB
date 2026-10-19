@@ -225,3 +225,26 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
     animation: none !important; transition: none !important; scroll-behavior: auto !important;
   }
 }
+
+/* ------------------------------------------------------------------ motion (CSS only; switched off by the reduced-motion rule above) */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* "backwards", not "forwards": a transform left on the page after the animation would make it the box that position:fixed dialogs are placed in. */
+.page-enter { animation: page-enter 0.25s ease-out backwards; }
+
+.card-lift { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.card-lift:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1); }
+
+.btn-press { transition: transform 0.1s ease; }
+.btn-press:active { transform: scale(0.97); }
+
+.nav-item { transition: background 0.15s ease, padding-left 0.15s ease; }
+.nav-item:hover { padding-left: 1.25rem; background: var(--z-hover, #f5f5f5); }
+
+@keyframes banner-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.banner-in { animation: banner-in 0.2s ease-out forwards; }

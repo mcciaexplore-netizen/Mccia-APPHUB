@@ -19,8 +19,7 @@ export const metadata = { title: "Approval System · MCCIA App Hub" };
  * or a redirect could no longer answer with a real 404 or redirect.
  */
 export default async function ApprovalsLayout({ children }: { children: React.ReactNode }) {
-  const hubUser = await requireUser();
-  const user = await requirePage();
+  const [hubUser, user] = await Promise.all([requireUser(), requirePage()]);
   const [departments, unread, review] = await Promise.all([getVisibleDepartments(hubUser), unreadCount(user.id), reviewItemsFor(user)]);
   return (
     <HubShell user={{ name: hubUser.name, role: hubUser.role, adminAreas: hubUser.adminAreas }} departments={departments} showApprovals review={review} showSetup={hasRole(user, "approvals_admin")}>

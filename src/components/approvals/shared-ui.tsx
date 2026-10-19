@@ -1,9 +1,7 @@
-"use client";
-
 import { CheckCircle2, ClipboardList, FileText } from "lucide-react";
 import type { AprRequestStatus } from "@/db/approvals-schema";
 
-/** Small pieces shared by the module's screens. */
+/** Small pieces shared by the module's screens. No hooks here, so they render on the server and inside client components alike. */
 
 const PILL_LABEL: Record<AprRequestStatus | "dg", string> = {
   pending: "Under Review", dg: "With Director General", approved: "Approved ✓", rejected: "Rejected", returned: "Needs Correction", withdrawn: "Withdrawn", draft: "Draft",
@@ -15,7 +13,7 @@ const PILL_LABEL: Record<AprRequestStatus | "dg", string> = {
  */
 export function StatusPill({ status, currentStepNo }: { status: AprRequestStatus; currentStepNo?: number }) {
   const key = status === "pending" && (currentStepNo ?? 1) > 1 ? "dg" : status;
-  return <span className={`apr-pill apr-pill-${key}`}>{PILL_LABEL[key]}</span>;
+  return <span className={`apr-pill apr-pill-${key} status-pill`}>{PILL_LABEL[key]}</span>;
 }
 
 const EMPTY = {
@@ -51,7 +49,7 @@ export function ActiveToggle({ active, onToggle, disabled }: { active: boolean; 
   return (
     <button
       type="button" onClick={onToggle} disabled={disabled} title={active ? "Click to deactivate" : "Click to activate"}
-      className={`badge ${active ? "badge-green" : "badge-neutral"} cursor-pointer disabled:cursor-not-allowed disabled:opacity-60`}
+      className={`badge btn-press ${active ? "badge-green" : "badge-neutral"} cursor-pointer disabled:cursor-not-allowed disabled:opacity-60`}
     >
       {active ? "Active" : "Inactive"}
     </button>

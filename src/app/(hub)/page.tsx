@@ -9,5 +9,5 @@ export default async function HomePage() {
   const user = await requireUser();
   const [departments, apps] = await Promise.all([getVisibleDepartments(user), getAccessibleApps(user)]);
   // Only ids, names, descriptions and icons are sent. App URLs never leave the server except through /go.
-  return <HomeClient departments={departments.map((d) => ({ id: d.id, name: d.name }))} apps={apps} isAdmin={isSuper(user)} />;
+  return <div className="page-enter"><HomeClient departments={departments.map((d) => ({ id: d.id, name: d.name }))} apps={apps} isAdmin={isSuper(user)} /></div>;
 }

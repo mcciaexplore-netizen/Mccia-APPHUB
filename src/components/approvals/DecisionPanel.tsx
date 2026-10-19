@@ -35,9 +35,9 @@ export function DecisionPanel({ id, commentToApprove, mode }: { id: string; comm
       </label>
       {error && <p className="zf-error" role="alert">{error}</p>}
       <div className="flex flex-wrap gap-2">
-        <button type="button" className="btn btn-primary" disabled={pending} onClick={() => decide("approve")}>{words.approve}</button>
+        <button type="button" className="btn btn-primary btn-press" disabled={pending} onClick={() => decide("approve")}>{words.approve}</button>
         <button type="button" className="btn btn-ghost" disabled={pending} onClick={() => decide("return")}>Return for corrections</button>
-        <button type="button" className="btn btn-danger" disabled={pending} onClick={() => decide("reject")}>{words.reject}</button>
+        <button type="button" className="btn btn-danger btn-press" disabled={pending} onClick={() => decide("reject")}>{words.reject}</button>
       </div>
     </section>
   );

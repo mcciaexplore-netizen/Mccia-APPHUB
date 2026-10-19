@@ -37,6 +37,9 @@ export type ListScreen = {
   newHref?: string;
 };
 
+/** How many requests a list screen shows per page. */
+export const PAGE_SIZE = 25;
+
 const HR: AprRequestType[] = ["hr"];
 const LARGE: AprRequestType[] = ["expenditure_large"];
 const SMALL: AprRequestType[] = ["expenditure_small"];

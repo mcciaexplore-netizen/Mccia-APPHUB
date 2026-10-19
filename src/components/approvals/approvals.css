@@ -132,3 +132,12 @@
 .apr-root .apr-dot { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; }
 .apr-root .apr-strip { border-radius: var(--radius-sm); background: #fee2e2; color: #b91c1c; padding: 0.3rem 0.6rem; font-size: 0.8rem; font-weight: 700; }
 .apr-root .apr-empty { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; border: 1px dashed var(--z-line); border-radius: var(--radius-md); background: var(--c-alt); padding: 2.2rem 1rem; text-align: center; }
+
+/* ------------------------------------------------------------------ motion */
+@keyframes pill-pop {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+.apr-root .status-pill { animation: pill-pop 0.2s ease-out forwards; }
+.apr-root .apr-table tbody tr { transition: background 0.12s ease; }
+.apr-root .apr-table tbody tr:hover { background: var(--z-hover, #f9fafb); }

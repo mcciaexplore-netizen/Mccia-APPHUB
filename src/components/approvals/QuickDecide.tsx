@@ -25,9 +25,9 @@ export function QuickDecide({ id, label, overBudget, kind }: { id: string; label
   return (
     <>
       <span className="inline-flex gap-1.5">
-        <button type="button" className="btn btn-primary btn-sm" onClick={() => setMode("approve")}>{words.approve}</button>
+        <button type="button" className="btn btn-primary btn-sm btn-press" onClick={() => setMode("approve")}>{words.approve}</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("return")}>Return</button>
-        <button type="button" className="btn btn-danger btn-sm" onClick={() => setMode("reject")}>{words.reject}</button>
+        <button type="button" className="btn btn-danger btn-sm btn-press" onClick={() => setMode("reject")}>{words.reject}</button>
       </span>
       {/* The dialog sits inside a clickable table row; clicks inside it must not reach the row (which would open the request). */}
       {mode && (

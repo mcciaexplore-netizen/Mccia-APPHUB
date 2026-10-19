@@ -15,10 +15,10 @@ export type SidebarDept = { id: string; name: string; icon: string };
 export type SidebarUser = { name: string; role: Role; adminAreas?: readonly string[] };
 
 /** One row of the sidebar: a line icon and a label; the page you are on is a soft teal pill. */
-const ROW = "mx-3 my-0.5 flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors duration-200";
+const ROW = "nav-item mx-3 my-0.5 flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors duration-200";
 const rowTone = (active: boolean) => (active ? "bg-nav-active text-primary" : "text-ink hover:bg-alt");
 /** The links that drop down under Approval System and Administrator. */
-const SUB = "flex min-h-10 items-center gap-2 rounded-md px-3 text-[0.82rem] transition-colors duration-200";
+const SUB = "nav-item flex min-h-10 items-center gap-2 rounded-md px-3 text-[0.82rem] transition-colors duration-200";
 const subTone = (active: boolean) => (active ? "bg-nav-active font-semibold text-primary" : "text-muted hover:bg-alt hover:text-ink");
 
 function Item({ href, active, onNavigate, children }: { href: string; active: boolean; onNavigate: () => void; children: React.ReactNode }) {

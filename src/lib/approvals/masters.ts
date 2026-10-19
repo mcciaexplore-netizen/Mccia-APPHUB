@@ -1,5 +1,6 @@
 import "server-only";
 import { and, asc, eq } from "drizzle-orm";
+import { unstable_cache } from "next/cache";
 import { db } from "@/db";
 import {
   aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprPublicationTypes, aprPublications,
@@ -156,3 +157,13 @@ export async function mergeCategories(sourceId: string, targetId: string, actor:
   await recordAudit(actor, "category", targetId, "merge", `Merged category "${source.name}" into "${target.name}"`, categoryRow(source), categoryRow(after));
   return categoryRow(after);
 }
+
+/**
+ * The same lists, kept for five minutes and shared across requests, for screens where a list a few minutes old does no harm (the filters
+ * above the request lists). The admin screens that change these lists, and the forms, keep reading them fresh with listMaster().
+ */
+export const listMasterCached = unstable_cache(
+  async (kind: MasterKind, includeInactive: boolean) => listMaster(kind, includeInactive),
+  ["master-list"],
+  { revalidate: 300, tags: ["masters"] },
+);

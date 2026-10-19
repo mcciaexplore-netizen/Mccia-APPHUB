@@ -19,12 +19,9 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const { tab } = await searchParams;
   if (!uuid.safeParse(id).success) notFound();
 
-  const [dept] = await db.select().from(departments).where(eq(departments.id, id));
-  if (!dept) notFound();
-  // An organisation department is not a group of applications: its people are listed in Users & Access.
-  if (dept.kind === "organisation") redirect(`/administrator/users?dept=${dept.id}`);
-
-  const [deptApps, members, grants] = await Promise.all([
+  // The department and everything listed under it are read together; a missing department is still a 404.
+  const [[dept], deptApps, members, grants] = await Promise.all([
+    db.select().from(departments).where(eq(departments.id, id)),
     db.select().from(apps).where(eq(apps.departmentId, id)).orderBy(asc(apps.sortOrder), asc(apps.name)),
     // Who is in the department: everyone for the two top roles; plain users for an Admin with Users & access; nobody for an Admin without it.
     isSuper(me) || hasArea(me, "people")
@@ -34,6 +31,9 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     db.select({ userId: userAppAccess.userId, appId: apps.id, name: apps.name })
       .from(userAppAccess).innerJoin(apps, and(eq(apps.id, userAppAccess.appId), eq(apps.departmentId, id))),
   ]);
+  if (!dept) notFound();
+  // An organisation department is not a group of applications: its people are listed in Users & Access.
+  if (dept.kind === "organisation") redirect(`/administrator/users?dept=${dept.id}`);
   const byUser = new Map<string, string[]>();
   for (const g of grants) byUser.set(g.userId, [...(byUser.get(g.userId) ?? []), g.name]);
 

@@ -1,5 +1,6 @@
 import "server-only";
 import { eq, sql } from "drizzle-orm";
+import { unstable_cache } from "next/cache";
 import { db } from "@/db";
 import { aprApproverRules, aprBranches, aprCategories, aprHrCategories } from "@/db/approvals-schema";
 
@@ -33,3 +34,6 @@ export async function setupChecklist(): Promise<SetupItem[]> {
     },
   ];
 }
+
+/** The checklist, kept for a minute and shared across requests (it is a few counts that rarely change). */
+export const setupChecklistCached = unstable_cache(async () => setupChecklist(), ["setup-checklist"], { revalidate: 60, tags: ["setup"] });
