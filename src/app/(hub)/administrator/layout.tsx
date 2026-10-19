@@ -3,16 +3,7 @@ import { AdminSidebar } from "@/components/AdminSidebar";
 import { AdminBackLink } from "@/components/BackLink";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { adminTabsFor } from "@/lib/admin-tabs";
-import { SETUP_GROUP_LABEL, approvalsApps, isGroup } from "@/lib/approvals/approvals.manifest";
-import { approvalsEnabled } from "@/lib/approvals/flags";
 import { requireAdministrator } from "@/lib/permissions";
-import { isSuper } from "@/lib/rbac";
-
-/** The Approval System's settings screens (Who Approves What, Expense Types, ...), read from its menu data. */
-const APPROVAL_SETTINGS = approvalsApps
-  .flatMap((a) => a.nav)
-  .flatMap((e) => (isGroup(e) && e.label === SETUP_GROUP_LABEL ? e.items : []))
-  .map((i) => ({ label: i.label, href: i.href! }));
 
 /** Administrator: its sidebar on the left (stacked above on a phone) and the section's page beside it. */
 export default async function AdministratorLayout({ children }: { children: React.ReactNode }) {
@@ -24,7 +15,7 @@ export default async function AdministratorLayout({ children }: { children: Reac
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         <aside className="w-full shrink-0 lg:sticky lg:top-20 lg:w-64">
           <Suspense fallback={null}>
-            <AdminSidebar tabs={adminTabsFor(me)} approvalSettings={isSuper(me) && approvalsEnabled() ? APPROVAL_SETTINGS : []} />
+            <AdminSidebar tabs={adminTabsFor(me)} />
           </Suspense>
         </aside>
         <div className="min-w-0 flex-1">{children}</div>
