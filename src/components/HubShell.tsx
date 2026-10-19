@@ -11,6 +11,9 @@ import { UserMenu } from "@/components/UserMenu";
 
 export type ShellUser = { name: string; role: Role };
 
+/** The sessionStorage key BackLink reads (see there). */
+export const PAGES_SEEN = "hub:pagesSeen";
+
 /**
  * The frame of every page: a top bar (the hub's name, which goes home, the bell and the person's menu) and the page under it. There is no
  * sidebar; everything is reached from the cards on the home page and on the pages they open.
@@ -24,6 +27,10 @@ export function HubShell({ user, unread, children }: { user: ShellUser | null; /
     if (wasInAdmin.current && !inAdmin) void lockAdmin();
     wasInAdmin.current = inAdmin;
   }, [inAdmin]);
+  // Counts the pages opened in this tab, so a "← Back" that returns to the previous page knows there is a hub page to return to.
+  useEffect(() => {
+    try { sessionStorage.setItem(PAGES_SEEN, String(Number(sessionStorage.getItem(PAGES_SEEN) ?? "0") + 1)); } catch {}
+  }, [pathname]);
 
   return (
     <div className="min-h-screen bg-canvas">

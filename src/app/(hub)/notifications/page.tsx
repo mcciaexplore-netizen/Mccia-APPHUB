@@ -1,3 +1,4 @@
+import { BackLink } from "@/components/BackLink";
 import { NotificationList } from "@/components/NotificationList";
 import { noticeFeed } from "@/lib/notice-feed";
 import { requireUser } from "@/lib/permissions";
@@ -9,7 +10,10 @@ export default async function Page() {
   const me = await requireUser();
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl sm:text-4xl">Notifications</h1>
+      <div>
+        <BackLink href="/" label="Home" />
+        <h1 className="mt-1 text-3xl sm:text-4xl">Notifications</h1>
+      </div>
       <NotificationList items={await noticeFeed(me.id)} />
     </div>
   );

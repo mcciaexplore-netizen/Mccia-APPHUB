@@ -1,3 +1,4 @@
+import { BackLink } from "@/components/BackLink";
 import { Inbox } from "lucide-react";
 import { requireActivityViewer } from "@/lib/permissions";
 import { parseFilters } from "@/lib/activity";
@@ -11,7 +12,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const scope = user.role === "dept_lead" ? user.homeDepartmentId : undefined;
   return (
     <div>
-      <h1 className="mb-8 text-3xl sm:text-4xl">Department activity</h1>
+      <BackLink href="/" label="Home" />
+      <h1 className="mb-8 mt-1 text-3xl sm:text-4xl">Department activity</h1>
       {user.role === "dept_lead" && !scope ? (
         <div className="alert"><Inbox size={18} className="mt-0.5 shrink-0" /><span>No home department is set for your account. Contact the Support Admin.</span></div>
       ) : (

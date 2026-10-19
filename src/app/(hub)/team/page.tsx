@@ -1,3 +1,4 @@
+import { BackLink } from "@/components/BackLink";
 import { PeopleDirectory } from "@/components/people/PeopleDirectory";
 import { loadDirectory } from "@/lib/people-page";
 import { requireTeamManager } from "@/lib/permissions";
@@ -10,6 +11,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const props = await loadDirectory(me, await searchParams, "/team");
   return (
     <div className="space-y-5">
+      <BackLink href="/" label="Home" />
       <p className="text-sm text-muted">The people in your team and the people who report to you. You can give or take away the applications that you can open yourself. Anything else is managed by an administrator.</p>
       <PeopleDirectory {...props} />
     </div>

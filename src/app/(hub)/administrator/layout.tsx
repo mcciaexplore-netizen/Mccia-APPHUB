@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireAdministrator } from "@/lib/permissions";
+import { AdminBackLink } from "@/components/BackLink";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { adminTabsFor } from "@/lib/admin-tabs";
 import { SETUP_GROUP_LABEL, approvalsApps, isGroup } from "@/lib/approvals/approvals.manifest";
@@ -19,6 +20,7 @@ export default async function AdministratorLayout({ children }: { children: Reac
   const me = await requireAdministrator();
   return (
     <ConfirmProvider>
+      <AdminBackLink />
       <h1 className="mb-6 text-3xl sm:text-4xl">Administrator</h1>
       <nav aria-label="Administrator" className="mb-6 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {adminTabsFor(me).map((t) => <Link key={t.href} href={t.href} className={card}>{t.label}</Link>)}
