@@ -1,0 +1,1 @@
+ALTER TABLE "apr_expenditure_details" ALTER COLUMN "branch_id" DROP NOT NULL;

@@ -84,7 +84,7 @@ export async function expenditureEditProps(user: ApprovalsUser, requestId: strin
     ...base,
     edit: editInfo(requestId, v),
     initial: {
-      employeeId: person?.value ?? "", email: v.requesterEmail, categoryId: e.categoryId, branchId: e.branchId, nature: e.nature ?? "", vendor: e.vendorName ?? "",
+      employeeId: person?.value ?? "", email: v.requesterEmail, categoryId: e.categoryId, branchId: e.branchId ?? "", nature: e.nature ?? "", vendor: e.vendorName ?? "",
       amount: v.amountPaise == null ? "" : formatINR(v.amountPaise), budgetAllocated: money(e.budget.allocatedPaise), budgetUsed: money(e.budget.usedPaise), expenseDate: e.expenseDate ?? "", taxInvoiceDate: e.taxInvoiceDate ?? "",
       pubTypeId: e.publicationTypeId ?? "", pubId: e.publicationId ?? "",
     },

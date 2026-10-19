@@ -236,7 +236,8 @@ export const aprExpenditureDetails = pgTable("apr_expenditure_details", {
   requestId: uuid("request_id").primaryKey().references(() => aprRequests.id, { onDelete: "cascade" }),
   categoryId: uuid("category_id").notNull().references(() => aprCategories.id, { onDelete: "restrict" }),
   natureOfExpenditure: text("nature_of_expenditure"),
-  branchId: uuid("branch_id").notNull().references(() => aprBranches.id, { onDelete: "restrict" }),
+  // Old requests keep the branch they were raised with; new ones have none (the form no longer asks for it).
+  branchId: uuid("branch_id").references(() => aprBranches.id, { onDelete: "restrict" }),
   // Snapshots taken on the server at submit time.
   budgetAllocatedPaise: paise("budget_allocated_paise"),
   budgetAvailablePaise: paise("budget_available_paise"),

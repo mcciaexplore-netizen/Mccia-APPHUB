@@ -94,7 +94,6 @@ export const approvalsApps: NavApp[] = [
         roles: ADMIN,
         items: [
           { label: "Who Approves What", href: "/approvals/admin/rules", roles: ADMIN },
-          { label: "Office Branches", href: "/approvals/admin/branches", roles: ADMIN },
           { label: "Expense Types", href: "/approvals/admin/categories", roles: ADMIN },
           { label: "HR Request Types", href: "/approvals/admin/hr-categories", roles: ADMIN },
           { label: "Publication Types", href: "/approvals/admin/publications", roles: ADMIN },

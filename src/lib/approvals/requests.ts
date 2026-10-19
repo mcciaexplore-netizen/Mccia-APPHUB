@@ -194,11 +194,11 @@ async function prepareExpenditure(form: ExpenditureForm, input: LargeExpenditure
 
   const [[category], [branch], people] = await Promise.all([
     db.select().from(aprCategories).where(eq(aprCategories.id, input.categoryId)),
-    db.select().from(aprBranches).where(eq(aprBranches.id, input.branchId)),
+    input.branchId ? db.select().from(aprBranches).where(eq(aprBranches.id, input.branchId)) : Promise.resolve([]),
     listUsers(),
   ]);
   if (!category?.active) throw new ApprovalsError("Pick an active category.");
-  if (!branch?.active) throw new ApprovalsError("Pick an active branch.");
+  if (input.branchId && !branch?.active) throw new ApprovalsError("Pick an active branch.");
   const employee = people.find((u) => u.id === input.employeeUserId);
   if (!employee) throw new ApprovalsError("Pick a person from the Name list.");
 

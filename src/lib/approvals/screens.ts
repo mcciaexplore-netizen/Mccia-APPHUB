@@ -50,25 +50,25 @@ const LIST_SCREENS: Record<string, ListScreen> = {
   "hr/pending": { title: "Pending HR Request", intro: "HR requests still waiting for a decision.", types: HR, statuses: ["pending"], categories: "hr" },
   "hr/rejected": { title: "Rejected HR Requests", intro: "HR requests that were rejected.", types: HR, statuses: ["rejected"], categories: "hr" },
 
-  "expenditures/all": { title: "All Expenditures", intro: "Every expenditure request of ₹10,000 and above you are allowed to see.", types: LARGE, branch: true, categories: "expense", newHref: "/approvals/expenditures/new" },
-  "expenditures/approved": { title: "Approved Expenditure Requests", intro: "Expenditure requests that were approved.", types: LARGE, statuses: ["approved"], branch: true, categories: "expense" },
-  "expenditures/pending": { title: "Pending Expenditure Requests", intro: "Expenditure requests still waiting for a decision.", types: LARGE, statuses: ["pending"], branch: true, categories: "expense" },
-  "expenditures/rejected": { title: "Rejected Expenditure Requests", intro: "Expenditure requests that were rejected.", types: LARGE, statuses: ["rejected"], branch: true, categories: "expense" },
+  "expenditures/all": { title: "All Expenditures", intro: "Every expenditure request of ₹10,000 and above you are allowed to see.", types: LARGE, categories: "expense", newHref: "/approvals/expenditures/new" },
+  "expenditures/approved": { title: "Approved Expenditure Requests", intro: "Expenditure requests that were approved.", types: LARGE, statuses: ["approved"], categories: "expense" },
+  "expenditures/pending": { title: "Pending Expenditure Requests", intro: "Expenditure requests still waiting for a decision.", types: LARGE, statuses: ["pending"], categories: "expense" },
+  "expenditures/rejected": { title: "Rejected Expenditure Requests", intro: "Expenditure requests that were rejected.", types: LARGE, statuses: ["rejected"], categories: "expense" },
 
-  "expenses/approved": { title: "Approved Expenses", intro: "Expenses below ₹10,000 that were approved.", types: SMALL, statuses: ["approved"], branch: true, vendor: true, categories: "expense" },
-  "expenses/pending": { title: "Pending", intro: "Expenses below ₹10,000 waiting for your decision.", types: SMALL, statuses: ["pending"], waitingForMe: true, quickDecide: true, branch: true, vendor: true, categories: "expense" },
-  "expenses/waiting": { title: "All Pending Expenses", intro: "All expenses below ₹10,000 still waiting for a decision.", types: SMALL, statuses: ["pending"], branch: true, vendor: true, categories: "expense" },
-  "expenses/mine": { title: "My Requests", intro: "Expenses below ₹10,000 that you raised, with where each one stands.", types: SMALL, mine: true, branch: true, vendor: true, categories: "expense", newHref: "/approvals/expenses/new" },
-  "expenses/rejected": { title: "Rejected Expenses", intro: "Expenses below ₹10,000 that were rejected.", types: SMALL, statuses: ["rejected"], branch: true, vendor: true, categories: "expense" },
+  "expenses/approved": { title: "Approved Expenses", intro: "Expenses below ₹10,000 that were approved.", types: SMALL, statuses: ["approved"], vendor: true, categories: "expense" },
+  "expenses/pending": { title: "Pending", intro: "Expenses below ₹10,000 waiting for your decision.", types: SMALL, statuses: ["pending"], waitingForMe: true, quickDecide: true, vendor: true, categories: "expense" },
+  "expenses/waiting": { title: "All Pending Expenses", intro: "All expenses below ₹10,000 still waiting for a decision.", types: SMALL, statuses: ["pending"], vendor: true, categories: "expense" },
+  "expenses/mine": { title: "My Requests", intro: "Expenses below ₹10,000 that you raised, with where each one stands.", types: SMALL, mine: true, vendor: true, categories: "expense", newHref: "/approvals/expenses/new" },
+  "expenses/rejected": { title: "Rejected Expenses", intro: "Expenses below ₹10,000 that were rejected.", types: SMALL, statuses: ["rejected"], vendor: true, categories: "expense" },
 
   inbox: {
     title: "Recommended Queue", intro: "Everything recommended to you for the final decision, HR and Expenditure together, newest first. Open a request to see its details before deciding.",
-    statuses: ["pending"], waitingForMe: true, branch: true, quickDecide: true, categories: "all",
+    statuses: ["pending"], waitingForMe: true, quickDecide: true, categories: "all",
   },
-  "my/pending": { title: "Pending Approvals", intro: "Forms waiting for your decision.", statuses: ["pending"], waitingForMe: true, branch: true, quickDecide: true, categories: "all" },
-  "my/recommended": { title: "Recommended", intro: "Forms you recommended to the Director General, and where each one stands now.", recommendedByMe: true, branch: true, categories: "all" },
-  "my/rejected": { title: "Rejected Forms", intro: "Forms you rejected.", rejectedByMe: true, branch: true, categories: "all" },
-  "my/completed": { title: "Completed by me", intro: "Requests you have already approved or rejected.", decidedByMe: true, branch: true, categories: "all" },
+  "my/pending": { title: "Pending Approvals", intro: "Forms waiting for your decision.", statuses: ["pending"], waitingForMe: true, quickDecide: true, categories: "all" },
+  "my/recommended": { title: "Recommended", intro: "Forms you recommended to the Director General, and where each one stands now.", recommendedByMe: true, categories: "all" },
+  "my/rejected": { title: "Rejected Forms", intro: "Forms you rejected.", rejectedByMe: true, categories: "all" },
+  "my/completed": { title: "Completed by me", intro: "Requests you have already approved or rejected.", decidedByMe: true, categories: "all" },
 };
 
 export const screenFor = (slug: string[]): ListScreen | undefined => LIST_SCREENS[slug.join("/")];
@@ -82,7 +82,7 @@ const REVIEW_TYPES: Record<ReviewKey, AprRequestType[]> = { hr: HR, expenditure:
  */
 export function reviewScreen(key: ReviewKey, tab: ReviewTab, decides: boolean): ListScreen {
   const types = REVIEW_TYPES[key];
-  const common = { types, branch: true, categories: key === "hr" ? ("hr" as const) : ("expense" as const) };
+  const common = { types, categories: key === "hr" ? ("hr" as const) : ("expense" as const) };
   if (tab === "pending") {
     return decides
       ? { ...common, title: "Pending", intro: "Waiting for your decision. Approve or Reject here, or open a request to see its files and budget first.", statuses: ["pending"], waitingForMe: true, quickDecide: true }
@@ -103,7 +103,7 @@ export function recommendationScreen(key: ReviewKey): ListScreen {
   return {
     title: key === "hr" ? "Recommended: HR" : "Recommended: Expenditure",
     intro: "What was recommended to you for the final decision. Approve or Reject what is still waiting, or open a request to see its files and budget first; the others show how you decided.",
-    types: REVIEW_TYPES[key], reachedMe: true, quickDecide: true, branch: true, categories: key === "hr" ? "hr" : "expense",
+    types: REVIEW_TYPES[key], reachedMe: true, quickDecide: true, categories: key === "hr" ? "hr" : "expense",
   };
 }
 

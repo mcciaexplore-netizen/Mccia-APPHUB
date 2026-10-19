@@ -3,7 +3,7 @@
  * forms (in the browser), the server and the tests all use the same rules.
  *
  * Every form has built-in fields. For those the Support Admin can rename them, move them, and hide the optional ones; the ones the request
- * cannot do without (the person, the category, the branch, the amount, ...) cannot be hidden. The Support Admin can also add extra fields
+ * cannot do without (the person, the category, the amount, ...) cannot be hidden. The Support Admin can also add extra fields
  * of their own (text, long text, number, date or a dropdown), which can be required, and can remove them again.
  */
 export type FormKey = "hr" | "large" | "small";
@@ -35,7 +35,6 @@ export const BUILTIN: Record<FormKey, readonly BuiltinDef[]> = {
     { key: "difference", label: "Difference", hideable: true },
     { key: "category", label: "Category", hideable: false },
     { key: "nature", label: "Nature of Expenditure", hideable: true },
-    { key: "branch", label: "Branch Name", hideable: false },
     { key: "allocated", label: "Budget Allocated", hideable: false },
     { key: "used", label: "Budget Used", hideable: false },
     { key: "remaining", label: "Budget Remaining", hideable: true },
@@ -50,7 +49,6 @@ export const BUILTIN: Record<FormKey, readonly BuiltinDef[]> = {
     { key: "date", label: "Date", hideable: true },
     { key: "category", label: "Category", hideable: false },
     { key: "nature", label: "Nature of Expenditure", hideable: true },
-    { key: "branch", label: "Branch Name", hideable: false },
     { key: "allocated", label: "Budget Allocated", hideable: false },
     { key: "used", label: "Budget Used", hideable: false },
     { key: "available", label: "Available budget", hideable: true },

@@ -94,7 +94,8 @@ const common = {
   requestedAt,
   categoryId: idSchema,
   natureOfExpenditure: optionalText(2000),
-  branchId: idSchema,
+  // The form no longer asks for a branch; an older client that still sends one is accepted.
+  branchId: idSchema.nullish().transform((v) => v ?? null),
   amountPaise,
   // The budget the requester says is allocated, and how much of it is used. The branch and category no longer decide the budget.
   budgetAllocatedPaise: budgetPaise("Budget allocated"),

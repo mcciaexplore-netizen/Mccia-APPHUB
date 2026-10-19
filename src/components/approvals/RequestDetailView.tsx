@@ -77,7 +77,7 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
           <Item label="Name">{name}</Item>
           <Item label="Email">{d.requesterEmail}</Item>
           <Item label="Category">{d.hr?.categoryName ?? e?.categoryName}</Item>
-          {e && <Item label="Branch Name">{e.branchName}</Item>}
+          {e?.branchName && <Item label="Branch Name">{e.branchName}</Item>}
           {e && <Item label="Nature of Expenditure"><span className="whitespace-pre-wrap">{e.nature}</span></Item>}
           <Item label="Date of Request">{formatDateTime(d.requestedAt)}</Item>
           <Item label="Financial year">{d.financialYear}</Item>

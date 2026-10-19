@@ -253,7 +253,7 @@ export type RequestDetail = {
   hr: { firstName: string; lastName: string; categoryName: string; description: string | null; budget: BudgetView | null } | null;
   expenditure: {
     categoryName: string;
-    branchName: string;
+    branchName: string | null;
     nature: string | null;
     vendorName: string | null;
     expenseDate: string | null;
@@ -297,7 +297,7 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
       .select({ d: aprExpenditureDetails, categoryName: aprCategories.name, branchName: aprBranches.name })
       .from(aprExpenditureDetails)
       .innerJoin(aprCategories, eq(aprCategories.id, aprExpenditureDetails.categoryId))
-      .innerJoin(aprBranches, eq(aprBranches.id, aprExpenditureDetails.branchId))
+      .leftJoin(aprBranches, eq(aprBranches.id, aprExpenditureDetails.branchId))
       .where(eq(aprExpenditureDetails.requestId, requestId)).then((r) => r[0] ?? null),
     db.select().from(aprRequestSteps).where(eq(aprRequestSteps.requestId, requestId)).orderBy(asc(aprRequestSteps.stepNo)),
     db.select().from(aprApprovalEvents).where(eq(aprApprovalEvents.requestId, requestId)).orderBy(asc(aprApprovalEvents.createdAt), asc(aprApprovalEvents.id)),
@@ -361,7 +361,7 @@ export type EditValues = {
   amountPaise: number | null;
   hr: { firstName: string; lastName: string; hrCategoryId: string; description: string | null; budget: BudgetView | null } | null;
   expenditure: {
-    categoryId: string; branchId: string; nature: string | null; vendorName: string | null; expenseDate: string | null; taxInvoiceDate: string | null;
+    categoryId: string; branchId: string | null; nature: string | null; vendorName: string | null; expenseDate: string | null; taxInvoiceDate: string | null;
     publicationTypeId: string | null; publicationId: string | null; budget: BudgetView;
   } | null;
   attachments: AttachmentRow[];

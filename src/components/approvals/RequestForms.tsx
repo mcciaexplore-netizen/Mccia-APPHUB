@@ -292,7 +292,6 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   };
 
   const [categories, setCategories] = useState(p.categories);
-  const [branches, setBranches] = useState(p.branches);
   const [pubTypes, setPubTypes] = useState(p.publicationTypes);
   const [pubs, setPubs] = useState(p.publications);
 
@@ -301,6 +300,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   const [requestedAt, setRequestedAt] = useState(p.edit?.requestedAt ?? p.now);
   const [categoryId, setCategoryId] = useState(defaults.categoryId);
   const [nature, setNature] = useState(defaults.nature);
+  // No branch is asked any more; a returned request that had one keeps it when it is corrected.
   const [branchId, setBranchId] = useState(defaults.branchId);
   const [amount, setAmount] = useState(defaults.amount);
   // Which kind of request this is: fixed by the form, or, on the one expense form, by the amount typed.
@@ -361,7 +361,6 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
     if (!large && !email.trim()) err.email = "Enter the email address.";
     else if (email.trim() && !EMAIL.test(email.trim())) err.email = "Enter a valid email address.";
     if (!categoryId) err.category = "Choose a category.";
-    if (!branchId) err.branch = "Choose a branch.";
     if (!large && !vendor.trim()) err.vendor = "Enter the vendor name.";
     if (amountPaise === null || amountPaise <= 0) err.amount = "Enter an amount above 0, with at most 2 decimals.";
     else if (wrong) err.amount = wrong;
@@ -372,14 +371,13 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
     checkExtra(fields, custom, err);
     setErrors(err);
     if (Object.keys(err).length) return;
-    const common = { employeeUserId: employeeId, email, requestedAt, categoryId, natureOfExpenditure: nature, branchId, amountPaise, budgetAllocatedPaise: parseINR(budgetAllocated), budgetUsedPaise: parseINR(budgetUsed), vendorName: vendor, custom: extraAnswers(fields, custom), ...(p.edit ? { keepAttachmentIds: keep } : {}) };
+    const common = { employeeUserId: employeeId, email, requestedAt, categoryId, natureOfExpenditure: nature, branchId: branchId || null, amountPaise, budgetAllocatedPaise: parseINR(budgetAllocated), budgetUsedPaise: parseINR(budgetUsed), vendorName: vendor, custom: extraAnswers(fields, custom), ...(p.edit ? { keepAttachmentIds: keep } : {}) };
     void submit(large
       ? { kind: "large", ...common, supportingDocs: ref(supporting), quotation: ref(quotation) }
       : { kind: "small", ...common, fileUpload: ref(fileUpload), expenseDate, publicationTypeId: pubTypeId || null, publicationId: pubId || null, taxInvoice: ref(taxInvoice), quotation: ref(quotation), taxInvoiceDate });
   };
 
   const addCategory = p.canAdd ? { kind: "categories" as const, noun: "category", onAdded: (o: Option) => setCategories((c) => [...c, o].sort((a, b) => a.label.localeCompare(b.label))) } : undefined;
-  const addBranch = p.canAdd ? { kind: "branches" as const, noun: "branch", onAdded: (o: Option) => setBranches((c) => [...c, o].sort((a, b) => a.label.localeCompare(b.label))) } : undefined;
 
   const amountRow = (
     <Row label={lab("amount", "Amount")} required htmlFor="ex-amount" error={errors.amount}>
@@ -412,11 +410,6 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
       </Row>
     ),
     nature: <Row label={lab("nature", "Nature of Expenditure")} htmlFor="ex-nature"><TextArea id="ex-nature" value={nature} onChange={setNature} /></Row>,
-    branch: (
-      <Row label={lab("branch", "Branch Name")} required htmlFor="ex-branch" error={errors.branch}>
-        <SearchSelect id="ex-branch" options={branches} value={branchId} onChange={setBranchId} invalid={!!errors.branch} add={addBranch} />
-      </Row>
-    ),
     vendor: <Row label={lab("vendor", "Vendor Name")} required={!large} htmlFor="ex-vendor" error={errors.vendor}><TextArea id="ex-vendor" value={vendor} onChange={setVendor} rows={3} /></Row>,
     amount: amountRow,
     quotation: <Row label={lab("quotation", "Quotation")} htmlFor="ex-quotation"><FileInput id="ex-quotation" label="Quotation" value={quotation} onChange={setQuotation} onBusy={busy} /></Row>,
