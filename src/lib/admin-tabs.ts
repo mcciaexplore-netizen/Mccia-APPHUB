@@ -1,7 +1,7 @@
 import { hasArea, isSuper, type Actor } from "@/lib/rbac";
 
 /**
- * The sections of Administrator, and which area of access opens each. The sidebar asks here, so a person is only ever shown what they may
+ * The sections of Administrator, and which area of access opens each. The section cards on Administrator ask here, so a person is only ever shown what they may
  * open. The Dashboard (counts only) is for everyone who may open Administrator at all.
  */
 export type AdminTab = { href: string; label: string; exact?: boolean };

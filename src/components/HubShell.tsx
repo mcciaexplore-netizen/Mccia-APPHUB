@@ -1,51 +1,49 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { Bell, Menu } from "lucide-react";
-import { Sidebar, type SidebarDept, type SidebarUser } from "@/components/Sidebar";
+import { usePathname } from "next/navigation";
+import { Bell } from "lucide-react";
+import { lockAdmin } from "@/actions/auth";
+import type { Role } from "@/db/schema";
 import { UserMenu } from "@/components/UserMenu";
-import type { ReviewItem } from "@/lib/approvals/approvals.manifest";
 
-export function HubShell({
-  user, departments, showApprovals, review, showSetup, unread, children,
-}: {
-  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; /** Where this person works under Approval System (HR, Expenditure), with what waits for them. */ review?: readonly ReviewItem[]; /** The Support Admin: the set-up screens are listed under Approval System. */ showSetup?: boolean; /** Unread notifications; the bell is shown when this is given. */ unread?: number; children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const close = () => setOpen(false);
-  const sidebar = (
-    <Suspense fallback={<div className="h-full w-60 border-r border-line bg-white" />}>
-      <Sidebar user={user} departments={departments} showApprovals={showApprovals} review={review} showSetup={showSetup} onNavigate={close} onClose={close} />
-    </Suspense>
-  );
+export type ShellUser = { name: string; role: Role };
+
+/**
+ * The frame of every page: a top bar (the hub's name, which goes home, the bell and the person's menu) and the page under it. There is no
+ * sidebar; everything is reached from the cards on the home page and on the pages they open.
+ */
+export function HubShell({ user, unread, children }: { user: ShellUser | null; /** Unread notifications; the bell is shown when this is given. */ unread?: number; children: React.ReactNode }) {
+  const pathname = usePathname();
+  const inAdmin = pathname.startsWith("/administrator");
+  // Administrator locks itself the moment you leave it (the proxy only re-checks on the way in).
+  const wasInAdmin = useRef(inAdmin);
+  useEffect(() => {
+    if (wasInAdmin.current && !inAdmin) void lockAdmin();
+    wasInAdmin.current = inAdmin;
+  }, [inAdmin]);
 
   return (
-    <div className="flex min-h-screen bg-canvas">
-      <div className="sticky top-0 hidden h-screen lg:block">{sidebar}</div>
-
-      {open && <div className="fixed inset-0 z-40 bg-overlay lg:hidden" onClick={close} aria-hidden />}
-      <div className={`fixed inset-y-0 left-0 z-50 transition-transform duration-300 lg:hidden ${open ? "translate-x-0 shadow-card-hover" : "-translate-x-full"}`}>
-        {sidebar}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 bg-white px-4 sm:px-8 lg:justify-end">
-          <button aria-label="Open menu" onClick={() => setOpen(true)} className="text-muted transition-colors hover:text-primary lg:hidden"><Menu size={22} /></button>
-          {user ? (
-            <div className="flex items-center gap-3">
-              {unread !== undefined && (
-                <Link href="/notifications" aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"} className="relative grid h-10 w-10 place-items-center rounded-md text-muted transition-colors hover:bg-alt hover:text-primary">
-                  <Bell size={20} />
-                  {unread > 0 && <span className="absolute right-1 top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-brand-red px-1 text-[0.62rem] font-bold leading-none text-white">{unread > 99 ? "99+" : unread}</span>}
-                </Link>
-              )}
-              <UserMenu name={user.name} role={user.role} />
-            </div>
-          ) : null}
-        </header>
-        <main className="p-4 pt-2 sm:p-8 sm:pt-4">{children}</main>
-      </div>
+    <div className="min-h-screen bg-canvas">
+      <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-line bg-white px-4 sm:px-8">
+        <Link href="/" className="block leading-tight">
+          <span className="block text-xl font-extrabold tracking-tight text-ink">MCCIA</span>
+          <span className="block text-[0.62rem] font-bold uppercase tracking-widest text-primary">App Hub</span>
+        </Link>
+        {user ? (
+          <div className="flex items-center gap-3">
+            {unread !== undefined && (
+              <Link href="/notifications" aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"} className="relative grid h-10 w-10 place-items-center rounded-md text-muted transition-colors hover:bg-alt hover:text-primary">
+                <Bell size={20} />
+                {unread > 0 && <span className="absolute right-1 top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-brand-red px-1 text-[0.62rem] font-bold leading-none text-white">{unread > 99 ? "99+" : unread}</span>}
+              </Link>
+            )}
+            <UserMenu name={user.name} role={user.role} />
+          </div>
+        ) : null}
+      </header>
+      <main className="mx-auto max-w-7xl p-4 pt-6 sm:p-8">{children}</main>
     </div>
   );
 }

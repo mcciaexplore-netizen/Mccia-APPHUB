@@ -99,7 +99,7 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
           <h2 className="text-2xl">{person.name}</h2>
           <p className="text-sm text-muted">{person.email}</p>
           <p className="mt-2 flex flex-wrap items-center gap-2"><span className={roleBadge[person.role]}>{roleLabel[person.role]}</span><span className={STATUS_BADGE[person.status]}>{STATUS_LABEL[person.status]}</span>
-            {person.mainAdmin && <span className="badge badge-neutral">{person.role === "head_admin" || person.role === "super_admin" ? "Main admin" : "Main account"}{person.passwordInSettings ? " · password in settings" : ""}</span>}</p>
+            {person.mainAdmin && person.role !== "head_admin" && <span className="badge badge-neutral">{person.role === "super_admin" ? "Main admin" : "Main account"}{person.passwordInSettings ? " · password in settings" : ""}</span>}</p>
         </div>
         {((caps.invite && !person.passwordInSettings) || (caps.toggleActive && !self) || (caps.remove && !self)) && (
           <div className="flex flex-wrap gap-2">

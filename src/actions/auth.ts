@@ -45,7 +45,7 @@ export async function unlockAdmin(formData: FormData) {
   redirect(target);
 }
 
-/** Called by the sidebar the moment you really leave Administrator. */
+/** Called by the page frame the moment you really leave Administrator. */
 export async function lockAdmin() {
   (await cookies()).delete(ADMIN_COOKIE);
 }

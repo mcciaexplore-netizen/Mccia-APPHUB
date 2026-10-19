@@ -18,7 +18,7 @@ import { resolveScreen } from "@/lib/approvals/screens";
  * path takes over from this one.
  *
  * The Pending, Approved and Rejected lists of HR and of Expenditure (/approvals/review/hr/pending, ...) are the approver's own place to
- * work, opened from the sidebar under Approval System. Only someone who approves that kind of request, or oversees them all, may open them.
+ * work, opened from their cards on the Approval System page. Only someone who approves that kind of request, or oversees them all, may open them.
  * The Director General has one place instead, Recommended (/approvals/review/recommendation/hr and .../expenditure): what was recommended to them.
  */
 /** The table streams in under whatever is above it; every check that can make the page a 404 has already run by then. */

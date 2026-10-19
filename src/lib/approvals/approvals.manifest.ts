@@ -42,7 +42,7 @@ export type NavApp = { key: AppKey; title: string; nav: NavEntry[] };
 const HANDLERS = ["approver", "dg"] as const; // people who are asked to decide requests
 const OVERSIGHT = ["viewer", "approvals_admin"] as const; // see every request, read only (an admin can also edit masters)
 const ADMIN = ["approvals_admin"] as const;
-/** The heading of the Support Admin's group of set-up screens (the sidebar shows this group under Approval System). */
+/** The heading of the Support Admin's group of set-up screens (the Approval System page shows them as cards). */
 export const SETUP_GROUP_LABEL = "Setup & Configuration";
 
 /**

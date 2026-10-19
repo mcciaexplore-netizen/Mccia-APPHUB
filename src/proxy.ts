@@ -6,7 +6,7 @@ import { ADMIN_COOKIE, ADMIN_IDLE, SESSION_COOKIE, cookieOptions, sign, verify }
  *   - nobody gets past /login without a valid sign-in;
  *   - /administrator needs a recent password check on top of that, kept alive while it is in use;
  *   - loading any page outside /administrator (a full page load) locks it again; moving around inside the app is handled by
- *     the sidebar, which calls lockAdmin() when you really leave Administrator (background prefetches must not count).
+ *     the page frame (HubShell), which calls lockAdmin() when you really leave Administrator (background prefetches must not count).
  * Every server action and page still checks for itself (src/lib/permissions.ts); this is the first line, not the only one.
  */
 export function proxy(req: NextRequest) {
