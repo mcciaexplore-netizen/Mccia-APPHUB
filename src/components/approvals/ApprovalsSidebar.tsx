@@ -28,18 +28,12 @@ function Line({ link, depth, pathname }: { link: SideLink; depth: number; pathna
 }
 
 /** The Approval System's own sidebar: what this person may open in it, and nothing else. */
-export function ApprovalsSidebar({ links, setup }: { links: SideLink[]; /** The Support Admin's set-up screens, under their own heading. */ setup?: SideLink[] }) {
+export function ApprovalsSidebar({ links }: { links: SideLink[] }) {
   const pathname = usePathname();
   return (
     <nav aria-label="Approval System" className="rounded-[14px] border border-gray-200 bg-white py-3">
       <p className="px-4 pb-2 text-[0.66rem] font-bold uppercase tracking-widest text-subtle">Approval System</p>
       <ul>{links.map((l) => <Line key={l.href} link={l} depth={0} pathname={pathname} />)}</ul>
-      {setup && setup.length > 0 && (
-        <>
-          <p className="mt-3 border-t border-line px-4 pb-2 pt-4 text-[0.66rem] font-bold uppercase tracking-widest text-subtle">Setup &amp; Configuration</p>
-          <ul>{setup.map((l) => <Line key={l.href} link={l} depth={0} pathname={pathname} />)}</ul>
-        </>
-      )}
     </nav>
   );
 }

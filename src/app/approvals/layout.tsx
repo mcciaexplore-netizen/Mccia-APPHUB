@@ -4,7 +4,7 @@ import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { HubShell } from "@/components/HubShell";
 import { ApprovalsSidebar, type SideLink } from "@/components/approvals/ApprovalsSidebar";
 import { ModuleHeader } from "@/components/approvals/ModuleHeader";
-import { REVIEW_KEYS, REVIEW_LABEL, REVIEW_TABS, REVIEW_TAB_LABEL, SETUP_GROUP_LABEL, approvalsApps, isGroup, type ReviewKey } from "@/lib/approvals/approvals.manifest";
+import { REVIEW_KEYS, REVIEW_LABEL, REVIEW_TABS, REVIEW_TAB_LABEL, type ReviewKey } from "@/lib/approvals/approvals.manifest";
 import { requirePage } from "@/lib/approvals/guard";
 import { hasAnyRole, hasRole, type ApprovalsUser } from "@/lib/approvals/host-adapter";
 import { unreadCount } from "@/lib/approvals/notify";
@@ -13,12 +13,6 @@ import { requireUser } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Approval System · MCCIA App Hub" };
-
-/** The Support Admin's set-up screens (Who Approves What, Expense Types, ...), read from the Approval System menu data. */
-const SETUP_LINKS: SideLink[] = approvalsApps
-  .flatMap((a) => a.nav)
-  .flatMap((e) => (isGroup(e) && e.label === SETUP_GROUP_LABEL ? e.items : []))
-  .map((i) => ({ label: i.label, href: i.href! }));
 
 /**
  * What the sidebar holds for this person. Everyone: Approval Forms (the forms) and Approved Forms. Under Approval Forms, whoever decides
@@ -54,7 +48,7 @@ export default async function ApprovalsLayout({ children }: { children: React.Re
       <ConfirmProvider>
         <div className="apr-root flex flex-col gap-6 lg:flex-row lg:items-start">
           <aside className="w-full shrink-0 lg:sticky lg:top-20 lg:w-72">
-            <ApprovalsSidebar links={links} setup={hasRole(user, "approvals_admin") ? SETUP_LINKS : undefined} />
+            <ApprovalsSidebar links={links} />
           </aside>
           <div className="min-w-0 flex-1">
             <Suspense fallback={null}>
