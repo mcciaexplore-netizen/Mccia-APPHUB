@@ -21,9 +21,13 @@ let counter = 0;
  * optional, and add fields of their own (short text, long text, number, date or a dropdown), which can be required. Saving applies at once
  * to the next person who opens the form. Requests already sent keep what was answered, under the name it had.
  */
-export function FormFieldsEditor({ initial }: { initial: Record<FormKey, FormField[]> }) {
+export function FormFieldsEditor({ initial, forms = FORM_KEYS, title = "Approval Forms", intro }: {
+  initial: Record<FormKey, FormField[]>;
+  /** Which forms this page edits (HR alone, or the expense form's two layouts); tabs are shown when there is more than one. */ forms?: readonly FormKey[];
+  title?: string; intro?: string;
+}) {
   const toast = useToast();
-  const [form, setForm] = useState<FormKey>("hr");
+  const [form, setForm] = useState<FormKey>(forms[0]);
   const [saved, setSaved] = useState<Record<FormKey, Line[]>>(() => Object.fromEntries(FORM_KEYS.map((k) => [k, initial[k].map(toLine)])) as Record<FormKey, Line[]>);
   const [lines, setLines] = useState<Record<FormKey, Line[]>>(saved);
   const [saving, setSaving] = useState(false);
@@ -60,18 +64,19 @@ export function FormFieldsEditor({ initial }: { initial: Record<FormKey, FormFie
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl">Approval Forms</h2>
+        <h2 className="text-xl">{title}</h2>
+        {intro && <p className="mt-1 max-w-3xl text-sm text-muted">{intro}</p>}
         <p className="mt-1 max-w-3xl text-sm text-muted">The forms everyone uses to raise a request. Rename a field, move it, hide the ones that are optional, or add fields of your own. A saved change shows the next time someone opens the form. Requests already sent keep what was answered.</p>
       </div>
 
-      <div role="tablist" aria-label="Forms" className="flex flex-wrap gap-2 border-b border-line pb-3">
-        {FORM_KEYS.map((k) => (
+      {forms.length > 1 && <div role="tablist" aria-label="Forms" className="flex flex-wrap gap-2 border-b border-line pb-3">
+        {forms.map((k) => (
           <button key={k} type="button" role="tab" aria-selected={form === k} onClick={() => setForm(k)}
             className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${form === k ? "bg-blue-tint text-primary" : "text-muted hover:bg-blue-tint hover:text-primary"}`}>
             {FORM_TITLE[k]}{signature(lines[k]) !== signature(saved[k]) ? " •" : ""}
           </button>
         ))}
-      </div>
+      </div>}
 
       <ol className="space-y-2" aria-label={`Fields of the ${FORM_TITLE[form]}`}>
         {mine.map((l, i) => (

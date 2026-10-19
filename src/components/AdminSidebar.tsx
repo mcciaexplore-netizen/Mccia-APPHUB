@@ -24,12 +24,21 @@ export function AdminSidebar({ tabs }: { tabs: AdminTab[] }) {
   };
   const line = (t: AdminTab) => {
     const Icon = ICON[t.label] ?? Settings2;
-    const active = isActive(t);
+    // A line with lines under it (Approval Forms: HR, Expenditure) is a heading for them; the line of the page open is highlighted.
+    const active = !t.children && isActive(t);
     return (
-      <li key={t.href}>
+      <li key={t.label}>
         <Link href={t.href} aria-current={active ? "page" : undefined} className={row(active)}>
           <Icon size={16} className="shrink-0" /><span className="py-2">{t.label}</span>
         </Link>
+        {t.children && (
+          <ul>
+            {t.children.map((c) => {
+              const on = isActive(c);
+              return <li key={c.href}><Link href={c.href} aria-current={on ? "page" : undefined} className={`${row(on)} pl-11`}><span className="py-2">{c.label}</span></Link></li>;
+            })}
+          </ul>
+        )}
       </li>
     );
   };
