@@ -203,10 +203,11 @@ try {
   await M.goto(BASE + "/");
   check("and the hub shows them the Approval System item", (await M.locator("aside:visible nav").first().innerText()).includes("Approval System"));
   await M.goto(BASE + "/approvals");
-  check("the Approval System page gives them the two form cards", (await M.getByRole("link", { name: /Approval Form/ }).count()) === 2);
-  await M.getByRole("link", { name: /Expenditure Approval Form/ }).click();
+  check("the Approval System page is their staff dashboard: Submit a Request, with Submit HR Request and Submit Expense", (await M.locator("main h1").first().innerText()) === "Submit a Request" && (await M.getByRole("link", { name: "Submit HR Request" }).getAttribute("href")) === "/approvals/hr/new" && (await M.getByRole("link", { name: "Submit Expense" }).getAttribute("href")) === "/approvals/expenses/new");
+  check("with a link to the Expenditure form for ₹10,000 and more, and My Recent Submissions empty", (await M.getByRole("link", { name: /Use the Expenditure form/ }).getAttribute("href")) === "/approvals/expenditures/new" && /Nothing submitted yet/.test(await M.locator("main").first().innerText()));
+  await M.getByRole("link", { name: "Submit Expense" }).click();
   await M.locator("main h2").first().waitFor();
-  check("the Expenditure card takes them to the Expenses form, with no menu around it", (await M.locator("main h2").first().innerText()) === "Expenses" && (await menuRows(M).count()) === 0);
+  check("Submit Expense takes them to the Expenses form, with no menu around it", (await M.locator("main h2").first().innerText()) === "Expenses" && (await menuRows(M).count()) === 0);
   await M.goto(BASE + "/approvals/hr/new");
   await M.locator("main h2").first().waitFor();
   check("the HR form has no menu around it either", (await menuRows(M).count()) === 0);
@@ -243,7 +244,7 @@ try {
   check("a second ordinary person, with neither application ticked, can open /approvals and both forms", (await status(out.page, "/approvals")) === 200 && (await status(out.page, "/approvals/hr/new")) === 200 && (await status(out.page, "/approvals/expenses/new")) === 200 && (await status(out.page, "/approvals/expenditures/new")) === 200);
   check("with nothing ticked the forms are all they have: no dropdown in the sidebar, no lists", (await out.page.locator("aside").first().getByRole("button", { name: "Approval System" }).count()) === 0 && (await status(out.page, "/approvals/hr/all")) === 404);
   await out.page.goto(BASE + "/approvals");
-  check("and the Approval System page, with its two form cards, is theirs like anyone's", (await out.page.getByRole("link", { name: /Approval Form/ }).count()) === 2);
+  check("and the Approval System page gives them the two forms, like anyone without a role", (await out.page.getByRole("link", { name: /^Submit (HR Request|Expense)$/ }).count()) === 2);
   check("the API answers them (they read the dropdown lists)", (await out.page.request.get(`${BASE}/api/approvals/masters/categories`)).status() === 200);
   check("but the admin pages stay closed to them", (await status(out.page, "/approvals/admin/categories")) === 404);
 

@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import { ClickableRow } from "@/components/approvals/ClickableRow";
-import { OverBudgetBadge, StatusBadge } from "@/components/approvals/Badges";
+import { OverBudgetBadge } from "@/components/approvals/Badges";
 import { ListFilters } from "@/components/approvals/ListFilters";
 import { PageHeader } from "@/components/approvals/PageHeader";
 import { QuickDecide } from "@/components/approvals/QuickDecide";
+import { EmptyState, StatusPill } from "@/components/approvals/shared-ui";
 import { appForType } from "@/lib/approvals/approvals.manifest";
 import { formatDate, formatDateTime, formatINR, isoToDisplay } from "@/lib/approvals/format";
 import { toQueryString, type ListParams, type SortKey } from "@/lib/approvals/list-params";
@@ -47,7 +48,9 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
   const exportHref = `/api/approvals/requests/export${exportQuery ? `${exportQuery}&` : "?"}screen=${encodeURIComponent(slug)}`;
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const columns = 8 + (screen.branch ? 1 : 0) + (screen.vendor ? 2 : 0) + (mixed ? 1 : 0) + (screen.quickDecide ? 1 : 0);
+  const filtered = !!(params.q || params.from || params.to || params.categoryId || params.branchId || params.status);
+  // An empty list says why: nothing waits for you, nothing was recommended to you, you raised nothing, or nothing matches.
+  const empty = filtered ? "none" : screen.reachedMe || slug === "inbox" ? "queue" : screen.waitingForMe ? "waiting" : screen.mine ? "mine" : "none";
 
   return (
     <>
@@ -57,6 +60,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
       />
       <ListFilters params={params} categories={categories} branches={branches.map((b) => ({ id: b.id, name: b.name }))} showStatus={!screen.statuses} showBranch={!!screen.branch} exportHref={exportHref} />
 
+      {rows.length === 0 ? <EmptyState kind={empty} /> : (
       <div className="table-wrap">
         <table>
           <thead>
@@ -77,11 +81,6 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
-              <tr><td colSpan={columns} className="!py-8 text-center text-[var(--z-muted)]">
-                {params.q || params.from || params.to || params.categoryId || params.branchId || params.status ? "No requests match these filters." : "No requests here yet."}
-              </td></tr>
-            )}
             {rows.map((r) => {
               const href = `/approvals/requests/${r.id}?app=${appForType(r.type)}`;
               return (
@@ -95,7 +94,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
                   {screen.vendor && <td className="whitespace-nowrap">{isoToDisplay(r.taxInvoiceDate)}</td>}
                   <td className="whitespace-nowrap text-right">{r.amountPaise == null ? "" : formatINR(r.amountPaise)}</td>
                   <td className="whitespace-nowrap">{formatDate(r.requestedAt)}</td>
-                  <td className="whitespace-nowrap"><span className="inline-flex flex-wrap items-center gap-1"><StatusBadge status={r.status} />{r.overBudget && <OverBudgetBadge />}</span></td>
+                  <td className="whitespace-nowrap"><span className="inline-flex flex-wrap items-center gap-1"><StatusPill status={r.status} currentStepNo={r.currentStep} />{r.overBudget && <OverBudgetBadge />}</span></td>
                   <td>{r.approverName ?? ""}</td>
                   <td className="whitespace-nowrap">{r.decidedAt ? formatDateTime(r.decidedAt) : ""}</td>
                   {screen.quickDecide && <td className="whitespace-nowrap">{r.mineToDecide && <QuickDecide id={r.id} label={r.requestNo ?? "request"} overBudget={r.overBudget} kind={decisionMode(r.currentStep, r.totalSteps)} />}</td>}
@@ -105,6 +104,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
           </tbody>
         </table>
       </div>
+      )}
 
       <nav className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--z-muted)]" aria-label="Pages">
         <span>{total === 0 ? "0 requests" : `Showing ${from}–${Math.min(page * pageSize, total)} of ${total}`}</span>

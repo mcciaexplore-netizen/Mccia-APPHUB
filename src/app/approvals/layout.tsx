@@ -5,6 +5,7 @@ import { HubShell } from "@/components/HubShell";
 import { ModuleHeader } from "@/components/approvals/ModuleHeader";
 import { getVisibleDepartments } from "@/lib/access";
 import { requirePage } from "@/lib/approvals/guard";
+import { hasRole } from "@/lib/approvals/host-adapter";
 import { unreadCount } from "@/lib/approvals/notify";
 import { reviewItemsFor } from "@/lib/approvals/request-queries";
 import { requireUser } from "@/lib/permissions";
@@ -22,7 +23,7 @@ export default async function ApprovalsLayout({ children }: { children: React.Re
   const user = await requirePage();
   const [departments, unread, review] = await Promise.all([getVisibleDepartments(hubUser), unreadCount(user.id), reviewItemsFor(user)]);
   return (
-    <HubShell user={{ name: hubUser.name, role: hubUser.role, adminAreas: hubUser.adminAreas }} departments={departments} showApprovals review={review}>
+    <HubShell user={{ name: hubUser.name, role: hubUser.role, adminAreas: hubUser.adminAreas }} departments={departments} showApprovals review={review} showSetup={hasRole(user, "approvals_admin")}>
       <ConfirmProvider>
         <div className="apr-root">
           <Suspense fallback={null}>

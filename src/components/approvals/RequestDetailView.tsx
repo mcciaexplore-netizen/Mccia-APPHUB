@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Download, Paperclip } from "lucide-react";
-import { OverBudgetBadge, StatusBadge } from "@/components/approvals/Badges";
+import { OverBudgetBadge } from "@/components/approvals/Badges";
+import { StatusPill } from "@/components/approvals/shared-ui";
 import { DecisionPanel, WithdrawButton } from "@/components/approvals/DecisionPanel";
 import { Timeline } from "@/components/approvals/Timeline";
 import { TYPE_LABEL, budgetWarning } from "@/lib/approvals/calc";
@@ -51,7 +52,7 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="!text-xl">{d.requestNo ?? "Request"}</h2>
         <span className="text-[var(--z-muted)]">{TYPE_LABEL[d.type]}</span>
-        <StatusBadge status={d.status} />
+        <StatusPill status={d.status} currentStepNo={d.steps.find((s) => s.status === "pending")?.stepNo} />
         {d.overBudget && <OverBudgetBadge />}
         {d.can.withdraw && <span className="ml-auto"><WithdrawButton id={d.id} /></span>}
       </div>

@@ -9,7 +9,7 @@ import { Icon } from "@/components/Icon";
 import type { Role } from "@/db/schema";
 import { adminTabsFor } from "@/lib/admin-tabs";
 import { canAdminister } from "@/lib/rbac";
-import { REVIEW_LABEL, reviewHref, type ReviewItem } from "@/lib/approvals/approvals.manifest";
+import { REVIEW_LABEL, SETUP_GROUP_LABEL, approvalsApps, isGroup, reviewHref, type NavItem, type ReviewItem } from "@/lib/approvals/approvals.manifest";
 
 export type SidebarDept = { id: string; name: string; icon: string };
 export type SidebarUser = { name: string; role: Role; adminAreas?: readonly string[] };
@@ -29,6 +29,9 @@ function Item({ href, active, onNavigate, children }: { href: string; active: bo
   );
 }
 
+/** The Support Admin's set-up screens (Who Approves What, Office Branches, ...), read from the Approval System menu data. */
+const SETUP_LINKS: NavItem[] = approvalsApps.flatMap((a) => a.nav).flatMap((e) => (isGroup(e) && e.label === SETUP_GROUP_LABEL ? e.items : []));
+
 const ADMIN_LINKS = [
   { href: "/administrator", label: "Dashboard", Icon: LayoutDashboard, exact: true },
   { href: "/administrator/users", label: "Users", Icon: Users },
@@ -38,9 +41,9 @@ const ADMIN_LINKS = [
 ] as const;
 
 export function Sidebar({
-  user, departments, showApprovals, review = [], onNavigate, onClose,
+  user, departments, showApprovals, review = [], showSetup = false, onNavigate, onClose,
 }: {
-  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; /** Where this person works under Approval System (HR, Expenditure), with what waits for them. */ review?: readonly ReviewItem[]; onNavigate: () => void; onClose: () => void;
+  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; /** Where this person works under Approval System (HR, Expenditure), with what waits for them. */ review?: readonly ReviewItem[]; /** The Support Admin: the set-up screens are listed under Approval System too. */ showSetup?: boolean; onNavigate: () => void; onClose: () => void;
 }) {
   const pathname = usePathname();
   const params = useSearchParams();
@@ -83,9 +86,9 @@ export function Sidebar({
           <div>
             <Item href="/approvals" active={inApprovals && !onReview} onNavigate={onNavigate}>
               <ClipboardList size={20} /> <span className="flex-1 py-2">Approval System</span>
-              {review.length > 0 && <ChevronDown size={16} aria-hidden className={`transition-transform duration-200 ${inApprovals ? "rotate-180" : ""}`} />}
+              {(review.length > 0 || showSetup) && <ChevronDown size={16} aria-hidden className={`transition-transform duration-200 ${inApprovals ? "rotate-180" : ""}`} />}
             </Item>
-            {inApprovals && review.length > 0 && (
+            {inApprovals && (review.length > 0 || showSetup) && (
               <div className="ml-8 mr-3 mt-0.5 space-y-0.5 border-l border-line pl-2" aria-label="Approval System">
                 {review.map((r) => {
                   const active = pathname.startsWith(`/approvals/review/${r.key}/`);
@@ -97,6 +100,19 @@ export function Sidebar({
                     </Link>
                   );
                 })}
+                {showSetup && (
+                  <div className="mt-3 space-y-0.5 border-t border-line pt-3" aria-label={SETUP_GROUP_LABEL}>
+                    <p className="px-3 pb-1 text-[0.66rem] font-bold uppercase tracking-widest text-subtle">{SETUP_GROUP_LABEL}</p>
+                    {SETUP_LINKS.map((l) => {
+                      const active = pathname === l.href || pathname.startsWith(`${l.href}/`);
+                      return (
+                        <Link key={l.href} href={l.href!} onClick={onNavigate} aria-current={active ? "page" : undefined} className={`${SUB} ${subTone(active)}`}>
+                          <span className="flex-1 whitespace-nowrap py-2">{l.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>

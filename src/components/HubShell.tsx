@@ -8,15 +8,15 @@ import { UserMenu } from "@/components/UserMenu";
 import type { ReviewItem } from "@/lib/approvals/approvals.manifest";
 
 export function HubShell({
-  user, departments, showApprovals, review, unread, children,
+  user, departments, showApprovals, review, showSetup, unread, children,
 }: {
-  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; /** Where this person works under Approval System (HR, Expenditure), with what waits for them. */ review?: readonly ReviewItem[]; /** Unread notifications; the bell is shown when this is given. */ unread?: number; children: React.ReactNode;
+  user: SidebarUser | null; departments: SidebarDept[]; showApprovals: boolean; /** Where this person works under Approval System (HR, Expenditure), with what waits for them. */ review?: readonly ReviewItem[]; /** The Support Admin: the set-up screens are listed under Approval System. */ showSetup?: boolean; /** Unread notifications; the bell is shown when this is given. */ unread?: number; children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
   const sidebar = (
     <Suspense fallback={<div className="h-full w-60 border-r border-line bg-white" />}>
-      <Sidebar user={user} departments={departments} showApprovals={showApprovals} review={review} onNavigate={close} onClose={close} />
+      <Sidebar user={user} departments={departments} showApprovals={showApprovals} review={review} showSetup={showSetup} onNavigate={close} onClose={close} />
     </Suspense>
   );
 

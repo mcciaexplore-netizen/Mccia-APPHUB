@@ -1,6 +1,41 @@
 "use client";
 
-/** Small pieces shared by the module's admin screens. */
+import { CheckCircle2, ClipboardList, FileText } from "lucide-react";
+import type { AprRequestStatus } from "@/db/approvals-schema";
+
+/** Small pieces shared by the module's screens. */
+
+const PILL_LABEL: Record<AprRequestStatus | "dg", string> = {
+  pending: "Under Review", dg: "With Director General", approved: "Approved ✓", rejected: "Rejected", returned: "Needs Correction", withdrawn: "Withdrawn", draft: "Draft",
+};
+
+/**
+ * A request's status as a coloured pill, the same everywhere. A pending request past its first step is with the Director General (their step
+ * is the last), so it is told apart from one still under review by the first approver.
+ */
+export function StatusPill({ status, currentStepNo }: { status: AprRequestStatus; currentStepNo?: number }) {
+  const key = status === "pending" && (currentStepNo ?? 1) > 1 ? "dg" : status;
+  return <span className={`apr-pill apr-pill-${key}`}>{PILL_LABEL[key]}</span>;
+}
+
+const EMPTY = {
+  waiting: { Icon: CheckCircle2, tone: "text-[var(--z-green)]", title: "You are all caught up!", body: "Nothing is waiting for your review right now." },
+  queue: { Icon: CheckCircle2, tone: "text-[var(--z-green)]", title: "Nothing in the queue.", body: "No requests have been recommended to you yet." },
+  mine: { Icon: FileText, tone: "text-subtle", title: "Nothing submitted yet.", body: "Use the buttons above to raise your first request." },
+  none: { Icon: ClipboardList, tone: "text-subtle", title: "No requests found.", body: "Try adjusting your filters." },
+} as const;
+
+/** What a list shows instead of an empty table. */
+export function EmptyState({ kind }: { kind: keyof typeof EMPTY }) {
+  const e = EMPTY[kind];
+  return (
+    <div className="apr-empty" role="status">
+      <e.Icon size={40} className={e.tone} aria-hidden />
+      <p className="font-bold text-ink">{e.title}</p>
+      <p className="text-sm text-subtle">{e.body}</p>
+    </div>
+  );
+}
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (

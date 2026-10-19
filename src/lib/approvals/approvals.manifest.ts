@@ -42,6 +42,8 @@ export type NavApp = { key: AppKey; title: string; nav: NavEntry[] };
 const HANDLERS = ["approver", "dg"] as const; // people who are asked to decide requests
 const OVERSIGHT = ["viewer", "approvals_admin"] as const; // see every request, read only (an admin can also edit masters)
 const ADMIN = ["approvals_admin"] as const;
+/** The heading of the Support Admin's group of set-up screens (the sidebar shows this group under Approval System). */
+export const SETUP_GROUP_LABEL = "Setup & Configuration";
 
 /**
  * Everyone sees the forms (marked `form`). Everything else, lists such as "Pending HR Request" included, is for people with full access
@@ -58,7 +60,6 @@ export const approvalsApps: NavApp[] = [
         items: [
           { label: "HR", href: "/approvals/hr/new", form: true },
           { label: "All Hr", href: "/approvals/hr/all" },
-          { label: "HR Approval Categories", href: "/approvals/admin/hr-categories", roles: ADMIN },
           { label: "All Requests Timeline", href: "/approvals/timeline" },
           { label: "HR Requests Report", href: "/approvals/hr/report", roles: OVERSIGHT },
           { label: "Approved HR requests", href: "/approvals/hr/approved" },
@@ -89,14 +90,16 @@ export const approvalsApps: NavApp[] = [
         ],
       },
       {
-        label: "Administration",
+        label: SETUP_GROUP_LABEL,
+        roles: ADMIN,
         items: [
-          { label: "Expense Types", href: "/approvals/admin/categories", roles: ADMIN },
-          { label: "Office Branches", href: "/approvals/admin/branches", roles: ADMIN },
-          { label: "Publication Types", href: "/approvals/admin/publications", roles: ADMIN },
           { label: "Who Approves What", href: "/approvals/admin/rules", roles: ADMIN },
+          { label: "Office Branches", href: "/approvals/admin/branches", roles: ADMIN },
+          { label: "Expense Types", href: "/approvals/admin/categories", roles: ADMIN },
+          { label: "HR Request Types", href: "/approvals/admin/hr-categories", roles: ADMIN },
+          { label: "Publication Types", href: "/approvals/admin/publications", roles: ADMIN },
           { label: "User Permissions", href: "/approvals/admin/access", roles: ADMIN },
-          { label: "Settings", href: "/approvals/admin/settings", roles: ADMIN },
+          { label: "Notification Settings", href: "/approvals/admin/settings", roles: ADMIN },
           { label: "Full Audit Log", href: "/approvals/admin/audit", roles: ADMIN },
         ],
       },

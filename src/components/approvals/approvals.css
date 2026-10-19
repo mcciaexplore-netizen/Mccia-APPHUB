@@ -112,3 +112,23 @@
 
 .apr-root .zth-sort { display: inline-flex; align-items: center; gap: 0.2rem; font-weight: 700; color: inherit; }
 .apr-root .zth-sort:hover { color: var(--c-primary); }
+
+/* ------------------------------------------------------------------ status pills (one look everywhere a request's status is shown) */
+.apr-root .apr-pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 0.15rem 0.65rem; font-size: 0.74rem; font-weight: 700; line-height: 1.4; white-space: nowrap; }
+.apr-root .apr-pill-pending { background: #fff8e1; color: #b45309; }
+.apr-root .apr-pill-dg { background: #f3e8ff; color: #7c3aed; }
+.apr-root .apr-pill-approved { background: #dcfce7; color: #15803d; }
+.apr-root .apr-pill-rejected { background: #fee2e2; color: #b91c1c; }
+.apr-root .apr-pill-returned { background: #fff7ed; color: #c2410c; }
+.apr-root .apr-pill-withdrawn, .apr-root .apr-pill-draft { background: #f3f4f6; color: #6b7280; }
+
+/* ------------------------------------------------------------------ dashboards on the Approval System page */
+.apr-root .apr-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; border-radius: var(--radius-md); padding: 0.9rem 1.1rem; font-size: 0.92rem; }
+.apr-root .apr-banner-amber { background: #fff8e1; color: #92400e; }
+.apr-root .apr-banner-green { background: #dcfce7; color: #166534; }
+.apr-root .apr-banner-purple { background: #f3e8ff; color: #6b21a8; }
+.apr-root .apr-banner-red { background: #b91c1c; color: #fff; }
+.apr-root .apr-banner a { font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+.apr-root .apr-dot { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; }
+.apr-root .apr-strip { border-radius: var(--radius-sm); background: #fee2e2; color: #b91c1c; padding: 0.3rem 0.6rem; font-size: 0.8rem; font-weight: 700; }
+.apr-root .apr-empty { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; border: 1px dashed var(--z-line); border-radius: var(--radius-md); background: var(--c-alt); padding: 2.2rem 1rem; text-align: center; }
