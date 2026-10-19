@@ -162,7 +162,10 @@ try {
   await R.page.goto(BASE + "/approvals/hr/new");
   check("the HR form has its fields in the Zoho order", JSON.stringify(await labels(R.page)) === JSON.stringify(["Name", "Email", "Category", "Date of Request", "Amount", "Description", "File upload", "File upload"]), (await labels(R.page)).join(" | "));
   await R.page.goto(BASE + "/approvals/expenditures/new");
-  check("the DG expenditure form has its 14 fields in order (the budget allocated and used are typed)", JSON.stringify(await labels(R.page)) === JSON.stringify(["Name", "Email", "Date of Request", "Difference", "Category", "Nature of Expenditure", "Branch Name", "Budget Allocated", "Budget Used", "Budget Remaining", "Amount", "Vendor Name", "Tax Invoice/Supporting Documents", "Quotation"]), (await labels(R.page)).join(" | "));
+  check("the old ₹10,000+ address opens the one expense form", new URL(R.page.url()).pathname === "/approvals/expenses/new");
+  await R.page.locator("#ex-amount").fill("15,000");
+  await R.page.getByText("the first approver recommends it to the Director General").first().waitFor({ timeout: 10000 }).catch(() => {});
+  check("typing 15,000 switches the one form to the ₹10,000+ fields, with its 14 fields in order (the budget allocated and used are typed)", JSON.stringify(await labels(R.page)) === JSON.stringify(["Name", "Email", "Date of Request", "Difference", "Category", "Nature of Expenditure", "Branch Name", "Budget Allocated", "Budget Used", "Budget Remaining", "Amount", "Vendor Name", "Tax Invoice/Supporting Documents", "Quotation"]), (await labels(R.page)).join(" | "));
   check("Submit and Reset are there", (await R.page.getByRole("button", { name: "Submit" }).count()) === 1 && (await R.page.getByRole("button", { name: "Reset" }).count()) === 1);
   await R.page.goto(BASE + "/approvals/expenses/new");
   check("the below-10k form has its 19 fields in order (two of them labelled Date; the budget allocated and used are typed)", JSON.stringify(await labels(R.page)) === JSON.stringify(["Name", "Email", "Date", "Category", "Nature of Expenditure", "Branch Name", "Budget Allocated", "Budget Used", "Available budget", "File upload", "Budget Remaining", "Date", "Type of Publication", "Publication", "Vendor Name", "Tax Invoice", "Quotation", "Date of Tax Invoice", "Amount"]), (await labels(R.page)).join(" | "));
@@ -239,11 +242,11 @@ try {
   check("10,000 on the below-10k form is refused with the redirect message", wrongSmall.status === 422 && /10,000 and above must be submitted through DG Expenditure Approval/.test(wrongSmall.json.error), wrongSmall.json.error);
   const wrongLarge = await submitWith(R.page, { kind: "large", employeeUserId: ids.req, ...common(branch.id, cat.id), amountPaise: 999900 });
   check("9,999 on the DG form is refused with the reverse message", wrongLarge.status === 422 && /below ₹10,000 must be submitted through the Expenses form/.test(wrongLarge.json.error), wrongLarge.json.error);
-  await R.page.goto(BASE + "/approvals/expenditures/new");
+  await R.page.goto(BASE + "/approvals/expenses/new");
+  await R.page.locator("#ex-amount").fill("15,000");
+  check("on the one expense form, 15,000 says it will go on to the DG and does not block Submit", (await R.page.getByText("the first approver recommends it to the Director General").count()) >= 1 && !(await R.page.getByRole("button", { name: "Submit" }).isDisabled()));
   await R.page.locator("#ex-amount").fill("9,999");
-  check("typing 9,999 on the DG form shows the message and a link, and blocks Submit", (await R.page.getByText("must be submitted through the Expenses form").count()) >= 1 && (await R.page.getByRole("button", { name: "Submit" }).isDisabled()));
-  const href = await R.page.getByRole("link", { name: "Open the Expenses form" }).getAttribute("href");
-  check("the link opens the other form with the amount carried over", /\/approvals\/expenses\/new\?.*amount=9%2C999/.test(href ?? ""), href);
+  check("and 9,999 goes back to the expense fields, with no wrong-form message", (await R.page.getByText("the first approver recommends it to the Director General").count()) === 0 && (await R.page.getByText("must be submitted through").count()) === 0 && (await R.page.locator("#ex-vendor").count()) === 1);
 
   section("7. Expenditure of 15,000 against the budget the requester typed");
   const big = await submitWith(R.page, { kind: "large", employeeUserId: ids.req, ...common(branch.id, cat.id), ...tight(5000000, 0), amountPaise: 1500000, vendorName: "ZZ Vendor", natureOfExpenditure: "ZZ test" });

@@ -54,9 +54,8 @@ export async function StaffDashboard({ user }: { user: ApprovalsUser }) {
         <article className="card-lift glass !rounded-md flex flex-col p-6">
           <span className="mb-4 grid h-12 w-12 place-items-center rounded-md bg-blue-tint text-primary"><Receipt size={24} aria-hidden /></span>
           <h2 className="text-xl text-ink">Expense Request</h2>
-          <p className="mt-1 flex-1 text-sm text-subtle">Submit an expense below ₹10,000 for direct approval</p>
+          <p className="mt-1 flex-1 text-sm text-subtle">Submit an expense of any amount. Below ₹10,000 it is approved directly; ₹10,000 and above goes on to the DG.</p>
           <Link href="/approvals/expenses/new" className="btn btn-primary mt-5 self-start">Submit Expense</Link>
-          <p className="mt-3 text-xs text-subtle">Need to claim ₹10,000 or more? <Link href="/approvals/expenditures/new" className="apr-link">Use the Expenditure form →</Link></p>
         </article>
       </div>
 

@@ -204,7 +204,7 @@ try {
   check("and the hub shows them the Approval System item", (await M.locator("aside:visible nav").first().innerText()).includes("Approval System"));
   await M.goto(BASE + "/approvals");
   check("the Approval System page is their staff dashboard: Submit a Request, with Submit HR Request and Submit Expense", (await M.locator("main h1").first().innerText()) === "Submit a Request" && (await M.getByRole("link", { name: "Submit HR Request" }).getAttribute("href")) === "/approvals/hr/new" && (await M.getByRole("link", { name: "Submit Expense" }).getAttribute("href")) === "/approvals/expenses/new");
-  check("with a link to the Expenditure form for ₹10,000 and more, and My Recent Submissions empty", (await M.getByRole("link", { name: /Use the Expenditure form/ }).getAttribute("href")) === "/approvals/expenditures/new" && /Nothing submitted yet/.test(await M.locator("main").first().innerText()));
+  check("there is no separate ₹10,000+ form to choose, and My Recent Submissions is empty", (await M.getByRole("link", { name: /Use the Expenditure form/ }).count()) === 0 && /Nothing submitted yet/.test(await M.locator("main").first().innerText()));
   await M.getByRole("link", { name: "Submit Expense" }).click();
   await M.locator("main h2").first().waitFor();
   check("Submit Expense takes them to the Expenses form, with no menu around it", (await M.locator("main h2").first().innerText()) === "Expenses" && (await menuRows(M).count()) === 0);

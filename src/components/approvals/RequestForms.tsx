@@ -7,7 +7,7 @@ import { api } from "@/components/approvals/api";
 import { useToast } from "@/components/Toast";
 import { DateInput, DateTimeInput, EmailInput, FileInput, FormActions, MoneyInput, ReadOnlyMoney, Row, SearchSelect, TextArea, TextInput, type Option, type UploadedFile } from "@/components/approvals/FormFields";
 import { assessBudget, budgetWarning, wrongFormMessage } from "@/lib/approvals/calc";
-import { formatDateTime, parseINR, todayIST } from "@/lib/approvals/format";
+import { formatDateTime, formatINR, parseINR, todayIST } from "@/lib/approvals/format";
 import type { FormField } from "@/lib/approvals/form-fields";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -273,11 +273,14 @@ export type ExpenditureFormProps = {
   initial?: { employeeId?: string; email?: string; categoryId?: string; branchId?: string; nature?: string; vendor?: string; amount?: string; budgetAllocated?: string; budgetUsed?: string; expenseDate?: string; taxInvoiceDate?: string; pubTypeId?: string; pubId?: string };
   /** Set when the form corrects a request that was returned. */
   edit?: EditInfo;
+  /**
+   * The one expense form for every amount: with these (the ₹10,000+ form's fields) it asks the expense fields below the threshold and these
+   * from the threshold up, and sends the request as the kind its amount makes it. `fields` are then the below-threshold ones.
+   */
+  largeFields?: FormField[];
 };
 
 export function ExpenditureForm(p: ExpenditureFormProps) {
-  const large = p.form === "large";
-  const lab = labeller(p.fields);
   const [custom, setCustom] = useState<Record<string, string>>(p.edit?.custom ?? {});
   const start = p.initial ?? {};
   const meListed = p.people.some((x) => x.value === p.meId);
@@ -300,6 +303,11 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   const [nature, setNature] = useState(defaults.nature);
   const [branchId, setBranchId] = useState(defaults.branchId);
   const [amount, setAmount] = useState(defaults.amount);
+  // Which kind of request this is: fixed by the form, or, on the one expense form, by the amount typed.
+  const typedPaise = amount.trim() ? parseINR(amount) : null;
+  const large = p.largeFields ? typedPaise != null && typedPaise >= p.thresholdPaise : p.form === "large";
+  const fields = p.largeFields && large ? p.largeFields : p.fields;
+  const lab = labeller(fields);
   const [budgetAllocated, setBudgetAllocated] = useState(defaults.budgetAllocated);
   const [budgetUsed, setBudgetUsed] = useState(defaults.budgetUsed);
   const [vendor, setVendor] = useState(defaults.vendor);
@@ -327,7 +335,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
 
   const amountPaise = amount.trim() ? parseINR(amount) : null;
   const { assessment, warning } = useBudget(budgetAllocated, budgetUsed, amountPaise);
-  const wrong = wrongFormMessage(p.form, amountPaise, p.thresholdPaise);
+  const wrong = p.largeFields ? null : wrongFormMessage(p.form, amountPaise, p.thresholdPaise);
 
   const otherHref = useMemo(() => {
     const q = new URLSearchParams();
@@ -361,10 +369,10 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
     if (!budgetUsed.trim() || parseINR(budgetUsed) === null) err.budgetUsed = "Enter the budget used so far (0 if none), with at most 2 decimals.";
     if (!large && taxInvoiceDate && taxInvoiceDate > todayIST()) err.taxInvoiceDate = "The date of the tax invoice cannot be in the future.";
     if (!large && pubId && !pubTypeId) err.pubType = "Choose the type of publication first.";
-    checkExtra(p.fields, custom, err);
+    checkExtra(fields, custom, err);
     setErrors(err);
     if (Object.keys(err).length) return;
-    const common = { employeeUserId: employeeId, email, requestedAt, categoryId, natureOfExpenditure: nature, branchId, amountPaise, budgetAllocatedPaise: parseINR(budgetAllocated), budgetUsedPaise: parseINR(budgetUsed), vendorName: vendor, custom: extraAnswers(p.fields, custom), ...(p.edit ? { keepAttachmentIds: keep } : {}) };
+    const common = { employeeUserId: employeeId, email, requestedAt, categoryId, natureOfExpenditure: nature, branchId, amountPaise, budgetAllocatedPaise: parseINR(budgetAllocated), budgetUsedPaise: parseINR(budgetUsed), vendorName: vendor, custom: extraAnswers(fields, custom), ...(p.edit ? { keepAttachmentIds: keep } : {}) };
     void submit(large
       ? { kind: "large", ...common, supportingDocs: ref(supporting), quotation: ref(quotation) }
       : { kind: "small", ...common, fileUpload: ref(fileUpload), expenseDate, publicationTypeId: pubTypeId || null, publicationId: pubId || null, taxInvoice: ref(taxInvoice), quotation: ref(quotation), taxInvoiceDate });
@@ -376,6 +384,9 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   const amountRow = (
     <Row label={lab("amount", "Amount")} required htmlFor="ex-amount" error={errors.amount}>
       <MoneyInput id="ex-amount" value={amount} onChange={setAmount} invalid={!!errors.amount} />
+      {p.largeFields && large && (
+        <p className="apr-notice mt-2" role="status">{formatINR(p.thresholdPaise, { symbol: true })} or more: the first approver recommends it to the Director General, who gives the final decision.</p>
+      )}
       {wrong && (
         <p className="apr-notice apr-notice-red mt-2" role="alert">
           {wrong}{amountPaise != null && amountPaise > 0 && <> <Link href={otherHref} className="apr-link">{large ? "Open the Expenses form" : "Open the DG Expenditure form"}</Link> with your details filled in.</>}
@@ -447,7 +458,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   return (
     <form className="zf" onSubmit={onSubmit} noValidate>
       {p.edit && <ReturnedNotice edit={p.edit} />}
-      {ordered(p.fields, rows, custom, (k, v) => setCustom((c) => ({ ...c, [k]: v })), errors)}
+      {ordered(fields, rows, custom, (k, v) => setCustom((c) => ({ ...c, [k]: v })), errors)}
       {p.edit && <CurrentFiles edit={p.edit} keep={keep} setKeep={setKeep} />}
       {warning && <p className="apr-notice mb-2 max-w-xl" role="status">{warning}</p>}
       {formError && <p className="zf-error mb-3" role="alert">{formError}</p>}

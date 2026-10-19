@@ -1,16 +1,8 @@
-import { PageHeader } from "@/components/approvals/PageHeader";
-import { ExpenditureForm } from "@/components/approvals/RequestForms";
-import { expenditureFormProps } from "@/lib/approvals/form-data";
-import { requirePage } from "@/lib/approvals/guard";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Expenditure · MCCIA Approvals" };
-
+/** There is one expense form for every amount now; the old ₹10,000+ address opens it, with anything carried in the address kept. */
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const user = await requirePage();
-  return (
-    <>
-      <PageHeader title="Expenditure" />
-      <ExpenditureForm {...await expenditureFormProps("large", user, await searchParams)} />
-    </>
-  );
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(await searchParams)) if (typeof v === "string") q.set(k, v);
+  redirect(`/approvals/expenses/new${q.size ? `?${q}` : ""}`);
 }

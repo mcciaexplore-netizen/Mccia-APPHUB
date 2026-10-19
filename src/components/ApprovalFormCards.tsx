@@ -4,7 +4,7 @@ import { APP_ENTRY } from "@/lib/approvals/approvals.manifest";
 /** The two forms for raising a request, as cards on the Approval System page. They are for everyone who signs in: nothing has to be ticked. */
 const FORMS: { app: CardApp; href: string }[] = [
   { app: { id: "approval-form-hr", name: "HR Approval Form", description: "Raise an HR request, for example a certificate or a letter.", icon: "UserCheck" }, href: APP_ENTRY.hr },
-  { app: { id: "approval-form-expenditure", name: "Expenditure Approval Form", description: "Raise an expense. The form points you to the DG form for ₹10,000 and above.", icon: "Wallet" }, href: APP_ENTRY.exp },
+  { app: { id: "approval-form-expenditure", name: "Expenditure Approval Form", description: "Raise an expense of any amount. ₹10,000 and above goes on to the DG.", icon: "Wallet" }, href: APP_ENTRY.exp },
 ];
 
 export function ApprovalFormCards() {
