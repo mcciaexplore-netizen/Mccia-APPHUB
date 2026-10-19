@@ -372,7 +372,7 @@ try {
   await visit(A, `/administrator/users/${plain.id}`, ADMIN_PW);
   check("the Application access box offers real applications only: no HR Approval, no Expenditure Approval, no Approval System category, no 'Approvals'", (await A.locator("main label", { hasText: /Approval/ }).count()) === 0 && !/Approval System/.test(await main(A)) && (await A.locator("main label", { hasText: "ZZR App" }).count()) >= 1);
   check("the Support Admin's page keeps the two form cards at the bottom", (await A.goto(BASE + "/approvals").then(() => cards(A).getByRole("link").count())) === 2);
-  check("and is their back office: System Status, the eight Setup & Configuration cards and Requests Waiting Now", /System Status/.test(await main(A)) && /Requests Waiting Now/.test(await main(A)) && (await A.locator("main a", { hasText: "Manage →" }).count()) === 8);
+  check("and is their back office: System Status and Requests Waiting Now; the set-up screens are in the sidebar only, not repeated on the page", /System Status/.test(await main(A)) && /Requests Waiting Now/.test(await main(A)) && !/Setup & Configuration/.test(await main(A)));
   const setupNav = A.locator("aside").first().locator('[aria-label="Setup & Configuration"] a');
   check("under Approval System the sidebar lists Setup & Configuration, in order, for the Support Admin", (await setupNav.allInnerTexts()).map((t) => t.trim()).join("|") === "Who Approves What|Office Branches|Expense Types|HR Request Types|Publication Types|User Permissions|Notification Settings|Full Audit Log");
   check("a plain user has no Setup & Configuration in the sidebar", await (async () => { await U.goto(BASE + "/approvals"); return (await U.locator('aside [aria-label="Setup & Configuration"]').count()) === 0; })());

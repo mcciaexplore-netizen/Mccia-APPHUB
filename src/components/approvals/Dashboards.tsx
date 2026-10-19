@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BookOpen, Bell, CheckCircle2, GitBranch, Receipt, ScrollText, Settings2, ShieldCheck, Tag, UserPlus, Users } from "lucide-react";
+import { CheckCircle2, Receipt, UserPlus } from "lucide-react";
 import { ApprovalFormCards } from "@/components/ApprovalFormCards";
 import { EmptyState, StatusPill } from "@/components/approvals/shared-ui";
 import { appForType, reviewHref } from "@/lib/approvals/approvals.manifest";
@@ -232,17 +232,6 @@ export async function ViewerDashboard() {
 
 /* ---------------------------------------------------------------- Support Admin */
 
-const SETUP_CARDS = [
-  { Icon: Settings2, title: "Who Approves What", text: "Set who reviews and approves requests", href: "/approvals/admin/rules" },
-  { Icon: GitBranch, title: "Office Branches", text: "Manage branches used in requests", href: "/approvals/admin/branches" },
-  { Icon: Tag, title: "Expense Types", text: "Types of expenses staff can submit", href: "/approvals/admin/categories" },
-  { Icon: Users, title: "HR Request Types", text: "Recruitment and HR request categories", href: "/approvals/admin/hr-categories" },
-  { Icon: BookOpen, title: "Publication Types", text: "Publication types for expense claims", href: "/approvals/admin/publications" },
-  { Icon: ShieldCheck, title: "User Permissions", text: "Control who can view or manage", href: "/approvals/admin/access" },
-  { Icon: Bell, title: "Notification Settings", text: "Turn email alerts on or off", href: "/approvals/admin/settings" },
-  { Icon: ScrollText, title: "Full Audit Log", text: "Every action ever taken", href: "/approvals/admin/audit" },
-] as const;
-
 export async function SupportAdminDashboard({ user }: { user: ApprovalsUser }) {
   const [rules, settings, pending] = await Promise.all([listRules(), getSettings(), listRequests(user, { statuses: ["pending"], pageSize: 10 })]);
   // Who is named where requests are actually routed: the Approver Rules (filled from the HR, Expenditure and Super Admin accounts until changed).
@@ -276,19 +265,6 @@ export async function SupportAdminDashboard({ user }: { user: ApprovalsUser }) {
             <p className="mt-2 font-bold text-ink">{formatINR(settings.thresholdPaise, { symbol: true })}</p>
             <p className="mt-0.5 text-xs text-subtle">Expenditure of this amount and above goes to the DG</p>
           </Link>
-        </div>
-      </Section>
-
-      <Section title="Setup & Configuration">
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {SETUP_CARDS.map((c) => (
-            <Link key={c.href} href={c.href} className="card-lift glass glass-hover !rounded-md flex flex-col gap-1.5 p-5">
-              <c.Icon size={22} className="text-primary" aria-hidden />
-              <span className="font-bold text-ink">{c.title}</span>
-              <span className="flex-1 text-xs text-subtle">{c.text}</span>
-              <span className="text-sm font-semibold text-primary">Manage →</span>
-            </Link>
-          ))}
         </div>
       </Section>
 
