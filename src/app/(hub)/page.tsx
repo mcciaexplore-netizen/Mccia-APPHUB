@@ -1,10 +1,22 @@
 export const dynamic = "force-dynamic";
 
 import { requireUser } from "@/lib/permissions";
-import { getAccessibleApps } from "@/lib/access";
+import { cardFacts, getAccessibleApps } from "@/lib/access";
+import { resolveAccess } from "@/lib/approvals/host-adapter";
+import { reviewItemsFor } from "@/lib/approvals/request-queries";
 import { approvalsEnabled } from "@/lib/approvals/flags";
 import { canAdminister, isSuper } from "@/lib/rbac";
-import { HomeClient, type HubCard } from "./HomeClient";
+import { HomeClient, type HomeApp, type HubCard } from "./HomeClient";
+
+/** "today", "yesterday", "3 days ago", "2 weeks ago", or the date for anything older than a month. */
+function ago(d: Date, now = Date.now()): string {
+  const days = Math.floor((now - d.getTime()) / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  if (days < 30) return `${Math.floor(days / 7)} ${days < 14 ? "week" : "weeks"} ago`;
+  return `on ${d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}`;
+}
 
 /**
  * The hub's one page of cards: the Approval System and Administrator (for those who may open them), a team manager's own pages, and every
@@ -13,8 +25,13 @@ import { HomeClient, type HubCard } from "./HomeClient";
 export default async function HomePage() {
   const user = await requireUser();
   const apps = await getAccessibleApps(user);
+  const [facts, waiting] = await Promise.all([
+    cardFacts(user.id, apps.map((a) => a.id), canAdminister(user)),
+    // What waits for this person in the Approval System, for the red count on its card.
+    approvalsEnabled() ? resolveAccess().then(async (a) => (a.status === "ok" ? (await reviewItemsFor(a.user)).reduce((n, r) => n + r.waiting, 0) : 0)) : Promise.resolve(0),
+  ]);
   const cards: HubCard[] = [
-    ...(approvalsEnabled() ? [{ id: "hub-approvals", name: "Approval System", description: "Raise HR and expense requests, and review the ones waiting for you.", icon: "ClipboardList", href: "/approvals" }] : []),
+    ...(approvalsEnabled() ? [{ id: "hub-approvals", name: "Approval System", description: "Raise HR and expense requests, and review the ones waiting for you.", icon: "ClipboardList", href: "/approvals", waiting }] : []),
     ...(canAdminister(user) ? [{ id: "hub-administrator", name: "Administrator", description: "Users, access, the approval forms, notifications and the activity log.", icon: "Shield", href: "/administrator" }] : []),
     ...(user.role === "dept_lead"
       ? [
@@ -24,5 +41,5 @@ export default async function HomePage() {
       : []),
   ];
   // Only ids, names, descriptions and icons are sent. App URLs never leave the server except through /go.
-  return <div className="page-enter"><HomeClient name={user.name} cards={cards} apps={apps.map(({ departmentId: _d, ...a }) => a)} isAdmin={isSuper(user)} /></div>;
+  return <div className="page-enter"><HomeClient name={user.name} cards={cards} apps={apps.map(({ departmentId: _d, ...a }): HomeApp => ({ ...a, category: facts.category.get(a.id), lastOpened: facts.lastOpened.has(a.id) ? ago(facts.lastOpened.get(a.id)!) : undefined, people: canAdminister(user) ? facts.people.get(a.id) ?? 0 : undefined }))} isAdmin={isSuper(user)} /></div>;
 }

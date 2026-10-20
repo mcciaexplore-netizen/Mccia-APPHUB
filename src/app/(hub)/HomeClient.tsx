@@ -5,12 +5,14 @@ import { Inbox, Search, X } from "lucide-react";
 import { AppCard, type CardApp } from "@/components/AppCard";
 
 /** A card for a part of the hub itself (Approval System, Administrator, ...), opened in the same tab. */
-export type HubCard = { id: string; name: string; description: string; icon: string; href: string };
+export type HubCard = { id: string; name: string; description: string; icon: string; href: string; /** Requests waiting for this person (Approval System). */ waiting?: number };
+/** An application with what its card says about it: category, when this person last opened it, and (for admins) how many have it. */
+export type HomeApp = CardApp & { category?: string; lastOpened?: string; people?: number };
 
 type Filter = "all" | "hub" | "apps";
 
 /** Every card on one panel, with a welcome line, a search and a filter: the hub's own parts first, then the applications. */
-export function HomeClient({ name, cards, apps, isAdmin }: { name: string; cards: HubCard[]; apps: CardApp[]; isAdmin: boolean }) {
+export function HomeClient({ name, cards, apps, isAdmin }: { name: string; cards: HubCard[]; apps: HomeApp[]; isAdmin: boolean }) {
   const [q, setQ] = useState("");
   const [searching, setSearching] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
@@ -50,8 +52,8 @@ export function HomeClient({ name, cards, apps, isAdmin }: { name: string; cards
         <div className="alert"><Inbox size={18} className="mt-0.5 shrink-0" /><span>No applications match.</span></div>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {shownCards.map((c, i) => <AppCard key={c.id} app={c} index={i} href={c.href} kind="Hub feature" />)}
-          {shownApps.map((a, i) => <AppCard key={a.id} app={a} index={shownCards.length + i} canOpenUnavailable={isAdmin} />)}
+          {shownCards.map((c, i) => <AppCard key={c.id} app={c} index={i} href={c.href} kind="Hub feature" waiting={c.waiting} />)}
+          {shownApps.map((a, i) => <AppCard key={a.id} app={a} index={shownCards.length + i} canOpenUnavailable={isAdmin} deptName={a.category} lastOpened={a.lastOpened} people={a.people} />)}
         </div>
       )}
     </div>

@@ -1,8 +1,8 @@
 import "server-only";
 import { cache } from "react";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, inArray, max } from "drizzle-orm";
 import { db } from "@/db";
-import { apps, departments, userAppAccess, type User } from "@/db/schema";
+import { activityLog, apps, departments, userAppAccess, type User } from "@/db/schema";
 import { hideApprovalsCard } from "@/lib/approvals/flags";
 import { isSuper } from "@/lib/rbac";
 
@@ -45,4 +45,25 @@ export async function getLaunchTarget(user: Pick<User, "id" | "role">, appId: st
         .innerJoin(userAppAccess, and(eq(userAppAccess.appId, apps.id), eq(userAppAccess.userId, user.id)))
         .where(live);
   return row ?? null;
+}
+
+/**
+ * What the home page's cards say about each application, from real records: its category's name, when this person last opened it, and,
+ * for those who manage access, how many people have been given it.
+ */
+export async function cardFacts(userId: string, appIds: string[], withPeople: boolean) {
+  if (appIds.length === 0) return { category: new Map<string, string>(), lastOpened: new Map<string, Date>(), people: new Map<string, number>() };
+  const [cats, opens, people] = await Promise.all([
+    db.select({ id: apps.id, name: departments.name }).from(apps).innerJoin(departments, eq(departments.id, apps.departmentId)).where(inArray(apps.id, appIds)),
+    db.select({ appId: activityLog.appId, at: max(activityLog.openedAt) }).from(activityLog)
+      .where(and(eq(activityLog.userId, userId), eq(activityLog.action, "launch"), inArray(activityLog.appId, appIds))).groupBy(activityLog.appId),
+    withPeople
+      ? db.select({ appId: userAppAccess.appId, n: count() }).from(userAppAccess).where(inArray(userAppAccess.appId, appIds)).groupBy(userAppAccess.appId)
+      : Promise.resolve([] as { appId: string; n: number }[]),
+  ]);
+  return {
+    category: new Map(cats.map((c) => [c.id, c.name])),
+    lastOpened: new Map(opens.filter((o) => o.appId && o.at).map((o) => [o.appId!, o.at!])),
+    people: new Map(people.map((p) => [p.appId, p.n])),
+  };
 }
