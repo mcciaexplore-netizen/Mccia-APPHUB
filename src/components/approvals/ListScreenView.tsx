@@ -66,17 +66,17 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
           <thead>
             <tr>
               {th("Request No.", "requestNo")}
-              {mixed && <th>Type</th>}
+              {mixed && <th className="hidden md:table-cell">Type</th>}
               {th("Name", "name")}
-              {th("Category", "category")}
+              {th("Category", "category", "hidden md:table-cell")}
               {screen.branch && th("Branch", "branch")}
-              {screen.vendor && <th>Vendor</th>}
-              {screen.vendor && <th>Tax invoice date</th>}
+              {screen.vendor && <th className="hidden md:table-cell">Vendor</th>}
+              {screen.vendor && <th className="hidden md:table-cell">Tax invoice date</th>}
               {th("Amount (₹)", "amount", "text-right")}
-              {th("Date of Request", "requestedAt")}
+              {th("Date of Request", "requestedAt", "hidden md:table-cell")}
               {th("Status", "status")}
-              {th("Approver", "approver")}
-              {th("Decision Date", "decidedAt")}
+              {th("Approver", "approver", "hidden md:table-cell")}
+              {th("Decision Date", "decidedAt", "hidden md:table-cell")}
               {screen.quickDecide && <th>Action</th>}
             </tr>
           </thead>
@@ -86,17 +86,17 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
               return (
                 <ClickableRow key={r.id} href={href}>
                   <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{r.requestNo ?? "—"}</Link></td>
-                  {mixed && <td>{TYPE_SHORT[r.type]}</td>}
+                  {mixed && <td className="hidden md:table-cell">{TYPE_SHORT[r.type]}</td>}
                   <td>{r.name}</td>
-                  <td>{r.categoryName ?? ""}</td>
+                  <td className="hidden md:table-cell">{r.categoryName ?? ""}</td>
                   {screen.branch && <td>{r.branchName ?? ""}</td>}
-                  {screen.vendor && <td className="max-w-48 truncate" title={r.vendorName ?? ""}>{r.vendorName ?? ""}</td>}
-                  {screen.vendor && <td className="whitespace-nowrap">{isoToDisplay(r.taxInvoiceDate)}</td>}
+                  {screen.vendor && <td className="hidden md:table-cell max-w-48 truncate" title={r.vendorName ?? ""}>{r.vendorName ?? ""}</td>}
+                  {screen.vendor && <td className="hidden md:table-cell whitespace-nowrap">{isoToDisplay(r.taxInvoiceDate)}</td>}
                   <td className="whitespace-nowrap text-right">{r.amountPaise == null ? "" : formatINR(r.amountPaise)}</td>
-                  <td className="whitespace-nowrap">{formatDate(r.requestedAt)}</td>
+                  <td className="hidden md:table-cell whitespace-nowrap">{formatDate(r.requestedAt)}</td>
                   <td className="whitespace-nowrap"><span className="inline-flex flex-wrap items-center gap-1"><StatusPill status={r.status} currentStepNo={r.currentStep} />{r.overBudget && <OverBudgetBadge />}</span></td>
-                  <td>{r.approverName ?? ""}</td>
-                  <td className="whitespace-nowrap">{r.decidedAt ? formatDateTime(r.decidedAt) : ""}</td>
+                  <td className="hidden md:table-cell">{r.approverName ?? ""}</td>
+                  <td className="hidden md:table-cell whitespace-nowrap">{r.decidedAt ? formatDateTime(r.decidedAt) : ""}</td>
                   {screen.quickDecide && <td className="whitespace-nowrap">{r.mineToDecide && <QuickDecide id={r.id} label={r.requestNo ?? "request"} overBudget={r.overBudget} kind={decisionMode(r.currentStep, r.totalSteps)} />}</td>}
                 </ClickableRow>
               );

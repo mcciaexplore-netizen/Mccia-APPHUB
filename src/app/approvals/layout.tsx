@@ -4,6 +4,7 @@ import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { HubShell } from "@/components/HubShell";
 import { ApprovalsSidebar, type SideLink } from "@/components/approvals/ApprovalsSidebar";
 import { ModuleHeader } from "@/components/approvals/ModuleHeader";
+import { MobileMenu } from "@/components/MobileMenu";
 import { REVIEW_KEYS, REVIEW_LABEL, REVIEW_TABS, REVIEW_TAB_LABEL, type ReviewKey } from "@/lib/approvals/approvals.manifest";
 import { requirePage } from "@/lib/approvals/guard";
 import { hasAnyRole, hasRole, type ApprovalsUser } from "@/lib/approvals/host-adapter";
@@ -48,7 +49,7 @@ export default async function ApprovalsLayout({ children }: { children: React.Re
       <ConfirmProvider>
         <div className="apr-root flex flex-col gap-6 lg:flex-row lg:items-start">
           <aside className="w-full shrink-0 lg:sticky lg:top-20 lg:w-72">
-            <ApprovalsSidebar links={links} />
+            <MobileMenu label="Approval System menu"><ApprovalsSidebar links={links} /></MobileMenu>
           </aside>
           <div className="min-w-0 flex-1">
             <Suspense fallback={null}>

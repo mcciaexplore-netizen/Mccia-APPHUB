@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { AdminSidebar } from "@/components/AdminSidebar";
 import { AdminBackLink } from "@/components/BackLink";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
+import { MobileMenu } from "@/components/MobileMenu";
 import { adminTabsFor } from "@/lib/admin-tabs";
 import { requireAdministrator } from "@/lib/permissions";
 
@@ -15,7 +16,7 @@ export default async function AdministratorLayout({ children }: { children: Reac
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         <aside className="w-full shrink-0 lg:sticky lg:top-20 lg:w-64">
           <Suspense fallback={null}>
-            <AdminSidebar tabs={adminTabsFor(me)} />
+            <MobileMenu label="Administrator menu"><AdminSidebar tabs={adminTabsFor(me)} /></MobileMenu>
           </Suspense>
         </aside>
         <div className="min-w-0 flex-1">{children}</div>

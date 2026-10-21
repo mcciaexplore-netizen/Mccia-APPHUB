@@ -256,3 +256,14 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
   to { opacity: 1; transform: translateY(0); }
 }
 .banner-in { animation: banner-in 0.2s ease-out forwards; }
+
+/* ------------------------------------------------------------------ phones and touch screens */
+/* iPhones zoom into any text box whose text is smaller than 16px; on small screens every box uses 16px. */
+@media (max-width: 640px) {
+  .input, input, select, textarea { font-size: 16px; }
+}
+/* On touch screens every button and menu line is at least 44px tall, the size a finger can hit reliably. */
+@media (pointer: coarse) {
+  .btn, .btn-sm { min-height: 44px; }
+  .nav-item { min-height: 44px; }
+}
