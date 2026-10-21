@@ -208,7 +208,7 @@ export function SearchSelect({
   );
 }
 
-function AddNewDialog({ add, initial, onClose, onDone }: { add: AddNew; initial: string; onClose: () => void; onDone: (o: Option) => void }) {
+export function AddNewDialog({ add, initial, onClose, onDone }: { add: AddNew; initial: string; onClose: () => void; onDone: (o: Option) => void }) {
   const [name, setName] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

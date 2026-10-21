@@ -12,7 +12,7 @@ import { toQueryString, type ListParams, type SortKey } from "@/lib/approvals/li
 import { listMasterCached } from "@/lib/approvals/masters";
 import { listRequests } from "@/lib/approvals/request-queries";
 import { PAGE_SIZE, type ListScreen } from "@/lib/approvals/screens";
-import type { ApprovalsUser } from "@/lib/approvals/host-adapter";
+import { hasRole, type ApprovalsUser } from "@/lib/approvals/host-adapter";
 import type { AprRequestStatus } from "@/db/approvals-schema";
 import { decisionMode } from "@/lib/approvals/calc";
 
@@ -58,7 +58,8 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
         title={screen.title} intro={screen.intro}
         actions={screen.newHref ? <Link href={screen.newHref} className="btn btn-primary btn-sm"><Plus size={14} /> New request</Link> : undefined}
       />
-      <ListFilters params={params} categories={categories} branches={branches.map((b) => ({ id: b.id, name: b.name }))} showStatus={!screen.statuses} showBranch={!!screen.branch} exportHref={exportHref} />
+      <ListFilters params={params} categories={categories} branches={branches.map((b) => ({ id: b.id, name: b.name }))} showStatus={!screen.statuses} showBranch={!!screen.branch} exportHref={exportHref}
+        addCategory={hasRole(user, "approvals_admin") ? (screen.categories === "hr" ? { kind: "hr-categories", noun: "HR request type" } : { kind: "categories", noun: "expense type" }) : undefined} />
 
       {rows.length === 0 ? <EmptyState kind={empty} /> : (
       <div className="table-wrap">

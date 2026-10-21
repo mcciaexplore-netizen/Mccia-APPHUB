@@ -1,3 +1,4 @@
+import { revalidateTag } from "next/cache";
 import { hasRole } from "@/lib/approvals/host-adapter";
 import { kindParam, ok, readJson, route } from "@/lib/approvals/guard";
 import { createMaster, listMaster } from "@/lib/approvals/masters";
@@ -13,5 +14,6 @@ export const GET = route<{ kind: string }>({}, async ({ req, user, params }) => 
 
 export const POST = route<{ kind: string }>({ roles: ["approvals_admin"] }, async ({ req, user, params }) => {
   const item = await createMaster(kindParam(params.kind), await readJson(req, masterCreate), user);
+  revalidateTag("masters", { expire: 0 }); // the list filters keep these lists for a few minutes: show the new one at once
   return ok({ item }, 201);
 });

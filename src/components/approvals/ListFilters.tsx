@@ -5,17 +5,24 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { Download, Search } from "lucide-react";
 import { STATUS_FILTERS, toQueryString, type ListParams } from "@/lib/approvals/list-params";
 import { STATUS_LABEL } from "@/lib/approvals/calc";
+import { AddNewDialog } from "@/components/approvals/FormFields";
 
 type Opt = { id: string; name: string };
+const ADD = "__add__";
 
 /** Search, date range and filters above a list. The state lives in the address, so a filtered view can be shared and exported. */
 export function ListFilters({
-  params, categories, branches, showStatus, showBranch, exportHref,
-}: { params: ListParams; categories: Opt[]; branches: Opt[]; showStatus: boolean; showBranch: boolean; exportHref: string }) {
+  params, categories, branches, showStatus, showBranch, exportHref, addCategory,
+}: {
+  params: ListParams; categories: Opt[]; branches: Opt[]; showStatus: boolean; showBranch: boolean; exportHref: string;
+  /** For the Approvals admin: "+ Add category" at the bottom of the Category list, adding to this kind of list. */
+  addCategory?: { kind: "categories" | "hr-categories"; noun: string };
+}) {
   const router = useRouter();
   const path = usePathname();
   const [pending, start] = useTransition();
   const [q, setQ] = useState(params.q);
+  const [adding, setAdding] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const apply = (next: Partial<ListParams>) => start(() => router.replace(`${path}${toQueryString({ ...params, ...next, page: 1 })}`));
@@ -35,9 +42,10 @@ export function ListFilters({
       <label className="block"><span className="label-xs block">To</span><input className="input" type="date" value={params.to} onChange={(e) => apply({ to: e.target.value })} /></label>
       <label className="block">
         <span className="label-xs block">Category</span>
-        <select className="input w-44" value={params.categoryId} onChange={(e) => apply({ categoryId: e.target.value })}>
+        <select className="input w-44" value={params.categoryId} onChange={(e) => (e.target.value === ADD ? setAdding(true) : apply({ categoryId: e.target.value }))}>
           <option value="">All</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {addCategory && <option value={ADD}>+ Add category</option>}
         </select>
       </label>
       {showBranch && (
@@ -60,6 +68,10 @@ export function ListFilters({
       )}
       {dirty && <button type="button" className="btn btn-ghost btn-sm" onClick={clear}>Clear</button>}
       <a className="btn btn-ghost btn-sm ml-auto" href={exportHref} download><Download size={14} /> Export CSV</a>
+      {adding && addCategory && (
+        <AddNewDialog add={{ ...addCategory, onAdded: () => {} }} initial="" onClose={() => setAdding(false)}
+          onDone={(o) => { setAdding(false); apply({ categoryId: o.value }); router.refresh(); }} />
+      )}
     </div>
   );
 }
