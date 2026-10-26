@@ -270,7 +270,7 @@ export async function checkImport(actor: Actor, rows: ImportRow[], policy: Impor
 
 type Outcome = "created" | "updated" | "skipped" | "invalid" | "failed";
 type Invitation = "sent" | "failed" | "manual" | "not_sent" | "none";
-export type RowOutcome = { row: number; name: string; email: string; outcome: Outcome; message: string; invitation: Invitation; link?: string };
+export type RowOutcome = { row: number; name: string; email: string; outcome: Outcome; message: string; invitation: Invitation; link?: string; /** The new account (created rows). */ userId?: string };
 export const BATCH_ROWS = 25;
 
 /**
@@ -328,7 +328,7 @@ export async function commitBatch(actor: Actor & { name: string }, rows: ImportR
         action: "user.create", targetType: "user", targetId: id, targetLabel: p.name,
         details: { source: "import", role: p.role, applications: p.appIds.length, branch: !!p.branchId, team: !!p.teamId, manager: !!managerId },
       });
-      results.push({ ...base, outcome: "created", message: p.appIds.length ? `Created with ${p.appIds.length} application${p.appIds.length > 1 ? "s" : ""}.` : "Created with no applications.", invitation: opts.invite ? "not_sent" : "none" });
+      results.push({ ...base, userId: id, outcome: "created", message: p.appIds.length ? `Created with ${p.appIds.length} application${p.appIds.length > 1 ? "s" : ""}.` : "Created with no applications.", invitation: opts.invite ? "not_sent" : "none" });
       if (token) toMail.push({ index: results.length - 1, name: p.name, email: p.email, token });
     } catch (e) {
       console.error("import row failed", e instanceof Error ? e.message : e);

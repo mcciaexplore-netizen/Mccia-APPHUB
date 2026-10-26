@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CheckCircle2, Copy, Download, FileSpreadsheet, Plus, Upload, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Copy, Download, FileSpreadsheet, Mail, Plus, Upload, X } from "lucide-react";
 import { LinksDialog } from "@/components/people/PeopleDialogs";
 import { useToast } from "@/components/Toast";
-import { checkImportAction, commitImportAction, type LinkResult } from "@/actions/people";
+import { checkImportAction, commitImportAction, sendSetupLinks, type LinkResult } from "@/actions/people";
 import { parseCsv, toCsv } from "@/lib/csv";
 import { MAX_FILE_BYTES, TEMPLATE_CSV, rowToCells, tableToRows, type ImportRow } from "@/lib/import-parse";
 import type { ImportSummary, RowCheck, RowOutcome, RowStatus } from "@/lib/import";
@@ -35,7 +35,10 @@ export function BulkAdd({ base, domains }: { base: string; domains: string }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [ignored, setIgnored] = useState<string[]>([]);
   const [existing, setExisting] = useState<"skip" | "update">("skip");
-  const [invite, setInvite] = useState(true);
+  // Sign-in details are sent after the accounts are made, to the people ticked in the results; sending during the import is optional.
+  const [invite, setInvite] = useState(false);
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  const [sending, setSending] = useState(false);
   const [checks, setChecks] = useState<Map<number, RowCheck>>(new Map());
   const [order, setOrder] = useState<number[]>([]);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
@@ -140,6 +143,31 @@ export function BulkAdd({ base, domains }: { base: string; domains: string }) {
   }), [rows, outcomes, checks]);
   const tally = (o: string) => finalRows.filter((x) => x.outcome === o).length;
   const manualLinks = [...outcomes.values()].filter((o) => o.link);
+  // New accounts that have not been emailed yet: ticked by default, and sent their sign-in details with one button.
+  const unsent = [...outcomes.values()].filter((o) => o.outcome === "created" && o.userId && o.invitation !== "sent");
+  const chosen = picked ?? new Set(unsent.map((o) => o.userId!));
+  const toggle = (id: string) => setPicked(() => { const next = new Set(chosen); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const sendDetails = async () => {
+    const ids = unsent.map((o) => o.userId!).filter((id) => chosen.has(id));
+    if (ids.length === 0) return;
+    setSending(true);
+    const sent: LinkResult[] = [];
+    for (let i = 0; i < ids.length; i += 200) {
+      const r = await sendSetupLinks(ids.slice(i, i + 200));
+      if (!r.ok) { setSending(false); toast.error(r.error); return; }
+      sent.push(...r.data);
+    }
+    setSending(false);
+    const byId = new Map(sent.map((s) => [s.id, s]));
+    setOutcomes((cur) => new Map([...cur].map(([k, o]) => {
+      const s = o.userId ? byId.get(o.userId) : undefined;
+      return [k, s && s.ok ? { ...o, invitation: s.delivery === "sent" ? "sent" : s.delivery === "failed" ? "failed" : "manual", link: s.link ?? undefined } : o];
+    })));
+    setPicked(null);
+    const emailed = sent.filter((s) => s.ok && s.delivery === "sent").length;
+    if (emailed === sent.length) toast.success(`Sign-in details emailed to ${emailed} ${emailed === 1 ? "person" : "people"}.`);
+    else setLinks(sent);
+  };
   const counts = (k: Filter) => k === "all" ? rows.length : k === "ready" ? rows.filter((r) => ready(checks.get(r.row))).length : rows.filter((r) => checks.get(r.row)?.status === k).length;
 
   return (
@@ -222,7 +250,7 @@ export function BulkAdd({ base, domains }: { base: string; domains: string }) {
                   <option value="update">Update their branch, team, manager and designation, and add the applications</option>
                 </select></label>
               <label className="flex items-start gap-2 text-sm sm:pt-6"><input type="checkbox" className="mt-1 h-4 w-4 accent-[var(--c-primary)]" checked={invite} disabled={phase === "running"} onChange={(e) => setInvite(e.target.checked)} />
-                <span>Email each new person a temporary password. If email is not working, you will get them to pass on.</span></label>
+                <span>Email each new person their sign-in details right away. Leave this off to choose who gets them after the accounts are made.</span></label>
             </div>
             {summary && (
               <p className="text-sm" aria-live="polite">
@@ -252,11 +280,31 @@ export function BulkAdd({ base, domains }: { base: string; domains: string }) {
           <p className="text-sm text-muted">
             Invitations: {[...outcomes.values()].filter((o) => o.invitation === "sent").length} emailed, {[...outcomes.values()].filter((o) => o.invitation === "manual").length} to pass on by hand, {[...outcomes.values()].filter((o) => o.invitation === "failed").length} could not be emailed, {[...outcomes.values()].filter((o) => o.invitation === "not_sent").length} not sent.
           </p>
+          {unsent.length > 0 && (
+            <div className="glass !rounded-md space-y-3 p-4" aria-label="Send sign-in details">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div><h3 className="text-base">Send sign-in details</h3>
+                  <p className="text-sm text-muted">Each person ticked gets one email with their sign-in, a temporary password, their role and applications. They choose their own password when they first sign in.</p></div>
+                <button className="btn btn-primary btn-sm" disabled={sending || chosen.size === 0} onClick={() => void sendDetails()}><Mail size={14} /> {sending ? "Sending…" : `Send to ${unsent.filter((o) => chosen.has(o.userId!)).length} ticked`}</button>
+              </div>
+              <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" className="h-4 w-4 accent-[var(--c-primary)]" checked={unsent.every((o) => chosen.has(o.userId!))}
+                onChange={(e) => setPicked(e.target.checked ? new Set(unsent.map((o) => o.userId!)) : new Set())} /> Tick everyone ({unsent.length})</label>
+              <ul className="max-h-64 divide-y divide-line overflow-y-auto rounded-md border border-line">
+                {unsent.map((o) => (
+                  <li key={o.userId}><label className="flex items-center gap-3 px-3 py-2 text-sm">
+                    <input type="checkbox" className="h-4 w-4 accent-[var(--c-primary)]" checked={chosen.has(o.userId!)} onChange={() => toggle(o.userId!)} />
+                    <b>{o.name}</b><span className="text-muted">{o.email}</span>
+                    {o.invitation === "failed" && <span className="badge badge-red ml-auto">Email failed: try again</span>}
+                  </label></li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             <button className="btn btn-primary btn-sm" onClick={() => download("import-report.csv", toCsv([["row", "name", "email", "result", "details", "invitation"], ...finalRows.map((x) => [String(x.r.row), x.r.name, x.r.email, x.outcome, x.message, x.invitation])]))}><Download size={14} /> Download report (CSV)</button>
             {manualLinks.length > 0 && <button className="btn btn-ghost btn-sm" onClick={() => setLinks(manualLinks.map((o, i) => ({ id: String(i), name: o.name, email: o.email, ok: true, delivery: o.invitation === "failed" ? "failed" : "manual", link: o.link ?? null, message: o.invitation === "failed" ? "The email could not be sent. Pass the link on yourself." : "No email is set up. Pass the link on yourself." })))}><Copy size={14} /> Show {manualLinks.length} setup link{manualLinks.length === 1 ? "" : "s"}</button>}
             {tally("failed") > 0 && <button className="btn btn-ghost btn-sm" onClick={() => void retryFailed()}>Retry the {tally("failed")} failed rows (safe: nobody is created twice)</button>}
-            <button className="btn btn-ghost btn-sm" onClick={() => { setRows([]); setChecks(new Map()); setOutcomes(new Map()); setSummary(null); setFileName(""); setPhase("edit"); }}>Start another import</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setRows([]); setChecks(new Map()); setOutcomes(new Map()); setSummary(null); setFileName(""); setPicked(null); setPhase("edit"); }}>Start another import</button>
             <Link className="btn btn-ghost btn-sm" href={base}>View people</Link>
           </div>
           <p className="text-xs text-subtle">The report lists results and reasons only. It never contains passwords.</p>

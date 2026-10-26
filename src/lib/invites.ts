@@ -3,7 +3,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { db } from "@/db";
-import { userInvites, users } from "@/db/schema";
+import { apps, userAppAccess, userInvites, users } from "@/db/schema";
+import { roleLabel } from "@/lib/format";
 import { isEnvAdmin } from "@/lib/auth";
 import { escapeHtml, sendMail } from "@/lib/mail";
 import { hashPassword } from "@/lib/passwords";
@@ -42,21 +43,40 @@ async function siteBase(): Promise<string> {
 
 export type InviteTarget = { id: string; name: string; email: string; isActive: boolean };
 
-/** Emails the sign-in details (when mail is set up) and records how it went. The temporary password is returned only when it was NOT emailed. */
-export async function deliverInvite(target: { name: string; email: string }, temp: string): Promise<{ delivery: Delivery; link: string | null }> {
+/** What the summary email can also say about the account, when known. */
+export type AccountFacts = { role?: string; applications?: string[] };
+
+/**
+ * Emails the sign-in details as one tidy summary of the account (when mail is set up) and records how it went: who they are signed in as,
+ * the temporary password, their role, the applications given, how long the password works, and what to do. The temporary password is
+ * returned only when it was NOT emailed.
+ */
+export async function deliverInvite(target: { name: string; email: string }, temp: string, facts: AccountFacts = {}): Promise<{ delivery: Delivery; link: string | null }> {
   const site = await siteBase();
+  const until = new Date(Date.now() + INVITE_HOURS * 3600 * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" });
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:9px 14px;border-bottom:1px solid #edf0f3;color:#64748b;width:42%">${label}</td><td style="padding:9px 14px;border-bottom:1px solid #edf0f3;color:#0f172a">${value}</td></tr>`;
+  const apps = facts.applications?.length ? facts.applications.map(escapeHtml).join(", ") : "None yet: your administrator will add them";
   const result = await sendMail(
     target.email,
-    "Your MCCIA App Hub account",
-    `<div style="font-family:Arial,sans-serif;max-width:520px"><h2 style="margin:0 0 14px">Welcome to the MCCIA App Hub</h2>
-     <p>Hello ${escapeHtml(target.name)},</p>
-     <p>An account has been made for you. Sign in with these details. The first time you sign in you will be asked to choose your own password.</p>
-     <table style="margin:14px 0;border-collapse:collapse">
-       <tr><td style="padding:6px 14px 6px 0;color:#555">Sign-in (email)</td><td style="padding:6px 0"><b>${escapeHtml(target.email)}</b></td></tr>
-       <tr><td style="padding:6px 14px 6px 0;color:#555">Temporary password</td><td style="padding:6px 0"><b style="font-family:Consolas,monospace;font-size:16px">${escapeHtml(temp)}</b></td></tr>
-     </table>
-     <p style="margin:18px 0"><a href="${escapeHtml(site)}/login" style="background:#2a6b7c;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px">Sign in to the App Hub</a></p>
-     <p style="color:#555;font-size:13px">The temporary password works for ${INVITE_HOURS / 24} days. Do not share it. If you did not expect this email, you can ignore it.</p></div>`,
+    "Your MCCIA App Hub sign-in details",
+    `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#0f172a">
+       <div style="background:#2a6b7c;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0"><div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:.85">MCCIA App Hub</div><div style="font-size:20px;font-weight:bold;margin-top:4px">Your account is ready</div></div>
+       <div style="border:1px solid #e2e8f0;border-top:0;border-radius:0 0 12px 12px;padding:20px 22px">
+         <p style="margin:0 0 14px">Hello ${escapeHtml(target.name)},</p>
+         <p style="margin:0 0 16px">Here is everything you need to sign in.</p>
+         <table style="width:100%;border-collapse:collapse;border:1px solid #edf0f3;border-radius:8px;font-size:14px">
+           ${row("Sign-in (your email)", `<b>${escapeHtml(target.email)}</b>`)}
+           ${row("Temporary password", `<b style="font-family:Consolas,monospace;font-size:16px;letter-spacing:1px">${escapeHtml(temp)}</b>`)}
+           ${facts.role ? row("Your role", escapeHtml(facts.role)) : ""}
+           ${row("Applications", apps)}
+           ${row("Password works until", escapeHtml(until))}
+         </table>
+         <p style="margin:18px 0 8px;font-weight:bold">What to do</p>
+         <ol style="margin:0 0 18px;padding-left:20px;line-height:1.7"><li>Open the App Hub and sign in with the details above.</li><li>Choose your own password when asked.</li><li>Your applications are on the home page.</li></ol>
+         <p style="margin:0 0 18px"><a href="${escapeHtml(site)}/login" style="background:#2a6b7c;color:#fff;text-decoration:none;padding:11px 20px;border-radius:8px;display:inline-block">Sign in to the App Hub</a></p>
+         <p style="color:#64748b;font-size:12px;margin:0">Do not share this password. If you did not expect this email, you can ignore it.</p>
+       </div></div>`,
   );
   const delivery: Delivery = result === "sent" ? "sent" : result === "failed" ? "failed" : "manual";
   await db.update(userInvites).set({ delivery }).where(eq(userInvites.tokenHash, hashToken(temp)));
@@ -77,7 +97,9 @@ export async function sendInvite(target: InviteTarget, createdById: string): Pro
   await db.update(userInvites).set({ expiresAt: new Date() }).where(and(eq(userInvites.userId, target.id), isNull(userInvites.usedAt), gt(userInvites.expiresAt, new Date())));
   await db.update(users).set({ passwordHash: await hashPassword(temp), mustChangePassword: true }).where(eq(users.id, target.id)); // also signs them out
   await db.insert(userInvites).values({ userId: target.id, tokenHash: hashToken(temp), expiresAt, createdById });
-  const { delivery, link } = await deliverInvite(target, temp);
+  const [who] = await db.select({ role: users.role }).from(users).where(eq(users.id, target.id));
+  const given = await db.select({ name: apps.name }).from(userAppAccess).innerJoin(apps, eq(apps.id, userAppAccess.appId)).where(eq(userAppAccess.userId, target.id));
+  const { delivery, link } = await deliverInvite(target, temp, { role: who ? roleLabel[who.role] : undefined, applications: given.map((g) => g.name).sort() });
   return { delivery, link, expiresAt };
 }
 

@@ -6,6 +6,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { userInvites, users } from "@/db/schema";
+import { writeAudit } from "@/lib/audit";
 import { authenticate, checkPassword, isEnvAdmin, recordLogin, userFingerprint } from "@/lib/auth";
 import { clientIp } from "@/lib/ip";
 import { hashPassword, passwordSchema } from "@/lib/passwords";
@@ -63,8 +64,9 @@ export async function changePassword(input: unknown): Promise<Result> {
     if (v.current === v.next) return { ok: false, error: "Choose a password different from the current one." };
     const hash = await hashPassword(v.next);
     await db.update(users).set({ passwordHash: hash, mustChangePassword: false }).where(eq(users.id, me.id));
-    // The temporary password they were sent (if any) is used up.
+    // The temporary password they were sent (if any) is used up, and the change is recorded (never the password).
     await db.update(userInvites).set({ usedAt: new Date() }).where(and(eq(userInvites.userId, me.id), isNull(userInvites.usedAt)));
+    await writeAudit({ id: me.id, name: me.name }, [{ action: me.mustChangePassword ? "user.password_first_set" : "user.password_changed", targetType: "user", targetId: me.id, targetLabel: me.name }]);
     // Keep this browser signed in under the new password; every other sign-in is now invalid.
     (await cookies()).set(SESSION_COOKIE, sign(me.id, userFingerprint({ email: me.email, passwordHash: hash }), "session", SESSION_MAX_AGE), cookieOptions(SESSION_MAX_AGE, await isHttps()));
     return { ok: true };
