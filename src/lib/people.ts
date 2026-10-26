@@ -53,7 +53,8 @@ function scope(actor: Actor): SQL | undefined {
 }
 
 const like = (s: string) => `%${s.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-const hasLoginRoute = sql`(${users.passwordHash} is not null or ${users.signupSource} = 'env')`;
+// A temporary password does not count: until they choose their own at the first sign-in, they are still a pending invitation.
+const hasLoginRoute = sql`((${users.passwordHash} is not null and not ${users.mustChangePassword}) or ${users.signupSource} = 'env')`;
 
 function filterSql(f: Partial<PeopleFilters>): SQL[] {
   const c: SQL[] = [];
@@ -96,7 +97,7 @@ export async function listPeople(actor: Actor, f: PeopleFilters, pageSize = PEOP
   const base = await db
     .select({
       id: users.id, name: users.name, email: users.email, designation: users.designation, role: users.role, isActive: users.isActive,
-      hasPassword: sql<boolean>`${users.passwordHash} is not null`, lastLoginAt: users.lastLoginAt, createdAt: users.createdAt,
+      hasPassword: sql<boolean>`(${users.passwordHash} is not null and not ${users.mustChangePassword})`, lastLoginAt: users.lastLoginAt, createdAt: users.createdAt,
       branch: branches.name, team: teams.name, manager: manager.name,
     })
     .from(users)
@@ -188,7 +189,7 @@ export async function getPerson(actor: User, id: string): Promise<PersonDetail |
   const mainAdmin = passwordInSettings || u.role === "super_admin";
   return {
     id: u.id, name: u.name, email: u.email, designation: u.designation, phone: u.phone, role: u.role, adminAreas: u.adminAreas, isActive: u.isActive, mainAdmin, passwordInSettings, roleFixed: envRoleIsFixed(u.email),
-    status: accountStatus({ isActive: u.isActive, hasPassword: !!u.passwordHash, passwordInSettings }),
+    status: accountStatus({ isActive: u.isActive, hasPassword: !!u.passwordHash && !u.mustChangePassword, passwordInSettings }),
     branchId: u.branchId, teamId: u.teamId, managerId: u.reportingManagerId,
     branch: row.branch, team: row.team, manager: row.manager,
     lastLoginAt: u.lastLoginAt, createdAt: u.createdAt, appIds: grants.map((g) => g.appId), launches,

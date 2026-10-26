@@ -27,7 +27,7 @@ function Card({ label, value, href, tone }: { label: string; value: number; href
 }
 
 /** A single bar split by status, with a legend of counts; each part opens the matching filtered list. Real counts only. */
-function StatusBars({ title, total, bars }: { title: string; total: number; bars: { label: string; n: number; color: string; href: string }[] }) {
+function StatusBars({ title, total, bars }: { title: string; total: number; bars: { label: string; n: number; color: string; href?: string }[] }) {
   return (
     <section className="glass !rounded-md space-y-3 p-5" aria-label={title}>
       <div className="flex items-baseline justify-between"><h2 className="text-lg">{title}</h2><span className="text-sm text-muted">{total} in all</span></div>
@@ -35,13 +35,14 @@ function StatusBars({ title, total, bars }: { title: string; total: number; bars
         {total > 0 && bars.filter((b) => b.n > 0).map((b) => <span key={b.label} style={{ width: `${(b.n / total) * 100}%`, background: b.color }} />)}
       </div>
       <ul className="grid grid-cols-2 gap-2 text-sm">
-        {bars.map((b) => (
-          <li key={b.label}><Link href={b.href} className="flex items-center gap-2 hover:text-primary">
+        {bars.map((b) => {
+          const row = <>
             <span className="h-2.5 w-2.5 rounded-full" style={{ background: b.color }} aria-hidden />
             <span className="flex-1 text-muted">{b.label}</span><b className="text-ink">{b.n}</b>
             <span className="w-10 text-right text-xs text-subtle">{total ? Math.round((b.n / total) * 100) : 0}%</span>
-          </Link></li>
-        ))}
+          </>;
+          return <li key={b.label}>{b.href ? <Link href={b.href} className="flex items-center gap-2 hover:text-primary">{row}</Link> : <span className="flex items-center gap-2">{row}</span>}</li>;
+        })}
       </ul>
     </section>
   );
@@ -66,33 +67,39 @@ export default async function Page() {
   const failing = external.filter((a) => checked.get(a.id) === false).length;
   const never = external.filter((a) => !checked.has(a.id)).length;
   const attention: { text: string; href: string }[] = [];
-  if (s.users.pending > 0) attention.push({ text: `${s.users.pending} ${s.users.pending === 1 ? "person has" : "people have"} not set a password yet`, href: "/administrator/users?status=pending" });
-  if (failing > 0) attention.push({ text: `${failing} application${failing === 1 ? "" : "s"} failed the last link check`, href: "/administrator/inventory" });
-  if (s.apps.unavailable > 0) attention.push({ text: `${s.apps.unavailable} application${s.apps.unavailable === 1 ? " is" : "s are"} marked unavailable`, href: "/administrator/inventory" });
-  if (never > 0) attention.push({ text: `${never} application${never === 1 ? " has" : "s have"} never been checked`, href: "/administrator/inventory" });
+  if (s.users.pending > 0 && hasArea(me, "people")) attention.push({ text: `${s.users.pending} ${s.users.pending === 1 ? "person has" : "people have"} not set a password yet`, href: "/administrator/users?status=pending" });
+  if (failing > 0 && hasArea(me, "apps")) attention.push({ text: `${failing} application${failing === 1 ? "" : "s"} failed the last link check`, href: "/administrator/inventory" });
+  if (s.apps.unavailable > 0 && hasArea(me, "apps")) attention.push({ text: `${s.apps.unavailable} application${s.apps.unavailable === 1 ? " is" : "s are"} marked unavailable`, href: "/administrator/inventory" });
+  if (never > 0 && hasArea(me, "apps")) attention.push({ text: `${never} application${never === 1 ? " has" : "s have"} never been checked`, href: "/administrator/inventory" });
 
-  const pendingApprovals = approvals ? approvals.hr.pending + approvals.large.pending + approvals.small.pending : 0;
+  const pendingHr = approvals ? approvals.hr.pending : 0;
+  const pendingExp = approvals ? approvals.large.pending + approvals.small.pending : 0;
+  const pendingApprovals = pendingHr + pendingExp;
+  // A link only goes where this person may go: an Admin without Users & access, or without Applications, gets the figure without the link.
+  const people = hasArea(me, "people"), appsArea = hasArea(me, "apps");
+  const usersHref = (q = "") => (people ? `/administrator/users${q}` : undefined);
+  const appsHref = appsArea ? "/administrator/inventory" : undefined;
   const userBars = [
-    { label: "Active", n: s.users.active, color: "#15803d", href: "/administrator/users?status=active" },
-    { label: "Pending invitation", n: s.users.pending, color: "#b45309", href: "/administrator/users?status=pending" },
-    { label: "Inactive", n: s.users.inactive, color: "#94a3b8", href: "/administrator/users?status=inactive" },
+    { label: "Active", n: s.users.active, color: "#15803d", href: usersHref("?status=active") },
+    { label: "Pending invitation", n: s.users.pending, color: "#b45309", href: usersHref("?status=pending") },
+    { label: "Inactive", n: s.users.inactive, color: "#94a3b8", href: usersHref("?status=inactive") },
   ];
   const appBars = [
-    { label: "Active", n: s.apps.live, color: "#2a6b7c", href: "/administrator/inventory" },
-    { label: "Under testing", n: s.apps.testing, color: "#b45309", href: "/administrator/inventory" },
-    { label: "Unavailable", n: s.apps.unavailable, color: "#b91c1c", href: "/administrator/inventory" },
-    { label: "Hidden", n: s.apps.hidden, color: "#94a3b8", href: "/administrator/inventory" },
+    { label: "Active", n: s.apps.live, color: "#2a6b7c", href: appsHref },
+    { label: "Under testing", n: s.apps.testing, color: "#b45309", href: appsHref },
+    { label: "Unavailable", n: s.apps.unavailable, color: "#b91c1c", href: appsHref },
+    { label: "Hidden", n: s.apps.hidden, color: "#94a3b8", href: appsHref },
   ];
 
   return (
     <div className="space-y-6">
       <section aria-label="Summary" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <Card label="Total users" value={s.users.total} href="/administrator/users" />
-        <Card label="Active users" value={s.users.active} href="/administrator/users?status=active" />
-        <Card label="Inactive users" value={s.users.inactive} href="/administrator/users?status=inactive" />
-        <Card label="Applications" value={s.apps.total} href="/administrator/inventory" />
-        {approvals && <Card label="Pending approvals" value={pendingApprovals} href="/approvals/review/hr/pending" tone="warn" />}
-        <Card label="Access assignments" value={assignments} href="/administrator/users" />
+        <Card label="Total users" value={s.users.total} href={usersHref()} />
+        <Card label="Active users" value={s.users.active} href={usersHref("?status=active")} />
+        <Card label="Inactive users" value={s.users.inactive} href={usersHref("?status=inactive")} />
+        <Card label="Applications" value={s.apps.total} href={appsHref} />
+        {approvals && <Card label="Pending approvals" value={pendingApprovals} href="/approvals/admin/audit" tone="warn" />}
+        <Card label="Access assignments" value={assignments} href={usersHref()} />
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -103,9 +110,10 @@ export default async function Page() {
       <section className="glass !rounded-md p-5" aria-label="Quick actions">
         <h2 className="mb-3 text-lg">Quick actions</h2>
         <div className="flex flex-wrap gap-2">
-          {hasArea(me, "people") && <Link href="/administrator/users" className="btn btn-primary btn-sm"><UserPlus size={14} /> Add user</Link>}
-          {hasArea(me, "apps") && <Link href="/administrator/inventory" className="btn btn-ghost btn-sm"><AppWindow size={14} /> Add application</Link>}
-          {approvals && <Link href="/approvals/review/hr/pending" className="btn btn-ghost btn-sm"><ClipboardCheck size={14} /> Review approvals{pendingApprovals ? ` (${pendingApprovals})` : ""}</Link>}
+          {hasArea(me, "people") && <Link href="/administrator/users?add=1" className="btn btn-primary btn-sm"><UserPlus size={14} /> Add user</Link>}
+          {hasArea(me, "apps") && <Link href="/administrator/inventory?add=1" className="btn btn-ghost btn-sm"><AppWindow size={14} /> Add application</Link>}
+          {approvals && <Link href="/approvals/review/hr/pending" className="btn btn-ghost btn-sm"><ClipboardCheck size={14} /> Review HR approvals{pendingHr ? ` (${pendingHr})` : ""}</Link>}
+          {approvals && <Link href="/approvals/review/expenditure/pending" className="btn btn-ghost btn-sm"><ClipboardCheck size={14} /> Review expenditure approvals{pendingExp ? ` (${pendingExp})` : ""}</Link>}
           {(hasArea(me, "activity") || hasArea(me, "audit")) && <Link href={hasArea(me, "activity") ? "/administrator/activity" : "/administrator/activity?tab=changes"} className="btn btn-ghost btn-sm"><Activity size={14} /> View activity log</Link>}
         </div>
       </section>
@@ -117,11 +125,11 @@ export default async function Page() {
             <ul className="space-y-2 text-sm">{attention.map((a) => <li key={a.text}><Link href={a.href} className="text-primary hover:underline">{a.text}</Link></li>)}</ul>
           )}
           <div className="flex flex-wrap gap-2 border-t border-line pt-4">
-            <Link href="/administrator/users/import" className="btn btn-primary btn-sm"><Upload size={14} /> Bulk add users</Link>
-            <Link href="/administrator/users" className="btn btn-ghost btn-sm"><Users size={14} /> Users</Link>
-            <Link href="/administrator/departments" className="btn btn-ghost btn-sm"><Layers size={14} /> Application categories</Link>
-            <Link href="/administrator/users/org" className="btn btn-ghost btn-sm"><Network size={14} /> Branches &amp; teams ({s.branches} · {s.teams})</Link>
-            <Link href="/administrator/inventory" className="btn btn-ghost btn-sm"><ClipboardList size={14} /> Application inventory</Link>
+            {hasArea(me, "import") && <Link href="/administrator/users/import" className="btn btn-primary btn-sm"><Upload size={14} /> Bulk add users</Link>}
+            {people && <Link href="/administrator/users" className="btn btn-ghost btn-sm"><Users size={14} /> Users</Link>}
+            {appsArea && <Link href="/administrator/departments" className="btn btn-ghost btn-sm"><Layers size={14} /> Application categories</Link>}
+            {hasArea(me, "org") && <Link href="/administrator/users/org" className="btn btn-ghost btn-sm"><Network size={14} /> Branches &amp; teams ({s.branches} · {s.teams})</Link>}
+            {appsArea && <Link href="/administrator/inventory" className="btn btn-ghost btn-sm"><ClipboardList size={14} /> Application inventory</Link>}
           </div>
         </section>
         {recent && (

@@ -41,7 +41,8 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
   const [busy, startBusy] = useTransition();
   const [selected, setSelected] = useState<string[]>([]);
   const [allMatching, setAllMatching] = useState(false);
-  const [adding, setAdding] = useState(false);
+  // "Add user" on the Dashboard opens the form straight away (?add=1).
+  const [adding, setAdding] = useState(() => caps.create && params.get("add") === "1");
   const [assigning, setAssigning] = useState(false);
   const [resetting, setResetting] = useState<{ id: string; name: string } | null>(null);
   const [links, setLinks] = useState<LinkResult[] | null>(null);

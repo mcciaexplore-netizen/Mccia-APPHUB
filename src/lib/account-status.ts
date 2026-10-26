@@ -1,6 +1,6 @@
 /**
- * The three states an account shows in the directory. A person who has never chosen a password (created by an invitation) is
- * "pending" until they do. The Support Admin's password comes from the environment, so having no stored one is normal for them.
+ * The three states an account shows in the directory. A person who has never chosen a password (no password yet, or only the temporary
+ * one they were emailed) is "pending" until they do. The Support Admin's password comes from the environment, so having no stored one is normal for them.
  */
 export type AccountStatus = "active" | "inactive" | "pending";
 

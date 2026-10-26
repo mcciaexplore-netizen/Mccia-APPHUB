@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Download, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -29,7 +29,9 @@ export function InventoryView({ rows, departments }: { rows: Row[]; departments:
   const router = useRouter();
   const toast = useToast();
   const confirm = useConfirm();
-  const [adding, setAdding] = useState(false);
+  // "Add application" on the Dashboard opens the form straight away (?add=1).
+  const params = useSearchParams();
+  const [adding, setAdding] = useState(() => params.get("add") === "1");
   const [pending, start] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
 
