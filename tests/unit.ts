@@ -282,11 +282,11 @@ eq("rbac: an Admin with Users & access may hand out any application, one without
 eq("rbac: Admin, Super Admin, HR Admin and Expense Admin are given only by the Support Admin (and the Support Admin role never); the last three are one person each", [[...PROMOTABLE_ROLES], [...ASSIGNABLE_ROLES].includes("head_admin" as never), [...SINGLE_HOLDER_ROLES]], [["admin", "super_admin", "hr_admin", "expense_admin"], false, ["super_admin", "hr_admin", "expense_admin"]]);
 eq("rbac: the areas an Admin can be given", [...ADMIN_AREAS], ["people", "import", "org", "apps", "audit", "activity"]);
 eq("rbac: a plain user and a Team manager never open Administrator", [canAdminister(USER), canAdminister(TM)], [false, false]);
-eq("tabs: the Support Admin sees the five sections and, below them, Approval Forms and the Notification Panel", [adminTabsFor(ADMIN).filter((t) => t.group === "main").map((t) => t.label), adminTabsFor(ADMIN).filter((t) => t.group === "settings").map((t) => t.label)],
-  [["Dashboard", "Users", "Applications", "User Administration", "Activity Log"], ["Approval Forms", "Notification Panel"]]);
-eq("tabs: an Admin sees the Dashboard, the Notification Panel and only the sections of the areas switched on, never Approval Forms", [adminTabsFor(A_NONE).map((t) => t.label), adminTabsFor(adminWith("people")).map((t) => t.label), adminTabsFor(adminWith("apps", "activity")).map((t) => t.label)],
-  [["Dashboard", "Notification Panel"], ["Dashboard", "Users", "User Administration", "Notification Panel"], ["Dashboard", "Applications", "Activity Log", "Notification Panel"]]);
-eq("tabs: User Administration and the Activity Log open on the first page the Admin may use", [adminTabsFor(A_IMPORT).find((t) => t.label === "User Administration")?.href, adminTabsFor(adminWith("org")).find((t) => t.label === "User Administration")?.href, adminTabsFor(A_AUDIT).find((t) => t.label === "Activity Log")?.href],
+eq("tabs: the Support Admin sees Dashboard, Users, Applications and Activity Log, then Approval Forms, HR, Expenditure and the Notification Panel", [adminTabsFor(ADMIN).filter((t) => t.group === "main").map((t) => t.label), adminTabsFor(ADMIN).filter((t) => t.group === "settings").map((t) => t.label)],
+  [["Dashboard", "Users", "Applications", "Activity Log"], ["Approval Forms", "HR", "Expenditure", "Notification Panel"]]);
+eq("tabs: an Admin sees the Dashboard, the Notification Panel and only the sections of the areas switched on, never the approval forms", [adminTabsFor(A_NONE).map((t) => t.label), adminTabsFor(adminWith("people")).map((t) => t.label), adminTabsFor(adminWith("apps", "activity")).map((t) => t.label)],
+  [["Dashboard", "Notification Panel"], ["Dashboard", "Users", "Notification Panel"], ["Dashboard", "Applications", "Activity Log", "Notification Panel"]]);
+eq("tabs: Users and the Activity Log open on the first page the Admin may use", [adminTabsFor(A_IMPORT).find((t) => t.label === "Users")?.href, adminTabsFor(adminWith("org")).find((t) => t.label === "Users")?.href, adminTabsFor(A_AUDIT).find((t) => t.label === "Activity Log")?.href],
   ["/administrator/users/import", "/administrator/users/org", "/administrator/activity?tab=changes"]);
 const own = new Set(["app1", "app2"]);
 eq("rbac: a team manager can hand out only the applications they hold", [

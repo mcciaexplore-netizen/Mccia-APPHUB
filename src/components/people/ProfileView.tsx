@@ -1,11 +1,11 @@
 "use client";
 
+import { ApplicationAccess } from "@/components/people/ApplicationAccess";
 import { RoleOptions, type RoleHolder } from "@/components/people/RoleOptions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { ArrowLeft, KeyRound, Mail, Power, Trash2 } from "lucide-react";
-import { AccessTree } from "@/components/AccessTree";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { LinksDialog, ResetDialog, type Catalog, type Manager, type Option, type Template } from "@/components/people/PeopleDialogs";
 import { useToast } from "@/components/Toast";
@@ -32,7 +32,7 @@ function describe(a: AuditLine): string {
 }
 
 /** One person, everything about them on one screen: who they are, where they sit, what they can open, and what changed recently. */
-export function ProfileView({ base, person, caps, options, catalog, templates, otherApps, audit, meId, accessEditable, appNames, responsibilities }: {
+export function ProfileView({ base, person, caps, options, catalog, templates, otherApps, audit, meId, accessEditable, responsibilities }: {
   base: string; person: PersonDetail; caps: ProfileCaps; options: { branches: Option[]; teams: Option[]; managers: Manager[]; roleHolders?: RoleHolder[] };
   catalog: Catalog; templates: Template[]; otherApps: number; audit: AuditLine[] | null; meId: string;
   /** Whether the viewer may change this person's access; when not (for example their own profile), it is shown read only. */
@@ -81,6 +81,10 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
     if (r.ok) { toast.success("What this Admin may open is saved and recorded in the audit log"); refresh(); } else toast.error(r.error);
   });
   const saveAccess = () => start(async () => {
+    // Taking access away is confirmed first: the person loses those applications at once.
+    const removed = saved.filter((x) => !apps.includes(x));
+    if (removed.length && !(await confirm({ title: "Take away access?", confirmLabel: "Save changes", danger: true,
+      message: `${person.name} will lose ${removed.length} application${removed.length === 1 ? "" : "s"} straight away${apps.length > saved.length - removed.length ? ", and get the new ones ticked" : ""}.` }))) return;
     const r = await setPersonAccess(person.id, apps);
     if (r.ok) { setSaved(apps); toast.success(r.data.changed.length ? "Access saved and recorded in the audit log" : "Nothing to change"); refresh(); } else toast.error(r.error);
   });
@@ -124,7 +128,7 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
 
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
         <form className="glass !rounded-md space-y-4 p-5 sm:p-6" onSubmit={saveDetails} aria-label="Details and organisation">
-          <h3 className="text-lg">Details and where they sit</h3>
+          <h3 className="text-lg">User overview</h3>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Name"><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} required maxLength={120} disabled={!caps.editPerson} /></Field>
             <Field label="Designation"><input className="input" value={f.designation} onChange={(e) => set("designation", e.target.value)} maxLength={120} disabled={!caps.editPerson} /></Field>
@@ -208,42 +212,22 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
             </div>
           )}
         </div>
-        {seesAll ? (
-          <div className="space-y-4">
-            <p className="text-sm text-muted">The Support Admin can open every application, so there is nothing to assign. This is everything {person.name} can open:</p>
-            {catalog.departments.map((d) => {
-              const list = catalog.apps.filter((x) => x.departmentId === d.id);
-              if (list.length === 0) return null;
-              return (
-                <div key={d.id}>
-                  <p className="label-xs mb-1.5">{d.name}{d.isActive ? "" : " (inactive)"}</p>
-                  <p className="flex flex-wrap gap-1.5">{list.map((x) => <span key={x.id} className={`badge ${x.isActive ? "" : "badge-neutral line-through"}`} title={x.isActive ? undefined : "Inactive"}>{x.name}</span>)}</p>
-                </div>
-              );
-            })}
-            {catalog.apps.length === 0 && <p className="text-sm text-subtle">No applications are registered yet.</p>}
+        {!seesAll && accessEditable && otherApps > 0 && <p className="text-xs text-muted">{person.name} also has {otherApps} application{otherApps === 1 ? "" : "s"} that only someone with wider access can change.</p>}
+        <ApplicationAccess departments={catalog.departments} apps={catalog.apps} value={apps} onChange={setApps} disabled={pending}
+          mode={seesAll ? "inherited" : accessEditable ? "edit" : "view"} />
+        {!seesAll && accessEditable && (
+          <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 rounded-md border border-line bg-white p-3 shadow-card">
+            <button className="btn btn-primary btn-sm" disabled={pending || !dirtyApps} onClick={saveAccess}>Save access</button>
+            <button className="btn btn-ghost btn-sm" disabled={pending || !dirtyApps} onClick={() => setApps(saved)}>Discard changes</button>
+            <span className="ml-auto text-sm text-muted">{dirtyApps ? `${apps.filter((x) => !saved.includes(x)).length} to give, ${saved.filter((x) => !apps.includes(x)).length} to take away · not saved yet` : "All changes saved"}</span>
           </div>
-        )
-        : !accessEditable ? (
-          appNames.length === 0 ? <p className="text-sm text-subtle">No applications assigned.</p>
-          : <p className="flex flex-wrap gap-1.5">{appNames.map((n) => <span key={n} className="badge">{n}</span>)}</p>
-        ) : (
-          <>
-            {otherApps > 0 && <p className="text-xs text-muted">{person.name} also has {otherApps} application{otherApps === 1 ? "" : "s"} that only someone with wider access can change.</p>}
-            <AccessTree departments={catalog.departments} apps={catalog.apps} value={apps} onChange={setApps} disabled={pending} />
-            <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 rounded-md border border-line bg-white p-3 shadow-card">
-              <button className="btn btn-primary btn-sm" disabled={pending || !dirtyApps} onClick={saveAccess}>Save access</button>
-              <button className="btn btn-ghost btn-sm" disabled={pending || apps.length === 0} onClick={() => setApps([])}>Untick all</button>
-              <button className="btn btn-ghost btn-sm" disabled={pending || !dirtyApps} onClick={() => setApps(saved)}>Discard changes</button>
-              <span className="ml-auto text-sm text-muted">{apps.length} application{apps.length === 1 ? "" : "s"} ticked{dirtyApps ? " · unsaved changes" : ""}</span>
-            </div>
-          </>
         )}
       </section>
 
       {audit && (
         <section className="glass !rounded-md p-5 sm:p-6" aria-label="Recent changes">
-          <h3 className="mb-3 text-lg">Recent changes</h3>
+          <h3 className="mb-3 text-lg">Activity &amp; login history</h3>
+          <p className="mb-3 text-sm text-muted">Last sign-in: {formatIST(person.lastLoginAt)}</p>
           {audit.length === 0 ? <p className="text-sm text-subtle">No changes recorded yet.</p> : (
             <ul className="divide-y divide-line text-sm">{audit.map((a) => <li key={a.id} className="flex flex-wrap justify-between gap-2 py-2"><span><b>{a.actorName}</b> {describe(a)}</span><span className="text-xs text-muted">{formatIST(a.at)}</span></li>)}</ul>
           )}

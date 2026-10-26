@@ -49,7 +49,7 @@ export function AccessManager({ initialTab, catalog, appCounts, templates }: {
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted">
-        To give or take away someone&apos;s applications, open <Link className="text-primary underline" href="/administrator/manage">User Administration</Link>. This page shows access from the application&apos;s side, and holds reusable templates.
+        To give or take away someone&apos;s applications, open <Link className="text-primary underline" href="/administrator/users">Users</Link>. This page shows access from the application&apos;s side, and holds reusable templates.
       </p>
       <nav className="flex gap-2 overflow-x-auto" aria-label="Access sections">
         {TABS.map((t) => (
