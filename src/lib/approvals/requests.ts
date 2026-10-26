@@ -200,42 +200,37 @@ async function prepareExpenditure(form: ExpenditureForm, input: LargeExpenditure
   const employee = people.find((u) => u.id === input.employeeUserId);
   if (!employee) throw new ApprovalsError("Pick a person from the Name list.");
 
-  const small = form === "small" ? (input as SmallExpenditureInput) : null;
-  if (small) {
-    if (small.taxInvoiceDate && small.taxInvoiceDate > todayIST()) throw new ApprovalsError("The date of the tax invoice cannot be in the future.");
-    if (small.publicationId && !small.publicationTypeId) throw new ApprovalsError("Pick the type of publication first.");
-    if (small.publicationId) {
-      const [pub] = await db.select().from(aprPublications).where(eq(aprPublications.id, small.publicationId));
-      if (!pub || pub.publicationTypeId !== small.publicationTypeId) throw new ApprovalsError("That publication does not belong to the chosen type.");
-    }
+  // The same form for every amount: its fields are checked the same way whichever approvers the amount sends it to.
+  const small = input as SmallExpenditureInput;
+  if (small.taxInvoiceDate && small.taxInvoiceDate > todayIST()) throw new ApprovalsError("The date of the tax invoice cannot be in the future.");
+  if (small.publicationId && !small.publicationTypeId) throw new ApprovalsError("Pick the type of publication first.");
+  if (small.publicationId) {
+    const [pub] = await db.select().from(aprPublications).where(eq(aprPublications.id, small.publicationId));
+    if (!pub || pub.publicationTypeId !== small.publicationTypeId) throw new ApprovalsError("That publication does not belong to the chosen type.");
   }
 
   return { employee, small, large: form === "large" ? (input as LargeExpenditureInput) : null };
 }
 
-const expenditureDetailsValues = (input: LargeExpenditureInput | SmallExpenditureInput, small: SmallExpenditureInput | null) => ({
+const expenditureDetailsValues = (input: LargeExpenditureInput | SmallExpenditureInput, small: SmallExpenditureInput) => ({
   categoryId: input.categoryId, branchId: input.branchId, natureOfExpenditure: input.natureOfExpenditure, vendorName: input.vendorName,
   budgetAllocatedPaise: null, budgetAvailablePaise: null, budgetRemainingPaise: null, differencePaise: null,
-  taxInvoiceDate: small?.taxInvoiceDate ?? null, expenseDate: small?.expenseDate ?? null,
-  publicationTypeId: small?.publicationTypeId ?? null, publicationId: small?.publicationId ?? null,
+  taxInvoiceDate: small.taxInvoiceDate, expenseDate: small.expenseDate,
+  publicationTypeId: small.publicationTypeId, publicationId: small.publicationId,
 });
 
-const expenditureFiles = (large: LargeExpenditureInput | null, small: SmallExpenditureInput | null): { slot: Slot; fileId: string }[] =>
-  large
-    ? [
-        ...(large.supportingDocs ? [{ slot: "supporting" as const, fileId: large.supportingDocs.fileId }] : []),
-        ...(large.quotation ? [{ slot: "quotation" as const, fileId: large.quotation.fileId }] : []),
-      ]
-    : [
-        ...(small!.fileUpload ? [{ slot: "file_upload" as const, fileId: small!.fileUpload.fileId }] : []),
-        ...(small!.taxInvoice ? [{ slot: "tax_invoice" as const, fileId: small!.taxInvoice.fileId }] : []),
-        ...(small!.quotation ? [{ slot: "quotation" as const, fileId: small!.quotation.fileId }] : []),
-      ];
+const expenditureFiles = (large: LargeExpenditureInput | null, small: SmallExpenditureInput): { slot: Slot; fileId: string }[] => [
+  ...(small.fileUpload ? [{ slot: "file_upload" as const, fileId: small.fileUpload.fileId }] : []),
+  ...(small.taxInvoice ? [{ slot: "tax_invoice" as const, fileId: small.taxInvoice.fileId }] : []),
+  ...(small.quotation ? [{ slot: "quotation" as const, fileId: small.quotation.fileId }] : []),
+  ...(large?.supportingDocs ? [{ slot: "supporting" as const, fileId: large.supportingDocs.fileId }] : []),
+];
 
 /** Both expenditure forms. The amount must match the form: 10,000 and above is "large" (DG), anything lower is "small". */
 export async function submitExpenditure(form: ExpenditureForm, input: LargeExpenditureInput | SmallExpenditureInput, actor: ApprovalsUser) {
   const { employee, small, large } = await prepareExpenditure(form, input);
-  const customValues = await resolveCustomAnswers(form, input.custom);
+  // One expense form: its extra fields are the ones set on it ("small"), whatever the amount.
+  const customValues = await resolveCustomAnswers("small", input.custom);
   return createRequest(actor, {
     customValues,
     type: form === "large" ? "expenditure_large" : "expenditure_small",
@@ -382,7 +377,7 @@ export async function resubmitRequest(requestId: string, input: ResubmitInput, a
   let requesterEmail: string;
   let newFiles: { slot: Slot; fileId: string }[];
   let writeDetails: () => Promise<unknown>;
-  const customValues = await resolveCustomAnswers(input.kind, input.custom);
+  const customValues = await resolveCustomAnswers(input.kind === "hr" ? "hr" : "small", input.custom);
   if (input.kind === "hr") {
     const [category] = await db.select().from(aprHrCategories).where(eq(aprHrCategories.id, input.hrCategoryId));
     if (!category?.active) throw new ApprovalsError("Pick an active category.");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { api } from "@/components/approvals/api";
 import {
@@ -66,7 +66,7 @@ export function FormFieldsEditor({ initial, forms = FORM_KEYS, title = "Approval
       <div>
         <h2 className="text-xl">{title}</h2>
         {intro && <p className="mt-1 max-w-3xl text-sm text-muted">{intro}</p>}
-        <p className="mt-1 max-w-3xl text-sm text-muted">The forms everyone uses to raise a request. Rename a field, move it, hide the ones that are optional, or add fields of your own. A saved change shows the next time someone opens the form. Requests already sent keep what was answered.</p>
+        <p className="mt-1 max-w-3xl text-sm text-muted">The forms everyone uses to raise a request. Edit the name of a field by typing in its box, move it up or down, remove the ones that are optional (and restore them later), or add fields of your own. A saved change shows the next time someone opens the form. Requests already sent keep what was answered.</p>
       </div>
 
       {forms.length > 1 && <div role="tablist" aria-label="Forms" className="flex flex-wrap gap-2 border-b border-line pb-3">
@@ -89,9 +89,14 @@ export function FormFieldsEditor({ initial, forms = FORM_KEYS, title = "Approval
               <input className="input !w-auto min-w-56 flex-1" value={l.label} maxLength={MAX_LABEL} aria-label={`Name of field ${i + 1}`} onChange={(e) => patch(l.id, { label: e.target.value })} />
               <span className={`badge ${l.builtin ? "badge-neutral" : "badge-green"}`}>{l.builtin ? "Built in" : KIND_LABEL[l.kind ?? "text"]}</span>
               {l.builtin ? (
-                l.hideable
-                  ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!l.hidden} onChange={(e) => patch(l.id, { hidden: !e.target.checked })} /> Shown</label>
-                  : <span className="text-xs text-subtle">Always shown: the request needs it</span>
+                // A built-in field is taken off the form (and can be put back), never deleted: the request still has a place for it.
+                !l.hideable ? <span className="text-xs text-subtle">Always on the form: the request needs it</span>
+                  : l.hidden ? (
+                    <>
+                      <span className="text-xs text-subtle">Removed from the form</span>
+                      <button type="button" className="btn btn-ghost btn-sm" aria-label={`Restore ${l.label}`} onClick={() => patch(l.id, { hidden: false })}><RotateCcw size={14} /> Restore</button>
+                    </>
+                  ) : <button type="button" className="btn btn-ghost btn-sm" aria-label={`Remove ${l.label}`} onClick={() => patch(l.id, { hidden: true })}><Trash2 size={14} /> Remove</button>
               ) : (
                 <>
                   <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!l.hidden} onChange={(e) => patch(l.id, { hidden: !e.target.checked })} /> Shown</label>

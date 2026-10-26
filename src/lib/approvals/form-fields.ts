@@ -10,8 +10,8 @@ export type FormKey = "hr" | "large" | "small";
 export const FORM_KEYS: readonly FormKey[] = ["hr", "large", "small"];
 export const FORM_TITLE: Record<FormKey, string> = {
   hr: "HR form",
-  small: "Expenses form (below ₹10,000)",
-  large: "Expenditure form (₹10,000 and above)",
+  small: "Expenditure form",
+  large: "Expenditure form (old ₹10,000+ layout, no longer used)",
 };
 
 export type BuiltinDef = { key: string; label: string; hideable: boolean };

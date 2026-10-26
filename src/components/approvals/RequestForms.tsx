@@ -248,10 +248,10 @@ export type ExpenditureFormProps = {
   /** Set when the form corrects a request that was returned. */
   edit?: EditInfo;
   /**
-   * The one expense form for every amount: with these (the ₹10,000+ form's fields) it asks the expense fields below the threshold and these
-   * from the threshold up, and sends the request as the kind its amount makes it. `fields` are then the below-threshold ones.
+   * The one expense form for a new request: the same fields for every amount, sent as the kind its amount makes it (from the threshold up it
+   * goes on to the Super Admin). Without it (correcting a returned request) the kind stays as it was raised.
    */
-  largeFields?: FormField[];
+  byAmount?: boolean;
 };
 
 export function ExpenditureForm(p: ExpenditureFormProps) {
@@ -279,11 +279,10 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   const [amount, setAmount] = useState(defaults.amount);
   // Which kind of request this is: fixed by the form, or, on the one expense form, by the amount typed.
   const typedPaise = amount.trim() ? parseINR(amount) : null;
-  const large = p.largeFields ? typedPaise != null && typedPaise >= p.thresholdPaise : p.form === "large";
-  const fields = p.largeFields && large ? p.largeFields : p.fields;
+  const large = p.byAmount ? typedPaise != null && typedPaise >= p.thresholdPaise : p.form === "large";
+  const fields = p.fields;
   const lab = labeller(fields);
   const [vendor, setVendor] = useState(defaults.vendor);
-  const [supporting, setSupporting] = useState<UploadedFile | null>(null);
   const [quotation, setQuotation] = useState<UploadedFile | null>(null);
   const [fileUpload, setFileUpload] = useState<UploadedFile | null>(null);
   const [taxInvoice, setTaxInvoice] = useState<UploadedFile | null>(null);
@@ -301,12 +300,12 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   const reset = () => {
     if (p.edit) { router.push(`/approvals/requests/${p.edit.requestId}?app=${large ? "hr" : "exp"}`); return; }
     setEmployeeId(defaults.employeeId); setEmail(defaults.email); setRequestedAt(new Date().toISOString()); setCategoryId(""); setNature(""); setBranchId("");
-    setAmount(""); setVendor(""); setSupporting(null); setQuotation(null); setFileUpload(null); setTaxInvoice(null); setExpenseDate(""); setTaxInvoiceDate("");
+    setAmount(""); setVendor(""); setQuotation(null); setFileUpload(null); setTaxInvoice(null); setExpenseDate(""); setTaxInvoiceDate("");
     setPubTypeId(""); setPubId(""); setCustom({}); setErrors({}); setFormError(null);
   };
 
   const amountPaise = amount.trim() ? parseINR(amount) : null;
-  const wrong = p.largeFields ? null : wrongFormMessage(p.form, amountPaise, p.thresholdPaise);
+  const wrong = p.byAmount ? null : wrongFormMessage(p.form, amountPaise, p.thresholdPaise);
 
   const otherHref = useMemo(() => {
     const q = new URLSearchParams();
@@ -327,21 +326,20 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
     e.preventDefault();
     const err: Errors = {};
     if (!employeeId) err.employee = "Choose a name.";
-    if (!large && !email.trim()) err.email = "Enter the email address.";
+    if (!email.trim()) err.email = "Enter the email address.";
     else if (email.trim() && !EMAIL.test(email.trim())) err.email = "Enter a valid email address.";
     if (!categoryId) err.category = "Choose a category.";
-    if (!large && !vendor.trim()) err.vendor = "Enter the vendor name.";
+    if (!vendor.trim()) err.vendor = "Enter the vendor name.";
     if (amountPaise === null || amountPaise <= 0) err.amount = "Enter an amount above 0, with at most 2 decimals.";
     else if (wrong) err.amount = wrong;
-    if (!large && taxInvoiceDate && taxInvoiceDate > todayIST()) err.taxInvoiceDate = "The date of the tax invoice cannot be in the future.";
-    if (!large && pubId && !pubTypeId) err.pubType = "Choose the type of publication first.";
+    if (taxInvoiceDate && taxInvoiceDate > todayIST()) err.taxInvoiceDate = "The date of the tax invoice cannot be in the future.";
+    if (pubId && !pubTypeId) err.pubType = "Choose the type of publication first.";
     checkExtra(fields, custom, err);
     setErrors(err);
     if (Object.keys(err).length) return;
     const common = { employeeUserId: employeeId, email, requestedAt, categoryId, natureOfExpenditure: nature, branchId: branchId || null, amountPaise, vendorName: vendor, custom: extraAnswers(fields, custom), ...(p.edit ? { keepAttachmentIds: keep } : {}) };
-    void submit(large
-      ? { kind: "large", ...common, supportingDocs: ref(supporting), quotation: ref(quotation) }
-      : { kind: "small", ...common, fileUpload: ref(fileUpload), expenseDate, publicationTypeId: pubTypeId || null, publicationId: pubId || null, taxInvoice: ref(taxInvoice), quotation: ref(quotation), taxInvoiceDate });
+    // The same fields for every amount; the kind only decides who approves it.
+    void submit({ kind: large ? "large" : "small", ...common, fileUpload: ref(fileUpload), expenseDate, publicationTypeId: pubTypeId || null, publicationId: pubId || null, taxInvoice: ref(taxInvoice), quotation: ref(quotation), taxInvoiceDate });
   };
 
   const addCategory = p.canAdd ? { kind: "categories" as const, noun: "category", onAdded: (o: Option) => setCategories((c) => [...c, o].sort((a, b) => a.label.localeCompare(b.label))) } : undefined;
@@ -349,7 +347,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   const amountRow = (
     <Row label={lab("amount", "Amount")} required htmlFor="ex-amount" error={errors.amount}>
       <MoneyInput id="ex-amount" value={amount} onChange={setAmount} invalid={!!errors.amount} />
-      {p.largeFields && large && (
+      {p.byAmount && large && (
         <p className="apr-notice mt-2" role="status">{formatINR(p.thresholdPaise, { symbol: true })} or more: the first approver recommends it to the Director General, who gives the final decision.</p>
       )}
       {wrong && (
@@ -367,48 +365,43 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
         <SearchSelect id="ex-name" options={p.people} value={employeeId} onChange={onEmployee} invalid={!!errors.employee} />
       </Row>
     ),
-    email: <Row label={lab("email", "Email")} required={!large} htmlFor="ex-email" error={errors.email}><EmailInput id="ex-email" value={email} onChange={setEmail} invalid={!!errors.email} /></Row>,
+    email: <Row label={lab("email", "Email")} required htmlFor="ex-email" error={errors.email}><EmailInput id="ex-email" value={email} onChange={setEmail} invalid={!!errors.email} /></Row>,
     date: p.edit
-      ? <Row label={lab("date", large ? "Date of Request" : "Date")}><p className="py-2">{formatDateTime(p.edit.requestedAt)}</p></Row>
-      : <Row label={lab("date", large ? "Date of Request" : "Date")} htmlFor="ex-requested"><DateTimeInput id="ex-requested" value={requestedAt} onChange={setRequestedAt} /></Row>,
+      ? <Row label={lab("date", "Date")}><p className="py-2">{formatDateTime(p.edit.requestedAt)}</p></Row>
+      : <Row label={lab("date", "Date")} htmlFor="ex-requested"><DateTimeInput id="ex-requested" value={requestedAt} onChange={setRequestedAt} /></Row>,
     category: (
       <Row label={lab("category", "Category")} required htmlFor="ex-category" error={errors.category}>
         <SearchSelect id="ex-category" options={categories} value={categoryId} onChange={setCategoryId} invalid={!!errors.category} add={addCategory} />
       </Row>
     ),
     nature: <Row label={lab("nature", "Nature of Expenditure")} htmlFor="ex-nature"><TextArea id="ex-nature" value={nature} onChange={setNature} /></Row>,
-    vendor: <Row label={lab("vendor", "Vendor Name")} required={!large} htmlFor="ex-vendor" error={errors.vendor}><TextArea id="ex-vendor" value={vendor} onChange={setVendor} rows={3} /></Row>,
+    vendor: <Row label={lab("vendor", "Vendor Name")} required htmlFor="ex-vendor" error={errors.vendor}><TextArea id="ex-vendor" value={vendor} onChange={setVendor} rows={3} /></Row>,
     amount: amountRow,
     quotation: <Row label={lab("quotation", "Quotation")} htmlFor="ex-quotation"><FileInput id="ex-quotation" label="Quotation" value={quotation} onChange={setQuotation} onBusy={busy} /></Row>,
   };
-  const rows: Record<string, React.ReactNode> = large
-    ? {
-        ...shared,
-        supporting: <Row label={lab("supporting", "Tax Invoice/Supporting Documents")} htmlFor="ex-supporting"><FileInput id="ex-supporting" label="Tax Invoice or supporting documents" value={supporting} onChange={setSupporting} onBusy={busy} /></Row>,
-      }
-    : {
-        ...shared,
-        file: <Row label={lab("file", "File upload")} htmlFor="ex-file"><FileInput id="ex-file" label="File upload" value={fileUpload} onChange={setFileUpload} onBusy={busy} /></Row>,
-        expenseDate: <Row label={lab("expenseDate", "Date")} htmlFor="ex-expense-date"><DateInput id="ex-expense-date" value={expenseDate} onChange={setExpenseDate} /></Row>,
-        publication: (
-          <>
-            <Row label={lab("publication", "Type of Publication")} htmlFor="ex-pub-type" error={errors.pubType}>
-              <SearchSelect
-                id="ex-pub-type" options={pubTypes} value={pubTypeId} onChange={onType} invalid={!!errors.pubType}
-                add={p.canAdd ? { kind: "publication-types", noun: "publication type", onAdded: (o) => setPubTypes((c) => [...c, o].sort((a, b) => a.label.localeCompare(b.label))) } : undefined}
-              />
-            </Row>
-            <Row label="Publication" htmlFor="ex-pub">
-              <SearchSelect
-                id="ex-pub" options={typePubs} value={pubId} onChange={setPubId} disabled={!pubTypeId}
-                add={p.canAdd && pubTypeId ? { kind: "publications", noun: "publication", extra: { publicationTypeId: pubTypeId }, onAdded: (o) => setPubs((c) => [...c, { ...o, typeId: pubTypeId }]) } : undefined}
-              />
-            </Row>
-          </>
-        ),
-        invoice: <Row label={lab("invoice", "Tax Invoice")} htmlFor="ex-invoice"><FileInput id="ex-invoice" label="Tax Invoice" value={taxInvoice} onChange={setTaxInvoice} onBusy={busy} /></Row>,
-        invoiceDate: <Row label={lab("invoiceDate", "Date of Tax Invoice")} htmlFor="ex-invoice-date" error={errors.taxInvoiceDate}><DateInput id="ex-invoice-date" value={taxInvoiceDate} onChange={setTaxInvoiceDate} max={todayIST()} invalid={!!errors.taxInvoiceDate} /></Row>,
-      };
+  const rows: Record<string, React.ReactNode> = {
+    ...shared,
+    file: <Row label={lab("file", "File upload")} htmlFor="ex-file"><FileInput id="ex-file" label="File upload" value={fileUpload} onChange={setFileUpload} onBusy={busy} /></Row>,
+    expenseDate: <Row label={lab("expenseDate", "Date")} htmlFor="ex-expense-date"><DateInput id="ex-expense-date" value={expenseDate} onChange={setExpenseDate} /></Row>,
+    publication: (
+      <>
+        <Row label={lab("publication", "Type of Publication")} htmlFor="ex-pub-type" error={errors.pubType}>
+          <SearchSelect
+            id="ex-pub-type" options={pubTypes} value={pubTypeId} onChange={onType} invalid={!!errors.pubType}
+            add={p.canAdd ? { kind: "publication-types", noun: "publication type", onAdded: (o) => setPubTypes((c) => [...c, o].sort((a, b) => a.label.localeCompare(b.label))) } : undefined}
+          />
+        </Row>
+        <Row label="Publication" htmlFor="ex-pub">
+          <SearchSelect
+            id="ex-pub" options={typePubs} value={pubId} onChange={setPubId} disabled={!pubTypeId}
+            add={p.canAdd && pubTypeId ? { kind: "publications", noun: "publication", extra: { publicationTypeId: pubTypeId }, onAdded: (o) => setPubs((c) => [...c, { ...o, typeId: pubTypeId }]) } : undefined}
+          />
+        </Row>
+      </>
+    ),
+    invoice: <Row label={lab("invoice", "Tax Invoice")} htmlFor="ex-invoice"><FileInput id="ex-invoice" label="Tax Invoice" value={taxInvoice} onChange={setTaxInvoice} onBusy={busy} /></Row>,
+    invoiceDate: <Row label={lab("invoiceDate", "Date of Tax Invoice")} htmlFor="ex-invoice-date" error={errors.taxInvoiceDate}><DateInput id="ex-invoice-date" value={taxInvoiceDate} onChange={setTaxInvoiceDate} max={todayIST()} invalid={!!errors.taxInvoiceDate} /></Row>,
+  };
 
   return (
     <form className="zf" onSubmit={onSubmit} noValidate>

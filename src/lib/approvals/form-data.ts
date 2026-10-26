@@ -23,7 +23,7 @@ export async function expenditureFormProps(
   form: "large" | "small", user: ApprovalsUser, search: Record<string, string | string[] | undefined>,
 ): Promise<ExpenditureFormProps> {
   const [categories, branches, types, publications, people, settings, fields] = await Promise.all([
-    listMaster("categories", false), listMaster("branches", false), listMaster("publication-types", false), listMaster("publications", false), listUsers(), getSettings(), getFormFields(form),
+    listMaster("categories", false), listMaster("branches", false), listMaster("publication-types", false), listMaster("publications", false), listUsers(), getSettings(), getFormFields("small"),
   ]);
   const amount = first(search.amount);
   return {

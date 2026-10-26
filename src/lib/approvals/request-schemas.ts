@@ -104,15 +104,6 @@ const common = {
   vendorName: optionalText(500),
 };
 
-/** Expenditure of the threshold and above: approved by the DG. */
-export const largeExpenditureInput = z.object({
-  ...common,
-  email: optionalEmail,
-  supportingDocs: optionalFile,
-  quotation: optionalFile,
-});
-export type LargeExpenditureInput = z.output<typeof largeExpenditureInput>;
-
 /** Expenditure below the threshold. Vendor name and email are required here, as in the Zoho form. */
 export const smallExpenditureInput = z.object({
   ...common,
@@ -127,6 +118,13 @@ export const smallExpenditureInput = z.object({
   taxInvoiceDate: optionalDate,
 });
 export type SmallExpenditureInput = z.output<typeof smallExpenditureInput>;
+
+/**
+ * Expenditure of the threshold and above: approved by the DG. The one expense form asks the same fields for every amount, so this is the
+ * same as below the threshold; only the approvers differ. supportingDocs is the file slot of the old ₹10,000+ form, still accepted.
+ */
+export const largeExpenditureInput = smallExpenditureInput.extend({ supportingDocs: optionalFile });
+export type LargeExpenditureInput = z.output<typeof largeExpenditureInput>;
 
 export const decisionInput = z.object({
   action: z.enum(["approve", "reject", "return"]),

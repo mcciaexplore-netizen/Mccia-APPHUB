@@ -201,8 +201,13 @@ const hrOk = { firstName: " Asha ", lastName: "Patil", hrCategoryId: uid };
 eq("hr form: minimum fields pass and are trimmed", (() => { const r = hrRequestInput.safeParse(hrOk); return r.success ? [r.data.firstName, r.data.email, r.data.amountPaise, r.data.description] : r.error.issues[0].message; })(), ["Asha", null, null, null]);
 eq("hr form: name and category are required, email must be valid, amount must be positive", [hrRequestInput.safeParse({ ...hrOk, firstName: " " }).success, hrRequestInput.safeParse({ ...hrOk, hrCategoryId: "x" }).success, hrRequestInput.safeParse({ ...hrOk, email: "nope" }).success, hrRequestInput.safeParse({ ...hrOk, amountPaise: 0 }).success, hrRequestInput.safeParse({ ...hrOk, amountPaise: 12.5 }).success], [false, false, false, false, false]);
 eq("hr form: a blank email is fine", hrRequestInput.safeParse({ ...hrOk, email: "" }).success, true);
-const lg = { employeeUserId: uid, categoryId: uid, branchId: uid, amountPaise: 1_500_000, budgetAllocatedPaise: 5_000_000, budgetUsedPaise: 0 };
+// One expense form for every amount: from the threshold up the same fields are asked (vendor name and email included).
+const lg = { employeeUserId: uid, categoryId: uid, branchId: uid, amountPaise: 1_500_000, budgetAllocatedPaise: 5_000_000, budgetUsedPaise: 0, email: "a@b.org", vendorName: "Vendor" };
 eq("large form: minimum fields pass, amount is required", [largeExpenditureInput.safeParse(lg).success, largeExpenditureInput.safeParse({ ...lg, amountPaise: undefined }).success], [true, false]);
+eq("large form: the same fields as below the threshold (vendor name and email required, expense fields kept)", [
+  largeExpenditureInput.safeParse({ ...lg, vendorName: "" }).success, largeExpenditureInput.safeParse({ ...lg, email: "" }).success,
+  largeExpenditureInput.safeParse({ ...lg, expenseDate: "2026-01-05", taxInvoiceDate: "2026-01-04" }).data?.expenseDate,
+], [false, false, "2026-01-05"]);
 const sm = { ...lg, amountPaise: 500_000, email: "a@b.org", vendorName: "Vendor" };
 eq("small form: vendor name and email are required", [smallExpenditureInput.safeParse(sm).success, smallExpenditureInput.safeParse({ ...sm, vendorName: "" }).success, smallExpenditureInput.safeParse({ ...sm, email: "" }).success], [true, false, false]);
 eq("dates: the request date cannot be in the future, an ordinary past one is fine", [

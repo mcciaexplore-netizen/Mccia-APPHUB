@@ -8,7 +8,7 @@ export const metadata = { title: "Approval Forms · MCCIA App Hub" };
 
 const FORMS = [
   { href: "/administrator/approval-forms/hr", title: "HR form", text: "The form staff fill in to raise an HR request: its fields, their names and order, and your own extra fields.", Icon: UserCheck },
-  { href: "/administrator/approval-forms/expenditure", title: "Expenditure form", text: "The one expense form, with the fields asked below ₹10,000 and those asked from ₹10,000 up.", Icon: Wallet },
+  { href: "/administrator/approval-forms/expenditure", title: "Expenditure form", text: "The one expense form, with the same fields for every amount. From ₹10,000 it also goes to the Super Admin.", Icon: Wallet },
 ] as const;
 
 /** Approval Forms: the two forms staff use to raise a request, each opening its editor (also HR and Expenditure in the sidebar). */

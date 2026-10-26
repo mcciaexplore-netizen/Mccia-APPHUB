@@ -80,10 +80,10 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
           <Item label="Amount">{money(d.amountPaise)}</Item>
           {d.hr && <Item label="Description"><span className="whitespace-pre-wrap">{d.hr.description}</span></Item>}
           {e && <Item label="Vendor Name"><span className="whitespace-pre-wrap">{e.vendorName}</span></Item>}
-          {e && d.type === "expenditure_small" && <Item label="Date of expense">{isoToDisplay(e.expenseDate)}</Item>}
+          {e && (d.type === "expenditure_small" || e.expenseDate) && <Item label="Date of expense">{isoToDisplay(e.expenseDate)}</Item>}
           {e?.publicationType && <Item label="Type of Publication">{e.publicationType}</Item>}
           {e?.publication && <Item label="Publication">{e.publication}</Item>}
-          {e && d.type === "expenditure_small" && <Item label="Date of Tax Invoice">{isoToDisplay(e.taxInvoiceDate)}</Item>}
+          {e && (d.type === "expenditure_small" || e.taxInvoiceDate) && <Item label="Date of Tax Invoice">{isoToDisplay(e.taxInvoiceDate)}</Item>}
           {d.custom.map((c) => <Item key={c.label} label={c.label}><span className="whitespace-pre-wrap">{c.value}</span></Item>)}
         </dl>
       </section>
