@@ -98,8 +98,9 @@ const common = {
   branchId: idSchema.nullish().transform((v) => v ?? null),
   amountPaise,
   // The budget the requester says is allocated, and how much of it is used. The branch and category no longer decide the budget.
-  budgetAllocatedPaise: budgetPaise("Budget allocated"),
-  budgetUsedPaise: budgetPaise("Budget used"),
+  // Budget figures are no longer typed (the budget of the category is used); an older client that still sends them is accepted and ignored.
+  budgetAllocatedPaise: budgetPaise("Budget allocated").nullish(),
+  budgetUsedPaise: budgetPaise("Budget used").nullish(),
   vendorName: optionalText(500),
 };
 

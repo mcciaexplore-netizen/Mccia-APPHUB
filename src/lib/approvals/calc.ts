@@ -6,11 +6,11 @@ import { formatINR } from "./format";
 
 export type ExpenditureForm = "large" | "small";
 
-/** A budget as the requester typed it: `allocatedPaise` is the budget allocated and `spentPaise` how much of it is used. `allocatedPaise` is null when none was given. */
+/** The budget of a category: `allocatedPaise` as set by the Director General (null when none is set), `spentPaise` what approved requests used, `pendingPaise` what waits for approval. */
 export type BudgetPosition = { allocatedPaise: number | null; spentPaise: number; pendingPaise: number };
 
 export type BudgetAssessment = {
-  /** No budget was given. */
+  /** No budget has been set for the category. */
   noBudget: boolean;
   allocatedPaise: number | null;
   /** The budget allocated minus the budget used, before this request. Null when there is no budget. */
@@ -19,14 +19,14 @@ export type BudgetAssessment = {
   afterPaise: number | null;
   /** How far over the available budget the request goes (0 when it fits). */
   excessPaise: number;
-  /** True when the amount is more than what is left, or there is no budget at all. Such a request is flagged, never blocked. */
+  /** True when the amount is more than what is left. Such a request is flagged, never blocked. A category with no budget set is not flagged. */
   overBudget: boolean;
 };
 
 /** What is left of a budget, and what would be left after a request for this amount. */
 export function assessBudget(position: BudgetPosition, amountPaise: number): BudgetAssessment {
   if (position.allocatedPaise == null) {
-    return { noBudget: true, allocatedPaise: null, availablePaise: null, afterPaise: null, excessPaise: 0, overBudget: true };
+    return { noBudget: true, allocatedPaise: null, availablePaise: null, afterPaise: null, excessPaise: 0, overBudget: false };
   }
   const available = position.allocatedPaise - position.spentPaise;
   const after = available - amountPaise;
@@ -42,8 +42,8 @@ export function assessBudget(position: BudgetPosition, amountPaise: number): Bud
 
 /** The warning shown under a form when a request is flagged. Null when there is nothing to warn about. */
 export function budgetWarning(a: BudgetAssessment): string | null {
-  if (a.noBudget) return "No budget was given. The request can still be submitted and will be flagged.";
-  if (a.overBudget) return `This request is ${formatINR(a.excessPaise, { symbol: true })} more than the budget left (allocated minus used). It can still be submitted and will be flagged.`;
+  if (a.noBudget) return "No budget has been set for this category yet. The request can still be submitted.";
+  if (a.overBudget) return `This request is ${formatINR(a.excessPaise, { symbol: true })} more than the budget left for this category. It can still be submitted and will be flagged as over budget.`;
   return null;
 }
 

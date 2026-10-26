@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { api } from "@/components/approvals/api";
 import { useToast } from "@/components/Toast";
 import { DateInput, DateTimeInput, EmailInput, FileInput, FormActions, MoneyInput, ReadOnlyMoney, Row, SearchSelect, TextArea, TextInput, type Option, type UploadedFile } from "@/components/approvals/FormFields";
@@ -122,15 +122,27 @@ function CurrentFiles({ edit, keep, setKeep }: { edit: EditInfo; keep: string[];
   );
 }
 
+type LiveBudget = { categoryId: string; allocatedPaise: number | null; usedPaise: number; pendingPaise: number };
+
 /**
- * The budget as the requester types it: the budget allocated and how much of it is used. What is left, and what would be left after this
- * request, are worked out as they type. Neither the branch nor the category decides the budget.
+ * The chosen category's budget for the year of the request, as set by the Director General, and what approved requests have used of it.
+ * Nothing is typed: the figures are fetched when the category is chosen, and what would be left after this request is worked out as the
+ * amount is typed. The server works the same figures out again when the request is sent.
  */
-function useBudget(allocated: string, used: string, amountPaise: number | null) {
-  const a = allocated.trim() ? parseINR(allocated) : null;
-  const u = used.trim() ? parseINR(used) : null;
-  const assessment = a !== null && u !== null ? assessBudget({ allocatedPaise: a, spentPaise: u, pendingPaise: 0 }, amountPaise ?? 0) : null;
-  return { assessment, warning: assessment && amountPaise ? budgetWarning(assessment) : null };
+function useBudget(categoryId: string, requestedAt: string, amountPaise: number | null) {
+  const [live, setLive] = useState<LiveBudget | null>(null);
+  useEffect(() => {
+    if (!categoryId) return;
+    let stale = false;
+    void fetch(`/api/approvals/budget?category=${categoryId}&date=${encodeURIComponent(requestedAt)}`)
+      .then((r) => (r.ok ? (r.json() as Promise<Omit<LiveBudget, "categoryId">>) : null))
+      .then((b) => { if (!stale && b) setLive({ categoryId, allocatedPaise: b.allocatedPaise, usedPaise: b.usedPaise, pendingPaise: b.pendingPaise }); })
+      .catch(() => {});
+    return () => { stale = true; };
+  }, [categoryId, requestedAt]);
+  const current = live && live.categoryId === categoryId ? live : null;
+  const assessment = current ? assessBudget({ allocatedPaise: current.allocatedPaise, spentPaise: current.usedPaise, pendingPaise: current.pendingPaise }, amountPaise ?? 0) : null;
+  return { budget: current, assessment, warning: assessment && amountPaise ? budgetWarning(assessment) : null };
 }
 
 /* ---------------------------------------------------------------- HR */
@@ -152,8 +164,8 @@ export function HrForm({ me, categories: initialCategories, fields, canAdd, now,
   const [custom, setCustom] = useState<Record<string, string>>(edit?.custom ?? {});
   const [first, ...rest] = me.name.trim().split(/\s+/);
   const defaults = edit?.initial
-    ? { first: edit.initial.first, last: edit.initial.last, email: edit.initial.email, categoryId: edit.initial.categoryId, amount: edit.initial.amount, description: edit.initial.description, budgetAllocated: edit.initial.budgetAllocated, budgetUsed: edit.initial.budgetUsed }
-    : { first: first ?? "", last: rest.join(" "), email: me.email, categoryId: "", amount: "", description: "", budgetAllocated: "", budgetUsed: "" };
+    ? { first: edit.initial.first, last: edit.initial.last, email: edit.initial.email, categoryId: edit.initial.categoryId, amount: edit.initial.amount, description: edit.initial.description }
+    : { first: first ?? "", last: rest.join(" "), email: me.email, categoryId: "", amount: "", description: "" };
   const [categories, setCategories] = useState(initialCategories);
   const [firstName, setFirstName] = useState(defaults.first);
   const [lastName, setLastName] = useState(defaults.last);
@@ -161,8 +173,6 @@ export function HrForm({ me, categories: initialCategories, fields, canAdd, now,
   const [categoryId, setCategoryId] = useState(defaults.categoryId);
   const [requestedAt, setRequestedAt] = useState(edit?.requestedAt ?? now);
   const [amount, setAmount] = useState(defaults.amount);
-  const [budgetAllocated, setBudgetAllocated] = useState(defaults.budgetAllocated);
-  const [budgetUsed, setBudgetUsed] = useState(defaults.budgetUsed);
   const [description, setDescription] = useState(defaults.description);
   const [file1, setFile1] = useState<UploadedFile | null>(null);
   const [file2, setFile2] = useState<UploadedFile | null>(null);
@@ -175,12 +185,11 @@ export function HrForm({ me, categories: initialCategories, fields, canAdd, now,
 
   const hasAmount = amount.trim() !== "";
   const amountPaise = hasAmount ? parseINR(amount) : null;
-  const { assessment, warning } = useBudget(hasAmount ? budgetAllocated : "", hasAmount ? budgetUsed : "", amountPaise);
 
   const reset = () => {
     if (edit) { router.push(`/approvals/requests/${edit.requestId}?app=hr`); return; }
     setFirstName(defaults.first); setLastName(defaults.last); setEmail(defaults.email); setCategoryId(""); setRequestedAt(new Date().toISOString());
-    setAmount(""); setBudgetAllocated(""); setBudgetUsed(""); setDescription(""); setFile1(null); setFile2(null); setCustom({}); setErrors({}); setFormError(null);
+    setAmount(""); setDescription(""); setFile1(null); setFile2(null); setCustom({}); setErrors({}); setFormError(null);
   };
 
   const onSubmit = (e: React.FormEvent) => {
@@ -190,14 +199,11 @@ export function HrForm({ me, categories: initialCategories, fields, canAdd, now,
     if (email.trim() && !EMAIL.test(email.trim())) err.email = "Enter a valid email address.";
     if (!categoryId) err.category = "Choose a category.";
     if (hasAmount && (amountPaise === null || amountPaise <= 0)) err.amount = "Enter an amount above 0, with at most 2 decimals.";
-    if (hasAmount && (!budgetAllocated.trim() || parseINR(budgetAllocated) === null)) err.budgetAllocated = "Enter the budget allocated, with at most 2 decimals.";
-    if (hasAmount && (!budgetUsed.trim() || parseINR(budgetUsed) === null)) err.budgetUsed = "Enter the budget used so far (0 if none), with at most 2 decimals.";
     checkExtra(fields, custom, err);
     setErrors(err);
     if (Object.keys(err).length) return;
     void submit({
       kind: "hr", firstName, lastName, email, hrCategoryId: categoryId, requestedAt, amountPaise, description,
-      budgetAllocatedPaise: hasAmount ? parseINR(budgetAllocated) : null, budgetUsedPaise: hasAmount ? parseINR(budgetUsed) : null,
       fileUpload: ref(file1), fileUpload2: ref(file2), custom: extraAnswers(fields, custom), ...(edit ? { keepAttachmentIds: keep } : {}),
     });
   };
@@ -226,15 +232,6 @@ export function HrForm({ me, categories: initialCategories, fields, canAdd, now,
     amount: (
       <>
         <Row label={lab("amount", "Amount")} htmlFor="hr-amount" error={errors.amount}><MoneyInput id="hr-amount" value={amount} onChange={setAmount} invalid={!!errors.amount} /></Row>
-        {hasAmount && (
-          <>
-            <Row label="Budget Allocated" required htmlFor="hr-allocated" error={errors.budgetAllocated}><MoneyInput id="hr-allocated" value={budgetAllocated} onChange={setBudgetAllocated} invalid={!!errors.budgetAllocated} /></Row>
-            <Row label="Budget Used" required htmlFor="hr-used" error={errors.budgetUsed}><MoneyInput id="hr-used" value={budgetUsed} onChange={setBudgetUsed} invalid={!!errors.budgetUsed} /></Row>
-            <Row label="Available budget" htmlFor="hr-available"><ReadOnlyMoney id="hr-available" paise={assessment?.availablePaise ?? null} /></Row>
-            <Row label="Budget Remaining" htmlFor="hr-after"><ReadOnlyMoney id="hr-after" paise={assessment?.afterPaise ?? null} /></Row>
-            {warning && <p className="apr-notice mb-2 max-w-xl" role="status">{warning}</p>}
-          </>
-        )}
       </>
     ),
     description: <Row label={lab("description", "Description")} htmlFor="hr-desc"><TextArea id="hr-desc" value={description} onChange={setDescription} /></Row>,
@@ -288,7 +285,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   const emailOf = (id: string) => p.people.find((x) => x.value === id)?.email ?? "";
   const defaults = {
     employeeId: defaultEmployee, email: start.email || emailOf(defaultEmployee), categoryId: start.categoryId ?? "", branchId: start.branchId ?? "",
-    nature: start.nature ?? "", vendor: start.vendor ?? "", amount: start.amount ?? "", budgetAllocated: start.budgetAllocated ?? "", budgetUsed: start.budgetUsed ?? "",
+    nature: start.nature ?? "", vendor: start.vendor ?? "", amount: start.amount ?? "",
   };
 
   const [categories, setCategories] = useState(p.categories);
@@ -308,8 +305,6 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   const large = p.largeFields ? typedPaise != null && typedPaise >= p.thresholdPaise : p.form === "large";
   const fields = p.largeFields && large ? p.largeFields : p.fields;
   const lab = labeller(fields);
-  const [budgetAllocated, setBudgetAllocated] = useState(defaults.budgetAllocated);
-  const [budgetUsed, setBudgetUsed] = useState(defaults.budgetUsed);
   const [vendor, setVendor] = useState(defaults.vendor);
   const [supporting, setSupporting] = useState<UploadedFile | null>(null);
   const [quotation, setQuotation] = useState<UploadedFile | null>(null);
@@ -329,12 +324,12 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   const reset = () => {
     if (p.edit) { router.push(`/approvals/requests/${p.edit.requestId}?app=${large ? "hr" : "exp"}`); return; }
     setEmployeeId(defaults.employeeId); setEmail(defaults.email); setRequestedAt(new Date().toISOString()); setCategoryId(""); setNature(""); setBranchId("");
-    setAmount(""); setBudgetAllocated(""); setBudgetUsed(""); setVendor(""); setSupporting(null); setQuotation(null); setFileUpload(null); setTaxInvoice(null); setExpenseDate(""); setTaxInvoiceDate("");
+    setAmount(""); setVendor(""); setSupporting(null); setQuotation(null); setFileUpload(null); setTaxInvoice(null); setExpenseDate(""); setTaxInvoiceDate("");
     setPubTypeId(""); setPubId(""); setCustom({}); setErrors({}); setFormError(null);
   };
 
   const amountPaise = amount.trim() ? parseINR(amount) : null;
-  const { assessment, warning } = useBudget(budgetAllocated, budgetUsed, amountPaise);
+  const { budget, assessment, warning } = useBudget(categoryId, requestedAt, amountPaise);
   const wrong = p.largeFields ? null : wrongFormMessage(p.form, amountPaise, p.thresholdPaise);
 
   const otherHref = useMemo(() => {
@@ -346,10 +341,8 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
     if (nature) q.set("nature", nature);
     if (vendor) q.set("vendor", vendor);
     if (amount) q.set("amount", amount);
-    if (budgetAllocated) q.set("allocated", budgetAllocated);
-    if (budgetUsed) q.set("used", budgetUsed);
     return `${large ? "/approvals/expenses/new" : "/approvals/expenditures/new"}${q.toString() ? `?${q}` : ""}`;
-  }, [large, employeeId, email, categoryId, branchId, nature, vendor, amount, budgetAllocated, budgetUsed]);
+  }, [large, employeeId, email, categoryId, branchId, nature, vendor, amount]);
 
   const onEmployee = (id: string) => { setEmployeeId(id); setEmail(emailOf(id)); };
   const onType = (id: string) => { setPubTypeId(id); setPubId(""); };
@@ -364,14 +357,12 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
     if (!large && !vendor.trim()) err.vendor = "Enter the vendor name.";
     if (amountPaise === null || amountPaise <= 0) err.amount = "Enter an amount above 0, with at most 2 decimals.";
     else if (wrong) err.amount = wrong;
-    if (!budgetAllocated.trim() || parseINR(budgetAllocated) === null) err.budgetAllocated = "Enter the budget allocated, with at most 2 decimals.";
-    if (!budgetUsed.trim() || parseINR(budgetUsed) === null) err.budgetUsed = "Enter the budget used so far (0 if none), with at most 2 decimals.";
     if (!large && taxInvoiceDate && taxInvoiceDate > todayIST()) err.taxInvoiceDate = "The date of the tax invoice cannot be in the future.";
     if (!large && pubId && !pubTypeId) err.pubType = "Choose the type of publication first.";
     checkExtra(fields, custom, err);
     setErrors(err);
     if (Object.keys(err).length) return;
-    const common = { employeeUserId: employeeId, email, requestedAt, categoryId, natureOfExpenditure: nature, branchId: branchId || null, amountPaise, budgetAllocatedPaise: parseINR(budgetAllocated), budgetUsedPaise: parseINR(budgetUsed), vendorName: vendor, custom: extraAnswers(fields, custom), ...(p.edit ? { keepAttachmentIds: keep } : {}) };
+    const common = { employeeUserId: employeeId, email, requestedAt, categoryId, natureOfExpenditure: nature, branchId: branchId || null, amountPaise, vendorName: vendor, custom: extraAnswers(fields, custom), ...(p.edit ? { keepAttachmentIds: keep } : {}) };
     void submit(large
       ? { kind: "large", ...common, supportingDocs: ref(supporting), quotation: ref(quotation) }
       : { kind: "small", ...common, fileUpload: ref(fileUpload), expenseDate, publicationTypeId: pubTypeId || null, publicationId: pubId || null, taxInvoice: ref(taxInvoice), quotation: ref(quotation), taxInvoiceDate });
@@ -413,8 +404,8 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
     vendor: <Row label={lab("vendor", "Vendor Name")} required={!large} htmlFor="ex-vendor" error={errors.vendor}><TextArea id="ex-vendor" value={vendor} onChange={setVendor} rows={3} /></Row>,
     amount: amountRow,
     quotation: <Row label={lab("quotation", "Quotation")} htmlFor="ex-quotation"><FileInput id="ex-quotation" label="Quotation" value={quotation} onChange={setQuotation} onBusy={busy} /></Row>,
-    allocated: <Row label={lab("allocated", "Budget Allocated")} required htmlFor="ex-alloc" error={errors.budgetAllocated}><MoneyInput id="ex-alloc" value={budgetAllocated} onChange={setBudgetAllocated} invalid={!!errors.budgetAllocated} /></Row>,
-    used: <Row label={lab("used", "Budget Used")} required htmlFor="ex-used" error={errors.budgetUsed}><MoneyInput id="ex-used" value={budgetUsed} onChange={setBudgetUsed} invalid={!!errors.budgetUsed} /></Row>,
+    allocated: <Row label={lab("allocated", "Budget Allocated")} htmlFor="ex-alloc"><ReadOnlyMoney id="ex-alloc" paise={budget?.allocatedPaise ?? null} empty={categoryId && budget && budget.allocatedPaise == null ? "No budget set" : ""} /></Row>,
+    used: <Row label={lab("used", "Budget Used")} htmlFor="ex-used"><ReadOnlyMoney id="ex-used" paise={budget && budget.allocatedPaise != null ? budget.usedPaise : null} /></Row>,
     remaining: <Row label={lab("remaining", "Budget Remaining")} htmlFor={large ? "ex-remaining" : "ex-after"}><ReadOnlyMoney id={large ? "ex-remaining" : "ex-after"} paise={(large ? assessment?.availablePaise : assessment?.afterPaise) ?? null} /></Row>,
   };
   const rows: Record<string, React.ReactNode> = large

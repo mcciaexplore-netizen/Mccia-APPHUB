@@ -5,6 +5,7 @@ import {
   aprApprovalEvents, aprApproverRules, aprAttachmentSlot, aprAttachments, aprBranches, aprCategories, aprCounters, aprExpenditureDetails,
   aprHrCategories, aprHrDetails, aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType,
 } from "@/db/approvals-schema";
+import { categoryBudget } from "./budget";
 import { ensureRulesSeeded } from "./env-rules";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
@@ -152,13 +153,9 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
  * branch nor the category decides it. What is left is the allocated figure minus the used one; a request for more than that is flagged
  * (never blocked), and its approver must write a comment to approve it.
  */
-const typedBudget = (allocatedPaise: number, usedPaise: number, amountPaise: number): BudgetAssessment => assessBudget({ allocatedPaise, spentPaise: usedPaise, pendingPaise: 0 }, amountPaise);
-
-/** An HR request with an amount must say what the budget is; one without an amount carries no budget. */
-function prepareHrBudget(input: { amountPaise: number | null; budgetAllocatedPaise: number | null; budgetUsedPaise: number | null }): { budget: BudgetAssessment | null } {
-  if (input.amountPaise == null) return { budget: null };
-  if (input.budgetAllocatedPaise == null || input.budgetUsedPaise == null) throw new ApprovalsError("An amount needs the budget allocated and the budget used, so the request can be checked against the budget. Fill in both.", 422);
-  return { budget: typedBudget(input.budgetAllocatedPaise, input.budgetUsedPaise, input.amountPaise) };
+/** HR requests do not use a budget: only expense requests are counted against their category's budget. */
+function prepareHrBudget(_input: { amountPaise: number | null }): { budget: BudgetAssessment | null } {
+  return { budget: null };
 }
 
 const hrDetailsValues = (input: HrRequestInput, budget: BudgetAssessment | null) => ({
@@ -187,7 +184,7 @@ export async function submitHrRequest(input: HrRequestInput, actor: ApprovalsUse
 }
 
 /** Everything both expenditure forms check before a request is saved or corrected: the right form, live masters, the person, the budget. */
-async function prepareExpenditure(form: ExpenditureForm, input: LargeExpenditureInput | SmallExpenditureInput) {
+async function prepareExpenditure(form: ExpenditureForm, input: LargeExpenditureInput | SmallExpenditureInput, financialYear?: string) {
   const settings = await getSettings();
   const wrong = wrongFormMessage(form, input.amountPaise, settings.thresholdPaise);
   if (wrong) throw new ApprovalsError(wrong, 422);
@@ -212,7 +209,10 @@ async function prepareExpenditure(form: ExpenditureForm, input: LargeExpenditure
     }
   }
 
-  const assessment = typedBudget(input.budgetAllocatedPaise, input.budgetUsedPaise, input.amountPaise);
+  // The category's budget for the year the request falls in, as set by the Director General, and what approved requests have used of it.
+  const fy = financialYear ?? financialYearOf(input.requestedAt);
+  const budget = await categoryBudget(input.categoryId, fy);
+  const assessment = assessBudget({ allocatedPaise: budget.allocatedPaise, spentPaise: budget.usedPaise, pendingPaise: budget.pendingPaise }, input.amountPaise);
   return { employee, assessment, small, large: form === "large" ? (input as LargeExpenditureInput) : null };
 }
 
@@ -403,7 +403,7 @@ export async function resubmitRequest(requestId: string, input: ResubmitInput, a
     ];
     writeDetails = () => db.update(aprHrDetails).set(hrDetailsValues(input, budget)).where(eq(aprHrDetails.requestId, requestId));
   } else {
-    const { employee, assessment, small, large } = await prepareExpenditure(input.kind, input);
+    const { employee, assessment, small, large } = await prepareExpenditure(input.kind, input, req.financialYear ?? undefined);
     requesterName = employee.name;
     requesterEmail = input.email ?? employee.email;
     overBudget = assessment.overBudget;

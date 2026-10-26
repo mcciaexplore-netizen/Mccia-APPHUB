@@ -252,6 +252,7 @@ export type RequestDetail = {
   custom: { label: string; value: string }[];
   hr: { firstName: string; lastName: string; categoryName: string; description: string | null; budget: BudgetView | null } | null;
   expenditure: {
+    categoryId: string;
     categoryName: string;
     branchName: string | null;
     nature: string | null;
@@ -311,7 +312,7 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
       exp.d.publicationId ? db.select({ name: aprPublications.name }).from(aprPublications).where(eq(aprPublications.id, exp.d.publicationId)).then((r) => r[0]?.name ?? null) : null,
     ]);
     expenditure = {
-      categoryName: exp.categoryName, branchName: exp.branchName, nature: exp.d.natureOfExpenditure, vendorName: exp.d.vendorName,
+      categoryId: exp.d.categoryId, categoryName: exp.categoryName, branchName: exp.branchName, nature: exp.d.natureOfExpenditure, vendorName: exp.d.vendorName,
       expenseDate: exp.d.expenseDate, taxInvoiceDate: exp.d.taxInvoiceDate, publicationType: type, publication: pub,
       budget: budgetOf(exp.d),
     };

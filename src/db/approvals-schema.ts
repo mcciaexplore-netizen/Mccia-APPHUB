@@ -124,6 +124,23 @@ export const aprBudgets = pgTable(
 );
 
 /** One row per step. min/max amount bands are optional (null max = no upper bound) and let a future type route by amount. */
+/**
+ * The budget of an expense category for a financial year ("2026-27"), set by the Director General (or the Support Admin). What is used is
+ * never stored: it is always the sum of the approved requests of that category and year, so it cannot drift and a rejection needs no undoing.
+ */
+export const aprCategoryBudgets = pgTable(
+  "apr_category_budgets",
+  {
+    id: id(),
+    financialYear: text("financial_year").notNull(),
+    categoryId: uuid("category_id").notNull().references(() => aprCategories.id, { onDelete: "restrict" }),
+    allocatedPaise: paise("allocated_paise").notNull(),
+    updatedByName: text("updated_by_name"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("apr_category_budgets_fy_category_uq").on(t.financialYear, t.categoryId)],
+);
+
 export const aprApproverRules = pgTable(
   "apr_approver_rules",
   {
