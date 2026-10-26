@@ -273,8 +273,6 @@ export type RequestDetail = {
     withdraw: boolean;
     /** The person who raised a returned request may correct it and send it back. */
     edit: boolean;
-    /** The approver must write a comment before approving: the request is over budget. */
-    commentToApprove: boolean;
     /** What this person's "approve" means: recommend it to the next approver, give the final decision after someone recommended it, or approve a one-step request. */
     mode: DecisionMode;
   };
@@ -339,8 +337,6 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
       decide: mine,
       withdraw: (pending || req.status === "returned") && req.requesterUserId === user.id,
       edit: req.status === "returned" && req.requesterUserId === user.id,
-      // Over budget asks the approver for a comment, except the Director General giving the final decision.
-      commentToApprove: mine && req.overBudget && decisionMode(req.currentStep, req.totalSteps) !== "final",
       mode: decisionMode(req.currentStep, req.totalSteps),
     },
   };

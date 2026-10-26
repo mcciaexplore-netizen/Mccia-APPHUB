@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import { ClickableRow } from "@/components/approvals/ClickableRow";
-import { OverBudgetBadge } from "@/components/approvals/Badges";
 import { ListFilters } from "@/components/approvals/ListFilters";
 import { PageHeader } from "@/components/approvals/PageHeader";
 import { QuickDecide } from "@/components/approvals/QuickDecide";
@@ -95,10 +94,10 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
                   {screen.vendor && <td className="hidden md:table-cell whitespace-nowrap">{isoToDisplay(r.taxInvoiceDate)}</td>}
                   <td className="whitespace-nowrap text-right">{r.amountPaise == null ? "" : formatINR(r.amountPaise)}</td>
                   <td className="hidden md:table-cell whitespace-nowrap">{formatDate(r.requestedAt)}</td>
-                  <td className="whitespace-nowrap"><span className="inline-flex flex-wrap items-center gap-1"><StatusPill status={r.status} currentStepNo={r.currentStep} />{r.overBudget && <OverBudgetBadge />}</span></td>
+                  <td className="whitespace-nowrap"><span className="inline-flex flex-wrap items-center gap-1"><StatusPill status={r.status} currentStepNo={r.currentStep} /></span></td>
                   <td className="hidden md:table-cell">{r.approverName ?? ""}</td>
                   <td className="hidden md:table-cell whitespace-nowrap">{r.decidedAt ? formatDateTime(r.decidedAt) : ""}</td>
-                  {screen.quickDecide && <td className="whitespace-nowrap">{r.mineToDecide && <QuickDecide id={r.id} label={r.requestNo ?? "request"} overBudget={r.overBudget && decisionMode(r.currentStep, r.totalSteps) !== "final"} kind={decisionMode(r.currentStep, r.totalSteps)} />}</td>}
+                  {screen.quickDecide && <td className="whitespace-nowrap">{r.mineToDecide && <QuickDecide id={r.id} label={r.requestNo ?? "request"} kind={decisionMode(r.currentStep, r.totalSteps)} />}</td>}
                 </ClickableRow>
               );
             })}

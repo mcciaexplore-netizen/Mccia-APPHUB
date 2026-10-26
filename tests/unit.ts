@@ -19,7 +19,7 @@ import {
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import {
-  assessBudget, budgetWarning, commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, planProblemMessage, planSteps, STATUS_LABEL, wrongFormMessage,
+  commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, planProblemMessage, planSteps, STATUS_LABEL, wrongFormMessage,
   type RuleLike,
 } from "../src/lib/approvals/calc";
 import { decisionInput, fileUploadStart, hrRequestInput, isAllowedFileName, largeExpenditureInput, mimeFor, safeFileName, smallExpenditureInput } from "../src/lib/approvals/request-schemas";
@@ -142,16 +142,6 @@ eq("form fields: a number, a date and a dropdown choice are checked, and a long 
 ], [true, false, false, false, false]);
 
 // Approvals: budget maths. Only approved spend counts; pending is shown, never subtracted.
-const pos = (allocated: number | null, spent = 0, pending = 0) => ({ allocatedPaise: allocated, spentPaise: spent, pendingPaise: pending });
-eq("budget: fits", assessBudget(pos(5_000_000, 1_000_000), 1_500_000), { noBudget: false, allocatedPaise: 5_000_000, availablePaise: 4_000_000, afterPaise: 2_500_000, excessPaise: 0, overBudget: false });
-eq("budget: spending exactly what is left is not over budget", assessBudget(pos(1_000_000, 400_000), 600_000).overBudget, false);
-eq("budget: one paisa over is over budget, by one paisa", [assessBudget(pos(1_000_000, 400_000), 600_001).overBudget, assessBudget(pos(1_000_000, 400_000), 600_001).excessPaise], [true, 1]);
-eq("budget: a category with no budget set is shown as such and not flagged", assessBudget(pos(null), 500), { noBudget: true, allocatedPaise: null, availablePaise: null, afterPaise: null, excessPaise: 0, overBudget: false });
-eq("budget: pending requests do not reduce what is available", assessBudget(pos(1_000_000, 0, 900_000), 500_000).overBudget, false);
-eq("budget: warning text", [budgetWarning(assessBudget(pos(1_000_000), 1_250_000)), budgetWarning(assessBudget(pos(1_000_000), 100)), budgetWarning(assessBudget(pos(null), 100))?.startsWith("No budget has been set")],
-  ["This request is ₹2,500.00 more than the budget left for this category. It can still be submitted and will be flagged as over budget.", null, true]);
-eq("budget: the budget the requester types is the allocated figure and how much is used; what is left is the difference, and a request beyond it is over", [assessBudget({ allocatedPaise: 5_000_000, spentPaise: 3_200_000, pendingPaise: 0 }, 1_800_000), assessBudget({ allocatedPaise: 5_000_000, spentPaise: 3_200_000, pendingPaise: 0 }, 1_800_001).overBudget, assessBudget({ allocatedPaise: 0, spentPaise: 0, pendingPaise: 0 }, 1).overBudget],
-  [{ noBudget: false, allocatedPaise: 5_000_000, availablePaise: 1_800_000, afterPaise: 0, excessPaise: 0, overBudget: false }, true, true]);
 
 // Approvals: the 10,000 rule. Exactly 10,000 is "large".
 eq("threshold: 9,999.99 is small, 10,000.00 is large", [formFor(999_999, 1_000_000), formFor(1_000_000, 1_000_000)], ["small", "large"]);
@@ -193,8 +183,7 @@ eq("escalation: the DG is the last staffed step of the large expenditure rules",
 eq("escalation: with no large expenditure DG the HR one is used, and with none at all there is none", [escalationApprover([typed("hr", rule(2, "Director General", ["hrdg"]))])?.approverUserId, escalationApprover([typed("expenditure_large", rule(1, "Reviewer", ["a"]))])], ["hrdg", null]);
 
 // Approvals: decisions, utilisation, numbers.
-eq("comment: needed to reject, and to approve over budget", [commentRequired("reject", false), commentRequired("approve", true), commentRequired("approve", false)], [true, true, false]);
-eq("comment: always needed to return a request for corrections", [commentRequired("return", false), commentRequired("return", true)], [true, true]);
+eq("comment: needed to reject and to return, never to approve", [commentRequired("reject"), commentRequired("return"), commentRequired("approve")], [true, true, false]);
 eq("status: a returned request has a label", STATUS_LABEL.returned, "Returned");
 eq("decisions: a step before the last recommends to the next approver, the last of several decides finally, a lone step just approves", [decisionMode(1, 2), decisionMode(2, 2), decisionMode(1, 1), decisionMode(1, 3), decisionMode(3, 3)], ["recommend", "final", "single", "recommend", "final"]);
 eq("decisions: the buttons say what they do", [MODE_WORDS.recommend.approve, MODE_WORDS.final.approve, MODE_WORDS.final.reject, MODE_WORDS.single.approve, MODE_WORDS.single.reject], ["Recommend to DG", "Final approve", "Final reject", "Approve", "Reject"]);
@@ -214,14 +203,12 @@ eq("hr form: name and category are required, email must be valid, amount must be
 eq("hr form: a blank email is fine", hrRequestInput.safeParse({ ...hrOk, email: "" }).success, true);
 const lg = { employeeUserId: uid, categoryId: uid, branchId: uid, amountPaise: 1_500_000, budgetAllocatedPaise: 5_000_000, budgetUsedPaise: 0 };
 eq("large form: minimum fields pass, amount is required", [largeExpenditureInput.safeParse(lg).success, largeExpenditureInput.safeParse({ ...lg, amountPaise: undefined }).success], [true, false]);
-eq("budget: the allocated and used figures are no longer typed (the category budget is used); an older client that still sends them must send whole paise, not negative", [largeExpenditureInput.safeParse({ ...lg, budgetAllocatedPaise: undefined }).success, largeExpenditureInput.safeParse({ ...lg, budgetUsedPaise: undefined }).success, largeExpenditureInput.safeParse({ ...lg, budgetUsedPaise: -1 }).success, largeExpenditureInput.safeParse({ ...lg, budgetAllocatedPaise: 10.5 }).success, largeExpenditureInput.safeParse({ ...lg, budgetAllocatedPaise: 0 }).success], [true, true, false, false, true]);
 const sm = { ...lg, amountPaise: 500_000, email: "a@b.org", vendorName: "Vendor" };
 eq("small form: vendor name and email are required", [smallExpenditureInput.safeParse(sm).success, smallExpenditureInput.safeParse({ ...sm, vendorName: "" }).success, smallExpenditureInput.safeParse({ ...sm, email: "" }).success], [true, false, false]);
 eq("dates: the request date cannot be in the future, an ordinary past one is fine", [
   largeExpenditureInput.safeParse({ ...lg, requestedAt: new Date(Date.now() + 3 * 86400000).toISOString() }).success,
   largeExpenditureInput.safeParse({ ...lg, requestedAt: new Date(Date.now() - 86400000).toISOString() }).success,
 ], [false, true]);
-eq("comments: the Director General never needs a comment to approve (even over budget); a first approver does when it is over budget; rejecting and returning always do", [commentRequired("approve", true, true), commentRequired("approve", true, false), commentRequired("approve", false, false), commentRequired("reject", false, true), commentRequired("return", true, true)], [false, true, false, true, true]);
 eq("decision: only approve or reject", [decisionInput.safeParse({ action: "approve" }).success, decisionInput.safeParse({ action: "maybe" }).success], [true, false]);
 
 // Approvals is on unless it is switched off on purpose.

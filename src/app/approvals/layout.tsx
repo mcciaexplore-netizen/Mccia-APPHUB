@@ -44,8 +44,6 @@ async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
   return [
     { label: "Approval Forms", href: "/approvals", children: places },
     { label: "Approved Forms", href: approvedHref, count: approvedCount },
-    // The Director General sets the budgets (the Support Admin can too); used and left are worked out from the approved requests.
-    ...(hasAnyRole(user, ["dg", "approvals_admin"]) ? [{ label: "Budgets", href: "/approvals/budgets" }] : []),
   ];
 }
 

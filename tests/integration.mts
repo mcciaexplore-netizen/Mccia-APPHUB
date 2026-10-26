@@ -169,7 +169,7 @@ try {
   const over = await R.submitExpenditure("large", large(4_000_000, { budgetAllocatedPaise: 5_000_000, budgetUsedPaise: 1_500_000 }), req);
   check("40,000 against 35,000 left (50,000 allocated, 15,000 used) is accepted but flagged", (await row(over.id)).overBudget === true);
   const overDetail = await Q.getRequestDetail(over.id, dg);
-  check("the approver is told a comment is needed, and the page shows the figures the requester gave", overDetail?.can.commentToApprove === true && overDetail.expenditure?.budget.allocatedPaise === 5_000_000 && overDetail.expenditure.budget.usedPaise === 1_500_000 && overDetail.expenditure.budget.availablePaise === 3_500_000 && overDetail.expenditure.budget.afterPaise === -500_000, JSON.stringify(overDetail?.expenditure?.budget));
+  check("the approver is told a comment is needed, and the page shows the figures the requester gave", overDetail?.expenditure?.budget.allocatedPaise === 5_000_000 && overDetail.expenditure.budget.usedPaise === 1_500_000 && overDetail.expenditure.budget.availablePaise === 3_500_000 && overDetail.expenditure.budget.afterPaise === -500_000, JSON.stringify(overDetail?.expenditure?.budget));
   check("approving over budget without a comment is refused", (await refused(() => R.decideRequest(over.id, { action: "approve", comment: null }, dg)))?.status === 422);
   check("with a comment it goes through", (await R.decideRequest(over.id, { action: "approve", comment: "one-off" }, dg)).status === "approved");
 

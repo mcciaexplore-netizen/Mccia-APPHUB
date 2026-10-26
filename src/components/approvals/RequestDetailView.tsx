@@ -1,12 +1,10 @@
 import Link from "next/link";
 import { Download, Paperclip } from "lucide-react";
-import { OverBudgetBadge } from "@/components/approvals/Badges";
 import { StatusPill } from "@/components/approvals/shared-ui";
 import { DecisionPanel, WithdrawButton } from "@/components/approvals/DecisionPanel";
 import { Timeline } from "@/components/approvals/Timeline";
-import { TYPE_LABEL, budgetWarning } from "@/lib/approvals/calc";
+import { TYPE_LABEL } from "@/lib/approvals/calc";
 import { formatDate, formatDateTime, formatINR, isoToDisplay } from "@/lib/approvals/format";
-import type { CategoryBudget } from "@/lib/approvals/budget";
 import type { AttachmentRow, RequestDetail, StepRow } from "@/lib/approvals/request-queries";
 
 const SLOT_LABEL: Record<string, string> = {
@@ -42,11 +40,9 @@ function Files({ items }: { items: AttachmentRow[] }) {
 }
 
 /** Everything about one request, read only, with the approver's controls when it is waiting for them. */
-export function RequestDetailView({ d, live = null }: { d: RequestDetail; /** The category budget as it stands now (expense requests). */ live?: CategoryBudget | null }) {
+export function RequestDetailView({ d }: { d: RequestDetail }) {
   const e = d.expenditure;
-  const b = e?.budget ?? d.hr?.budget ?? null; // an HR request that carries an amount has a budget too
   const name = d.hr ? `${d.hr.firstName} ${d.hr.lastName}` : d.requesterName;
-  const warning = d.overBudget && b && b.afterPaise != null ? budgetWarning({ noBudget: false, allocatedPaise: b.allocatedPaise, availablePaise: b.availablePaise, afterPaise: b.afterPaise, excessPaise: Math.max(0, -b.afterPaise), overBudget: true }) : null;
 
   return (
     <div className="space-y-8">
@@ -54,7 +50,6 @@ export function RequestDetailView({ d, live = null }: { d: RequestDetail; /** Th
         <h2 className="!text-xl">{d.requestNo ?? "Request"}</h2>
         <span className="text-[var(--z-muted)]">{TYPE_LABEL[d.type]}</span>
         <StatusPill status={d.status} currentStepNo={d.steps.find((s) => s.status === "pending")?.stepNo} />
-        {d.overBudget && <OverBudgetBadge />}
         {d.can.withdraw && <span className="ml-auto"><WithdrawButton id={d.id} /></span>}
       </div>
 
@@ -70,7 +65,7 @@ export function RequestDetailView({ d, live = null }: { d: RequestDetail; /** Th
         </div>
       )}
 
-      {d.can.decide && <DecisionPanel id={d.id} commentToApprove={d.can.commentToApprove} mode={d.can.mode} />}
+      {d.can.decide && <DecisionPanel id={d.id} mode={d.can.mode} />}
 
       <section aria-labelledby="req-details">
         <h2 id="req-details" className="mb-3">Request</h2>
@@ -93,55 +88,6 @@ export function RequestDetailView({ d, live = null }: { d: RequestDetail; /** Th
         </dl>
       </section>
 
-      {e && live && (
-        <section aria-labelledby="req-budget">
-          <h2 id="req-budget" className="mb-1">Budget</h2>
-          <p className="mb-3 max-w-2xl text-sm text-[var(--z-muted)]">{e.categoryName}, financial year {d.financialYear}. Set by the Director General; used is the total of the approved requests, worked out now.</p>
-          {live.allocatedPaise == null ? (
-            <p className="apr-notice max-w-2xl">No budget has been set for {e.categoryName} for {d.financialYear} yet.</p>
-          ) : (() => {
-            const counted = d.status === "approved";
-            const notCounted = d.status === "rejected" || d.status === "withdrawn";
-            const left = live.allocatedPaise - live.usedPaise - (counted || notCounted ? 0 : d.amountPaise ?? 0);
-            return (
-              <div className="table-wrap max-w-3xl">
-                <table>
-                  <thead><tr>
-                    <th className="text-right">Budget</th><th className="text-right">Used (approved)</th><th className="text-right">Waiting for approval</th>
-                    <th className="text-right">This request</th><th className="text-right">{counted || notCounted ? "Left now" : "Left after approval"}</th>
-                  </tr></thead>
-                  <tbody><tr>
-                    <td className="text-right">{money(live.allocatedPaise)}</td>
-                    <td className="text-right">{money(live.usedPaise)}</td>
-                    <td className="text-right">{money(live.pendingPaise)}</td>
-                    <td className="text-right">{d.amountPaise == null ? "—" : money(d.amountPaise)}<span className="block text-xs text-[var(--z-muted)]">{counted ? "included in used" : notCounted ? "not counted" : "not yet counted"}</span></td>
-                    <td className={`text-right font-bold ${left < 0 ? "zf-neg" : ""}`}>{money(left)}{left < 0 && <span className="block text-xs font-normal">over budget by {money(-left)}</span>}</td>
-                  </tr></tbody>
-                </table>
-              </div>
-            );
-          })()}
-        </section>
-      )}
-      {!e && b && (
-        <section aria-labelledby="req-budget">
-          <h2 id="req-budget" className="mb-3">Budget</h2>
-          <p className="mb-2 max-w-2xl text-sm text-[var(--z-muted)]">The figures given when this request was raised (HR requests no longer use a budget).</p>
-          <div className="table-wrap max-w-2xl">
-            <table>
-              <thead><tr><th className="text-right">Budget allocated</th><th className="text-right">Budget used</th><th className="text-right">Available</th><th className="text-right">Left after this request</th></tr></thead>
-              <tbody>
-                <tr>
-                  <td className="text-right">{b.allocatedPaise == null ? "—" : money(b.allocatedPaise)}</td>
-                  <td className="text-right">{b.usedPaise == null ? "—" : money(b.usedPaise)}</td>
-                  <td className="text-right">{b.availablePaise == null ? "—" : money(b.availablePaise)}</td>
-                  <td className={`text-right ${b.afterPaise != null && b.afterPaise < 0 ? "zf-neg" : ""}`}>{b.afterPaise == null ? "—" : money(b.afterPaise)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
 
       <section aria-labelledby="req-files">
         <h2 id="req-files" className="mb-3">Attachments</h2>

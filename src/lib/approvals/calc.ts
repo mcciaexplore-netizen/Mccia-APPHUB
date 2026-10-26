@@ -6,47 +6,6 @@ import { formatINR } from "./format";
 
 export type ExpenditureForm = "large" | "small";
 
-/** The budget of a category: `allocatedPaise` as set by the Director General (null when none is set), `spentPaise` what approved requests used, `pendingPaise` what waits for approval. */
-export type BudgetPosition = { allocatedPaise: number | null; spentPaise: number; pendingPaise: number };
-
-export type BudgetAssessment = {
-  /** No budget has been set for the category. */
-  noBudget: boolean;
-  allocatedPaise: number | null;
-  /** The budget allocated minus the budget used, before this request. Null when there is no budget. */
-  availablePaise: number | null;
-  /** Available minus this amount: what would be left. Negative when the request goes over. Null when there is no budget. */
-  afterPaise: number | null;
-  /** How far over the available budget the request goes (0 when it fits). */
-  excessPaise: number;
-  /** True when the amount is more than what is left. Such a request is flagged, never blocked. A category with no budget set is not flagged. */
-  overBudget: boolean;
-};
-
-/** What is left of a budget, and what would be left after a request for this amount. */
-export function assessBudget(position: BudgetPosition, amountPaise: number): BudgetAssessment {
-  if (position.allocatedPaise == null) {
-    return { noBudget: true, allocatedPaise: null, availablePaise: null, afterPaise: null, excessPaise: 0, overBudget: false };
-  }
-  const available = position.allocatedPaise - position.spentPaise;
-  const after = available - amountPaise;
-  return {
-    noBudget: false,
-    allocatedPaise: position.allocatedPaise,
-    availablePaise: available,
-    afterPaise: after,
-    excessPaise: after < 0 ? -after : 0,
-    overBudget: after < 0,
-  };
-}
-
-/** The warning shown under a form when a request is flagged. Null when there is nothing to warn about. */
-export function budgetWarning(a: BudgetAssessment): string | null {
-  if (a.noBudget) return "No budget has been set for this category yet. The request can still be submitted.";
-  if (a.overBudget) return `This request is ${formatINR(a.excessPaise, { symbol: true })} more than the budget left for this category. It can still be submitted and will be flagged as over budget.`;
-  return null;
-}
-
 /** An expenditure of exactly the threshold counts as "large": 10,000 and above goes to the DG, 9,999.99 and below does not. */
 export const formFor = (amountPaise: number, thresholdPaise: number): ExpenditureForm => (amountPaise >= thresholdPaise ? "large" : "small");
 
@@ -134,12 +93,9 @@ export const planProblemMessage = (p: StepPlanProblem): string =>
 
 /* ---------------------------------------------------------------- decisions */
 
-/**
- * Whether the approver must write a comment: always to reject or to return a request for corrections, and to approve one that is over
- * budget, except for the Director General's final approval (`finalDecision`), which never needs a comment.
- */
-export function commentRequired(action: "approve" | "reject" | "return", overBudget: boolean, finalDecision = false): boolean {
-  return action !== "approve" || (overBudget && !finalDecision);
+/** Whether the approver must write a comment: to reject or to return a request for corrections, never to approve it. */
+export function commentRequired(action: "approve" | "reject" | "return"): boolean {
+  return action !== "approve";
 }
 
 /* ---------------------------------------------------------------- request numbers */

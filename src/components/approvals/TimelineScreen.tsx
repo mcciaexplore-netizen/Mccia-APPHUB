@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { OverBudgetBadge } from "@/components/approvals/Badges";
 import { StatusPill } from "@/components/approvals/shared-ui";
 import { PageHeader } from "@/components/approvals/PageHeader";
 import { Timeline } from "@/components/approvals/Timeline";
@@ -35,7 +34,7 @@ export async function TimelineScreen({
             {rows.map((r) => (
               <li key={r.id}>
                 <Link href={href(r.id)} aria-current={r.id === id ? "true" : undefined} className={`block px-3 py-2 hover:bg-[#f7f8f9] ${r.id === id ? "bg-[var(--z-tint)]" : ""}`}>
-                  <span className="flex items-center justify-between gap-2"><b>{r.requestNo}</b><span className="flex gap-1"><StatusPill status={r.status} currentStepNo={r.currentStep} />{r.overBudget && <OverBudgetBadge />}</span></span>
+                  <span className="flex items-center justify-between gap-2"><b>{r.requestNo}</b><span className="flex gap-1"><StatusPill status={r.status} currentStepNo={r.currentStep} /></span></span>
                   <span className="block truncate text-sm text-[var(--z-muted)]">{r.name} · {r.categoryName} · {formatDate(r.requestedAt)}</span>
                 </Link>
               </li>
@@ -48,7 +47,7 @@ export async function TimelineScreen({
           ) : (
             <>
               <div className="mb-4 flex flex-wrap items-center gap-3">
-                <h2 className="!text-lg">{picked.requestNo}</h2><StatusPill status={picked.status} currentStepNo={picked.steps.find((s) => s.status === "pending")?.stepNo} />{picked.overBudget && <OverBudgetBadge />}
+                <h2 className="!text-lg">{picked.requestNo}</h2><StatusPill status={picked.status} currentStepNo={picked.steps.find((s) => s.status === "pending")?.stepNo} />
                 <Link href={`/approvals/requests/${picked.id}?app=${appForType(picked.type)}`} className="apr-link ml-auto text-sm">Open the request</Link>
               </div>
               <Timeline events={picked.events} />

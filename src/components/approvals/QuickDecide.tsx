@@ -7,14 +7,14 @@ import { api, useAction } from "@/components/approvals/api";
 
 /**
  * Approve (or Recommend to the DG, or Final approve: see `kind`), Return and Reject right from a list. A comment is always asked for before
- * rejecting or returning, and before approving something over budget.
+ * rejecting or returning, never before approving.
  */
-export function QuickDecide({ id, label, overBudget, kind }: { id: string; label: string; overBudget: boolean; kind: DecisionMode }) {
+export function QuickDecide({ id, label, kind }: { id: string; label: string; kind: DecisionMode }) {
   const words = MODE_WORDS[kind];
   const { run, pending } = useAction();
   const [mode, setMode] = useState<"approve" | "reject" | "return" | null>(null);
   const [comment, setComment] = useState("");
-  const needed = mode === "reject" || mode === "return" || (mode === "approve" && overBudget);
+  const needed = mode === "reject" || mode === "return";
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,7 +34,6 @@ export function QuickDecide({ id, label, overBudget, kind }: { id: string; label
         <div onClick={(e) => e.stopPropagation()}>
         <Modal title={`${mode === "approve" ? words.approve : mode === "return" ? "Return for corrections:" : words.reject} ${label}`} onClose={() => setMode(null)}>
           <form onSubmit={submit} className="space-y-4">
-            {mode === "approve" && overBudget && <p className="apr-notice">This request is over budget, so a comment is required to approve it.</p>}
             <label className="block">
               <span className="label-xs mb-1.5 block">Comment{needed ? " *" : ""}</span>
               <textarea className="input !h-24 w-full" value={comment} onChange={(e) => setComment(e.target.value)} maxLength={2000} required={needed} autoFocus />

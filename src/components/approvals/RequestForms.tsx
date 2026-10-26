@@ -6,7 +6,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { api } from "@/components/approvals/api";
 import { useToast } from "@/components/Toast";
 import { DateInput, DateTimeInput, EmailInput, FileInput, FormActions, MoneyInput, ReadOnlyMoney, Row, SearchSelect, TextArea, TextInput, type Option, type UploadedFile } from "@/components/approvals/FormFields";
-import { assessBudget, budgetWarning, wrongFormMessage } from "@/lib/approvals/calc";
+import { wrongFormMessage } from "@/lib/approvals/calc";
 import { formatDateTime, formatINR, parseINR, todayIST } from "@/lib/approvals/format";
 import type { FormField } from "@/lib/approvals/form-fields";
 
@@ -54,7 +54,7 @@ const extraAnswers = (fields: FormField[], custom: Record<string, string>) =>
 /** What the correction form needs to know about a request that was returned for corrections. */
 export type EditInfo = {
   requestId: string;
-  /** The original date of request: it is kept, and decides which budget year the request is checked against. */
+  /** The original date of request: it is kept as it was. */
   requestedAt: string;
   attachments: { id: string; slot: string; fileName: string; size: number }[];
   returnedBy: string | null;
@@ -120,29 +120,6 @@ function CurrentFiles({ edit, keep, setKeep }: { edit: EditInfo; keep: string[];
       <p className="zf-sub mt-1">A new file attached in the same place replaces the current one.</p>
     </Row>
   );
-}
-
-type LiveBudget = { categoryId: string; allocatedPaise: number | null; usedPaise: number; pendingPaise: number };
-
-/**
- * The chosen category's budget for the year of the request, as set by the Director General, and what approved requests have used of it.
- * Nothing is typed: the figures are fetched when the category is chosen, and what would be left after this request is worked out as the
- * amount is typed. The server works the same figures out again when the request is sent.
- */
-function useBudget(categoryId: string, requestedAt: string, amountPaise: number | null) {
-  const [live, setLive] = useState<LiveBudget | null>(null);
-  useEffect(() => {
-    if (!categoryId) return;
-    let stale = false;
-    void fetch(`/api/approvals/budget?category=${categoryId}&date=${encodeURIComponent(requestedAt)}`)
-      .then((r) => (r.ok ? (r.json() as Promise<Omit<LiveBudget, "categoryId">>) : null))
-      .then((b) => { if (!stale && b) setLive({ categoryId, allocatedPaise: b.allocatedPaise, usedPaise: b.usedPaise, pendingPaise: b.pendingPaise }); })
-      .catch(() => {});
-    return () => { stale = true; };
-  }, [categoryId, requestedAt]);
-  const current = live && live.categoryId === categoryId ? live : null;
-  const assessment = current ? assessBudget({ allocatedPaise: current.allocatedPaise, spentPaise: current.usedPaise, pendingPaise: current.pendingPaise }, amountPaise ?? 0) : null;
-  return { budget: current, assessment, warning: assessment && amountPaise ? budgetWarning(assessment) : null };
 }
 
 /* ---------------------------------------------------------------- HR */
@@ -329,7 +306,6 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   };
 
   const amountPaise = amount.trim() ? parseINR(amount) : null;
-  const { budget, assessment, warning } = useBudget(categoryId, requestedAt, amountPaise);
   const wrong = p.largeFields ? null : wrongFormMessage(p.form, amountPaise, p.thresholdPaise);
 
   const otherHref = useMemo(() => {
@@ -404,19 +380,14 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
     vendor: <Row label={lab("vendor", "Vendor Name")} required={!large} htmlFor="ex-vendor" error={errors.vendor}><TextArea id="ex-vendor" value={vendor} onChange={setVendor} rows={3} /></Row>,
     amount: amountRow,
     quotation: <Row label={lab("quotation", "Quotation")} htmlFor="ex-quotation"><FileInput id="ex-quotation" label="Quotation" value={quotation} onChange={setQuotation} onBusy={busy} /></Row>,
-    allocated: <Row label={lab("allocated", "Budget Allocated")} htmlFor="ex-alloc"><ReadOnlyMoney id="ex-alloc" paise={budget?.allocatedPaise ?? null} empty={categoryId && budget && budget.allocatedPaise == null ? "No budget set" : ""} /></Row>,
-    used: <Row label={lab("used", "Budget Used")} htmlFor="ex-used"><ReadOnlyMoney id="ex-used" paise={budget && budget.allocatedPaise != null ? budget.usedPaise : null} /></Row>,
-    remaining: <Row label={lab("remaining", "Budget Remaining")} htmlFor={large ? "ex-remaining" : "ex-after"}><ReadOnlyMoney id={large ? "ex-remaining" : "ex-after"} paise={(large ? assessment?.availablePaise : assessment?.afterPaise) ?? null} /></Row>,
   };
   const rows: Record<string, React.ReactNode> = large
     ? {
         ...shared,
-        difference: <Row label={lab("difference", "Difference")} htmlFor="ex-diff"><ReadOnlyMoney id="ex-diff" placeholder="#######" paise={assessment?.afterPaise ?? null} /></Row>,
         supporting: <Row label={lab("supporting", "Tax Invoice/Supporting Documents")} htmlFor="ex-supporting"><FileInput id="ex-supporting" label="Tax Invoice or supporting documents" value={supporting} onChange={setSupporting} onBusy={busy} /></Row>,
       }
     : {
         ...shared,
-        available: <Row label={lab("available", "Available budget")} htmlFor="ex-available"><ReadOnlyMoney id="ex-available" paise={assessment?.availablePaise ?? null} /></Row>,
         file: <Row label={lab("file", "File upload")} htmlFor="ex-file"><FileInput id="ex-file" label="File upload" value={fileUpload} onChange={setFileUpload} onBusy={busy} /></Row>,
         expenseDate: <Row label={lab("expenseDate", "Date")} htmlFor="ex-expense-date"><DateInput id="ex-expense-date" value={expenseDate} onChange={setExpenseDate} /></Row>,
         publication: (
@@ -444,7 +415,6 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
       {p.edit && <ReturnedNotice edit={p.edit} />}
       {ordered(fields, rows, custom, (k, v) => setCustom((c) => ({ ...c, [k]: v })), errors)}
       {p.edit && <CurrentFiles edit={p.edit} keep={keep} setKeep={setKeep} />}
-      {warning && <p className="apr-notice mb-2 max-w-xl" role="status">{warning}</p>}
       {formError && <p className="zf-error mb-3" role="alert">{formError}</p>}
       <FormActions submitting={submitting} disabled={uploads > 0 || !!wrong} onReset={reset} label={p.edit ? "Resubmit" : "Submit"} resetLabel={p.edit ? "Cancel" : "Reset"} />
     </form>

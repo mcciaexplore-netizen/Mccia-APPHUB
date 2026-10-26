@@ -11,10 +11,10 @@ import { STATUS_LABEL, TYPE_LABEL } from "@/lib/approvals/calc";
 
 export const dynamic = "force-dynamic";
 
-const HEADER = ["Request No.", "Type", "Name", "Category", "Branch", "Vendor", "Amount (INR)", "Date of Request", "Status", "Over budget", "Approver", "Decision Date"];
+const HEADER = ["Request No.", "Type", "Name", "Category", "Branch", "Vendor", "Amount (INR)", "Date of Request", "Status", "Approver", "Decision Date"];
 const line = (r: RequestRow) => [
   r.requestNo ?? "", TYPE_LABEL[r.type], r.name, r.categoryName ?? "", r.branchName ?? "", r.vendorName ?? "",
-  r.amountPaise == null ? "" : formatINR(r.amountPaise), formatDateTime(r.requestedAt), STATUS_LABEL[r.status], r.overBudget ? "Yes" : "",
+  r.amountPaise == null ? "" : formatINR(r.amountPaise), formatDateTime(r.requestedAt), STATUS_LABEL[r.status],
   r.approverName ?? "", formatDateTime(r.decidedAt),
 ];
 
