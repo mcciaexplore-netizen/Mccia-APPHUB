@@ -128,29 +128,30 @@ async function analyse(rows: ImportRow[], policy: ImportPolicy, actor: Actor) {
     else if (!isEmailAllowed(email)) errors.push(`Email must end with ${domainsLabel()}.`);
     else if (isEnvAdmin(email)) errors.push("That address is the main admin, which is set in the environment settings.");
 
-    const role = ROLE_WORDS[norm(raw.role)];
-    if (!role) errors.push(`Role "${raw.role}" is not recognised. Leave it empty for a User, or write Team manager. Administrators cannot be created here.`);
+    // Only the name and the email are required. An optional value that cannot be used (a branch, team, manager, role or application that
+    // is not found) is left empty with a warning, and the person is still added; it can be set later on their profile.
+    const role = ROLE_WORDS[norm(raw.role)] ?? "member";
+    if (!ROLE_WORDS[norm(raw.role)]) warnings.push(`Role "${raw.role}" is not recognised, so they are added as a User. Other roles are given on their profile.`);
 
     const need = (kind: string, value: string, names: string[]) => {
       const s = suggest(value, names);
-      errors.push(`${kind} "${value}" was not found.${s ? ` Did you mean "${s}"?` : ""}`);
-      if (s) suggestions.push(`${kind}: ${s}`);
+      warnings.push(`${kind} "${value}" was not found${s ? ` (did you mean "${s}"?)` : ""}, so it was left empty.`);
     };
 
     let branchId: string | null = null, teamId: string | null = null;
     if (raw.branch.trim()) {
       const b = brByName.get(norm(raw.branch));
       if (!b) need("Branch", raw.branch, brs.map((x) => x.name));
-      else if (!b.isActive) errors.push(`Branch "${b.name}" is inactive.`);
+      else if (!b.isActive) warnings.push(`Branch "${b.name}" is inactive, so it was left empty.`);
       else branchId = b.id;
     }
     if (raw.team.trim()) {
       const t = teamByName.get(norm(raw.team));
       if (!t) need("Team", raw.team, tms.map((x) => x.name));
-      else if (!t.isActive) errors.push(`Team "${t.name}" is inactive.`);
+      else if (!t.isActive) warnings.push(`Team "${t.name}" is inactive, so it was left empty.`);
       else {
         teamId = t.id;
-        if (t.branchId && branchId && t.branchId !== branchId) errors.push(`Team "${t.name}" belongs to branch "${branchName.get(t.branchId) ?? "another branch"}", not "${raw.branch.trim()}".`);
+        if (t.branchId && branchId && t.branchId !== branchId) { teamId = null; warnings.push(`Team "${t.name}" belongs to branch "${branchName.get(t.branchId) ?? "another branch"}", not "${raw.branch.trim()}", so the team was left empty.`); }
         else if (t.branchId && !branchId) { branchId = t.branchId; warnings.push(`Branch set to "${branchName.get(t.branchId)}", the team's branch.`); }
       }
     }
@@ -163,17 +164,17 @@ async function analyse(rows: ImportRow[], policy: ImportPolicy, actor: Actor) {
         const me = mt.toLowerCase();
         managerEmail = me;
         const dbUser = userByEmail.get(me);
-        if (me === email) errors.push("A person cannot be their own reporting manager.");
+        if (me === email) { managerEmail = null; warnings.push("A person cannot be their own reporting manager, so it was left empty."); }
         else if (dbUser) {
-          if (!dbUser.isActive || dbUser.status !== "approved") errors.push(`Reporting manager ${me} is inactive.`);
+          if (!dbUser.isActive || dbUser.status !== "approved") { managerEmail = null; warnings.push(`Reporting manager ${me} is inactive, so it was left empty.`); }
           else managerId = dbUser.id;
         } else if (firstRowOf.has(me)) managerRow = firstRowOf.get(me)!;
-        else errors.push(`Reporting manager ${me} has no account and is not in this file.`);
+        else { managerEmail = null; warnings.push(`Reporting manager ${me} has no account and is not in this file, so it was left empty.`); }
       } else {
         const found = peopleByName.get(mt.toLowerCase()) ?? [];
         if (found.length === 1) { managerId = found[0].id; managerEmail = found[0].email; }
-        else if (found.length > 1) errors.push(`Several people are called "${mt}". Write the manager's email instead.`);
-        else errors.push(`Reporting manager "${mt}" was not found. Write their email.`);
+        else if (found.length > 1) warnings.push(`Several people are called "${mt}", so the manager was left empty. Write the manager's email instead.`);
+        else warnings.push(`Reporting manager "${mt}" was not found, so it was left empty. Write their email.`);
       }
     }
 
@@ -183,7 +184,7 @@ async function analyse(rows: ImportRow[], policy: ImportPolicy, actor: Actor) {
       const named = byAppName.get(norm(token));
       if (full) appIds.push(full);
       else if (named?.length === 1) appIds.push(named[0]);
-      else if (named && named.length > 1) errors.push(`Application "${token}" exists in several application categories. Write it as Category / App.`);
+      else if (named && named.length > 1) warnings.push(`Application "${token}" exists in several application categories, so it was not given. Write it as Category / App.`);
       else need("Application", token, catalog.map((a) => a.name));
     }
 

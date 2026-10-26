@@ -54,10 +54,11 @@ export function tableToRows(table: string[][]): ParsedTable {
 /** The template an administrator downloads: notes first (lines starting with # are ignored), then the header, then a commented example. */
 export const TEMPLATE_CSV = `${[
   ["# MCCIA App Hub: add many people at once. Lines that start with # are notes and are ignored."],
-  ["# Required: name and email. Everything else is optional. Do NOT add a password column: each person chooses their own from a link."],
-  ["# branch and team must already exist (see Branches & Teams). Spelling is checked."],
-  ["# reporting_manager: that person's email. They must already have an account or appear in this file."],
-  ["# role: leave empty for User, or write Team manager."],
+  ["# Required: name and email. Everything else is optional: a value that is not found is left empty and the person is still added."],
+  ["# Do NOT add a password column: each person gets a temporary password by email and chooses their own."],
+  ["# branch and team: used only if they already exist (see Branches & Teams); otherwise left empty."],
+  ["# reporting_manager: that person's email, if they already have an account or appear in this file; otherwise left empty."],
+  ["# role: leave empty for User, or write Team manager. Other roles (Super Admin, HR Admin, Expense Admin, Admin) are given on the profile."],
   ["# applications: names separated by commas. Write Category / App if the same name exists in two application categories."],
   ["# example: Asha Patil | asha.patil@example.com | Pune | Accounts | manager@example.com | | Tally, CRM | Accountant"],
   [...COLUMNS],
