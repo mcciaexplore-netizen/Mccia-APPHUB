@@ -7,7 +7,7 @@ import { ChangePasswordForm } from "./ChangePasswordForm";
 export const metadata = { title: "Change password · MCCIA App Hub" };
 
 export default async function ChangePasswordPage() {
-  const user = await requireUser();
+  const user = await requireUser({ allowTemporary: true });
   const managedInEnv = isEnvAdmin(user.email);
   return (
     <main className="grid min-h-screen place-items-center px-4 py-16">
@@ -15,6 +15,7 @@ export default async function ChangePasswordPage() {
         <div className="icon-tile mx-auto mb-5"><KeyRound size={18} /></div>
         <h1 className="section-title text-center">Change password</h1>
         <p className="mt-2 text-center text-sm text-muted">Signed in as {user.email}.</p>
+        {user.mustChangePassword && <p className="alert mt-5 text-left text-sm">You signed in with a temporary password. Choose your own password to continue: type the temporary one as your current password.</p>}
         {managedInEnv ? (
           <p className="alert mt-6 text-left">This account&apos;s password is set in the environment settings (the <code>…_PASSWORD</code> setting of this account: Support Admin, Super Admin, HR or Expenditure). Change it there and redeploy.</p>
         ) : (

@@ -1,7 +1,7 @@
 -- Applies migration 0017 (the HR Admin and Expense Admin roles, and one person each for Super Admin, HR Admin and Expense Admin) to the live
 -- database, by hand. Paste the whole file into the Neon SQL Editor (project APPHUB) and run it once, BEFORE the new code is deployed.
 --
--- RUN THE USER CLEAN-UP FIRST (scripts/remove-all-users-except-support-admin.sql): the "one person each" rule below cannot be added while
+-- RUN THE CLEAN-UP FIRST (scripts/reset-keep-aistudio-and-applications.sql): the "one person each" rule below cannot be added while
 -- two people still hold the same role (for example two Super Admins left over from testing).
 --
 -- Part 1 adds two values to the list of roles. Postgres needs these committed before they can be used, so they run on their own, before

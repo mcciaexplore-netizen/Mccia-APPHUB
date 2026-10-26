@@ -1,5 +1,4 @@
 import "server-only";
-import { randomBytes } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, branches, departments, teams, users, type Role } from "@/db/schema";
@@ -9,7 +8,8 @@ import { writeAudit, type AuditEntry } from "@/lib/audit";
 import { isEnvAdmin } from "@/lib/auth";
 import { domainsLabel, isEmailAllowed } from "@/lib/domains";
 import { type ImportRow, MAX_IMPORT_ROWS } from "@/lib/import-parse";
-import { deliverInvite, hashToken } from "@/lib/invites";
+import { deliverInvite, hashToken, tempPassword } from "@/lib/invites";
+import { hashPassword } from "@/lib/passwords";
 import { managerChainReaches } from "@/lib/org";
 import { canImportUsers, canUpdateByImport, type Actor } from "@/lib/rbac";
 import { UserError } from "@/lib/user-error";
@@ -316,10 +316,10 @@ export async function commitBatch(actor: Actor & { name: string }, rows: ImportR
         continue;
       }
 
-      const token = opts.invite ? randomBytes(32).toString("base64url") : null;
+      const token = opts.invite ? tempPassword() : null;
       const id = await createAccount(actor, {
         name: p.name, email: p.email, role: p.role, branchId: p.branchId, teamId: p.teamId, managerId, designation: p.designation,
-        appIds: p.appIds, passwordHash: null, inviteTokenHash: token ? hashToken(token) : null, source: "import",
+        appIds: p.appIds, passwordHash: token ? await hashPassword(token) : null, mustChangePassword: !!token, inviteTokenHash: token ? hashToken(token) : null, source: "import",
       });
       if (!id) { results.push({ ...base, outcome: "skipped", message: "Already has an account. Not changed.", invitation: "none" }); continue; }
 
@@ -335,7 +335,7 @@ export async function commitBatch(actor: Actor & { name: string }, rows: ImportR
     }
   }
 
-  // Invitation emails, a few at a time. The link is returned to the administrator only when it could not be emailed.
+  // Sign-in emails, a few at a time. The temporary password is returned to the administrator only when it could not be emailed.
   for (let i = 0; i < toMail.length; i += 5) {
     await Promise.all(toMail.slice(i, i + 5).map(async (m) => {
       const r = results[m.index];

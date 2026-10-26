@@ -150,7 +150,7 @@ export function BulkAdd({ base, domains }: { base: string; domains: string }) {
         <div>
           <h2 className="text-xl">Bulk add users</h2>
           <p className="mt-1 text-sm text-muted">
-            Create many accounts at once from a CSV or Excel file, or type the rows below. Each person receives a one-time link to choose their own password, so <b>no password goes in the file</b>.
+            Create many accounts at once from a CSV or Excel file, or type the rows below. Each person receives a temporary password by email and chooses their own at the first sign-in, so <b>no password goes in the file</b>.
             Branch, team and reporting manager are checked before anything is created. {domains && <>Emails must end with {domains}.</>}
           </p>
         </div>
@@ -222,7 +222,7 @@ export function BulkAdd({ base, domains }: { base: string; domains: string }) {
                   <option value="update">Update their branch, team, manager and designation, and add the applications</option>
                 </select></label>
               <label className="flex items-start gap-2 text-sm sm:pt-6"><input type="checkbox" className="mt-1 h-4 w-4 accent-[var(--c-primary)]" checked={invite} disabled={phase === "running"} onChange={(e) => setInvite(e.target.checked)} />
-                <span>Create a setup link for each new person and email it. If email is not set up, you will get the links to pass on.</span></label>
+                <span>Email each new person a temporary password. If email is not working, you will get them to pass on.</span></label>
             </div>
             {summary && (
               <p className="text-sm" aria-live="polite">
@@ -259,7 +259,7 @@ export function BulkAdd({ base, domains }: { base: string; domains: string }) {
             <button className="btn btn-ghost btn-sm" onClick={() => { setRows([]); setChecks(new Map()); setOutcomes(new Map()); setSummary(null); setFileName(""); setPhase("edit"); }}>Start another import</button>
             <Link className="btn btn-ghost btn-sm" href={base}>View people</Link>
           </div>
-          <p className="text-xs text-subtle">The report lists results and reasons only. It never contains passwords or setup links.</p>
+          <p className="text-xs text-subtle">The report lists results and reasons only. It never contains passwords.</p>
           <div className="table-wrap max-h-[28rem] overflow-y-auto"><table>
             <thead><tr><th>Row</th><th>Name</th><th>Email</th><th>Result</th><th>Details</th></tr></thead>
             <tbody>{finalRows.map((x) => (

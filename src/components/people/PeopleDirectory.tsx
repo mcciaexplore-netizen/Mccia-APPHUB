@@ -76,7 +76,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
   const count = allMatching ? result.total : selected.length;
   const refresh = () => router.refresh();
 
-  // Setup links go to the people ticked on this page (for a new person, or to reset a password). Not available for "everyone matching".
+  // Temporary passwords go to the people ticked on this page (for a new person, or to reset a password). Not available for "everyone matching".
   const sendLinks = () => startBusy(async () => {
     const r = await sendSetupLinks(selected);
     if (!r.ok) return toast.error(r.error);
@@ -138,7 +138,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-line bg-nav-active px-4 py-2.5 text-sm" role="region" aria-label="Actions for the selected people">
           <b>{count} selected</b>
           {caps.assign && <button className="btn btn-primary btn-sm" onClick={() => setAssigning(true)}><ShieldCheck size={14} /> Assign applications</button>}
-          {caps.invite && <button className="btn btn-ghost btn-sm" disabled={busy || allMatching || selected.length === 0} onClick={sendLinks}><Mail size={14} /> Send setup links</button>}
+          {caps.invite && <button className="btn btn-ghost btn-sm" disabled={busy || allMatching || selected.length === 0} onClick={sendLinks}><Mail size={14} /> Email temporary passwords</button>}
           <button className="btn btn-ghost btn-sm" onClick={() => { setSelected([]); setAllMatching(false); }}>Clear selection</button>
           {allOnPage && !allMatching && result.total > rows.length && (
             <button className="ml-auto text-primary underline" onClick={() => setAllMatching(true)}>Select all {result.total} people matching</button>
@@ -200,7 +200,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
                   <div className="flex justify-end gap-1.5">
                     <Link className="chip !p-1.5 text-muted" aria-label={`Manage access for ${u.name}`} title="Open profile and access" href={`${base}/${u.id}`}><ShieldCheck size={14} /></Link>
                     {caps.invite && !u.passwordInSettings && (
-                      <button className="chip !p-1.5 text-muted" aria-label={`Reset password for ${u.name}`} title="Reset password or send a setup link" onClick={() => setResetting({ id: u.id, name: u.name })}><KeyRound size={14} /></button>
+                      <button className="chip !p-1.5 text-muted" aria-label={`Reset password for ${u.name}`} title="Reset password" onClick={() => setResetting({ id: u.id, name: u.name })}><KeyRound size={14} /></button>
                     )}
                     {caps.remove && u.id !== meId && (
                       <button className="chip !p-1.5 text-brand-red" aria-label={`Delete ${u.name}`} title="Delete" disabled={busy}
@@ -238,7 +238,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
           onDone={(r) => {
             setAdding(false);
             if (r.delivery === "manual" || r.delivery === "failed") setLinks([{ id: r.id, name: r.name, email: r.email, ok: true, delivery: r.delivery, link: r.link, message: r.delivery === "failed" ? "The email could not be sent. Pass the link on yourself." : "No email is set up. Pass the link on yourself." }]);
-            toast.success(r.delivery === "sent" ? `User created. A setup link was emailed to ${r.email}.` : r.delivery === "none" ? "User created." : "User created. Pass on their setup link.");
+            toast.success(r.delivery === "sent" ? `User created. Their sign-in details were emailed to ${r.email}.` : r.delivery === "none" ? "User created." : "User created. Pass on their temporary password.");
             refresh();
           }} />
       )}

@@ -15,8 +15,10 @@ export type NewAccount = {
   appIds: string[];
   /** A scrypt hash when the administrator chose to set the password; null when the person will choose their own. Never plaintext. */
   passwordHash: string | null;
-  /** The SHA-256 hash of an invitation token to store, or null for no invitation. The token itself never reaches this file. */
+  /** The SHA-256 hash of the invitation record of the temporary password (it carries the expiry), or null for none. The password never reaches this file. */
   inviteTokenHash: string | null;
+  /** The account starts with a temporary password: the person must choose their own when they first sign in. */
+  mustChangePassword?: boolean;
   source: "admin" | "import";
 };
 
@@ -32,8 +34,8 @@ export async function createAccount(actor: Pick<User, "id">, a: NewAccount): Pro
     : sql``;
   const res = (await db.execute(sql`
     with u as (
-      insert into users (name, email, role, branch_id, team_id, reporting_manager_id, designation, password_hash, signup_source, status, reviewed_at, reviewed_by_id)
-      values (${a.name}, ${a.email}, ${a.role}::role, ${a.branchId}::uuid, ${a.teamId}::uuid, ${a.managerId}::uuid, ${a.designation}, ${a.passwordHash}, ${a.source}, 'approved', now(), ${actor.id}::uuid)
+      insert into users (name, email, role, branch_id, team_id, reporting_manager_id, designation, password_hash, must_change_password, signup_source, status, reviewed_at, reviewed_by_id)
+      values (${a.name}, ${a.email}, ${a.role}::role, ${a.branchId}::uuid, ${a.teamId}::uuid, ${a.managerId}::uuid, ${a.designation}, ${a.passwordHash}, ${a.mustChangePassword ?? false}, ${a.source}, 'approved', now(), ${actor.id}::uuid)
       on conflict (email) do nothing returning id
     ) ${grants} ${invite}
     select id from u`)) as unknown as { rows: { id: string }[] };

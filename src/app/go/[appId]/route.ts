@@ -16,6 +16,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ appI
 
   const user = await getCurrentUser();
   if (!user) return NextResponse.redirect(new URL("/login", req.url), 302);
+  // Someone still on a temporary password chooses their own first.
+  if (user.mustChangePassword) return NextResponse.redirect(new URL("/change-password", req.url), 302);
 
   const target = await getLaunchTarget(user, appId);
   // Unknown, inactive, and "not yours" all get the same answer, so nobody learns which applications exist.

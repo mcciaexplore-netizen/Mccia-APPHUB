@@ -26,7 +26,7 @@ function describe(a: AuditLine): string {
   const d = (a.details ?? {}) as { added?: string[]; removed?: string[]; changes?: Record<string, { from: unknown; to: unknown }>; delivery?: string };
   if (a.action === "access.change") return [d.added?.length ? `added ${d.added.join(", ")}` : "", d.removed?.length ? `removed ${d.removed.join(", ")}` : ""].filter(Boolean).join("; ") || "changed access";
   if (a.action === "user.update" && d.changes) return `changed ${Object.keys(d.changes).join(", ")}`;
-  if (a.action === "user.invite") return `sent a setup link (${d.delivery ?? "created"})`;
+  if (a.action === "user.invite") return `sent a temporary password (${d.delivery ?? "created"})`;
   if (a.action === "user.admin_areas") return "changed what this Admin may open";
   return a.action.replace(/^user\./, "").replace(/_/g, " ");
 }
@@ -87,7 +87,7 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
   const setupLink = () => start(async () => {
     const r = await sendSetupLink(person.id);
     if (!r.ok) return toast.error(r.error);
-    if (r.data.ok && r.data.delivery === "sent") toast.success(`Setup link emailed to ${person.email}.`); else setLinks([r.data]);
+    if (r.data.ok && r.data.delivery === "sent") toast.success(`Temporary password emailed to ${person.email}.`); else setLinks([r.data]);
     refresh();
   });
 
@@ -104,7 +104,7 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
         </div>
         {((caps.invite && !person.passwordInSettings) || (caps.toggleActive && !self) || (caps.remove && !self)) && (
           <div className="flex flex-wrap gap-2">
-            {caps.invite && !person.passwordInSettings && <button className="btn btn-ghost btn-sm" disabled={pending || !person.isActive} onClick={setupLink}><Mail size={14} /> Send setup link</button>}
+            {caps.invite && !person.passwordInSettings && <button className="btn btn-ghost btn-sm" disabled={pending || !person.isActive} onClick={setupLink}><Mail size={14} /> Email temporary password</button>}
             {caps.invite && !person.passwordInSettings && <button className="btn btn-ghost btn-sm" aria-label={`Reset password for ${person.name}`} onClick={() => setResetting(true)}><KeyRound size={14} /> Reset password</button>}
             {caps.toggleActive && !self && (
               <button className="btn btn-ghost btn-sm" disabled={pending} onClick={async () => {
@@ -152,7 +152,7 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
               <Fact label="Status"><span className={STATUS_BADGE[person.status]}>{STATUS_LABEL[person.status]}</span></Fact>
               <Fact label="Last sign-in">{formatIST(person.lastLoginAt)}</Fact>
               <Fact label="Created">{formatIST(person.createdAt)}</Fact>
-              <Fact label="Setup link">{person.invite ? (person.invite.state === "used" ? "Used" : person.invite.state === "expired" ? "Expired" : `Open until ${formatIST(person.invite.expiresAt)}`) : <span className="text-subtle">None</span>}</Fact>
+              <Fact label="Temporary password">{person.invite ? (person.invite.state === "used" ? "Used" : person.invite.state === "expired" ? "Expired" : `Open until ${formatIST(person.invite.expiresAt)}`) : <span className="text-subtle">None</span>}</Fact>
             </dl>
           </section>
           <section className="glass !rounded-md p-5" aria-label="Approval responsibilities">

@@ -3,19 +3,30 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { db } from "@/db";
-import { userInvites } from "@/db/schema";
+import { userInvites, users } from "@/db/schema";
 import { isEnvAdmin } from "@/lib/auth";
 import { escapeHtml, sendMail } from "@/lib/mail";
 import { hashPassword } from "@/lib/passwords";
 import { UserError } from "@/lib/user-error";
 
 /**
- * Account set-up by invitation. Nobody types or hears another person's password: the person gets a one-time link, opens it and chooses
- * their own. The link holds a random 256-bit token; only its SHA-256 hash is stored, so even someone who can read the database cannot
- * rebuild a link. A link works once, for 72 hours, and sending a new one cancels the old one.
+ * New accounts, and password resets, by a temporary password sent by email (through the hub's mail settings: the Support Admin's Zoho
+ * mailbox). It is random, works for INVITE_HOURS (7 days), and the person must choose their own password the first time they sign in.
+ * Only scrambled copies are kept: as the account's password (scrypt) and on the invitation record (SHA-256), which carries the expiry.
+ * When the email cannot be sent, the temporary password is shown ONCE to the administrator to pass on; it is never stored, logged or audited.
  */
-export const INVITE_HOURS = 72;
+export const INVITE_HOURS = 7 * 24;
 export type Delivery = "sent" | "failed" | "manual";
+
+/** 12 characters without look-alikes (no 0/O, 1/l/I), with an upper, a lower, a digit and a symbol. */
+export function tempPassword(): string {
+  const sets = ["ABCDEFGHJKLMNPQRSTUVWXYZ", "abcdefghijkmnopqrstuvwxyz", "23456789", "#@$%&*!?"];
+  const all = sets.join("");
+  const pick = (s: string) => s[randomBytes(1)[0] % s.length];
+  const chars = [...sets.map(pick), ...Array.from({ length: 8 }, () => pick(all))];
+  for (let i = chars.length - 1; i > 0; i--) { const j = randomBytes(1)[0] % (i + 1); [chars[i], chars[j]] = [chars[j], chars[i]]; }
+  return chars.join("");
+}
 
 export const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
@@ -31,37 +42,42 @@ async function siteBase(): Promise<string> {
 
 export type InviteTarget = { id: string; name: string; email: string; isActive: boolean };
 
-/** Emails a link (when mail is set up) and records how it went. The link is returned only when it was NOT emailed, so it can be passed on by hand. */
-export async function deliverInvite(target: { name: string; email: string }, token: string): Promise<{ delivery: Delivery; link: string | null }> {
-  const link = `${await siteBase()}/set-password?token=${token}`;
+/** Emails the sign-in details (when mail is set up) and records how it went. The temporary password is returned only when it was NOT emailed. */
+export async function deliverInvite(target: { name: string; email: string }, temp: string): Promise<{ delivery: Delivery; link: string | null }> {
+  const site = await siteBase();
   const result = await sendMail(
     target.email,
-    "Set up your MCCIA App Hub password",
+    "Your MCCIA App Hub account",
     `<div style="font-family:Arial,sans-serif;max-width:520px"><h2 style="margin:0 0 14px">Welcome to the MCCIA App Hub</h2>
      <p>Hello ${escapeHtml(target.name)},</p>
-     <p>An account has been created for you. Choose your password with the button below. The link works once and expires in ${INVITE_HOURS} hours.</p>
-     <p style="margin:18px 0"><a href="${escapeHtml(link)}" style="background:#2a6b7c;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px">Set my password</a></p>
-     <p style="color:#555;font-size:13px">If you did not expect this email, you can ignore it.</p></div>`,
+     <p>An account has been made for you. Sign in with these details. The first time you sign in you will be asked to choose your own password.</p>
+     <table style="margin:14px 0;border-collapse:collapse">
+       <tr><td style="padding:6px 14px 6px 0;color:#555">Sign-in (email)</td><td style="padding:6px 0"><b>${escapeHtml(target.email)}</b></td></tr>
+       <tr><td style="padding:6px 14px 6px 0;color:#555">Temporary password</td><td style="padding:6px 0"><b style="font-family:Consolas,monospace;font-size:16px">${escapeHtml(temp)}</b></td></tr>
+     </table>
+     <p style="margin:18px 0"><a href="${escapeHtml(site)}/login" style="background:#2a6b7c;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px">Sign in to the App Hub</a></p>
+     <p style="color:#555;font-size:13px">The temporary password works for ${INVITE_HOURS / 24} days. Do not share it. If you did not expect this email, you can ignore it.</p></div>`,
   );
   const delivery: Delivery = result === "sent" ? "sent" : result === "failed" ? "failed" : "manual";
-  await db.update(userInvites).set({ delivery }).where(eq(userInvites.tokenHash, hashToken(token)));
-  return { delivery, link: delivery === "sent" ? null : link };
+  await db.update(userInvites).set({ delivery }).where(eq(userInvites.tokenHash, hashToken(temp)));
+  return { delivery, link: delivery === "sent" ? null : temp };
 }
 
 /**
- * Makes a fresh link for a person and tries to email it. Returns how it was delivered; when it could not be emailed the link itself is
- * returned ONCE so the administrator can pass it on. It is never stored, logged, audited or put in a report.
+ * A fresh temporary password for a person (a new account's first one, or a reset): it replaces their password at once, they must choose their
+ * own when they next sign in, and it is emailed to them. When it could not be emailed it is returned ONCE so the administrator can pass it on.
  */
 export async function sendInvite(target: InviteTarget, createdById: string): Promise<{ delivery: Delivery; link: string | null; expiresAt: Date }> {
   if (isEnvAdmin(target.email)) throw new UserError("This account's password is set in the environment settings.");
   if (!target.isActive) throw new UserError(`${target.name} is inactive. Activate the account first.`);
 
-  const token = randomBytes(32).toString("base64url");
+  const temp = tempPassword();
   const expiresAt = new Date(Date.now() + INVITE_HOURS * 3600 * 1000);
-  // Older links for this person stop working at once.
+  // Older temporary passwords and links for this person stop working at once.
   await db.update(userInvites).set({ expiresAt: new Date() }).where(and(eq(userInvites.userId, target.id), isNull(userInvites.usedAt), gt(userInvites.expiresAt, new Date())));
-  await db.insert(userInvites).values({ userId: target.id, tokenHash: hashToken(token), expiresAt, createdById });
-  const { delivery, link } = await deliverInvite(target, token);
+  await db.update(users).set({ passwordHash: await hashPassword(temp), mustChangePassword: true }).where(eq(users.id, target.id)); // also signs them out
+  await db.insert(userInvites).values({ userId: target.id, tokenHash: hashToken(temp), expiresAt, createdById });
+  const { delivery, link } = await deliverInvite(target, temp);
   return { delivery, link, expiresAt };
 }
 

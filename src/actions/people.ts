@@ -1,6 +1,5 @@
 "use server";
 
-import { randomBytes } from "node:crypto";
 import { and, count, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -12,7 +11,7 @@ import { writeAudit } from "@/lib/audit";
 import { envRoleIsFixed, isEnvAdmin } from "@/lib/auth";
 import { domainsLabel, isEmailAllowed } from "@/lib/domains";
 import { BATCH_ROWS, checkImport, commitBatch, type ImportPolicy } from "@/lib/import";
-import { deliverInvite, hashToken, sendInvite } from "@/lib/invites";
+import { deliverInvite, hashToken, sendInvite, tempPassword } from "@/lib/invites";
 import { roleLabel } from "@/lib/format";
 import type { Role } from "@/db/schema";
 import { notifyUsers } from "@/lib/notifications";
@@ -75,7 +74,7 @@ const newPerson = z.object({
 
 export type AddResult = { id: string; delivery: "sent" | "failed" | "manual" | "none"; link: string | null };
 
-/** One person. They choose their own password from a one-time link, unless the administrator deliberately sets one. */
+/** One person. They get a temporary password by email and choose their own at the first sign-in, unless the administrator sets one. */
 export async function addPerson(input: unknown) {
   return adminAction("people", async (admin): Promise<AddResult> => {
     const v = newPerson.parse(input);
@@ -91,17 +90,19 @@ export async function addPerson(input: unknown) {
     }
     const password = v.password.trim();
     const passwordHash = password ? await hashPassword(passwordSchema.parse(password)) : null;
-    const token = !passwordHash && v.invite ? randomBytes(32).toString("base64url") : null;
+    // No password chosen by the administrator: a temporary one, emailed to them, to be changed at the first sign-in.
+    const token = !passwordHash && v.invite ? tempPassword() : null;
     const id = await createAccount(admin, {
       name: v.name, email: v.email, role: v.role, branchId: org.branchId, teamId: org.teamId, managerId: org.managerId,
-      designation: v.designation, appIds, passwordHash, inviteTokenHash: token ? hashToken(token) : null, source: "admin",
+      designation: v.designation, appIds, passwordHash: passwordHash ?? (token ? await hashPassword(token) : null), mustChangePassword: !!token,
+      inviteTokenHash: token ? hashToken(token) : null, source: "admin",
     });
     if (!id) throw new UserError("That email already has an account.");
 
     const names = await orgNames(org);
     const appNames = appIds.length ? (await db.select({ name: apps.name }).from(apps).where(inArray(apps.id, appIds))).map((a) => a.name).sort() : [];
     await writeAudit(admin, [
-      { action: "user.create", targetType: "user", targetId: id, targetLabel: v.name, details: { source: "admin", role: v.role, ...names, credential: passwordHash ? "password set by administrator" : token ? "setup link" : "none yet" } },
+      { action: "user.create", targetType: "user", targetId: id, targetLabel: v.name, details: { source: "admin", role: v.role, ...names, credential: passwordHash ? "password set by administrator" : token ? "temporary password emailed" : "none yet" } },
       ...(appNames.length ? [{ action: "access.change", targetType: "user" as const, targetId: id, targetLabel: v.name, details: { source: "create", mode: "add", added: appNames, removed: [], before: [], after: appNames } }] : []),
     ]);
     if (!token) return { id, delivery: "none", link: null };

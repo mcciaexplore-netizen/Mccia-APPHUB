@@ -20,21 +20,21 @@ const Field = ({ label, children, hint }: { label: string; children: React.React
   <label className="block"><span className="label-xs mb-1.5 block">{label}</span>{children}{hint && <span className="mt-1 block text-xs text-subtle">{hint}</span>}</label>
 );
 
-/** Shows one-time setup links that could not be emailed, so the administrator can pass them on. They exist only on this screen. */
+/** Shows temporary passwords that could not be emailed, so the administrator can pass them on. They exist only on this screen. */
 export function LinksDialog({ results, onClose }: { results: LinkResult[]; onClose: () => void }) {
   const toast = useToast();
   const withLink = results.filter((r) => r.link);
   const copy = async (text: string, what: string) => {
-    try { await navigator.clipboard.writeText(text); toast.success(`${what} copied.`); } catch { toast.error("Could not copy. Select the link and copy it by hand."); }
+    try { await navigator.clipboard.writeText(text); toast.success(`${what} copied.`); } catch { toast.error("Could not copy. Select it and copy it by hand."); }
   };
   return (
-    <Modal title="Setup links" onClose={onClose}>
+    <Modal title="Sign-in details" onClose={onClose}>
       <div className="space-y-4">
         <div className="alert alert-green"><CheckCircle2 size={18} className="mt-0.5 shrink-0" />
           <span>{results.filter((r) => r.ok && r.delivery === "sent").length} emailed, {withLink.length} to pass on by hand, {results.filter((r) => !r.ok).length} could not be made.</span></div>
         {withLink.length > 0 && (
           <div className="alert"><AlertCircle size={18} className="mt-0.5 shrink-0" />
-            <span>These links are shown only now and are not stored anywhere. Each one lets its owner choose a password, works once and expires in 72 hours. Send each only to the person it is for.</span></div>
+            <span>These temporary passwords are shown only now and are not stored anywhere readable. Each works for 7 days, and its owner must choose their own password the first time they sign in. Give each only to the person it is for, with their email as the sign-in.</span></div>
         )}
         <ul className="max-h-80 divide-y divide-line overflow-y-auto rounded-md border border-line">
           {results.map((r) => (
@@ -43,14 +43,14 @@ export function LinksDialog({ results, onClose }: { results: LinkResult[]; onClo
                 <span className={`badge ${r.ok ? (r.delivery === "sent" ? "badge-green" : "badge-purple") : "badge-red"}`}>{r.ok ? (r.delivery === "sent" ? "Emailed" : "Pass on by hand") : "Not made"}</span></div>
               <p className="text-xs text-muted">{r.message}</p>
               {r.link && (
-                <div className="flex gap-2"><input readOnly className="input !py-1.5 font-mono text-xs" value={r.link} aria-label={`Setup link for ${r.name}`} onFocus={(e) => e.currentTarget.select()} />
-                  <button type="button" className="btn btn-ghost btn-sm shrink-0" onClick={() => copy(r.link!, "Link")}><Copy size={14} /> Copy</button></div>
+                <div className="flex gap-2"><input readOnly className="input !py-1.5 font-mono text-xs" value={r.link} aria-label={`Temporary password for ${r.name}`} onFocus={(e) => e.currentTarget.select()} />
+                  <button type="button" className="btn btn-ghost btn-sm shrink-0" onClick={() => copy(r.link!, "Temporary password")}><Copy size={14} /> Copy</button></div>
               )}
             </li>
           ))}
         </ul>
         <div className="flex flex-wrap justify-end gap-2">
-          {withLink.length > 1 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => copy(withLink.map((r) => `${r.name} <${r.email}>: ${r.link}`).join("\n"), "All links")}><Copy size={14} /> Copy all</button>}
+          {withLink.length > 1 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => copy(withLink.map((r) => `${r.name} <${r.email}>: ${r.link}`).join("\n"), "All sign-in details")}><Copy size={14} /> Copy all</button>}
           <button type="button" className="btn btn-primary btn-sm" onClick={onClose}>Done</button>
         </div>
       </div>
@@ -58,7 +58,7 @@ export function LinksDialog({ results, onClose }: { results: LinkResult[]; onClo
   );
 }
 
-/** Reset someone's access to the hub: send them a setup link (best), or type a password for someone who cannot receive email. */
+/** Reset someone's access to the hub: email them a temporary password (best), or type a password for someone who cannot receive email. */
 export function ResetDialog({ person, onClose, onLinks }: { person: { id: string; name: string }; onClose: () => void; onLinks: (r: LinkResult[]) => void }) {
   const toast = useToast();
   const [pending, start] = useTransition();
@@ -67,13 +67,13 @@ export function ResetDialog({ person, onClose, onLinks }: { person: { id: string
     <Modal title={`Reset password for ${person.name}`} onClose={onClose}>
       <div className="space-y-6">
         <section className="space-y-2">
-          <h3 className="text-base">Send a setup link (recommended)</h3>
-          <p className="text-sm text-muted">They get a one-time link and choose their own password. Nobody else ever sees it. Any older link stops working.</p>
+          <h3 className="text-base">Email a temporary password (recommended)</h3>
+          <p className="text-sm text-muted">They get a temporary password by email and must choose their own when they next sign in. Their current password stops working at once.</p>
           <button type="button" className="btn btn-primary btn-sm" disabled={pending} onClick={() => start(async () => {
             const r = await sendSetupLink(person.id);
             if (!r.ok) return toast.error(r.error);
-            if (r.data.ok && r.data.delivery === "sent") { toast.success(`Setup link emailed to ${r.data.email}.`); onClose(); } else { onLinks([r.data]); onClose(); }
-          })}><Mail size={14} /> Send setup link</button>
+            if (r.data.ok && r.data.delivery === "sent") { toast.success(`Temporary password emailed to ${r.data.email}.`); onClose(); } else { onLinks([r.data]); onClose(); }
+          })}><Mail size={14} /> Email a temporary password</button>
         </section>
         <form className="space-y-3 border-t border-line pt-5" onSubmit={(e) => {
           e.preventDefault();
@@ -97,7 +97,7 @@ export function ResetDialog({ person, onClose, onLinks }: { person: { id: string
   );
 }
 
-/** Add one person. By default they receive a setup link; setting a password by hand is the exception. */
+/** Add one person. By default they receive a temporary password by email; setting a password by hand is the exception. */
 export function AddPersonDialog({ options, catalog, domains, canPromote, onClose, onDone }: {
   options: { branches: Option[]; teams: Option[]; managers: Manager[]; roleHolders?: RoleHolder[] }; catalog: Catalog; domains: string;
   /** Only the Support Admin may add someone as an Admin or a Super Admin. */
@@ -139,7 +139,7 @@ export function AddPersonDialog({ options, catalog, domains, canPromote, onClose
         <fieldset className="space-y-2 sm:col-span-2">
           <legend className="label-xs mb-1.5">How do they get their password?</legend>
           <label className="flex items-start gap-2 text-sm"><input type="radio" className="mt-1 accent-[var(--c-primary)]" checked={!byHand} onChange={() => setByHand(false)} />
-            <span><b>Send them a setup link</b> (recommended). They choose their own password. If no email is set up, you will get the link to pass on.</span></label>
+            <span><b>Email them a temporary password</b> (recommended). They sign in with it and choose their own. If email is not working, you will get it to pass on.</span></label>
           <label className="flex items-start gap-2 text-sm"><input type="radio" className="mt-1 accent-[var(--c-primary)]" checked={byHand} onChange={() => setByHand(true)} />
             <span><b>I will set a password for them</b>, for someone who cannot receive email.</span></label>
           {byHand && (

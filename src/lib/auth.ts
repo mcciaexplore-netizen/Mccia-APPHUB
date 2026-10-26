@@ -1,8 +1,8 @@
 import "server-only";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { activityLog, users, type User } from "@/db/schema";
+import { activityLog, type User, userInvites, users } from "@/db/schema";
 import { burnPasswordCheck, verifyPassword } from "@/lib/passwords";
 
 const digest = (v: string) => createHash("sha256").update(v).digest();
@@ -80,7 +80,14 @@ export async function authenticate(emailRaw: string, password: string): Promise<
     await burnPasswordCheck(password);
     return null;
   }
-  return (await verifyPassword(password, u.passwordHash)) ? u : null;
+  if (!(await verifyPassword(password, u.passwordHash))) return null;
+  // A temporary password (sent by email, to be changed at the first sign-in) works only while its invitation record is still open.
+  if (u.mustChangePassword) {
+    const [open] = await db.select({ id: userInvites.id }).from(userInvites)
+      .where(and(eq(userInvites.userId, u.id), isNull(userInvites.usedAt), gt(userInvites.expiresAt, new Date()))).limit(1);
+    if (!open) return null;
+  }
+  return u;
 }
 
 /** Checks a password for someone who is already signed in (unlocking Administrator, changing a password). */

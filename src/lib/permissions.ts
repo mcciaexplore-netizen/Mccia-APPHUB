@@ -28,9 +28,14 @@ async function adminUnlocked(u: User): Promise<boolean> {
   return !!unlock && unlock.u === u.id;
 }
 
-export async function requireUser(): Promise<User> {
+/**
+ * The signed-in person, or off to sign in. Someone still on a temporary password (sent by email) is sent to choose their own first;
+ * the change-password page itself passes `{ allowTemporary: true }`.
+ */
+export async function requireUser(opts: { allowTemporary?: boolean } = {}): Promise<User> {
   const u = await getCurrentUser();
   if (!u) redirect("/login");
+  if (u.mustChangePassword && !opts.allowTemporary) redirect("/change-password");
   return u;
 }
 
