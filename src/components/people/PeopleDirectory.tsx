@@ -8,7 +8,7 @@ import { ArrowDown, ArrowUp, KeyRound, Mail, Plus, Search, ShieldCheck, Trash2, 
 import { useConfirm } from "@/components/ConfirmDialog";
 import { AddPersonDialog, AssignDialog, LinksDialog, ResetDialog, type Catalog, type Manager, type Option, type Template } from "@/components/people/PeopleDialogs";
 import { useToast } from "@/components/Toast";
-import { deletePerson, sendSetupLinks, setPersonActive, type LinkResult } from "@/actions/people";
+import { deletePeople, deletePerson, sendSetupLinks, setPersonActive, type LinkResult } from "@/actions/people";
 import { STATUS_BADGE, STATUS_LABEL } from "@/lib/account-status";
 import { formatIST, roleBadge, roleLabel } from "@/lib/format";
 import type { PeopleFilters, PersonRow } from "@/lib/people";
@@ -85,6 +85,21 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
     refresh();
   });
 
+  // Deleting the ticked people (Support Admin only). Not available for "everyone matching": each person is ticked on purpose. Yourself is left out.
+  const deletable = selected.filter((id) => id !== meId);
+  const removeSelected = async () => {
+    const names = rows.filter((r) => deletable.includes(r.id)).map((r) => r.name);
+    if (!(await confirm({ title: `Delete ${deletable.length} ${deletable.length === 1 ? "user" : "users"}?`, confirmLabel: "Delete", danger: true,
+      message: `${names.slice(0, 5).join(", ")}${names.length > 5 ? ` and ${names.length - 5} more` : ""} will be removed for good, with their passwords and their access to applications. Their past activity stays in the log as an unknown user. To stop someone signing in but keep the account, deactivate them instead.` }))) return;
+    startBusy(async () => {
+      const r = await deletePeople(deletable);
+      if (!r.ok) return toast.error(r.error);
+      toast.success(`${r.data} ${r.data === 1 ? "user" : "users"} deleted`);
+      setSelected([]);
+      refresh();
+    });
+  };
+
   const th = (label: string, key: PeopleFilters["sort"]) => (
     <th aria-sort={filters.sort === key ? (filters.dir === "asc" ? "ascending" : "descending") : "none"}>
       <button type="button" className="inline-flex items-center gap-1 font-bold uppercase tracking-[0.08em]" onClick={() => sortBy(key)}>
@@ -140,6 +155,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
           <b>{count} selected</b>
           {caps.assign && <button className="btn btn-primary btn-sm" onClick={() => setAssigning(true)}><ShieldCheck size={14} /> Assign applications</button>}
           {caps.invite && <button className="btn btn-ghost btn-sm" disabled={busy || allMatching || selected.length === 0} onClick={sendLinks}><Mail size={14} /> Email temporary passwords</button>}
+          {caps.remove && <button className="btn btn-danger btn-sm" disabled={busy || allMatching || deletable.length === 0} title={allMatching ? "Tick people on this page to delete them" : undefined} onClick={removeSelected}><Trash2 size={14} /> Delete selected</button>}
           <button className="btn btn-ghost btn-sm" onClick={() => { setSelected([]); setAllMatching(false); }}>Clear selection</button>
           {allOnPage && !allMatching && result.total > rows.length && (
             <button className="ml-auto text-primary underline" onClick={() => setAllMatching(true)}>Select all {result.total} people matching</button>
@@ -151,7 +167,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
       <div className={`table-wrap ${navigating ? "opacity-60" : ""}`} aria-busy={navigating}>
         <table>
           <thead><tr>
-            {(caps.assign || caps.invite) && (
+            {(caps.assign || caps.invite || caps.remove) && (
               <th className="w-10"><input type="checkbox" className="h-4 w-4 accent-[var(--c-primary)]" aria-label="Select everyone on this page" checked={allOnPage}
                 onChange={(e) => { setAllMatching(false); setSelected(e.target.checked ? [...new Set([...selected, ...pageIds])] : selected.filter((id) => !pageIds.includes(id))); }} /></th>
             )}
@@ -160,7 +176,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
           <tbody>
             {rows.map((u) => (
               <tr key={u.id} className={u.isActive ? "" : "opacity-60"} data-email={u.email}>
-                {(caps.assign || caps.invite) && (
+                {(caps.assign || caps.invite || caps.remove) && (
                   <td><input type="checkbox" className="h-4 w-4 accent-[var(--c-primary)]" aria-label={`Select ${u.name}`} checked={allMatching || selected.includes(u.id)} disabled={allMatching}
                     onChange={(e) => setSelected((s) => (e.target.checked ? [...s, u.id] : s.filter((id) => id !== u.id)))} /></td>
                 )}

@@ -1,6 +1,6 @@
 "use server";
 
-import { and, count, eq, inArray, ne } from "drizzle-orm";
+import { and, count, eq, inArray, ne, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { apps, branches, teams, userAppAccess, users, type User } from "@/db/schema";
@@ -184,6 +184,28 @@ export async function deletePerson(id: string) {
     }
     await db.delete(users).where(eq(users.id, id));
     await writeAudit(admin, [{ action: "user.delete", targetType: "user", targetId: id, targetLabel: u.name, details: { email: u.email, role: u.role } }]);
+  });
+}
+
+/**
+ * Several people at once (the ticked rows of Users), with the same rules as deletePerson: only the Support Admin, never their own account,
+ * and never the last active Support Admin. One statement, so either all of them are deleted or none are. Each is recorded in the audit log.
+ */
+export async function deletePeople(ids: unknown) {
+  return adminAction(async (admin): Promise<number> => {
+    const list = [...new Set(uuidList.parse(ids))];
+    if (list.length === 0) throw new UserError("Select at least one user.");
+    if (list.length > MAX_PEOPLE) throw new UserError(`That is more than ${MAX_PEOPLE} people. Narrow the selection.`);
+    if (list.includes(admin.id)) throw new UserError("You cannot delete your own account. Untick yourself and try again.");
+    const targets = await db.select({ id: users.id, name: users.name, email: users.email, role: users.role }).from(users).where(inArray(users.id, list));
+    if (targets.length !== list.length) throw new UserError("One or more users no longer exist. Reload and try again.");
+    if (targets.some((t) => t.role === "head_admin")) {
+      const [{ n }] = await db.select({ n: count() }).from(users).where(and(eq(users.role, "head_admin"), eq(users.isActive, true), notInArray(users.id, list)));
+      if (n === 0) throw new UserError("There must always be at least one active Support Admin.");
+    }
+    await db.delete(users).where(inArray(users.id, list));
+    await writeAudit(admin, targets.map((t) => ({ action: "user.delete", targetType: "user" as const, targetId: t.id, targetLabel: t.name, details: { email: t.email, role: t.role, bulk: true } })));
+    return targets.length;
   });
 }
 
