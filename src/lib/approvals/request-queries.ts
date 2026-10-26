@@ -338,7 +338,8 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
       decide: mine,
       withdraw: (pending || req.status === "returned") && req.requesterUserId === user.id,
       edit: req.status === "returned" && req.requesterUserId === user.id,
-      commentToApprove: mine && req.overBudget,
+      // Over budget asks the approver for a comment, except the Director General giving the final decision.
+      commentToApprove: mine && req.overBudget && decisionMode(req.currentStep, req.totalSteps) !== "final",
       mode: decisionMode(req.currentStep, req.totalSteps),
     },
   };

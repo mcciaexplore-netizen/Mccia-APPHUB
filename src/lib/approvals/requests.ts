@@ -8,7 +8,7 @@ import {
 import { ensureRulesSeeded } from "./env-rules";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
-import { assessBudget, commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, TYPE_LABEL, wrongFormMessage, type BudgetAssessment, type ExpenditureForm } from "./calc";
+import { assessBudget, commentRequired, decisionMode, escalationApprover, formatRequestNo, planProblemMessage, planSteps, TYPE_LABEL, wrongFormMessage, type BudgetAssessment, type ExpenditureForm } from "./calc";
 import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { resolveCustomAnswers } from "./form-config";
 import type { CustomAnswers } from "./form-fields";
@@ -269,7 +269,8 @@ export async function decideRequest(requestId: string, input: { action: "approve
 
   // Over budget is what was worked out from the figures the requester typed when the request was raised (or corrected).
   const overBudget = req.overBudget;
-  if (commentRequired(input.action, overBudget) && !input.comment) {
+  // The final decision by the Director General on a request recommended to them never needs a comment to approve.
+  if (commentRequired(input.action, overBudget, decisionMode(req.currentStep, req.totalSteps) === "final") && !input.comment) {
     throw new ApprovalsError(
       input.action === "reject" ? "Please write a comment explaining why you are rejecting this request."
         : input.action === "return" ? "Please write a comment saying what needs to be corrected."

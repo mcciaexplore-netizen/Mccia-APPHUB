@@ -98,7 +98,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
                   <td className="whitespace-nowrap"><span className="inline-flex flex-wrap items-center gap-1"><StatusPill status={r.status} currentStepNo={r.currentStep} />{r.overBudget && <OverBudgetBadge />}</span></td>
                   <td className="hidden md:table-cell">{r.approverName ?? ""}</td>
                   <td className="hidden md:table-cell whitespace-nowrap">{r.decidedAt ? formatDateTime(r.decidedAt) : ""}</td>
-                  {screen.quickDecide && <td className="whitespace-nowrap">{r.mineToDecide && <QuickDecide id={r.id} label={r.requestNo ?? "request"} overBudget={r.overBudget} kind={decisionMode(r.currentStep, r.totalSteps)} />}</td>}
+                  {screen.quickDecide && <td className="whitespace-nowrap">{r.mineToDecide && <QuickDecide id={r.id} label={r.requestNo ?? "request"} overBudget={r.overBudget && decisionMode(r.currentStep, r.totalSteps) !== "final"} kind={decisionMode(r.currentStep, r.totalSteps)} />}</td>}
                 </ClickableRow>
               );
             })}

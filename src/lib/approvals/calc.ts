@@ -134,9 +134,12 @@ export const planProblemMessage = (p: StepPlanProblem): string =>
 
 /* ---------------------------------------------------------------- decisions */
 
-/** Whether the approver must write a comment: always to reject or to return a request for corrections, and also to approve one that is over budget. */
-export function commentRequired(action: "approve" | "reject" | "return", overBudget: boolean): boolean {
-  return action !== "approve" || overBudget;
+/**
+ * Whether the approver must write a comment: always to reject or to return a request for corrections, and to approve one that is over
+ * budget, except for the Director General's final approval (`finalDecision`), which never needs a comment.
+ */
+export function commentRequired(action: "approve" | "reject" | "return", overBudget: boolean, finalDecision = false): boolean {
+  return action !== "approve" || (overBudget && !finalDecision);
 }
 
 /* ---------------------------------------------------------------- request numbers */

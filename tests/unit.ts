@@ -221,6 +221,7 @@ eq("dates: the request date cannot be in the future, an ordinary past one is fin
   largeExpenditureInput.safeParse({ ...lg, requestedAt: new Date(Date.now() + 3 * 86400000).toISOString() }).success,
   largeExpenditureInput.safeParse({ ...lg, requestedAt: new Date(Date.now() - 86400000).toISOString() }).success,
 ], [false, true]);
+eq("comments: the Director General never needs a comment to approve (even over budget); a first approver does when it is over budget; rejecting and returning always do", [commentRequired("approve", true, true), commentRequired("approve", true, false), commentRequired("approve", false, false), commentRequired("reject", false, true), commentRequired("return", true, true)], [false, true, false, true, true]);
 eq("decision: only approve or reject", [decisionInput.safeParse({ action: "approve" }).success, decisionInput.safeParse({ action: "maybe" }).success], [true, false]);
 
 // Approvals is on unless it is switched off on purpose.
