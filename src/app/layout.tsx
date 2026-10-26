@@ -19,6 +19,10 @@ export const viewport: Viewport = { themeColor: "#2a6b7c" };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={inter.variable}>
+      <head>
+        {/* The browser's install offer can come before the page has loaded its scripts: keep it so the Download buttons can use it. */}
+        <script dangerouslySetInnerHTML={{ __html: `window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.__mcciaInstall=e;window.dispatchEvent(new Event("mccia-install-ready"));});` }} />
+      </head>
       <body className="min-h-screen font-sans">
         <Toaster>{children}</Toaster>
         <InstallPrompt />

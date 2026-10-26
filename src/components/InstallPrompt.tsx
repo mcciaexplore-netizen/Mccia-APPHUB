@@ -27,9 +27,12 @@ export function InstallPrompt() {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
     const installed = window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
     if (installed) return;
-    const onOffer = (e: Event) => { e.preventDefault(); setOffer(e as InstallEvent); };
-    const onInstalled = () => { setShow(null); setOffer(null); };
-    window.addEventListener("beforeinstallprompt", onOffer);
+    // The offer is caught by a script in the page head (it can arrive before this runs), then handed over here.
+    const w = window as Window & { __mcciaInstall?: InstallEvent };
+    const onOffer = () => { if (w.__mcciaInstall) setOffer(w.__mcciaInstall); };
+    const onInstalled = () => { setShow(null); setOffer(null); w.__mcciaInstall = undefined; };
+    onOffer();
+    window.addEventListener("mccia-install-ready", onOffer);
     window.addEventListener("appinstalled", onInstalled);
     // Shown after a moment, so it never covers the page while it is still loading.
     const t = setTimeout(() => {
@@ -37,7 +40,7 @@ export function InstallPrompt() {
       if (!read(SEEN)) setShow("popup");
       else if (Number(read(SNOOZE) ?? 0) < Date.now()) setShow("banner");
     }, 1500);
-    return () => { clearTimeout(t); window.removeEventListener("beforeinstallprompt", onOffer); window.removeEventListener("appinstalled", onInstalled); };
+    return () => { clearTimeout(t); window.removeEventListener("mccia-install-ready", onOffer); window.removeEventListener("appinstalled", onInstalled); };
   }, []);
 
   const close = (snooze: boolean) => {
@@ -45,12 +48,20 @@ export function InstallPrompt() {
     if (snooze) write(SNOOZE, String(Date.now() + WEEK));
     setShow(null);
   };
+  // The browser's own Install box when it has offered one (it can be used once; the browser offers again later). Otherwise the steps.
   const install = async () => {
-    if (!offer) return;
-    await offer.prompt();
-    const { outcome } = await offer.userChoice;
-    setOffer(null);
-    close(outcome !== "accepted");
+    if (!offer) { setShow("popup"); return; }
+    try {
+      await offer.prompt();
+      const { outcome } = await offer.userChoice;
+      (window as Window & { __mcciaInstall?: InstallEvent }).__mcciaInstall = undefined;
+      setOffer(null);
+      if (outcome === "accepted") close(false);
+      else setShow("popup");
+    } catch {
+      setOffer(null);
+      setShow("popup");
+    }
   };
 
   const how = offer ? null : ios
@@ -82,7 +93,7 @@ export function InstallPrompt() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icon-192.png" alt="" width={36} height={36} className="rounded-[8px] border border-line" />
         <p className="min-w-0 flex-1 text-sm"><b className="text-ink">Download this application</b><span className="block text-xs text-muted">{offer ? "Install the App Hub on this device." : ios ? "Share → Add to Home Screen." : "Browser menu → Install MCCIA App Hub."}</span></p>
-        {offer && <button className="btn btn-primary btn-sm" onClick={install}><Download size={14} /> Install</button>}
+        <button className="btn btn-primary btn-sm" onClick={install}><Download size={14} /> {offer ? "Install" : "How to install"}</button>
         <button className="btn btn-ghost btn-sm" aria-label="Not now" onClick={() => close(true)}><X size={14} /></button>
       </div>
     );
