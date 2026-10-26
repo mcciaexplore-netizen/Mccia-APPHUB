@@ -1,5 +1,6 @@
 "use client";
 
+import { RoleOptions, type RoleHolder } from "@/components/people/RoleOptions";
 import { useEffect, useState, useTransition } from "react";
 import { AlertCircle, CheckCircle2, ChevronLeft, Copy, KeyRound, Mail, RefreshCw } from "lucide-react";
 import { AccessTree } from "@/components/AccessTree";
@@ -98,14 +99,14 @@ export function ResetDialog({ person, onClose, onLinks }: { person: { id: string
 
 /** Add one person. By default they receive a setup link; setting a password by hand is the exception. */
 export function AddPersonDialog({ options, catalog, domains, canPromote, onClose, onDone }: {
-  options: { branches: Option[]; teams: Option[]; managers: Manager[] }; catalog: Catalog; domains: string;
+  options: { branches: Option[]; teams: Option[]; managers: Manager[]; roleHolders?: RoleHolder[] }; catalog: Catalog; domains: string;
   /** Only the Support Admin may add someone as an Admin or a Super Admin. */
   canPromote: boolean;
   onClose: () => void; onDone: (r: AddResult & { name: string; email: string }) => void;
 }) {
   const toast = useToast();
   const [pending, start] = useTransition();
-  const [v, setV] = useState({ name: "", email: "", designation: "", role: "member" as "member" | "dept_lead" | "admin" | "super_admin", branchId: "", teamId: "", managerId: "" });
+  const [v, setV] = useState({ name: "", email: "", designation: "", role: "member" as string, branchId: "", teamId: "", managerId: "" });
   const [appIds, setAppIds] = useState<string[]>([]);
   const [byHand, setByHand] = useState(false);
   const [password, setPassword] = useState(() => generatePassword());
@@ -130,7 +131,7 @@ export function AddPersonDialog({ options, catalog, domains, canPromote, onClose
         <Field label="Email (the username)"><input className="input" type="email" value={v.email} onChange={(e) => set("email", e.target.value)} required placeholder={domains ? `name${domains.split(" or ")[0]}` : "name@example.com"} /></Field>
         <Field label="Designation (optional)"><input className="input" value={v.designation} onChange={(e) => set("designation", e.target.value)} maxLength={120} /></Field>
         <Field label="Role">
-          <select className="input" value={v.role} onChange={(e) => set("role", e.target.value)}><option value="member">User</option><option value="dept_lead">Team manager</option>{canPromote && <><option value="admin">Admin</option><option value="super_admin">Super admin</option></>}</select></Field>
+          <select className="input" value={v.role} onChange={(e) => set("role", e.target.value)}><RoleOptions holders={options.roleHolders ?? []} personId={null} canPromote={canPromote} current={v.role} /></select></Field>
         <Field label="Branch (optional)"><select className="input" value={v.branchId} onChange={(e) => set("branchId", e.target.value)}><option value="">None</option>{options.branches.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
         <Field label="Team (optional)"><select className="input" value={v.teamId} onChange={(e) => set("teamId", e.target.value)}><option value="">None</option>{options.teams.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
         <Field label="Reporting manager (optional)"><select className="input" value={v.managerId} onChange={(e) => set("managerId", e.target.value)}><option value="">None</option>{options.managers.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.email})</option>)}</select></Field>

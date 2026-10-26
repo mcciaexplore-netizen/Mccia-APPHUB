@@ -14,11 +14,12 @@ import { domainsLabel, isEmailAllowed } from "@/lib/domains";
 import { BATCH_ROWS, checkImport, commitBatch, type ImportPolicy } from "@/lib/import";
 import { deliverInvite, hashToken, sendInvite } from "@/lib/invites";
 import { roleLabel } from "@/lib/format";
+import type { Role } from "@/db/schema";
 import { notifyUsers } from "@/lib/notifications";
 import { checkOrg } from "@/lib/org";
 import { hashPassword, passwordSchema } from "@/lib/passwords";
 import { parsePeopleFilters, peopleIds } from "@/lib/people";
-import { ADMIN_AREAS, AREA_LABEL, ASSIGNABLE_ROLES, canChangeRole, canDeactivate, canEditPerson, canManageAccess, isSupport, PROMOTABLE_ROLES } from "@/lib/rbac";
+import { ADMIN_AREAS, AREA_LABEL, ASSIGNABLE_ROLES, canChangeRole, canDeactivate, canEditPerson, canManageAccess, isSupport, PROMOTABLE_ROLES, SINGLE_HOLDER_ROLES } from "@/lib/rbac";
 import { emailSchema, uuid, uuidList } from "@/lib/validation";
 
 /**
@@ -30,9 +31,16 @@ const optionalText = (max: number) => z.string().trim().max(max).nullish().trans
 const optionalId = uuid.nullish().transform((v) => v ?? null);
 const role = z.enum([...ASSIGNABLE_ROLES, ...PROMOTABLE_ROLES]);
 const PROMOTED = new Set<string>(PROMOTABLE_ROLES);
-/** Making someone an Admin or Super Admin is the Support Admin's alone. */
+/** Making someone an Admin, the Super Admin, the HR Admin or the Expense Admin is the Support Admin's alone. */
 function checkMayGiveRole(admin: Pick<User, "role">, wanted: string) {
-  if (PROMOTED.has(wanted) && !isSupport(admin)) throw new UserError("Only the Support Admin can make someone an Admin or a Super Admin.");
+  if (PROMOTED.has(wanted) && !isSupport(admin)) throw new UserError("Only the Support Admin can give that role.");
+}
+
+/** The Super Admin, the HR Admin and the Expense Admin are one person each: another person holding the role must be changed first. */
+async function checkSingleHolder(wanted: string, personId: string | null) {
+  if (!(SINGLE_HOLDER_ROLES as readonly string[]).includes(wanted)) return;
+  const [holder] = await db.select({ id: users.id, name: users.name }).from(users).where(eq(users.role, wanted as Role));
+  if (holder && holder.id !== personId) throw new UserError(`${holder.name} is already the ${roleLabel[wanted as Role]}. Only one person can have this role: change ${holder.name}'s role first.`);
 }
 
 function checkDomain(email: string) {
@@ -72,6 +80,7 @@ export async function addPerson(input: unknown) {
   return adminAction("people", async (admin): Promise<AddResult> => {
     const v = newPerson.parse(input);
     checkMayGiveRole(admin, v.role);
+    await checkSingleHolder(v.role, null);
     checkDomain(v.email);
     if (isEnvAdmin(v.email)) throw new UserError("That address is a main admin account, which is set in the environment settings.");
     const org = await checkOrg({ branchId: v.branchId, teamId: v.teamId, managerId: v.managerId }, null);
@@ -123,6 +132,7 @@ export async function updatePerson(id: string, input: unknown) {
     const newRole = v.role ?? cur.role;
     if (newRole !== cur.role && envRoleIsFixed(cur.email)) throw new UserError("This account is the Support Admin or the Super Admin set in the environment settings, so its role is put back at every sign-in. Change it there, in Vercel.");
     if (newRole !== cur.role && !canChangeRole(admin, cur)) throw new UserError("That person's role cannot be changed here. Only the Support Admin changes roles.");
+    if (newRole !== cur.role) await checkSingleHolder(newRole, id);
     const before = await orgNames({ branchId: cur.branchId, teamId: cur.teamId, managerId: cur.reportingManagerId });
     const after = await orgNames(org);
     const changes: Record<string, { from: unknown; to: unknown }> = {};

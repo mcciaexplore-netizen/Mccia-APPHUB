@@ -46,7 +46,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   }
   if (review) {
     // HR and Expenditure, each with Pending, Approved and Rejected (chosen in the Approval System sidebar). An approver opens the place the
-    // Approver Rules give them; the Director General opens both, as the final approver of each.
+    // their role gives them (HR Admin: HR, Expense Admin: Expenditure); the Director General opens both, as the final approver of each.
     const items = await reviewItemsFor(user);
     if (!items.some((i) => i.key === review.key) && !hasRole(user, "dg")) notFound();
     const decides = hasAnyRole(user, ["approver", "dg"]);

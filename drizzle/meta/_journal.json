@@ -120,6 +120,13 @@
       "when": 1792171329153,
       "tag": "0016_category_budgets",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792171330153,
+      "tag": "0017_hr_expense_admin_roles",
+      "breakpoints": true
     }
   ]
 }

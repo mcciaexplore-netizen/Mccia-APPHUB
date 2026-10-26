@@ -1,10 +1,9 @@
 import "server-only";
 import { cache } from "react";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { aprApproverRules, aprUserRoles } from "@/db/approvals-schema";
-import { ensureEnvAccounts, envAccountEmail } from "@/lib/auth";
+import { aprUserRoles } from "@/db/approvals-schema";
 import { getCurrentUser as hostCurrentUser } from "@/lib/permissions";
 import { ALL_ROLES, type ApprovalsRole } from "./approvals.manifest";
 
@@ -14,7 +13,8 @@ import { ALL_ROLES, type ApprovalsRole } from "./approvals.manifest";
  */
 
 export type { ApprovalsRole };
-export type ApprovalsUser = { id: string; name: string; email: string; roles: ApprovalsRole[] };
+/** `place`: where this person approves first, from their role in the hub (HR Admin: HR requests, Expense Admin: expenses). */
+export type ApprovalsUser = { id: string; name: string; email: string; roles: ApprovalsRole[]; place?: "hr" | "expenditure" | null };
 export type DirectoryUser = { id: string; name: string; email: string; headAdmin: boolean; active: boolean };
 
 export type Access =
@@ -24,25 +24,18 @@ export type Access =
 const isRole = (r: string): r is ApprovalsRole => (ALL_ROLES as readonly string[]).includes(r);
 
 /**
- * Module roles. requester: everyone. approvals_admin: the hub's head admin (the Support Admin), or granted in the module. viewer: granted, and
- * implied for admins. approver and dg are not granted: a person is an approver when named on step 1 of an active routing rule, and a dg when
- * named on a later step. The hub's Super Admin (the Director General) is a dg whether or not the rules name them yet, so their
- * Recommended place under Approval System is there from the first sign-in; what reaches them to decide still follows the rules.
+ * Module roles, from the person's role in the hub. requester: everyone. approvals_admin: the Support Admin (or granted in the module); viewer:
+ * granted, and implied for admins. approver: the HR Admin and the Expense Admin, who decide first. dg: the Super Admin, the final approver.
+ * There is nothing else to set up: giving someone one of these roles in the hub is what makes them an approver.
  */
-async function rolesFor(userId: string, isHeadAdmin: boolean, isSuperAdmin: boolean): Promise<ApprovalsRole[]> {
-  const [granted, steps] = await Promise.all([
-    db.select({ role: aprUserRoles.role }).from(aprUserRoles).where(eq(aprUserRoles.userId, userId)),
-    db
-      .select({ stepNo: aprApproverRules.stepNo })
-      .from(aprApproverRules)
-      .where(and(eq(aprApproverRules.active, true), sql`${userId}::uuid = any(${aprApproverRules.approverUserIds})`)),
-  ]);
+async function rolesFor(userId: string, hubRole: string): Promise<ApprovalsRole[]> {
+  const granted = await db.select({ role: aprUserRoles.role }).from(aprUserRoles).where(eq(aprUserRoles.userId, userId));
   const roles = new Set<ApprovalsRole>(["requester"]);
   for (const g of granted) if (isRole(g.role)) roles.add(g.role);
-  if (isHeadAdmin) roles.add("approvals_admin");
-  if (isSuperAdmin) roles.add("dg");
+  if (hubRole === "head_admin") roles.add("approvals_admin");
+  if (hubRole === "super_admin") roles.add("dg");
+  if (hubRole === "hr_admin" || hubRole === "expense_admin") roles.add("approver");
   if (roles.has("approvals_admin")) roles.add("viewer");
-  for (const s of steps) roles.add(s.stepNo === 1 ? "approver" : "dg");
   return [...roles];
 }
 
@@ -50,8 +43,8 @@ async function rolesFor(userId: string, isHeadAdmin: boolean, isSuperAdmin: bool
 export const resolveAccess = cache(async (): Promise<Access> => {
   const host = await hostCurrentUser();
   if (!host) return { status: "anonymous" };
-  const isHeadAdmin = host.role === "head_admin";
-  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles: await rolesFor(host.id, isHeadAdmin, host.role === "super_admin") } };
+  const place = host.role === "hr_admin" ? "hr" : host.role === "expense_admin" ? "expenditure" : null;
+  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles: await rolesFor(host.id, host.role), place } };
 });
 
 /** Everyone who can sign in to the hub, for the Name dropdown and the approver pickers. There is no second user table. */
@@ -78,17 +71,15 @@ export const hasRole = (user: Pick<ApprovalsUser, "roles"> | null | undefined, r
 export const hasAnyRole = (user: Pick<ApprovalsUser, "roles"> | null | undefined, roles: readonly ApprovalsRole[]) => !!user && roles.some((r) => user.roles.includes(r));
 
 /**
- * The main accounts that handle approvals, from the environment settings: HR, Expenditure and the Super Admin (the DG). Their rows are
- * made if they do not exist yet. A person who is not set, or is not active, comes back as null.
+ * Who approves, from the roles in the hub (one person each): the HR Admin (first approver of HR requests), the Expense Admin (first approver
+ * of expenses) and the Super Admin (the final approver). A role nobody holds, or held by someone inactive, comes back as null.
  */
-export async function mainApprovers(): Promise<{ hr: DirectoryUser | null; expenditure: DirectoryUser | null; dg: DirectoryUser | null }> {
-  await ensureEnvAccounts();
-  const pick = async (key: "hr" | "expenditure" | "super") => {
-    const email = envAccountEmail(key);
-    if (!email) return null;
-    const [u] = await db.select({ id: users.id, name: users.name, email: users.email, role: users.role, active: users.isActive }).from(users).where(eq(users.email, email));
-    return u?.active ? { id: u.id, name: u.name, email: u.email, headAdmin: u.role === "head_admin", active: true } : null;
+export async function roleApprovers(): Promise<{ hr: DirectoryUser | null; expense: DirectoryUser | null; superAdmin: DirectoryUser | null }> {
+  const rows = await db.select({ id: users.id, name: users.name, email: users.email, role: users.role }).from(users)
+    .where(and(inArray(users.role, ["hr_admin", "expense_admin", "super_admin"]), eq(users.isActive, true), eq(users.status, "approved")));
+  const pick = (role: string) => {
+    const u = rows.find((r) => r.role === role);
+    return u ? { id: u.id, name: u.name, email: u.email, headAdmin: false, active: true } : null;
   };
-  const [hr, expenditure, dg] = await Promise.all([pick("hr"), pick("expenditure"), pick("super")]);
-  return { hr, expenditure, dg };
+  return { hr: pick("hr_admin"), expense: pick("expense_admin"), superAdmin: pick("super_admin") };
 }

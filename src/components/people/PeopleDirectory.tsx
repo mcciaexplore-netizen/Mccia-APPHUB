@@ -1,5 +1,6 @@
 "use client";
 
+import type { RoleHolder } from "@/components/people/RoleOptions";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -18,7 +19,7 @@ export type DirectoryProps = {
   base: string;
   result: { rows: PersonRow[]; total: number; pages: number; page: number };
   filters: PeopleFilters;
-  options: { branches: Option[]; teams: Option[]; apps: Option[]; managers: Manager[] };
+  options: { branches: Option[]; teams: Option[]; apps: Option[]; managers: Manager[]; roleHolders?: RoleHolder[] };
   catalog: Catalog;
   templates: Template[];
   caps: Capabilities;
@@ -116,7 +117,7 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
         {select("Filter by branch", "branch", filters.branchId, options.branches, "All branches")}
         {select("Filter by team", "team", filters.teamId, options.teams, "All teams")}
         <select className="input !w-auto !py-2" aria-label="Filter by role" value={filters.role ?? ""} onChange={(e) => setParam("role", e.target.value)}>
-          <option value="">All roles</option><option value="member">User</option><option value="dept_lead">Team manager</option><option value="admin">Admin</option><option value="super_admin">Super admin</option><option value="head_admin">Support admin</option>
+          <option value="">All roles</option><option value="super_admin">Super admin</option><option value="expense_admin">Expense admin</option><option value="hr_admin">HR admin</option><option value="admin">Admin</option><option value="member">User</option><option value="dept_lead">Team manager</option><option value="head_admin">Support admin</option>
         </select>
         <select className="input !w-auto !py-2" aria-label="Filter by status" value={filters.status ?? ""} onChange={(e) => setParam("status", e.target.value)}>
           <option value="">Any status</option><option value="active">Active</option><option value="pending">Pending invitation</option><option value="inactive">Inactive</option>

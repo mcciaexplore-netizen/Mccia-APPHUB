@@ -6,7 +6,6 @@ import {
   aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType,
 } from "@/db/approvals-schema";
 import { decisionMode, type DecisionMode } from "./calc";
-import { ensureRulesSeeded } from "./env-rules";
 import { REVIEW_KEYS, isDgOnly, type ReviewItem } from "./approvals.manifest";
 import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
 import type { SortKey } from "./list-params";
@@ -188,20 +187,15 @@ export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Pro
 }
 
 /**
- * The places an approver works under Approval System, with how many requests wait for them in each. HR for someone named on an HR step,
- * Expenditure for someone named on an expenditure step (either size); people who oversee everything (viewers, the Approvals admin) get both.
- * A person who approves nothing and oversees nothing gets none, and the sidebar shows no dropdown.
- * The Approver Rules are filled from the HR, Expenditure and Super Admin accounts first (once, and only if they are still empty), so those
- * accounts have their place from their first sign-in, without anyone having to open the Approver Rules screen or send a request first.
+ * The places an approver works under Approval System, with how many requests wait for them in each: HR for the HR Admin, Expenditure for the
+ * Expense Admin (from their role in the hub); people who oversee everything (viewers, the Approvals admin) get both. A person who approves
+ * nothing and oversees nothing gets none.
  */
 export async function reviewItemsFor(user: ApprovalsUser): Promise<ReviewItem[]> {
-  await ensureRulesSeeded();
   const oversees = hasAnyRole(user, ["viewer", "approvals_admin"]);
-  const [steps, waiting] = await Promise.all([
-    oversees ? Promise.resolve([] as { type: AprRequestType }[]) : db.select({ type: aprApproverRules.requestType }).from(aprApproverRules).where(and(eq(aprApproverRules.active, true), sql`${user.id}::uuid = any(${aprApproverRules.approverUserIds})`)),
-    db.select({ type: aprRequests.type, n: sql<number>`count(*)::int` }).from(aprRequests).where(and(eq(aprRequests.status, "pending"), eq(aprRequests.currentApproverUserId, user.id))).groupBy(aprRequests.type),
-  ]);
-  const named = new Set(steps.map((s) => (s.type === "hr" ? "hr" : "expenditure")));
+  const waiting = await db.select({ type: aprRequests.type, n: sql<number>`count(*)::int` }).from(aprRequests)
+    .where(and(eq(aprRequests.status, "pending"), eq(aprRequests.currentApproverUserId, user.id))).groupBy(aprRequests.type);
+  const named = new Set(user.place ? [user.place] : []);
   const count = (k: "hr" | "expenditure") => waiting.filter((w) => (w.type === "hr") === (k === "hr")).reduce((a, w) => a + w.n, 0);
   // The Director General has one place, what was recommended to them, with a tab each for HR and Expenditure.
   if (isDgOnly(user.roles)) {

@@ -36,7 +36,9 @@ export type Target = { id: string; role: Role; teamId: string | null; reportingM
 /** The roles an administrator may give to someone through the Add user form and the import: a User (and the Team manager, which nobody needs). */
 export const ASSIGNABLE_ROLES = ["member", "dept_lead"] as const satisfies readonly Role[];
 /** The roles only the Support Admin may give, on a person's profile or when adding them. head_admin is never one of them. */
-export const PROMOTABLE_ROLES = ["admin", "super_admin"] as const satisfies readonly Role[];
+export const PROMOTABLE_ROLES = ["admin", "super_admin", "hr_admin", "expense_admin"] as const satisfies readonly Role[];
+/** Roles only one person may hold at a time: the final approver and the two first approvers. */
+export const SINGLE_HOLDER_ROLES = ["super_admin", "hr_admin", "expense_admin"] as const satisfies readonly Role[];
 
 /** The Support Admin: full power over the software, and the only one who manages accounts, roles and access. (The Super Admin is not one of these.) */
 export const isSuper = (a: Pick<Actor, "role">) => a.role === "head_admin";

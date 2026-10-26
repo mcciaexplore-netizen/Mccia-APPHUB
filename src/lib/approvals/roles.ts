@@ -1,10 +1,10 @@
 import "server-only";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { aprAdminAudit, aprApproverRules, aprUserRoles } from "@/db/approvals-schema";
+import { aprAdminAudit, aprUserRoles } from "@/db/approvals-schema";
 import { recordAudit } from "./audit";
 import { ApprovalsError } from "./errors";
-import { listUsers, type ApprovalsUser } from "./host-adapter";
+import { listUsers, roleApprovers, type ApprovalsUser } from "./host-adapter";
 
 export type RoleRow = {
   userId: string;
@@ -13,22 +13,17 @@ export type RoleRow = {
   headAdmin: boolean; // always an approvals admin, set in the hub
   admin: boolean; // granted here
   viewer: boolean; // granted here
-  approver: boolean; // derived: named on step 1 of an active routing rule
-  dg: boolean; // derived: named on a later step
+  approver: boolean; // from the hub role: the HR Admin or the Expense Admin
+  dg: boolean; // from the hub role: the Super Admin
 };
 
 export async function listRoleAssignments(): Promise<RoleRow[]> {
-  const [people, granted, rules] = await Promise.all([
-    listUsers(),
-    db.select().from(aprUserRoles),
-    db.select({ stepNo: aprApproverRules.stepNo, ids: aprApproverRules.approverUserIds }).from(aprApproverRules).where(eq(aprApproverRules.active, true)),
-  ]);
+  const [people, granted, who] = await Promise.all([listUsers(), db.select().from(aprUserRoles), roleApprovers()]);
   const has = (userId: string, role: string) => granted.some((g) => g.userId === userId && g.role === role);
-  const onStep = (userId: string, pick: (n: number) => boolean) => rules.some((r) => pick(r.stepNo) && r.ids.includes(userId));
   return people.map((u) => ({
     userId: u.id, name: u.name, email: u.email, headAdmin: u.headAdmin,
     admin: has(u.id, "approvals_admin"), viewer: has(u.id, "viewer"),
-    approver: onStep(u.id, (n) => n === 1), dg: onStep(u.id, (n) => n > 1),
+    approver: u.id === who.hr?.id || u.id === who.expense?.id, dg: u.id === who.superAdmin?.id,
   }));
 }
 

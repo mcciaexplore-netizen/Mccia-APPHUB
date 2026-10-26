@@ -84,12 +84,12 @@ export function planSteps(rules: readonly RuleLike[], requesterUserId: string, a
 
 export const planProblemMessage = (p: StepPlanProblem): string =>
   p === "no-approver"
-    ? "No approver has been set up for this kind of request yet. Ask an Approvals admin to name one under Approver Rules."
+    ? "Nobody can approve this kind of request yet. Ask the Support Admin to give someone the HR Admin, Expense Admin or Super Admin role."
     : p === "requester-is-dg"
-      ? "You are the Director General and also the requester, so this request cannot be routed. Ask the Support Admin to assign a temporary approver for this request."
+      ? "You are the Super Admin and also the requester, so this request cannot be routed: nobody else can give the final decision."
     : p === "only-self"
-      ? "You are the only approver set up for this kind of request, and nobody can approve their own request. Ask an Approvals admin to name someone else."
-      : "The same person is named on more than one approval step for this kind of request. The first approver and the Director General must be different people. Ask an Approvals admin to fix Approver Rules.";
+      ? "You are the only approver of this kind of request, and nobody can approve their own request. Ask the Support Admin to give the Super Admin role to someone."
+      : "The same person would approve this request twice. Ask the Support Admin to check the HR Admin, Expense Admin and Super Admin roles.";
 
 /* ---------------------------------------------------------------- decisions */
 

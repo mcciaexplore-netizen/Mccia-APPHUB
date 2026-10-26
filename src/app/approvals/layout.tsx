@@ -19,7 +19,7 @@ export const metadata = { title: "Approval System · MCCIA App Hub" };
 /**
  * What the sidebar holds for this person. Everyone: Approval Forms (the forms) and Approved Forms. Under Approval Forms, whoever decides
  * requests gets the places they decide in, each with its Pending, Approved and Rejected lists: the Director General and the Support Admin
- * both HR and Expenditure, an approver the place the Approver Rules give them.
+ * both HR and Expenditure, an approver the place their role gives them (HR Admin: HR, Expense Admin: Expenditure).
  */
 async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
   const items = await reviewItemsFor(user);

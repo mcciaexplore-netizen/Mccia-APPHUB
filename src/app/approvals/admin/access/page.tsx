@@ -11,7 +11,7 @@ export default async function Page() {
     <>
       <PageHeader
         title="Roles and Access"
-        intro="Who can open Approvals is decided in the App Hub (Administrator > Access). Here you choose who also oversees requests or manages this module. Approvers and the DG are set on the Approver Rules screen."
+        intro="Who can open Approvals is decided in the App Hub (Administrator > Access). Here you choose who also oversees requests or manages this module. The approvers come from roles in the hub: the HR Admin, the Expense Admin and the Super Admin (set on each person's profile in User Administration)."
       />
       <AccessManager rows={await listRoleAssignments()} />
     </>

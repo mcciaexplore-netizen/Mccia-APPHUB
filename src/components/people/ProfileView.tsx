@@ -1,5 +1,6 @@
 "use client";
 
+import { RoleOptions, type RoleHolder } from "@/components/people/RoleOptions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -32,11 +33,11 @@ function describe(a: AuditLine): string {
 
 /** One person, everything about them on one screen: who they are, where they sit, what they can open, and what changed recently. */
 export function ProfileView({ base, person, caps, options, catalog, templates, otherApps, audit, meId, accessEditable, appNames, responsibilities }: {
-  base: string; person: PersonDetail; caps: ProfileCaps; options: { branches: Option[]; teams: Option[]; managers: Manager[] };
+  base: string; person: PersonDetail; caps: ProfileCaps; options: { branches: Option[]; teams: Option[]; managers: Manager[]; roleHolders?: RoleHolder[] };
   catalog: Catalog; templates: Template[]; otherApps: number; audit: AuditLine[] | null; meId: string;
   /** Whether the viewer may change this person's access; when not (for example their own profile), it is shown read only. */
   accessEditable: boolean; appNames: string[];
-  /** What this person does in the Approval System, worked out from the Approver Rules (empty for most people). */
+  /** What this person does in the Approval System, worked out from their role (empty for most people). */
   responsibilities: string[];
 }) {
   const router = useRouter();
@@ -132,7 +133,7 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
             <Field label="Reporting manager"><select className="input" value={f.managerId} onChange={(e) => set("managerId", e.target.value)} disabled={!caps.editPerson}><option value="">None</option>{options.managers.filter((m) => m.id !== person.id).map((d) => <option key={d.id} value={d.id}>{d.name} ({d.email})</option>)}</select></Field>
             <Field label="Role">
               {isHeadAdmin ? <input className="input" value={roleLabel[person.role]} disabled aria-label="Role" /> : (
-                <select className="input" value={f.role} onChange={(e) => set("role", e.target.value)} disabled={!caps.changeRole || self || person.roleFixed} aria-label="Role"><option value="member">User</option><option value="dept_lead">Team manager</option><option value="admin">Admin</option><option value="super_admin">Super admin</option></select>
+                <select className="input" value={f.role} onChange={(e) => set("role", e.target.value)} disabled={!caps.changeRole || self || person.roleFixed} aria-label="Role"><RoleOptions holders={options.roleHolders ?? []} personId={person.id} canPromote current={f.role} /></select>
               )}
             </Field>
           </div>

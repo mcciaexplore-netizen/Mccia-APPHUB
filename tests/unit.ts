@@ -5,7 +5,7 @@ import { parseCsv, toCsv } from "../src/lib/csv";
 import { accountStatus } from "../src/lib/account-status";
 import { COLUMNS, MAX_IMPORT_ROWS, TEMPLATE_CSV, tableToRows } from "../src/lib/import-parse";
 import {
-  ADMIN_AREAS, ASSIGNABLE_ROLES, PROMOTABLE_ROLES, canAdminister, canChangeRole, canDeactivate, canEditPerson, canImportUsers, canManageAccess, canUpdateByImport, canViewPerson, capabilities,
+  ADMIN_AREAS, ASSIGNABLE_ROLES, PROMOTABLE_ROLES, SINGLE_HOLDER_ROLES, canAdminister, canChangeRole, canDeactivate, canEditPerson, canImportUsers, canManageAccess, canUpdateByImport, canViewPerson, capabilities,
   firstUngrantable, grantableApps, hasArea, isStaff, wouldCreateCycle,
   type Actor, type Target,
 } from "../src/lib/rbac";
@@ -173,7 +173,7 @@ eq("routing: the first approver raising a small request goes to the DG, not refu
   { steps: [{ stepNo: 1, stepLabel: "Director General", approverUserId: "dg" }], problem: null });
 eq("routing: without a DG to hand it to, the first approver's own small request is still refused", planSteps([rule(1, "Reviewer", ["shrotri"])], "shrotri", 100).problem, "only-self");
 eq("routing: the first approver raising a large request has the DG only (step 1 of 1)", planSteps([rule(1, "Reviewer", ["shrotri"]), rule(2, "Director General", ["dg"])], "shrotri", 2_000_000, dgEsc).steps.map((s) => [s.stepNo, s.approverUserId]), [[1, "dg"]]);
-eq("routing: the DG being the one who raised it is not handed to themselves, and the reason names it", [planSteps([rule(1, "Reviewer", ["dg"])], "dg", 100, dgEsc).problem, planProblemMessage("requester-is-dg").startsWith("You are the Director General and also the requester")], ["requester-is-dg", true]);
+eq("routing: the DG being the one who raised it is not handed to themselves, and the reason names it", [planSteps([rule(1, "Reviewer", ["dg"])], "dg", 100, dgEsc).problem, planProblemMessage("requester-is-dg").startsWith("You are the Super Admin and also the requester")], ["requester-is-dg", true]);
 eq("routing: a first approver on their own, with a DG who is somebody else named, is handed on; with nobody to hand to it stays only-self", [planSteps([rule(1, "Reviewer", ["shrotri"])], "shrotri", 100, dgEsc).problem, planSteps([rule(1, "Reviewer", ["shrotri"])], "shrotri", 100).problem], [null, "only-self"]);
 eq("routing: nobody named still says so, the DG is not invented", planSteps([rule(1, "Reviewer", [])], "shrotri", 100, dgEsc).problem, "no-approver");
 eq("routing: the same person on two steps is refused", planSteps([rule(1, "Reviewer", ["a"]), rule(2, "Director General", ["a"])], "req", 100).problem, "same-approver");
@@ -279,7 +279,7 @@ eq("rbac: without Users & access an Admin edits nobody, even with other areas on
 eq("rbac: bulk add needs its own area", [canImportUsers(A_IMPORT), canImportUsers(A_PEOPLE), canImportUsers(A_NONE)], [true, false, false]);
 eq("rbac: an import may update plain users for an Admin with Bulk add, anyone for the top roles, and nothing without the area", [canUpdateByImport(A_IMPORT, mk("member")), canUpdateByImport(A_IMPORT, mk("admin")), canUpdateByImport(A_IMPORT, mk("super_admin")), canUpdateByImport(A_PEOPLE, mk("member")), canUpdateByImport(ADMIN, mk("admin")), canUpdateByImport(ADMIN, mk("super_admin"))], [true, false, false, false, true, true]);
 eq("rbac: an Admin with Users & access may hand out any application, one without may hand out none", [grantableApps(A_PEOPLE, new Set(["app1"])), [...(grantableApps(A_NONE, new Set(["app1"])) ?? ["x"])]], [null, []]);
-eq("rbac: Admin and Super Admin can be given through the screens, only by the Support Admin (and the Support Admin role never)", [[...PROMOTABLE_ROLES], [...ASSIGNABLE_ROLES].includes("head_admin" as never)], [["admin", "super_admin"], false]);
+eq("rbac: Admin, Super Admin, HR Admin and Expense Admin are given only by the Support Admin (and the Support Admin role never); the last three are one person each", [[...PROMOTABLE_ROLES], [...ASSIGNABLE_ROLES].includes("head_admin" as never), [...SINGLE_HOLDER_ROLES]], [["admin", "super_admin", "hr_admin", "expense_admin"], false, ["super_admin", "hr_admin", "expense_admin"]]);
 eq("rbac: the areas an Admin can be given", [...ADMIN_AREAS], ["people", "import", "org", "apps", "audit", "activity"]);
 eq("rbac: a plain user and a Team manager never open Administrator", [canAdminister(USER), canAdminister(TM)], [false, false]);
 eq("tabs: the Support Admin sees the five sections and, below them, Approval Forms and the Notification Panel", [adminTabsFor(ADMIN).filter((t) => t.group === "main").map((t) => t.label), adminTabsFor(ADMIN).filter((t) => t.group === "settings").map((t) => t.label)],

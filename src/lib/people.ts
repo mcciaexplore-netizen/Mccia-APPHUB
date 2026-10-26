@@ -33,7 +33,7 @@ export function parsePeopleFilters(sp: Record<string, string | string[] | undefi
   const sort = g("sort");
   return {
     q: g("q") || undefined, branchId: id("branch"), teamId: id("team"), managerId: id("manager"), appId: id("app"),
-    role: role === "head_admin" || role === "super_admin" || role === "admin" || role === "dept_lead" || role === "member" ? role : undefined,
+    role: role === "head_admin" || role === "super_admin" || role === "hr_admin" || role === "expense_admin" || role === "admin" || role === "dept_lead" || role === "member" ? role : undefined,
     status: status === "active" || status === "inactive" || status === "pending" ? status : undefined,
     sort: (SORTS as readonly string[]).includes(sort ?? "") ? (sort as PeopleSort) : "name",
     dir: g("dir") === "desc" ? "desc" : "asc",

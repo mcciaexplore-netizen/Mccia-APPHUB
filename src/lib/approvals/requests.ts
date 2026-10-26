@@ -2,10 +2,9 @@ import "server-only";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  aprApprovalEvents, aprApproverRules, aprAttachmentSlot, aprAttachments, aprBranches, aprCategories, aprCounters, aprExpenditureDetails,
+  aprApprovalEvents, aprAttachmentSlot, aprAttachments, aprBranches, aprCategories, aprCounters, aprExpenditureDetails,
   aprHrCategories, aprHrDetails, aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType,
 } from "@/db/approvals-schema";
-import { ensureRulesSeeded } from "./env-rules";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
 import { commentRequired, decisionMode, escalationApprover, formatRequestNo, planProblemMessage, planSteps, TYPE_LABEL, wrongFormMessage, type ExpenditureForm } from "./calc";
@@ -13,7 +12,7 @@ import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { resolveCustomAnswers } from "./form-config";
 import type { CustomAnswers } from "./form-fields";
 import { financialYearOf, formatINR, todayIST } from "./format";
-import { getDirectoryUsers, listUsers, type ApprovalsUser } from "./host-adapter";
+import { getDirectoryUsers, listUsers, roleApprovers, type ApprovalsUser } from "./host-adapter";
 import { notify } from "./notify";
 import { canSeeRequest } from "./request-queries";
 import type { HrRequestInput, LargeExpenditureInput, ResubmitInput, SmallExpenditureInput } from "./request-schemas";
@@ -63,22 +62,36 @@ async function nextSerial(prefix: string, financialYear: string): Promise<number
   return row?.n ?? 1;
 }
 
+/** The steps of each kind of request, built from who holds each role. An expense below the threshold has only the Expense Admin's step. */
+function roleRules(r: Awaited<ReturnType<typeof roleApprovers>>) {
+  const step = (requestType: string, stepNo: number, stepLabel: string, who: { id: string } | null, maxAmountPaise: number | null = null) =>
+    ({ requestType, stepNo, stepLabel, minAmountPaise: 0, maxAmountPaise, approverUserIds: who ? [who.id] : [], active: true });
+  return [
+    step("hr", 1, "HR Admin", r.hr),
+    step("hr", 2, "Super Admin", r.superAdmin),
+    step("expenditure_large", 1, "Expense Admin", r.expense),
+    step("expenditure_large", 2, "Super Admin", r.superAdmin),
+    step("expenditure_small", 1, "Expense Admin", r.expense),
+  ];
+}
+
 async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: string; requestNo: string }> {
-  await ensureRulesSeeded();
   const settings = await getSettings();
 
   const fileIds = p.files.map((f) => f.fileId);
   if (new Set(fileIds).size !== fileIds.length) throw new ApprovalsError("The same file cannot be attached twice. Please attach each file separately.");
   const stored = await checkFilesReady(actor, fileIds);
 
-  const allRules = await db.select().from(aprApproverRules);
+  // Who approves comes from the roles in the hub, in code: HR requests go to the HR Admin, then the Super Admin; expenses go to the Expense
+  // Admin, and from the threshold up on to the Super Admin. A role nobody holds is skipped, and nobody approves their own request.
+  const allRules = roleRules(await roleApprovers());
   const rules = allRules.filter((r) => r.requestType === p.type);
-  const plan = planSteps(rules.map((r) => ({ ...r, approverUserIds: r.approverUserIds })), actor.id, p.amountPaise ?? 0, escalationApprover(allRules));
+  const plan = planSteps(rules, actor.id, p.amountPaise ?? 0, escalationApprover(allRules));
   if (plan.problem) throw new ApprovalsError(planProblemMessage(plan.problem), 409);
   const approvers = new Map((await getDirectoryUsers(plan.steps.map((s) => s.approverUserId))).map((u) => [u.id, u]));
   for (const s of plan.steps) {
     const a = approvers.get(s.approverUserId);
-    if (!a?.active) throw new ApprovalsError(`${s.stepLabel} is not an active user any more. Ask an Approvals admin to update the Approver Rules.`, 409);
+    if (!a?.active) throw new ApprovalsError(`The ${s.stepLabel} is not an active user any more. Ask the Support Admin to give the role to someone else.`, 409);
   }
 
   // From here the files are this request's. If it cannot be saved they are given back, so the person can simply try again.

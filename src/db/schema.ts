@@ -4,6 +4,7 @@ import {
   boolean,
   index,
   integer,
+  uniqueIndex,
   jsonb,
   pgEnum,
   pgTable,
@@ -17,7 +18,8 @@ import { sql } from "drizzle-orm";
 
 // head_admin is the Support Admin (the account set in the environment); super_admin is the Super Admin (the DG); admin is an Admin whose
 // areas of Administrator are switched on one by one (users.admin_areas); member is the plain User; dept_lead is the Team manager (kept, but nobody needs it).
-export const roleEnum = pgEnum("role", ["head_admin", "dept_lead", "member", "super_admin", "admin"]);
+// hr_admin and expense_admin are the first approvers of HR requests and of expenses; super_admin is the final approver. One person each.
+export const roleEnum = pgEnum("role", ["head_admin", "dept_lead", "member", "super_admin", "admin", "hr_admin", "expense_admin"]);
 // Only "approved" users may sign in. An admin moves people between pending, approved and rejected.
 export const userStatusEnum = pgEnum("user_status", ["pending", "approved", "rejected"]);
 export const activityActionEnum = pgEnum("activity_action", ["login", "launch"]);
@@ -102,6 +104,10 @@ export const users = pgTable(
     index("users_team_idx").on(t.teamId),
     index("users_manager_idx").on(t.reportingManagerId),
     index("users_department_idx").on(t.homeDepartmentId),
+    // One person each: the Super Admin, the HR Admin and the Expense Admin (the app checks first and explains; this keeps it true).
+    uniqueIndex("users_one_super_admin").on(t.role).where(sql`${t.role} = 'super_admin'`),
+    uniqueIndex("users_one_hr_admin").on(t.role).where(sql`${t.role} = 'hr_admin'`),
+    uniqueIndex("users_one_expense_admin").on(t.role).where(sql`${t.role} = 'expense_admin'`),
   ],
 );
 
