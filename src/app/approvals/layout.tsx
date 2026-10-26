@@ -9,7 +9,8 @@ import { REVIEW_KEYS, REVIEW_LABEL, REVIEW_TABS, REVIEW_TAB_LABEL, type ReviewKe
 import { requirePage } from "@/lib/approvals/guard";
 import { hasAnyRole, hasRole, type ApprovalsUser } from "@/lib/approvals/host-adapter";
 import { unreadCount } from "@/lib/approvals/notify";
-import { reviewItemsFor } from "@/lib/approvals/request-queries";
+import { listRequests, reviewItemsFor } from "@/lib/approvals/request-queries";
+import { reviewScreen, screenFor, type ListScreen } from "@/lib/approvals/screens";
 import { requireUser } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
@@ -23,16 +24,26 @@ export const metadata = { title: "Approval System · MCCIA App Hub" };
 async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
   const items = await reviewItemsFor(user);
   const dg = hasRole(user, "dg");
+  const decides = hasAnyRole(user, ["approver", "dg"]);
   const keys: ReviewKey[] = dg || hasRole(user, "approvals_admin") ? [...REVIEW_KEYS] : REVIEW_KEYS.filter((k) => items.some((i) => i.key === k));
-  const recommended = items.find((i) => i.key === "recommendation");
-  const waiting = (k: ReviewKey) => (dg ? recommended?.counts?.[k] : items.find((i) => i.key === k)?.waiting) ?? 0;
-  const places: SideLink[] = keys.map((k) => ({
-    label: REVIEW_LABEL[k], href: `/approvals/review/${k}/pending`, waiting: waiting(k),
-    children: REVIEW_TABS.map((t) => ({ label: `${REVIEW_TAB_LABEL[t]} ${REVIEW_LABEL[k]} Approvals`, href: `/approvals/review/${k}/${t}`, waiting: t === "pending" ? waiting(k) : 0 })),
-  }));
+  const approvedHref = decides ? "/approvals/decided/approved" : "/approvals/my/approved";
+  // How many requests each line opens: counted with the same filter as the list itself, so the number always matches the page.
+  const countOf = (s: ListScreen | undefined) =>
+    s ? listRequests(user, { types: s.types, statuses: s.statuses, mine: s.mine, waitingForMe: s.waitingForMe, approvedByMe: s.approvedByMe, rejectedByMe: s.rejectedByMe, pageSize: 1 }).then((r) => r.total) : Promise.resolve(0);
+  const [placeCounts, approvedCount] = await Promise.all([
+    Promise.all(keys.map((k) => Promise.all(REVIEW_TABS.map((t) => countOf(reviewScreen(k, t, decides)))))),
+    countOf(screenFor(approvedHref.replace("/approvals/", "").split("/"))),
+  ]);
+  const places: SideLink[] = keys.map((k, i) => {
+    const counts = placeCounts[i];
+    return {
+      label: REVIEW_LABEL[k], href: `/approvals/review/${k}/pending`, waiting: counts[0],
+      children: REVIEW_TABS.map((t, j) => ({ label: `${REVIEW_TAB_LABEL[t]} ${REVIEW_LABEL[k]} Approvals`, href: `/approvals/review/${k}/${t}`, ...(t === "pending" && counts[j] > 0 ? { waiting: counts[j] } : { count: counts[j] }) })),
+    };
+  });
   return [
     { label: "Approval Forms", href: "/approvals", children: places },
-    { label: "Approved Forms", href: hasAnyRole(user, ["approver", "dg"]) ? "/approvals/decided/approved" : "/approvals/my/approved" },
+    { label: "Approved Forms", href: approvedHref, count: approvedCount },
   ];
 }
 
