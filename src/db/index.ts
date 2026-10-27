@@ -28,6 +28,15 @@ neonConfig.fetchFunction = async (input: RequestInfo | URL, init?: RequestInit) 
  * Both drivers expose the same query-builder API. Note: neon-http has no
  * interactive transactions, so app code must not rely on db.transaction().
  */
+/** A database on this same machine (localhost, 127.0.0.1 or ::1). */
+const isLocalDatabase = (url: string) => {
+  try {
+    return ["localhost", "127.0.0.1", "[::1]", "::1"].includes(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+};
+
 function createDb() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set");
@@ -37,10 +46,9 @@ function createDb() {
       connectionString: url,
       // 5 by default. With many people using the site at once, raise it with DB_POOL_MAX (stay under the database's own connection limit).
       max: Math.max(1, Math.min(100, Number(process.env.DB_POOL_MAX) || 5)),
-      ssl:
-        process.env.DATABASE_SSL === "true"
-          ? { rejectUnauthorized: false }
-          : false,
+      // Always encrypted, with the server's certificate checked, except for a database on this same machine (local development and
+      // tests), which has no certificate to check. DATABASE_SSL is no longer read.
+      ssl: isLocalDatabase(url) ? false : { rejectUnauthorized: true },
     });
     return drizzlePg(pool, { schema });
   }

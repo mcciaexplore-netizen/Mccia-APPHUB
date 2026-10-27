@@ -18,7 +18,7 @@ npx tsx scripts/seed.ts               # or: npm run db:seed (safe to re-run)
 npm run dev
 ```
 
-Environment variables (see `.env.example`): `DATABASE_URL`, `DB_DRIVER` (`neon` or `pg`), `DATABASE_SSL`, `AUTH_SECRET` (signs the login cookie; `openssl rand -base64 32`), `HEAD_ADMIN_EMAIL`, `HEAD_ADMIN_NAME`, `HEAD_ADMIN_PASSWORD` (at least 10 characters, a letter and a number), and optionally `ALLOWED_EMAIL_DOMAIN` (comma-separated domains users may have; empty means any), `APP_BASE_URL` (the site's address, used in setup links), `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM` (to email setup links), and `DB_POOL_MAX` (with `DB_DRIVER=pg` only: connections per server process, default 5).
+Environment variables (see `.env.example`): `DATABASE_URL`, `DB_DRIVER` (`neon` or `pg`), `AUTH_SECRET` (signs the login cookie; `openssl rand -base64 32`), `HEAD_ADMIN_EMAIL`, `HEAD_ADMIN_NAME`, `HEAD_ADMIN_PASSWORD` (at least 10 characters, a letter and a number), and optionally `ALLOWED_EMAIL_DOMAIN` (comma-separated domains users may have; empty means any), `APP_BASE_URL` (the site's address, used in setup links), `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM` (to email setup links), and `DB_POOL_MAX` (with `DB_DRIVER=pg` only: connections per server process, default 5).
 
 The seed only creates the head admin named in the environment. Departments, apps and users are all added from Administrator.
 
@@ -121,7 +121,7 @@ npm run dev
 ## Database portability
 
 - Plain Postgres only, no Neon-specific features. Portable column types; uuids come from `gen_random_uuid()` (Postgres 13+, no extension).
-- All DB access goes through `src/db/index.ts`. `DB_DRIVER=neon` uses `drizzle-orm/neon-http`; `DB_DRIVER=pg` uses `drizzle-orm/node-postgres` with a `pg` Pool (max 5, SSL via `DATABASE_SSL`).
+- All DB access goes through `src/db/index.ts`. `DB_DRIVER=neon` uses `drizzle-orm/neon-http`; `DB_DRIVER=pg` uses `drizzle-orm/node-postgres` with a `pg` Pool (max 5), always over TLS with the certificate checked, except for a database on localhost.
 - Migrations live in `drizzle/` and are committed. Generate with `npx drizzle-kit generate`, apply with `npx drizzle-kit migrate`.
 - Timestamps are `timestamptz` (UTC) and are shown in Asia/Kolkata in the UI.
 - The `neon-http` driver has no interactive transactions, so the app never uses `db.transaction()`. Keep it that way to stay driver-agnostic.
@@ -144,7 +144,7 @@ Requires `pg_dump` and `psql` (PostgreSQL client tools) on PATH.
 2. Create the database and a dedicated user.
 3. Run the migrations against the new database: `$env:DATABASE_URL="<new url>"; npx drizzle-kit migrate`
 4. `pg_dump` the data from Neon and restore it on the new server: run `.\scripts\backup.ps1 -DataOnly` with the Neon URL, then `.\scripts\restore.ps1 -File <dump>` with the new URL.
-5. In Vercel set `DB_DRIVER=pg`, `DATABASE_URL` and `DATABASE_SSL`.
+5. In Vercel set `DB_DRIVER=pg` and `DATABASE_URL` (TLS with certificate checking is always on).
 6. Redeploy and verify (open the hub, open an app, check the activity log).
 7. Keep Neon read-only for a week, then delete it.
 
