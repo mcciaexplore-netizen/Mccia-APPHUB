@@ -13,5 +13,6 @@ const formOf = (raw: string) => {
 export const GET = route<{ form: string }>({ roles: ["approvals_admin"] }, async ({ params }) => ok({ fields: await getFormFields(formOf(params.form)) }));
 
 /** Saves a form's layout: its built-in fields (renamed, moved, hidden) and the extra fields, top to bottom. */
-export const PUT = route<{ form: string }>({ roles: ["approvals_admin"] }, async ({ req, user, params }) =>
+// Saved from Administrator → HR / Expenditure, so it also needs Administrator unlocked.
+export const PUT = route<{ form: string }>({ roles: ["approvals_admin"], adminUnlock: true }, async ({ req, user, params }) =>
   ok({ fields: await saveFormFields(formOf(params.form), await readJson(req, saveFieldsInput), user) }));

@@ -4,7 +4,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { aprUserRoles } from "@/db/approvals-schema";
-import { getCurrentUser as hostCurrentUser } from "@/lib/permissions";
+import { adminUnlocked, getCurrentUser as hostCurrentUser } from "@/lib/permissions";
 import { ALL_ROLES, type ApprovalsRole } from "./approvals.manifest";
 
 /**
@@ -49,6 +49,12 @@ export const resolveAccess = cache(async (): Promise<Access> => {
 
 /** Whether the person is still on the temporary password they were emailed: they must choose their own before using the module. */
 export const needsOwnPassword = async () => !!(await hostCurrentUser())?.mustChangePassword;
+
+/** Whether the person has unlocked Administrator with their password recently (the hub's re-check for its most sensitive screens). */
+export const administratorUnlocked = async () => {
+  const host = await hostCurrentUser();
+  return !!host && (await adminUnlocked(host));
+};
 
 /** Everyone who can sign in to the hub, for the Name dropdown and the approver pickers. There is no second user table. */
 export async function listUsers(): Promise<DirectoryUser[]> {

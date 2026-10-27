@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { ZodError, type ZodType } from "zod";
 import { ApprovalsError } from "./errors";
 import { approvalsEnabled } from "./flags";
-import { hasAnyRole, needsOwnPassword, resolveAccess, type ApprovalsRole, type ApprovalsUser } from "./host-adapter";
+import { administratorUnlocked, hasAnyRole, needsOwnPassword, resolveAccess, type ApprovalsRole, type ApprovalsUser } from "./host-adapter";
 import { idSchema, kindSchema } from "./validation";
 
 /** For pages and layouts. Off, or not allowed for this role, looks like a page that does not exist; not signed in goes to the hub's sign-in. */
@@ -40,7 +40,8 @@ function sameOrigin(req: NextRequest): boolean {
  * place that turns validation and database errors into clean JSON. `roles` lists the roles that may call it (any one is enough).
  */
 export function route<P extends Record<string, string> = Record<never, never>>(
-  opts: { roles?: ApprovalsRole[] },
+  /** adminUnlock: a change made from a screen inside Administrator also needs Administrator unlocked (the password asked again). */
+  opts: { roles?: ApprovalsRole[]; adminUnlock?: boolean },
   fn: (c: Ctx<P>) => Promise<Response>,
 ) {
   return async (req: NextRequest, ctx: { params: Promise<P> }): Promise<Response> => {
@@ -50,7 +51,9 @@ export function route<P extends Record<string, string> = Record<never, never>>(
       if (a.status === "anonymous") return fail("Please sign in.", 401);
       if (await needsOwnPassword()) return fail("Choose your own password first: you are still using the temporary one.", 403);
       if (opts.roles?.length && !hasAnyRole(a.user, opts.roles)) return fail("Not allowed.", 403);
-      if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !sameOrigin(req)) return fail("Not allowed.", 403);
+      const write = !["GET", "HEAD", "OPTIONS"].includes(req.method);
+      if (write && !sameOrigin(req)) return fail("Not allowed.", 403);
+      if (write && opts.adminUnlock && !(await administratorUnlocked())) return fail("Administrator has locked. Open it again and enter your password, then save.", 403);
       return await fn({ req, user: a.user, params: await ctx.params });
     } catch (e) {
       if (e instanceof ApprovalsError) return fail(e.message, e.status);

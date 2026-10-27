@@ -24,7 +24,7 @@ export const getCurrentUser = cache(async (): Promise<User | null> => {
 });
 
 /** Administrator is unlocked only with a recent password check by this same person (see src/proxy.ts for the re-lock). */
-async function adminUnlocked(u: User): Promise<boolean> {
+export async function adminUnlocked(u: User): Promise<boolean> {
   const unlock = verify((await cookies()).get(ADMIN_COOKIE)?.value, "admin");
   return !!unlock && unlock.u === u.id;
 }
