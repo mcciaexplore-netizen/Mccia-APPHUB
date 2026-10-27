@@ -11,6 +11,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx scripts/seed.ts",
     "db:seed:approvals": "tsx scripts/seed-approvals.ts",
+    "db:seed:sso": "tsx scripts/sso-dev-seed.ts",
     "typecheck": "tsc --noEmit",
     "clean:scan": "node scripts/cleanup.mjs",
     "clean:fix": "node scripts/cleanup.mjs --fix",
