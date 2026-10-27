@@ -263,6 +263,24 @@ There is no server, Docker, SSH, security group or firewall to check: the app ru
 
 ## Fix status
 
-| ID | Status |
-|---|---|
-| All | Pending (Phase 1: audit only) |
+Phase 2 runs on the branch `security-fixes`, one commit per fix.
+
+| ID | Status | Notes |
+|---|---|---|
+| H-1 | Pending |  |
+| H-2 | Fixed | next 16.3.7 → 16.4.3 (and eslint-config-next) |
+| M-1 | Pending |  |
+| M-2 | Fixed | zod 4.6.5 → 4.6.7 |
+| M-3 | Skipped for now (owner's decision) | Plan at the end of Phase 2 |
+| M-4 | Pending |  |
+| M-5 | Pending |  |
+| L-1 | Fixed | nodemailer 10.1.1 → 10.2.1. npm audit --omit=dev: 0 vulnerabilities. 4 moderate remain in the dev-only drizzle-kit (esbuild dev server), not deployed |
+| L-2 | Pending | Fix later |
+| L-3 | Pending |  |
+| L-4 | Pending |  |
+| L-5 | Skipped for now (owner's decision) |  |
+| L-6 | Pending |  |
+| L-7 | Pending | Fix later |
+| L-8 | Pending | Fix later |
+| I-1 | Pending | Fix later |
+| I-2 | Pending | Fix later |
