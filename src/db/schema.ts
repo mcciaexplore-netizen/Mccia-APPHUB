@@ -2,6 +2,7 @@ import {
   type AnyPgColumn,
   bigserial,
   boolean,
+  check,
   index,
   integer,
   uniqueIndex,
@@ -127,9 +128,18 @@ export const apps = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
     isActive: boolean("is_active").notNull().default(true),
     status: appStatusEnum("status").notNull().default("active"),
+    // Single sign-on: when on, the card opens /launch/<sso_slug>, which hands the person to sso_callback_url with a short-lived signed token.
+    // sso_slug is the token's audience and part of the launch address; sso_callback_url is on the same origin as `url` (see src/lib/sso-rules.ts).
+    ssoEnabled: boolean("sso_enabled").notNull().default(false),
+    ssoSlug: text("sso_slug"),
+    ssoCallbackUrl: text("sso_callback_url"),
     createdAt: createdAt(),
   },
-  (t) => [index("apps_department_idx").on(t.departmentId)],
+  (t) => [
+    index("apps_department_idx").on(t.departmentId),
+    // One application per slug (an application without single sign-on has none).
+    uniqueIndex("apps_sso_slug_uq").on(t.ssoSlug).where(sql`${t.ssoSlug} is not null`),
+  ],
 );
 
 /** The result of one reachability check of an application's address. Kept as history; the newest row is what the inventory shows. */
@@ -216,8 +226,15 @@ export const userAppAccess = pgTable(
       .references(() => apps.id, { onDelete: "cascade" }),
     grantedById: uuid("granted_by_id").references(() => users.id, { onDelete: "set null" }),
     grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
+    // The person's role inside a single sign-on application: "user" or "admin". Only the Support Admin changes it. Ignored by applications
+    // without single sign-on; the Support Admin is an admin in every single sign-on application whatever this says.
+    appRole: text("app_role").notNull().default("user"),
   },
-  (t) => [unique("user_app_access_user_app_uq").on(t.userId, t.appId), index("user_app_access_app_idx").on(t.appId)],
+  (t) => [
+    unique("user_app_access_user_app_uq").on(t.userId, t.appId),
+    index("user_app_access_app_idx").on(t.appId),
+    check("user_app_access_app_role_check", sql`${t.appRole} in ('user', 'admin')`),
+  ],
 );
 
 /**

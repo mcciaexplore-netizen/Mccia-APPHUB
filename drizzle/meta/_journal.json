@@ -134,6 +134,13 @@
       "when": 1792171331153,
       "tag": "0018_login_attempt_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793100760998,
+      "tag": "0019_sso",
+      "breakpoints": true
     }
   ]
 }
