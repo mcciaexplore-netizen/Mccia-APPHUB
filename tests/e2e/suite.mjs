@@ -226,7 +226,7 @@ try {
 
   section("5. Users & Access: the directory and bulk add");
   await go("/administrator/users");
-  const ut = await main(); check("Users & Access offers Add user and Bulk add users", (await page.getByRole("button", { name: /Add user/ }).count()) === 1 && (await page.getByRole("link", { name: /Bulk add users/ }).count()) >= 1);
+  check("Users & Access offers Add user and Bulk add users", (await page.getByRole("button", { name: /Add user/ }).count()) === 1 && (await page.getByRole("link", { name: /Bulk add users/ }).count()) >= 1);
   check("the Support Admin's row is marked as such", (await page.locator("tr", { hasText: ADMIN_EMAIL }).first().innerText()).toLowerCase().includes("support admin"));
   for (const l of ["Filter by branch", "Filter by team", "Filter by role", "Filter by status", "Filter by application"]) check(`the directory has: ${l}`, (await page.getByLabel(l).count()) === 1);
   await go("/administrator/users/import");
@@ -296,7 +296,7 @@ try {
   await poll(async () => /Create 0 accounts/.test(await createBtn.innerText()));
   const usersBefore = (await sql`select count(*)::int n from users where email like 'zz-%'`)[0].n;
   check("running the same file again creates no one (retries are safe): the button offers 0 and is disabled", /Create 0 accounts/.test(await createBtn.innerText()) && (await createBtn.isDisabled()));
-  check("the people already created are reported as already existing (the row with no name is simply invalid)", (await page.getByRole("button", { name: /^Already exists · 7$/ }).count()) === 1, (await page.getByRole("group", { name: "Show rows" }).innerText()).replace(/\s+/g, " "));
+  check("the people already created are reported as already existing (the row with no name is simply invalid)", await poll(async () => (await page.getByRole("button", { name: /^Already exists · 7$/ }).count()) === 1), (await page.getByRole("group", { name: "Show rows" }).innerText()).replace(/\s+/g, " "));
   check("and no one was duplicated", (await sql`select count(*)::int n from users where email like 'zz-%'`)[0].n === usersBefore);
 
   await go("/administrator/users");

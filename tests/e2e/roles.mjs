@@ -61,10 +61,12 @@ const removeTestData = async () => {
   await sql`delete from apr_categories where name like 'ZZR%'`;
   await sql`delete from apr_admin_audit where created_at >= ${new Date(startedAt.getTime() - 60000)}`;
 };
+const snapParts = ["departments", "apps", "users", "access", "categories", "form fields"];
 const snap = async () => JSON.stringify([
   await sql`select name,is_active from departments where name not like 'ZZR%' order by name`,
   await sql`select name,url,is_active,status from apps where name not like 'ZZR%' order by name`,
-  await sql`select email,role,is_active,admin_areas from users where email not like 'zzr-%' order by email`,
+  // The Support Admin's own row is left out: it is made at its first sign-in if it is missing, which is how the environment account works.
+  await sql`select email,role,is_active,admin_areas from users where email not like 'zzr-%' and email <> ${ADMIN_EMAIL} order by email`,
   await sql`select user_id,app_id from user_app_access where user_id in (select id from users where email not like 'zzr-%') order by user_id, app_id`,
   await sql`select name,active from apr_categories where name not like 'ZZR%' order by name`,
   await sql`select form,key,label,hidden from apr_form_fields order by form,key`,
@@ -307,7 +309,9 @@ try {
 } finally {
   await browser.close().catch(() => {});
   await removeTestData().catch((e) => console.error("CLEANUP FAILED, run again to retry:", e.message));
-  check("everything that was there before is exactly as before", (await snap()) === before);
+  const after = await snap();
+  const changed = snapParts.filter((_, i) => JSON.stringify(JSON.parse(after)[i]) !== JSON.stringify(JSON.parse(before)[i]));
+  check("everything that was there before is exactly as before", after === before, changed.length ? `changed: ${changed.join(", ")} | before ${JSON.stringify(JSON.parse(before)[snapParts.indexOf(changed[0])]).slice(0, 300)} | after ${JSON.stringify(JSON.parse(after)[snapParts.indexOf(changed[0])]).slice(0, 300)}` : "");
 }
 
 const failed = results.filter(([, ok]) => !ok).length;
