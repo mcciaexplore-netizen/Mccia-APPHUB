@@ -18,6 +18,12 @@ import { WINDOW_MS as SIR_WINDOW, refusedUntil as sirRefusedUntil, slowDownMs as
 import { adminTabsFor } from "../src/lib/admin-tabs";
 import { scrub } from "../src/lib/scrub";
 import { xlsxToTable } from "../src/lib/xlsx-read";
+import { createPublicKey, generateKeyPairSync } from "node:crypto";
+import { SSO_ISSUER, SSO_KID, SsoConfigError, buildClaims, loadSigningKey, signSsoToken, verifySsoToken } from "../src/lib/sso";
+import { SSO_ROLES, callbackProblem, slugProblem, ssoRoleFor } from "../src/lib/sso-rules";
+import { autoPostHtml, launchHeaders, messageHtml } from "../src/lib/sso-page";
+import { appInput } from "../src/lib/validation";
+import { safeNext } from "../src/lib/session";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
   FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
@@ -422,6 +428,132 @@ eq("admin paths: Administrator and the Approval System's admin pages count; noth
   eq("site url: local development falls back to localhost", siteUrl({ NODE_ENV: "development" }), "http://localhost:3000");
 }
 
-console.log(`\n${ok}/${ok + bad} unit checks passed`);
-process.exit(bad ? 1 : 0);
+
+// Single sign-on (src/lib/sso.ts, sso-rules.ts, sso-page.ts): the token contract, the rules for a slug and a callback address, and the hand-off page.
+const ssoTests = (async () => {
+  const pair = () => {
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    return { env: Buffer.from(privateKey.export({ type: "pkcs8", format: "pem" }) as string).toString("base64"), publicPem: publicKey.export({ type: "spki", format: "pem" }) as string };
+  };
+  const hub = pair();
+  const person = { id: "6f1c0a52-3f0e-4c58-9a57-0d5f2d7d9a11", email: "asha@mcciapune.com", name: "Asha Kulkarni" };
+  const AUD = "mccia-search";
+  // Runs something that should be refused and says why (jose's error code), or "accepted" when it was not.
+  const why = async (fn: () => Promise<unknown>) => { try { await fn(); return "accepted"; } catch (e) { return (e as { code?: string }).code ?? String(e); } };
+
+  // Claims
+  const T0 = Date.UTC(2026, 9, 27, 12, 0, 0);
+  const c = buildClaims({ slug: AUD, user: person, role: "user", now: T0, jti: "fixed-id" });
+  eq("sso claims: issuer, audience, subject, email, name, role and a fixed id", { iss: c.iss, aud: c.aud, sub: c.sub, email: c.email, name: c.name, role: c.role, jti: c.jti },
+    { iss: "mccia-app-hub", aud: "mccia-search", sub: person.id, email: person.email, name: person.name, role: "user", jti: "fixed-id" });
+  eq("sso claims: iat is the time in whole seconds and exp is exactly 60 seconds later", [c.iat, c.exp - c.iat], [T0 / 1000, 60]);
+  eq("sso claims: nothing else is in the token (no password, no hub role)", Object.keys(c).sort(), ["aud", "email", "exp", "iat", "iss", "jti", "name", "role", "sub"]);
+  eq("sso claims: every token gets its own jti", new Set(Array.from({ length: 500 }, () => buildClaims({ slug: AUD, user: person, role: "user" }).jti)).size, 500);
+
+  // Signing and verifying with the matching public key
+  const key = await loadSigningKey(hub.env);
+  const token = await signSsoToken(key, buildClaims({ slug: AUD, user: person, role: "admin" }));
+  const ok1 = await verifySsoToken(token, hub.publicPem, { audience: AUD });
+  eq("sso token: three dot-separated parts; header is EdDSA / JWT / hub-1", [token.split(".").length, ok1.header], [3, { alg: "EdDSA", typ: "JWT", kid: "hub-1" }]);
+  eq("sso token: verifies with the matching public key and carries the claims", [ok1.claims.iss, ok1.claims.aud, ok1.claims.sub, ok1.claims.email, ok1.claims.name, ok1.claims.role, ok1.claims.exp - ok1.claims.iat],
+    [SSO_ISSUER, AUD, person.id, person.email, person.name, "admin", 60]);
+  eq("sso token: the key id constant is hub-1", SSO_KID, "hub-1");
+  eq("sso token: a wrong audience is rejected", await why(() => verifySsoToken(token, hub.publicPem, { audience: "some-other-app" })), "ERR_JWT_CLAIM_VALIDATION_FAILED");
+  const old = await signSsoToken(key, buildClaims({ slug: AUD, user: person, role: "user", now: Date.now() - 5 * 60 * 1000 }));
+  eq("sso token: an expired token is rejected", await why(() => verifySsoToken(old, hub.publicPem, { audience: AUD })), "ERR_JWT_EXPIRED");
+  const fresh = buildClaims({ slug: AUD, user: person, role: "user" });
+  const soon = await signSsoToken(key, fresh);
+  eq("sso token: valid at 59 seconds, expired at 61", [await why(() => verifySsoToken(soon, hub.publicPem, { audience: AUD, now: new Date((fresh.iat + 59) * 1000) })), await why(() => verifySsoToken(soon, hub.publicPem, { audience: AUD, now: new Date((fresh.iat + 61) * 1000) }))], ["accepted", "ERR_JWT_EXPIRED"]);
+  const [h, p, sig] = token.split(".");
+  const flipped = (sig[0] === "A" ? "B" : "A") + sig.slice(1);
+  eq("sso token: a tampered signature is rejected", await why(() => verifySsoToken(`${h}.${p}.${flipped}`, hub.publicPem, { audience: AUD })), "ERR_JWS_SIGNATURE_VERIFICATION_FAILED");
+  const forged = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(p, "base64url").toString()), role: "admin", email: "someone-else@mcciapune.com" })).toString("base64url");
+  eq("sso token: a tampered payload is rejected", await why(() => verifySsoToken(`${h}.${forged}.${sig}`, hub.publicPem, { audience: AUD })), "ERR_JWS_SIGNATURE_VERIFICATION_FAILED");
+  const other = pair();
+  const strangers = await signSsoToken(await loadSigningKey(other.env), buildClaims({ slug: AUD, user: person, role: "admin" }));
+  eq("sso token: a token signed by a different key is rejected", await why(() => verifySsoToken(strangers, hub.publicPem, { audience: AUD })), "ERR_JWS_SIGNATURE_VERIFICATION_FAILED");
+  eq("sso token: an unsigned (alg none) token is rejected", await why(() => verifySsoToken(`${Buffer.from('{"alg":"none"}').toString("base64url")}.${p}.`, hub.publicPem, { audience: AUD })) === "accepted", false);
+
+  // The key setting
+  const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs8", format: "pem" }) as string;
+  const keyCode = async (v: string | undefined) => { try { await loadSigningKey(v); return "loaded"; } catch (e) { return e instanceof SsoConfigError ? e.code : String(e); } };
+  eq("sso key: missing or blank is key_missing", [await keyCode(undefined), await keyCode(""), await keyCode("   ")], ["key_missing", "key_missing", "key_missing"]);
+  eq("sso key: junk, a bare PEM (not base64) and an RSA key are key_invalid", [await keyCode("not-a-key"), await keyCode(Buffer.from("-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----").toString("base64")), await keyCode(Buffer.from(rsa).toString("base64"))], ["key_invalid", "key_invalid", "key_invalid"]);
+  eq("sso key: the error carries only its code, never the key", await (async () => { try { await loadSigningKey(hub.env.slice(0, 40)); } catch (e) { return (e as Error).message; } return ""; })(), "key_invalid");
+  eq("sso key: surrounding whitespace and a trailing newline are fine", await keyCode(` ${hub.env}\n`), "loaded");
+  eq("sso key: the public key is what the private key makes", createPublicKey(Buffer.from(hub.env, "base64").toString()).export({ type: "spki", format: "pem" }), hub.publicPem);
+
+  // Role mapping
+  eq("sso role: the Support Admin is an admin everywhere, whatever the grant says", [ssoRoleFor("head_admin", null), ssoRoleFor("head_admin", "user"), ssoRoleFor("head_admin", "admin")], ["admin", "admin", "admin"]);
+  eq("sso role: everyone else gets the role on their grant (default user)", [ssoRoleFor("member", "admin"), ssoRoleFor("member", "user"), ssoRoleFor("member", null), ssoRoleFor("admin", undefined), ssoRoleFor("super_admin", "user"), ssoRoleFor("dept_lead", "admin")], ["admin", "user", "user", "user", "user", "admin"]);
+  eq("sso role: only user and admin exist", [...SSO_ROLES], ["user", "admin"]);
+
+  // Slug rules
+  eq("sso slug: valid ones", ["mccia-search", "ab", "a1", "x-y-z", "a".repeat(40), "app2"].map(slugProblem), [null, null, null, null, null, null]);
+  eq("sso slug: too short, too long, capitals, spaces, underscores, edge or double hyphens, empty are all refused",
+    ["a", "a".repeat(41), "Mccia", "mccia search", "mccia_search", "-abc", "abc-", "a--b", "", "ab/cd", "é-app"].map((x) => slugProblem(x) !== null), Array(11).fill(true));
+
+  // Callback rules
+  const APP = "https://search.mcciapune.com";
+  const prod = { production: true }, dev = { production: false };
+  eq("sso callback: https on the application's own origin is fine, with a path and a query", [
+    callbackProblem("https://search.mcciapune.com/api/sso/callback", APP, prod), callbackProblem("https://search.mcciapune.com", APP, prod), callbackProblem("https://search.mcciapune.com/cb?x=1", APP, prod),
+    callbackProblem("https://search.mcciapune.com/cb", "https://search.mcciapune.com/app/home", prod),
+  ], [null, null, null, null]);
+  eq("sso callback: another host, a subdomain, a different port, a lookalike or the parent domain is refused", [
+    "https://evil.example.com/cb", "https://x.search.mcciapune.com/cb", "https://search.mcciapune.com:8443/cb", "https://search.mcciapune.com.evil.com/cb", "https://mcciapune.com/cb",
+  ].map((u) => callbackProblem(u, APP, prod) !== null), [true, true, true, true, true]);
+  eq("sso callback: http is refused in production, even for localhost", [callbackProblem("http://search.mcciapune.com/cb", "http://search.mcciapune.com", prod) !== null, callbackProblem("http://127.0.0.1:3001/cb", "http://127.0.0.1:3001", prod) !== null, callbackProblem("http://localhost:3001/cb", "http://localhost:3001", prod) !== null], [true, true, true]);
+  eq("sso callback: outside production http is allowed only for localhost and 127.0.0.1", [
+    callbackProblem("http://127.0.0.1:3001/api/sso/callback", "http://127.0.0.1:3001", dev), callbackProblem("http://localhost:3001/cb", "http://localhost:3001", dev),
+    callbackProblem("http://search.mcciapune.com/cb", "http://search.mcciapune.com", dev) !== null, callbackProblem("http://192.168.1.5/cb", "http://192.168.1.5", dev) !== null,
+  ], [null, null, true, true]);
+  eq("sso callback: a user name or password in it is refused", ["https://user@search.mcciapune.com/cb", "https://user:pw@search.mcciapune.com/cb", "https://:pw@search.mcciapune.com/cb"].map((u) => callbackProblem(u, APP, prod) !== null), [true, true, true]);
+  eq("sso callback: a #fragment is refused (even an empty one)", ["https://search.mcciapune.com/cb#x", "https://search.mcciapune.com/cb#"].map((u) => callbackProblem(u, APP, prod) !== null), [true, true]);
+  eq("sso callback: not an address, other schemes, and a hub path as the application's address are refused", [
+    callbackProblem("/api/sso/callback", APP, prod) !== null, callbackProblem("javascript:alert(1)", APP, prod) !== null, callbackProblem("ftp://search.mcciapune.com/cb", APP, prod) !== null,
+    callbackProblem("https://search.mcciapune.com/cb", "/approvals", prod) !== null, callbackProblem("", APP, prod) !== null,
+  ], [true, true, true, true, true]);
+
+  // The form's own validation (appInput): the same rules, and the old behaviour when the fields are left out
+  const base = { departmentId: "6f1c0a52-3f0e-4c58-9a57-0d5f2d7d9a11", name: "MCCIA Search", url: "https://search.mcciapune.com", icon: "Globe" };
+  const msg = (x: unknown) => { const r = appInput.safeParse(x); return r.success ? "ok" : r.error.issues[0].message; };
+  const parsed = appInput.parse({ ...base, ssoEnabled: true, ssoSlug: " MCCIA-Search ", ssoCallbackUrl: " https://search.mcciapune.com/api/sso/callback " });
+  eq("app form: a valid single sign-on setup is accepted, the slug lowercased and both trimmed", [parsed.ssoEnabled, parsed.ssoSlug, parsed.ssoCallbackUrl], [true, "mccia-search", "https://search.mcciapune.com/api/sso/callback"]);
+  eq("app form: single sign-on on needs both a slug and a callback", [msg({ ...base, ssoEnabled: true, ssoCallbackUrl: "https://search.mcciapune.com/cb" }).startsWith("Enter an SSO slug"), msg({ ...base, ssoEnabled: true, ssoSlug: "mccia-search" }).startsWith("Enter the callback"), msg({ ...base, ssoEnabled: true, ssoSlug: "", ssoCallbackUrl: "" }).startsWith("Enter an SSO slug")], [true, true, true]);
+  eq("app form: a cross-origin callback is refused", msg({ ...base, ssoEnabled: true, ssoSlug: "mccia-search", ssoCallbackUrl: "https://evil.example.com/cb" }).includes("same site"), true);
+  eq("app form: a bad slug is refused", msg({ ...base, ssoEnabled: true, ssoSlug: "Bad Slug!", ssoCallbackUrl: "https://search.mcciapune.com/cb" }).includes("SSO slug"), true);
+  const legacy = appInput.parse(base);
+  eq("app form: an older form that sends no single sign-on fields leaves them alone (undefined, not erased)", [legacy.ssoEnabled, legacy.ssoSlug, legacy.ssoCallbackUrl], [undefined, undefined, undefined]);
+  eq("app form: single sign-on off needs neither, and empty strings become null", (() => { const r = appInput.parse({ ...base, ssoEnabled: false, ssoSlug: "", ssoCallbackUrl: "" }); return [r.ssoEnabled, r.ssoSlug, r.ssoCallbackUrl]; })(), [false, null, null]);
+
+  // The hand-off page
+  const nonce = "bm9uY2U=";
+  const html = autoPostHtml({ callback: 'https://search.mcciapune.com/api/sso/callback?a=1&b="2"', token: "aaa.bbb.ccc", appName: 'Search <b>"x"</b>', nonce });
+  eq("sso page: a POST form to the callback with one hidden token field, an auto-submit script with the nonce, and a noscript button", [
+    /<form id="sso" method="post" action="https:\/\/search\.mcciapune\.com\/api\/sso\/callback\?a=1&amp;b=&quot;2&quot;">/.test(html),
+    (html.match(/<input /g) ?? []).length, html.includes('<input type="hidden" name="token" value="aaa.bbb.ccc">'),
+    html.includes(`<script nonce="${nonce}">document.getElementById("sso").submit();</script>`), /<noscript>[\s\S]*<button type="submit">/.test(html),
+  ], [true, 1, true, true, true]);
+  eq("sso page: the application's name cannot inject markup", html.includes("<b>") || html.includes('"x"</b>'), false);
+  const hd = launchHeaders("https://search.mcciapune.com", nonce);
+  eq("sso page headers: never cached, no referrer, never framed, and a policy of nothing but this script and one form target", [
+    hd["Cache-Control"], hd["Referrer-Policy"], hd["X-Frame-Options"], hd["Content-Security-Policy"],
+  ], ["no-store", "no-referrer", "DENY", `default-src 'none'; script-src 'nonce-${nonce}'; form-action https://search.mcciapune.com; base-uri 'none'; frame-ancestors 'none'`]);
+  eq("sso page: the refusal page says exactly what was asked and links back to the hub", [
+    messageHtml("No access", "You don't have access to this app. Ask your administrator.", true).includes("You don't have access to this app. Ask your administrator."),
+    messageHtml("No access", "x", true).includes('<a href="/">'), messageHtml("No access", "x").includes("<a "),
+  ], [true, true, false]);
+
+  // Sign-in round trip: /launch/<slug> is a safe place to come back to after signing in
+  eq("sso sign-in: /login?next=/launch/<slug> sends the person back to the launch address", [safeNext("/launch/mccia-search"), safeNext("//evil.com"), safeNext("https://evil.com")], ["/launch/mccia-search", "/", "/"]);
+})();
+
+ssoTests.then(() => {
+  console.log(`\n${ok}/${ok + bad} unit checks passed`);
+  process.exit(bad ? 1 : 0);
+}, (e) => {
+  console.error("FAIL single sign-on tests crashed:", e);
+  process.exit(1);
+});
 
