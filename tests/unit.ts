@@ -369,7 +369,8 @@ eq("guards: the reviewed list holds only actions that really exist", [...SELF_CH
 // routes go through its own route() wrapper, which does it centrally, so they are covered by its own tests.
 const appDir = new URL("../src/app/", import.meta.url);
 const routeFiles = (readdirSync(appDir, { recursive: true }) as string[]).filter((f) => /(^|\/)route\.ts$/.test(f) && !/^(api\/approvals|approvals)\//.test(f));
-const openRoutes = routeFiles.filter((f) => !/\b(assertHeadAdmin|assertArea|getCurrentUser|requireUser|requireHeadAdmin|requireArea|requireAdministrator)\(/.test(readFileSync(new URL(f, appDir), "utf8")));
+// A Vercel Cron route has no sign-in: it must check CRON_SECRET instead.
+const openRoutes = routeFiles.filter((f) => !/\b(assertHeadAdmin|assertArea|getCurrentUser|requireUser|requireHeadAdmin|requireArea|requireAdministrator)\(|process\.env\.CRON_SECRET/.test(readFileSync(new URL(f, appDir), "utf8")));
 eq(`guards: all ${routeFiles.length} route handlers outside the Approval System check who is asking`, openRoutes, []);
 
 // The application check must never be steered at an internal network
