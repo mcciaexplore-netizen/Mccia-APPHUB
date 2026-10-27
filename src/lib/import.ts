@@ -14,6 +14,7 @@ import { managerChainReaches } from "@/lib/org";
 import { canImportUsers, canUpdateByImport, type Actor } from "@/lib/rbac";
 import { UserError } from "@/lib/user-error";
 import { emailSchema } from "@/lib/validation";
+import { logError } from "@/lib/log-error";
 
 /**
  * Bulk creation of accounts. Two steps, so nothing is created by surprise:
@@ -351,7 +352,7 @@ export async function commitBatch(actor: Actor & { name: string }, rows: ImportR
   try {
     await writeAudit(actor, audit);
   } catch (e) {
-    console.error("audit write failed", e);
+    logError("[hub] import: audit write failed", e);
     throw new UserError("The accounts were processed, but the change could not be recorded in the audit log. Please tell an administrator.");
   }
   return results;

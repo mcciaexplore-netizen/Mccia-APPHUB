@@ -12,6 +12,7 @@ import {
 import { isPublicAddress } from "../src/lib/net-guard";
 import { clientIp } from "../src/lib/ip";
 import { isAdminPath } from "../src/lib/admin-paths";
+import { errorSummary } from "../src/lib/log-error";
 import { WINDOW_MS as SIR_WINDOW, refusedUntil as sirRefusedUntil, slowDownMs as sirSlowDownMs } from "../src/lib/sign-in-rules";
 import { adminTabsFor } from "../src/lib/admin-tabs";
 import { scrub } from "../src/lib/scrub";
@@ -400,6 +401,16 @@ eq("admin paths: Administrator and the Approval System's admin pages count; noth
   "/administrator", "/administrator/users/1", "/approvals/admin", "/approvals/admin/categories?x=1",
   "/approvals", "/approvals/administrators", "/approvals/requests/1", "/administratorx", "/",
 ].map(isAdminPath), [true, true, true, true, false, false, false, false, false]);
+
+// What goes in the logs (src/lib/log-error.ts): a code and a short first line, never the query parameters.
+{
+  const dbErr = Object.assign(new Error("Failed query: insert into users (email) values ($1)\nparams: asha@mcciapune.com"), {
+    cause: Object.assign(new Error("duplicate key value violates unique constraint \"users_email_key\""), { code: "23505", detail: "Key (email)=(asha@mcciapune.com) already exists." }),
+  });
+  eq("log: a database error gives its code and the driver's message, without the parameters or details", errorSummary(dbErr), '[23505] duplicate key value violates unique constraint "users_email_key"');
+  eq("log: a plain error gives its first line only, cut short", errorSummary(new Error(`${"x".repeat(300)}\nsecond line`)).length, 160);
+  eq("log: odd values do not throw", [errorSummary(null), errorSummary("boom"), errorSummary({ code: "ECONNREFUSED" })], ["unknown error", "boom", "[ECONNREFUSED] unknown error"]);
+}
 
 console.log(`\n${ok}/${ok + bad} unit checks passed`);
 process.exit(bad ? 1 : 0);

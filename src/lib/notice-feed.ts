@@ -3,6 +3,7 @@ import { approvalsEnabled } from "@/lib/approvals/flags";
 import { recentNotifications, unreadCount as approvalsUnread } from "@/lib/approvals/notify";
 import type { NoticeItem } from "@/components/NotificationList";
 import { hubUnreadCount, listHubNotifications } from "@/lib/notifications";
+import { logError } from "@/lib/log-error";
 
 /** Everything addressed to one person, from the hub and from the Approval System, newest first. Only ever one person's own rows. */
 export async function noticeFeed(userId: string): Promise<NoticeItem[]> {
@@ -20,7 +21,7 @@ export async function noticeUnread(userId: string): Promise<number> {
     return hub + apr;
   } catch (e) {
     // The bell is a convenience: it must never take a page down with it.
-    console.error("[hub] could not count notifications", e);
+    logError("[hub] could not count notifications", e);
     return 0;
   }
 }

@@ -282,5 +282,5 @@ Phase 2 runs on the branch `security-fixes`, one commit per fix.
 | L-6 | Fixed | poweredByHeader: false (X-Powered-By gone, checked on a local build); Permissions-Policy: camera, microphone, geolocation, payment, usb off. |
 | L-7 | Pending | Fix later |
 | L-8 | Fixed | pg driver: ssl { rejectUnauthorized: true } always, except a database on localhost / 127.0.0.1 / ::1 (local development and tests). DATABASE_SSL no longer read (README updated). Production uses the Neon driver (HTTPS) unless DB_DRIVER=pg. |
-| I-1 | Pending | Fix later |
+| I-1 | Fixed | src/lib/log-error.ts: every server log of a failure is now '<where>: [code] first line of the message' (160 characters at most), preferring the database driver's message over the 'Failed query … params' text. The 14 places that logged whole error objects use it. Unit-tested that query parameters and details never appear. |
 | I-2 | Pending | Fix later |

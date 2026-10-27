@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { aprNotifications } from "@/db/approvals-schema";
 import { getDirectoryUsers } from "./host-adapter";
 import { absoluteLink, mailHtml, sendMail } from "./mail";
+import { logError } from "@/lib/log-error";
 
 export type Notice = {
   userId: string;
@@ -25,7 +26,7 @@ export async function notify(n: Notice): Promise<void> {
   try {
     await db.insert(aprNotifications).values({ userId: n.userId, requestId: n.requestId ?? null, title: n.title, body: n.body ?? null, link: n.link ?? null });
   } catch (e) {
-    console.error("[approvals] could not save notification", e);
+    logError("[approvals] could not save notification", e);
   }
   if (!n.email) return;
   try {
@@ -33,7 +34,7 @@ export async function notify(n: Notice): Promise<void> {
     if (!person?.email) return;
     await sendMail(person.email, n.title, mailHtml(n.title, n.body ? [n.body] : [], n.link ? { label: "Open the request", href: absoluteLink(n.link) } : undefined));
   } catch (e) {
-    console.error("[approvals] could not email notification", e);
+    logError("[approvals] could not email notification", e);
   }
 }
 

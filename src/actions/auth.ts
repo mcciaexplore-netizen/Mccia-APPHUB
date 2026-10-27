@@ -15,6 +15,7 @@ import { getCurrentUser } from "@/lib/permissions";
 import { isAdminPath } from "@/lib/admin-paths";
 import { canAdminister } from "@/lib/rbac";
 import { ADMIN_COOKIE, ADMIN_IDLE, SESSION_COOKIE, SESSION_MAX_AGE, cookieOptions, safeNext, sign } from "@/lib/session";
+import { logError } from "@/lib/log-error";
 
 const isHttps = async () => (await headers()).get("x-forwarded-proto") === "https" || process.env.NODE_ENV === "production";
 const back = (path: string, next: string) => `${path}?error=1${next !== "/" ? `&next=${encodeURIComponent(next)}` : ""}`;
@@ -91,7 +92,7 @@ export async function changePassword(input: unknown): Promise<Result> {
     return { ok: true };
   } catch (e) {
     if (e instanceof z.ZodError) return { ok: false, error: e.issues[0]?.message ?? "Invalid input" };
-    console.error(e);
+    logError("[auth] change password failed", e);
     return { ok: false, error: "Something went wrong. Please try again." };
   }
 }

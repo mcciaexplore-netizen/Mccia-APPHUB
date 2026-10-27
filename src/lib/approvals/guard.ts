@@ -6,6 +6,7 @@ import { ApprovalsError } from "./errors";
 import { approvalsEnabled } from "./flags";
 import { administratorUnlocked, hasAnyRole, needsOwnPassword, resolveAccess, type ApprovalsRole, type ApprovalsUser } from "./host-adapter";
 import { idSchema, kindSchema } from "./validation";
+import { logError } from "@/lib/log-error";
 
 /** For pages and layouts. Off, or not allowed for this role, looks like a page that does not exist; not signed in goes to the hub's sign-in. */
 export async function requirePage(...anyOf: ApprovalsRole[]): Promise<ApprovalsUser> {
@@ -60,7 +61,7 @@ export function route<P extends Record<string, string> = Record<never, never>>(
       if (e instanceof ZodError) return fail(e.issues[0]?.message ?? "Invalid input", 400, { issues: e.issues.map((i) => ({ path: i.path.join("."), message: i.message })) });
       if (pgCode(e) === "23505") return fail("That already exists.", 409);
       if (pgCode(e) === "23503") return fail("This item is still in use.", 409);
-      console.error(e);
+      logError("[approvals] request failed", e);
       return fail("Something went wrong. Please try again.", 500);
     }
   };

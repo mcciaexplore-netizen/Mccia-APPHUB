@@ -6,6 +6,7 @@ import { notifyUsers } from "@/lib/notifications";
 import { writeAudit, type AuditEntry } from "@/lib/audit";
 import { canGrantAny, canManageAccess, firstUngrantable, grantableApps } from "@/lib/rbac";
 import { UserError } from "@/lib/user-error";
+import { logError } from "@/lib/log-error";
 
 /**
  * Giving and taking away application access, for many people and many applications at once.
@@ -145,7 +146,7 @@ async function settle(actor: Actor, c: SettleCtx, rows: Row[], source: string, m
   try {
     await writeAudit(actor, entries);
   } catch (e) {
-    console.error("audit write failed", e);
+    logError("[hub] access: audit write failed", e);
     throw new UserError("The access was changed, but the change could not be recorded in the audit log. Please tell an administrator.");
   }
   // Tell each person whose access changed. The key makes the same change written twice (a retry) a single notification.

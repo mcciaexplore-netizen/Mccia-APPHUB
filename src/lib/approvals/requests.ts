@@ -17,6 +17,7 @@ import { notify } from "./notify";
 import { canSeeRequest } from "./request-queries";
 import type { HrRequestInput, LargeExpenditureInput, ResubmitInput, SmallExpenditureInput } from "./request-schemas";
 import { getSettings } from "./settings";
+import { logError } from "@/lib/log-error";
 
 /**
  * Submitting, deciding and withdrawing requests. The database driver has no multi-statement transactions, so each flow is ordered to
@@ -148,7 +149,7 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
     await addEvent({ requestId: draft.id, action: "submitted", actorUserId: actor.id, actorName: actor.name, fromStatus: null, toStatus: "pending" });
     await addEvent({ requestId: draft.id, action: "assigned", stepNo: 1, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "pending", comment: `Sent to ${firstName} (${first.stepLabel})` });
   } catch (e) {
-    console.error("[approvals] could not write the history of a new request", draft.id, e);
+    logError(`[approvals] could not write the history of new request ${draft.id}`, e);
   }
   await notify({
     userId: first.approverUserId, requestId: draft.id, link: link(draft.id, p.type), email: settings.notifyApproverOnAssignment,
@@ -320,7 +321,7 @@ export async function decideRequest(requestId: string, input: { action: "approve
       }
     }
   } catch (e) {
-    for (const back of undo) await back().catch((err) => console.error("[approvals] could not undo part of a failed decision", requestId, err));
+    for (const back of undo) await back().catch((err) => logError(`[approvals] could not undo part of a failed decision on ${requestId}`, err));
     throw e;
   }
 
@@ -333,7 +334,7 @@ export async function decideRequest(requestId: string, input: { action: "approve
       await addEvent({ requestId, action: "assigned", stepNo: next.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "pending", comment: `Sent to ${next.approverName} (${next.stepLabel})` });
     }
   } catch (e) {
-    console.error("[approvals] could not write the history of a decision", requestId, e);
+    logError(`[approvals] could not write the history of a decision on ${requestId}`, e);
   }
   if (next) {
     await notify({
@@ -449,7 +450,7 @@ export async function resubmitRequest(requestId: string, input: ResubmitInput, a
     await addEvent({ requestId, action: "resubmitted", stepNo: step.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "returned", toStatus: "pending" });
     await addEvent({ requestId, action: "assigned", stepNo: step.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: "pending", comment: `Sent back to ${step.approverName} (${step.stepLabel})` });
   } catch (e) {
-    console.error("[approvals] could not write the history of a resubmission", requestId, e);
+    logError(`[approvals] could not write the history of a resubmission of ${requestId}`, e);
   }
   await notify({
     userId: step.approverUserId, requestId, link: link(requestId, req.type), email: settings.notifyApproverOnAssignment,

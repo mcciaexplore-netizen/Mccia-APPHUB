@@ -2,6 +2,7 @@ import "server-only";
 import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { hubNotifications } from "@/db/schema";
+import { logError } from "@/lib/log-error";
 
 /**
  * What the hub tells people: a change to their access, their role, what they may open. One row per person per event, kept in the
@@ -20,7 +21,7 @@ export async function notifyUsers(notices: NewNotice[]): Promise<void> {
       .values(notices.map((n) => ({ userId: n.userId, kind: n.kind, title: n.title, body: n.body ?? null, link: n.link ?? null, dedupeKey: n.dedupeKey })))
       .onConflictDoNothing();
   } catch (e) {
-    console.error("[hub] could not save notifications", e);
+    logError("[hub] could not save notifications", e);
   }
 }
 

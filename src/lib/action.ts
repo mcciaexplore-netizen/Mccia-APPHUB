@@ -5,6 +5,7 @@ import { assertArea, assertHeadAdmin, assertStaff } from "@/lib/permissions";
 import type { AdminArea } from "@/lib/rbac";
 import { UserError } from "@/lib/user-error";
 import type { User } from "@/db/schema";
+import { logError } from "@/lib/log-error";
 
 export type Result<T = undefined> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -27,7 +28,7 @@ async function guarded<T>(who: () => Promise<User>, fn: (actor: User) => Promise
     if (pgCode(e) === "23505") return { ok: false, error: "That name or email already exists." };
     if (pgCode(e) === "23503") return { ok: false, error: "This item is still referenced elsewhere." };
     if (e instanceof Error && e.message === "Not allowed") return { ok: false, error: "Not allowed." };
-    console.error(e);
+    logError("[hub] action failed", e);
     return { ok: false, error: "Something went wrong. Please try again." };
   }
 }
