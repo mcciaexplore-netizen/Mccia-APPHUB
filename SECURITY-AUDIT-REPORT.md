@@ -279,7 +279,7 @@ Phase 2 runs on the branch `security-fixes`, one commit per fix.
 | L-3 | Partly fixed · Decision needed | route() has a new adminUnlock option; saving the HR / Expenditure form (the only Approval System admin screen inside Administrator) now needs Administrator unlocked. NOT applied to Categories, HR Categories, Publications, Settings and Access: those pages are under /approvals/admin, and any page load outside Administrator locks it (src/proxy.ts), so requiring the unlock there would break those screens and the '+ Add' in the forms. Option: move those screens under Administrator, then turn the option on. |
 | L-4 | Fixed | assertHeadAdmin / assertArea / assertStaff (every admin and staff server action and the CSV export routes) and the Approval System route() wrapper refuse someone still on a temporary password, with a plain message. changePassword and marking notifications read still work. Pages already redirected. |
 | L-5 | Skipped for now (owner's decision) |  |
-| L-6 | Pending |  |
+| L-6 | Fixed | poweredByHeader: false (X-Powered-By gone, checked on a local build); Permissions-Policy: camera, microphone, geolocation, payment, usb off. |
 | L-7 | Pending | Fix later |
 | L-8 | Pending | Fix later |
 | I-1 | Pending | Fix later |
