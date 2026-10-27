@@ -46,3 +46,7 @@ next-env.d.ts
 # local env
 .env.local
 backups/
+
+# single sign-on key files (see scripts/sso-keygen.mjs)
+sso-private.b64
+sso-public.b64
