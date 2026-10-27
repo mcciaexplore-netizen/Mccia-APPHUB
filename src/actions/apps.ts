@@ -14,6 +14,24 @@ async function nextOrder(departmentId: string) {
   return rows.reduce((m, r) => Math.max(m, r.s), 0) + 10;
 }
 
+/** Two applications cannot share a single sign-on slug: say so plainly (the unique index would only say "already exists"). */
+async function assertSlugFree(slug: string | null | undefined, exceptId?: string) {
+  if (!slug) return;
+  const [other] = await db.select({ id: apps.id, name: apps.name }).from(apps).where(eq(apps.ssoSlug, slug));
+  if (other && other.id !== exceptId) throw new UserError(`The SSO slug "${slug}" is already used by ${other.name}. Choose a different one.`);
+}
+
+/** The same, for two people saving at the same moment: the database's unique index is the last word. */
+async function withSlugCheck<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    const x = e as { code?: string; constraint?: string; cause?: { code?: string; constraint?: string } };
+    if ((x?.code ?? x?.cause?.code) === "23505" && (x?.constraint ?? x?.cause?.constraint) === "apps_sso_slug_uq") throw new UserError("That SSO slug is already used by another application. Choose a different one.");
+    throw e;
+  }
+}
+
 async function loadApp(id: string) {
   const [a] = await db.select().from(apps).where(eq(apps.id, uuid.parse(id)));
   if (!a) throw new UserError("Application not found.");
@@ -23,8 +41,9 @@ async function loadApp(id: string) {
 export async function createApp(input: unknown) {
   return adminAction("apps", async (admin) => {
     const v = appInput.parse(input);
-    const [a] = await db.insert(apps).values({ ...v, sortOrder: await nextOrder(v.departmentId) }).returning({ id: apps.id });
-    await writeAudit(admin, [{ action: "app.create", targetType: "app", targetId: a.id, targetLabel: v.name, details: { status: v.status ?? "active", visible: v.isActive ?? true } }]);
+    await assertSlugFree(v.ssoSlug);
+    const [a] = await withSlugCheck(async () => db.insert(apps).values({ ...v, sortOrder: await nextOrder(v.departmentId) }).returning({ id: apps.id }));
+    await writeAudit(admin, [{ action: "app.create", targetType: "app", targetId: a.id, targetLabel: v.name, details: { status: v.status ?? "active", visible: v.isActive ?? true, singleSignOn: v.ssoEnabled ?? false } }]);
   });
 }
 
@@ -32,14 +51,18 @@ export async function updateApp(id: string, input: unknown) {
   return adminAction("apps", async (admin) => {
     const v = appInput.parse(input);
     const cur = await loadApp(id);
+    await assertSlugFree(v.ssoSlug, cur.id);
     const sortOrder = cur.departmentId === v.departmentId ? cur.sortOrder : await nextOrder(v.departmentId);
-    await db.update(apps).set({ ...v, sortOrder }).where(eq(apps.id, cur.id));
+    await withSlugCheck(() => db.update(apps).set({ ...v, sortOrder }).where(eq(apps.id, cur.id)));
     const changes: string[] = [];
     if (cur.name !== v.name) changes.push("name");
     if (cur.url !== v.url) changes.push("address"); // the address itself is not recorded
     if (cur.departmentId !== v.departmentId) changes.push("department");
     if (v.status && cur.status !== v.status) changes.push(`status ${cur.status} → ${v.status}`);
     if (v.isActive !== undefined && cur.isActive !== v.isActive) changes.push(v.isActive ? "shown in hub" : "hidden from hub");
+    if (v.ssoEnabled !== undefined && cur.ssoEnabled !== v.ssoEnabled) changes.push(`single sign-on ${v.ssoEnabled ? "on" : "off"}`);
+    if (v.ssoSlug !== undefined && cur.ssoSlug !== v.ssoSlug) changes.push(`SSO slug ${cur.ssoSlug ?? "none"} → ${v.ssoSlug ?? "none"}`);
+    if (v.ssoCallbackUrl !== undefined && cur.ssoCallbackUrl !== v.ssoCallbackUrl) changes.push("SSO callback address"); // like the address, the callback itself is not recorded
     if (changes.length) await writeAudit(admin, [{ action: "app.update", targetType: "app", targetId: cur.id, targetLabel: v.name, details: { changed: changes } }]);
   });
 }

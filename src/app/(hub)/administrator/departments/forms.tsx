@@ -6,6 +6,7 @@ import { IconPicker } from "@/components/IconPicker";
 import { AppCard } from "@/components/AppCard";
 import { useToast } from "@/components/Toast";
 import { DEFAULT_ICON } from "@/lib/icons";
+import { callbackProblem, slugProblem } from "@/lib/sso-rules";
 
 type Res = { ok: true } | { ok: false; error: string };
 
@@ -44,7 +45,10 @@ export function DepartmentForm({ initial, submitLabel, onSubmit, pending }: {
   );
 }
 
-export type AppVals = { departmentId: string; name: string; description: string; url: string; icon: string; appToken: string; isActive: boolean; status: "active" | "testing" | "unavailable" };
+export type AppVals = {
+  departmentId: string; name: string; description: string; url: string; icon: string; appToken: string; isActive: boolean; status: "active" | "testing" | "unavailable";
+  ssoEnabled: boolean; ssoSlug: string; ssoCallbackUrl: string;
+};
 
 /** An application always belongs to one department. With a single department given, it is fixed and shown as text. */
 export function AppForm({ departments, initial, submitLabel, onSubmit, pending }: {
@@ -53,9 +57,13 @@ export function AppForm({ departments, initial, submitLabel, onSubmit, pending }
   const [v, setV] = useState<AppVals>({
     departmentId: initial?.departmentId ?? departments[0]?.id ?? "", name: initial?.name ?? "",
     description: initial?.description ?? "", url: initial?.url ?? "https://", icon: initial?.icon ?? DEFAULT_ICON, appToken: initial?.appToken ?? "", isActive: initial?.isActive ?? true, status: initial?.status ?? "active",
+    ssoEnabled: initial?.ssoEnabled ?? false, ssoSlug: initial?.ssoSlug ?? "", ssoCallbackUrl: initial?.ssoCallbackUrl ?? "",
   });
   const set = <K extends keyof AppVals>(k: K, val: AppVals[K]) => setV((s) => ({ ...s, [k]: val }));
   const urlBad = v.url.length > 8 && !/^(https:\/\/\S+|\/(?!\/)\S*)$/.test(v.url);
+  // The same rules the server applies (src/lib/sso-rules.ts), shown while typing. Only once something has been typed.
+  const slugBad = v.ssoEnabled && v.ssoSlug.trim() ? slugProblem(v.ssoSlug.trim().toLowerCase()) : null;
+  const callbackBad = v.ssoEnabled && v.ssoCallbackUrl.trim() ? callbackProblem(v.ssoCallbackUrl.trim(), v.url.trim()) : null;
   return (
     <div className="grid gap-6 md:grid-cols-[1fr_11rem]">
       <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); onSubmit(v); }}>
@@ -78,6 +86,24 @@ export function AppForm({ departments, initial, submitLabel, onSubmit, pending }
         <Field label="App token (optional, for future single sign-on)">
           <input className="input" value={v.appToken} onChange={(e) => set("appToken", e.target.value)} maxLength={500} autoComplete="off" />
         </Field>
+        <div className="space-y-3 rounded-md border border-line p-3">
+          <label className="flex cursor-pointer items-start gap-2.5">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={v.ssoEnabled} onChange={(e) => set("ssoEnabled", e.target.checked)} />
+            <span className="text-sm"><b>Single sign-on</b><span className="block text-xs text-muted">The card signs people in to this application with their hub account (a short-lived signed token is sent to the callback URL). The application must be set up to accept it.</span></span>
+          </label>
+          {v.ssoEnabled && (
+            <>
+              <Field label="SSO slug (lowercase letters, numbers and hyphens, for example mccia-search)">
+                <input className="input" value={v.ssoSlug} onChange={(e) => set("ssoSlug", e.target.value)} maxLength={80} autoComplete="off" spellCheck={false} required />
+                {slugBad && <span className="mt-1 block text-xs text-brand-red">{slugBad}</span>}
+              </Field>
+              <Field label="Callback URL (on the same site as the URL above)">
+                <input className="input" type="text" inputMode="url" value={v.ssoCallbackUrl} onChange={(e) => set("ssoCallbackUrl", e.target.value)} maxLength={2000} autoComplete="off" spellCheck={false} required />
+                {callbackBad && <span className="mt-1 block text-xs text-brand-red">{callbackBad}</span>}
+              </Field>
+            </>
+          )}
+        </div>
         <Field label="Availability label">
           <select className="input" value={v.status} onChange={(e) => set("status", e.target.value as AppVals["status"])}>
             <option value="active">Active (working)</option><option value="testing">Under testing (shown with a label)</option><option value="unavailable">Unavailable (shown, cannot be opened)</option>

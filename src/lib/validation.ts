@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ICONS } from "@/lib/icons";
+import { callbackProblem, slugProblem } from "@/lib/sso-rules";
 
 const icon = z.string().refine((v) => v in ICONS, "Pick an icon from the list");
 /** A full https:// address, or a path on this same site (a built-in app such as /approvals). */
@@ -28,6 +29,18 @@ export const appInput = z.object({
   isActive: z.boolean().optional(), // shown in the hub; omitted means unchanged (new apps start active)
   // What the administrator says it is: working, still being tested, or down. Omitted means unchanged (new apps start active).
   status: z.enum(["active", "testing", "unavailable"]).optional(),
+  // Single sign-on (see src/lib/sso-rules.ts). Each is omitted for "unchanged" (an older form, or new apps start with it off); empty means none.
+  ssoEnabled: z.boolean().optional(),
+  ssoSlug: z.string().trim().toLowerCase().max(80).nullish().transform((v) => (v === undefined ? undefined : v || null)),
+  ssoCallbackUrl: z.string().trim().max(2000).nullish().transform((v) => (v === undefined ? undefined : v || null)),
+}).superRefine((v, ctx) => {
+  const bad = (path: "ssoSlug" | "ssoCallbackUrl", message: string) => ctx.addIssue({ code: "custom", path: [path], message });
+  // A slug is always checked when there is one (it must stay unique and well formed); the callback address is checked while single sign-on is on.
+  if (v.ssoSlug) { const p = slugProblem(v.ssoSlug); if (p) bad("ssoSlug", p); }
+  if (!v.ssoEnabled) return;
+  if (!v.ssoSlug) bad("ssoSlug", "Enter an SSO slug for this application (for example mccia-search).");
+  if (!v.ssoCallbackUrl) bad("ssoCallbackUrl", "Enter the callback URL where this application receives the sign-in.");
+  else { const p = callbackProblem(v.ssoCallbackUrl, v.url); if (p) bad("ssoCallbackUrl", p); }
 });
 
 export const emailSchema = z.string().trim().toLowerCase().email("Enter a valid email");
