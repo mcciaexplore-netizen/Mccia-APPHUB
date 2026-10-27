@@ -1,13 +1,13 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
-import { headers } from "next/headers";
 import { db } from "@/db";
 import { apps, userAppAccess, userInvites, users } from "@/db/schema";
 import { roleLabel } from "@/lib/format";
 import { isEnvAdmin } from "@/lib/auth";
 import { escapeHtml, sendMail } from "@/lib/mail";
 import { hashPassword } from "@/lib/passwords";
+import { siteUrl } from "@/lib/site-url";
 import { UserError } from "@/lib/user-error";
 
 /**
@@ -31,16 +31,6 @@ export function tempPassword(): string {
 
 export const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
-/** The address of this site for links: APP_BASE_URL when set, otherwise the address this request came in on. */
-async function siteBase(): Promise<string> {
-  const fixed = (process.env.APP_BASE_URL ?? "").trim().replace(/\/$/, "");
-  if (fixed) return fixed;
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
-  return `${proto}://${host}`;
-}
-
 export type InviteTarget = { id: string; name: string; email: string; isActive: boolean };
 
 /** What the summary email can also say about the account, when known. */
@@ -52,7 +42,12 @@ export type AccountFacts = { role?: string; applications?: string[] };
  * returned only when it was NOT emailed.
  */
 export async function deliverInvite(target: { name: string; email: string }, temp: string, facts: AccountFacts = {}): Promise<{ delivery: Delivery; link: string | null }> {
-  const site = await siteBase();
+  let site: string;
+  try {
+    site = siteUrl();
+  } catch (e) {
+    throw new UserError(e instanceof Error ? e.message : "The site address is not set.");
+  }
   const until = new Date(Date.now() + INVITE_HOURS * 3600 * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" });
   const row = (label: string, value: string) =>
     `<tr><td style="padding:9px 14px;border-bottom:1px solid #edf0f3;color:#64748b;width:42%">${label}</td><td style="padding:9px 14px;border-bottom:1px solid #edf0f3;color:#0f172a">${value}</td></tr>`;

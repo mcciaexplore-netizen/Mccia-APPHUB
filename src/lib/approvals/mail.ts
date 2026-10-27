@@ -1,5 +1,6 @@
 import "server-only";
 import nodemailer from "nodemailer";
+import { siteUrl } from "@/lib/site-url";
 
 /**
  * The module's one door to email. Configured by SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and SMTP_FROM (see .env.example).
@@ -42,8 +43,8 @@ export async function sendMail(to: string, subject: string, html: string): Promi
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-/** An absolute link to a page of the module when APP_BASE_URL is set, otherwise just the path. */
-export const absoluteLink = (path: string) => `${(process.env.APP_BASE_URL ?? "").trim().replace(/\/$/, "")}${path}`;
+/** An absolute link to a page of the module, on this site's address (see src/lib/site-url.ts). */
+export const absoluteLink = (path: string) => `${siteUrl()}${path}`;
 
 /** The same simple layout for every message: a heading, a few lines of detail and one button. Every value is escaped. */
 export function mailHtml(heading: string, lines: string[], link?: { label: string; href: string }): string {

@@ -13,6 +13,7 @@ import { isPublicAddress } from "../src/lib/net-guard";
 import { clientIp } from "../src/lib/ip";
 import { isAdminPath } from "../src/lib/admin-paths";
 import { errorSummary } from "../src/lib/log-error";
+import { siteUrl } from "../src/lib/site-url";
 import { WINDOW_MS as SIR_WINDOW, refusedUntil as sirRefusedUntil, slowDownMs as sirSlowDownMs } from "../src/lib/sign-in-rules";
 import { adminTabsFor } from "../src/lib/admin-tabs";
 import { scrub } from "../src/lib/scrub";
@@ -410,6 +411,15 @@ eq("admin paths: Administrator and the Approval System's admin pages count; noth
   eq("log: a database error gives its code and the driver's message, without the parameters or details", errorSummary(dbErr), '[23505] duplicate key value violates unique constraint "users_email_key"');
   eq("log: a plain error gives its first line only, cut short", errorSummary(new Error(`${"x".repeat(300)}\nsecond line`)).length, 160);
   eq("log: odd values do not throw", [errorSummary(null), errorSummary("boom"), errorSummary({ code: "ECONNREFUSED" })], ["unknown error", "boom", "[ECONNREFUSED] unknown error"]);
+}
+
+// The site address in emails (src/lib/site-url.ts): never the request's Host header.
+{
+  const threw = (env: Record<string, string>) => { try { siteUrl(env); return false; } catch (e) { return e instanceof Error && e.message.includes("APP_BASE_URL"); } };
+  eq("site url: APP_BASE_URL wins, without a trailing slash", siteUrl({ APP_BASE_URL: "https://mccia-apphub.vercel.app/", VERCEL_ENV: "production", VERCEL_URL: "x.vercel.app" }), "https://mccia-apphub.vercel.app");
+  eq("site url: production without APP_BASE_URL fails clearly (on Vercel and self-hosted)", [threw({ VERCEL_ENV: "production", VERCEL_URL: "x.vercel.app" }), threw({ NODE_ENV: "production" })], [true, true]);
+  eq("site url: a Preview uses its own Vercel address", siteUrl({ VERCEL_ENV: "preview", VERCEL_URL: "mccia-apphub-git-security-fixes.vercel.app", NODE_ENV: "production" }), "https://mccia-apphub-git-security-fixes.vercel.app");
+  eq("site url: local development falls back to localhost", siteUrl({ NODE_ENV: "development" }), "http://localhost:3000");
 }
 
 console.log(`\n${ok}/${ok + bad} unit checks passed`);
