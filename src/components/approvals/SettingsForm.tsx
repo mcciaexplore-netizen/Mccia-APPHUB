@@ -35,7 +35,7 @@ export function SettingsForm({ initial }: { initial: ApprovalsSettings }) {
 
   return (
     <form onSubmit={submit} className="max-w-2xl space-y-6">
-      <Field label="Threshold for the DG step" hint="Expenditure of this amount or more is raised on the large form and goes to the DG. Requests already submitted keep the route they were given.">
+      <Field label="Threshold for the DG step" hint="An expense of this amount or more goes on to the Super Admin (the DG) after the Expense Admin. It is the same form at every amount. Requests already submitted keep the route they were given.">
         <div className="relative w-56">
           <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-subtle">{"₹"}</span>
           <input className="input !pl-8" inputMode="decimal" value={threshold} onChange={(e) => setThreshold(e.target.value)} required />
