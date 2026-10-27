@@ -272,7 +272,7 @@ Phase 2 runs on the branch `security-fixes`, one commit per fix.
 | M-1 | Fixed | Every attempt (success, failure, refused) recorded in login_attempts with kind (login/unlock/password) and blocked flag (migration 0018). Sign-ins tab shows them. |
 | M-2 | Fixed | zod 4.6.5 → 4.6.7 |
 | M-3 | Skipped for now (owner's decision) | Plan at the end of Phase 2 |
-| M-4 | Pending |  |
+| M-4 | Shipped in Report-Only · Manual check needed | Content-Security-Policy-Report-Only in next.config.ts (self only; inline scripts/styles allowed; frame-ancestors none). Headless Chrome on /login: no violations. Owner to check the signed-in pages in the browser console, then switch the header name to Content-Security-Policy to enforce. |
 | M-5 | Fixed (code) · Manual action needed | Daily Vercel Cron (vercel.json, 03:00 IST) calls /api/cron/cleanup-uploads, protected by a CRON_SECRET bearer check (401 without it, and refuses everyone when CRON_SECRET is unset). Deletes uploads never attached to a request, older than 24 h, never one an attachment points at. SQL checked with EXPLAIN only; **not run against any database** until Preview is confirmed to use a separate Neon branch. Add CRON_SECRET in Vercel. |
 | L-1 | Fixed | nodemailer 10.1.1 → 10.2.1. npm audit --omit=dev: 0 vulnerabilities. 4 moderate remain in the dev-only drizzle-kit (esbuild dev server), not deployed |
 | L-2 | Pending | Fix later |
