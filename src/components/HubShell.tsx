@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell } from "lucide-react";
 import { lockAdmin } from "@/actions/auth";
+import { isAdminPath } from "@/lib/admin-paths";
 import type { Role } from "@/db/schema";
 import { UserMenu } from "@/components/UserMenu";
 
@@ -20,7 +21,7 @@ export const PAGES_SEEN = "hub:pagesSeen";
  */
 export function HubShell({ user, unread, children }: { user: ShellUser | null; /** Unread notifications; the bell is shown when this is given. */ unread?: number; children: React.ReactNode }) {
   const pathname = usePathname();
-  const inAdmin = pathname.startsWith("/administrator");
+  const inAdmin = isAdminPath(pathname);
   // Administrator locks itself the moment you leave it (the proxy only re-checks on the way in).
   const wasInAdmin = useRef(inAdmin);
   useEffect(() => {

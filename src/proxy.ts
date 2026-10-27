@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { isAdminPath } from "@/lib/admin-paths";
 import { ADMIN_COOKIE, ADMIN_IDLE, SESSION_COOKIE, cookieOptions, sign, verify } from "@/lib/session";
 
 /**
@@ -23,7 +24,7 @@ export function proxy(req: NextRequest) {
 
   const unlock = verify(req.cookies.get(ADMIN_COOKIE)?.value, "admin");
   const unlocked = !!unlock && unlock.u === session.u;
-  const inAdmin = pathname === "/administrator" || pathname.startsWith("/administrator/");
+  const inAdmin = isAdminPath(pathname); // Administrator, and the Approval System's admin pages
 
   if (inAdmin) {
     if (!unlocked) return to(`/unlock?next=${here}`);

@@ -40,8 +40,7 @@ function sameOrigin(req: NextRequest): boolean {
  * place that turns validation and database errors into clean JSON. `roles` lists the roles that may call it (any one is enough).
  */
 export function route<P extends Record<string, string> = Record<never, never>>(
-  /** adminUnlock: a change made from a screen inside Administrator also needs Administrator unlocked (the password asked again). */
-  opts: { roles?: ApprovalsRole[]; adminUnlock?: boolean },
+  opts: { roles?: ApprovalsRole[] },
   fn: (c: Ctx<P>) => Promise<Response>,
 ) {
   return async (req: NextRequest, ctx: { params: Promise<P> }): Promise<Response> => {
@@ -53,7 +52,8 @@ export function route<P extends Record<string, string> = Record<never, never>>(
       if (opts.roles?.length && !hasAnyRole(a.user, opts.roles)) return fail("Not allowed.", 403);
       const write = !["GET", "HEAD", "OPTIONS"].includes(req.method);
       if (write && !sameOrigin(req)) return fail("Not allowed.", 403);
-      if (write && opts.adminUnlock && !(await administratorUnlocked())) return fail("Administrator has locked. Open it again and enter your password, then save.", 403);
+      // The Support Admin's changes to the module (forms, categories, settings, access) need Administrator unlocked, like Administrator's own.
+      if (write && opts.roles?.includes("approvals_admin") && !(await administratorUnlocked())) return fail("Administrator has locked. Open Administrator and enter your password again, then try once more.", 403);
       return await fn({ req, user: a.user, params: await ctx.params });
     } catch (e) {
       if (e instanceof ApprovalsError) return fail(e.message, e.status);

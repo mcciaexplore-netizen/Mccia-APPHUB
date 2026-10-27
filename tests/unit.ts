@@ -11,6 +11,7 @@ import {
 } from "../src/lib/rbac";
 import { isPublicAddress } from "../src/lib/net-guard";
 import { clientIp } from "../src/lib/ip";
+import { isAdminPath } from "../src/lib/admin-paths";
 import { WINDOW_MS as SIR_WINDOW, refusedUntil as sirRefusedUntil, slowDownMs as sirSlowDownMs } from "../src/lib/sign-in-rules";
 import { adminTabsFor } from "../src/lib/admin-tabs";
 import { scrub } from "../src/lib/scrub";
@@ -393,6 +394,12 @@ eq("net guard: public IPv6 and a mapped public IPv4 are allowed, and anything th
   ], ["1.2.3.4", "5.6.7.8", "9.9.9.9", null]);
   eq("limits: the email-only slow-down starts at 10 and stops growing at 5 seconds", [sirSlowDownMs(9), sirSlowDownMs(10), sirSlowDownMs(12), sirSlowDownMs(14), sirSlowDownMs(40)], [0, 1000, 3000, 5000, 5000]);
 }
+
+// Which pages count as Administrator for the unlock and the lock (src/lib/admin-paths.ts).
+eq("admin paths: Administrator and the Approval System's admin pages count; nothing else does", [
+  "/administrator", "/administrator/users/1", "/approvals/admin", "/approvals/admin/categories?x=1",
+  "/approvals", "/approvals/administrators", "/approvals/requests/1", "/administratorx", "/",
+].map(isAdminPath), [true, true, true, true, false, false, false, false, false]);
 
 console.log(`\n${ok}/${ok + bad} unit checks passed`);
 process.exit(bad ? 1 : 0);

@@ -12,6 +12,7 @@ import { clientIp } from "@/lib/ip";
 import { hashPassword, passwordSchema } from "@/lib/passwords";
 import { record, refuseOrSlow } from "@/lib/sign-in-limits";
 import { getCurrentUser } from "@/lib/permissions";
+import { isAdminPath } from "@/lib/admin-paths";
 import { canAdminister } from "@/lib/rbac";
 import { ADMIN_COOKIE, ADMIN_IDLE, SESSION_COOKIE, SESSION_MAX_AGE, cookieOptions, safeNext, sign } from "@/lib/session";
 
@@ -45,7 +46,8 @@ export async function logout() {
 /** Administrator asks for the password again; it locks again as soon as you leave it (see src/proxy.ts). */
 export async function unlockAdmin(formData: FormData) {
   const next = safeNext(formData.get("next"));
-  const target = next.startsWith("/administrator") ? next : "/administrator";
+  // Back to the page they were opening: in Administrator, or one of the Approval System's admin pages.
+  const target = isAdminPath(next) ? next : "/administrator";
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canAdminister(user)) redirect("/");
