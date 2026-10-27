@@ -1,6 +1,6 @@
 /**
  * End-to-end test of Users & Access in a real browser: branches and teams, editing a person, the team manager's limited view, application
- * labels and checks, bulk add from Excel, one-time setup links, the audit log, and basic accessibility. Run:
+ * labels and checks, bulk add from Excel, temporary passwords from a person's page, the audit log, and basic accessibility. Run:
  *   E2E_BASE_URL=http://localhost:3000 npm run test:e2e:people
  *
  * It WRITES to the database the site uses, but only rows named "ZZP"/"zzp-": a department with four applications, a few people and a
@@ -21,13 +21,15 @@ req("dotenv").config({ path: ROOT + "/.env.local", quiet: true });
 req("dotenv").config({ path: ROOT + "/.env", quiet: true });
 const BASE = (process.env.E2E_BASE_URL || "").replace(/\/$/, "");
 if (!BASE) { console.error("Set E2E_BASE_URL, for example: E2E_BASE_URL=http://localhost:3000 npm run test:e2e:people"); process.exit(2); }
-const ADMIN_EMAIL = (process.env.HEAD_ADMIN_EMAIL || "").trim().toLowerCase();
-const ADMIN_PW = process.env.HEAD_ADMIN_PASSWORD || "";
+if (/neon\.tech/i.test(process.env.DATABASE_URL || "") && process.env.E2E_ALLOW_NEON !== "yes") { console.error("DATABASE_URL is a Neon address. Point it (and the site) at a test database, or a Neon branch with E2E_ALLOW_NEON=yes."); process.exit(2); }
+const ADMIN_EMAIL = (process.env.SUPPORT_ADMIN_EMAIL || process.env.HEAD_ADMIN_EMAIL || "").trim().toLowerCase();
+const ADMIN_PW = (process.env.SUPPORT_ADMIN_PASSWORD || process.env.HEAD_ADMIN_PASSWORD || "").trim();
 if (!ADMIN_EMAIL || !ADMIN_PW) { console.error("HEAD_ADMIN_EMAIL and HEAD_ADMIN_PASSWORD must be set: the suite signs in as the main admin."); process.exit(2); }
 
 const rawSql = (() => {
   if ((process.env.DB_DRIVER ?? "neon") !== "pg") return req("@neondatabase/serverless").neon(process.env.DATABASE_URL);
-  const pool = new (req("pg").Pool)({ connectionString: process.env.DATABASE_URL, max: 4, ssl: process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : false });
+  const local = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(process.env.DATABASE_URL || "");
+  const pool = new (req("pg").Pool)({ connectionString: process.env.DATABASE_URL, max: 4, ssl: local ? false : { rejectUnauthorized: true } });
   return async (strings, ...values) => (await pool.query(strings.reduce((q, s, i) => q + (i ? `$${i}` : "") + s, ""), values)).rows;
 })();
 const retry = async (fn, tries = 8, waitMs = 3000) => { let last; for (let i = 0; i < tries; i++) { try { return await fn(); } catch (e) { last = e; await new Promise((r) => setTimeout(r, waitMs)); } } throw last; };
@@ -69,6 +71,8 @@ const snap = async () => JSON.stringify([
 await removeTestData();
 const before = await snap();
 const browser = await launch();
+// The "Download the app" popup and banner are marked as already seen in every test browser, so they never cover a button.
+{ const open = browser.newContext.bind(browser); browser.newContext = async (o) => { const c = await open(o); await c.addInitScript(() => { try { localStorage.setItem("mccia-install-popup-seen", "1"); localStorage.setItem("mccia-install-snoozed-until", String(Date.now() + 864e5)); } catch {} }); return c; }; }
 const consoleErrors = [], pageErrors = [];
 const newSession = async (viewport = { width: 1300, height: 1000 }) => {
   const ctx = await browser.newContext({ viewport, acceptDownloads: true });
@@ -170,20 +174,23 @@ try {
   check("a person cannot be offered as their own manager", (await tf.locator("select").nth(2).locator("option", { hasText: tm.email }).count()) === 0);
   await go("/administrator/users/" + m2.id);
   const rf = A.getByRole("form", { name: "Details and organisation" });
-  await rf.getByLabel("Role").selectOption("dept_lead"); await rf.getByRole("button", { name: "Save details" }).click(); check("the role can be changed to Team manager", await toast(A, "Details saved")); await A.waitForTimeout(1000);
-  check("and it is stored", (await sql`select role from users where id = ${m2.id}`)[0].role === "dept_lead");
+  await rf.getByLabel("Role").selectOption("admin"); await rf.getByRole("button", { name: "Save details" }).click(); check("the role can be changed to Admin", await toast(A, "Details saved")); await A.waitForTimeout(1000);
+  check("and it is stored", (await sql`select role from users where id = ${m2.id}`)[0].role === "admin");
   await rf.getByLabel("Role").selectOption("member"); await rf.getByRole("button", { name: "Save details" }).click(); await toast(A, "Details saved"); await A.waitForTimeout(1000);
   check("and can be changed back", (await sql`select role from users where id = ${m2.id}`)[0].role === "member");
+  await go("/administrator/users/" + tm.id);
+  check("a Team manager keeps that choice in the Role box (it is not offered to anyone else)", (await A.getByRole("form", { name: "Details and organisation" }).getByLabel("Role").inputValue()) === "dept_lead");
   const adminRow = (await sql`select id from users where email = ${ADMIN_EMAIL}`)[0];
   await go("/administrator/users/" + adminRow.id);
-  check("the main admin's profile has no delete, no deactivate and no role change", (await A.getByRole("button", { name: /Delete|Deactivate/ }).count()) === 0 && (await A.getByLabel("Role").isDisabled()));
+  check("the Support Admin's own page has no delete, no deactivate and no role change", (await A.getByRole("button", { name: /Delete|Deactivate/ }).count()) === 0 && (await A.getByLabel("Role").isDisabled()));
 
   // ------------------------------------------------------------------------------------------------------------------------------
   section("3. A team manager sees and changes only their own team");
   tmS = await newSession(); const T = tmS.page;
   await signIn(T, tm.email, PW);
-  check("a team manager has a 'My team' item in the sidebar", (await T.locator("aside:visible nav a", { hasText: "My team" }).count()) === 1);
-  check("and no Administrator item", (await T.locator("aside:visible").getByRole("button", { name: "Administrator" }).count()) === 0);
+  await T.goto(BASE + "/"); await T.waitForLoadState("networkidle").catch(() => {});
+  check("a team manager has a 'My team' card on the home page", (await T.locator('main a[href="/team"]').count()) === 1);
+  check("and no Administrator card", !/\bAdministrator\b/.test(await main(T)));
   await T.goto(BASE + "/team"); await T.waitForLoadState("networkidle").catch(() => {});
   const tText = await main(T);
   check("My team lists people in the team and people reporting to them", tText.includes("ZZP Member1") && tText.includes("ZZP Member2") && tText.includes("ZZP Member4"));
@@ -194,9 +201,9 @@ try {
   await T.goto(BASE + `/team?team=${teamB.id}`); await T.waitForLoadState("networkidle").catch(() => {});
   check("filtering by another team cannot widen what a team manager sees", /No one matches|No one is in your team/.test(await main(T)) && !(await main(T)).includes("ZZP Member3"));
   await T.goto(BASE + `/team/${m1.id}`); await T.waitForLoadState("networkidle").catch(() => {});
-  check("a team member's profile opens, read only (fields are disabled, there is no Save details)", (await T.getByLabel("Name").first().isDisabled()) && (await T.getByRole("button", { name: "Save details" }).count()) === 0);
-  check("it has no delete, deactivate, setup link or reset buttons", (await T.getByRole("button", { name: /Delete|Deactivate|Send setup link|Reset password/ }).count()) === 0);
-  check("the access checklist offers only the applications the manager holds themselves", (await T.locator("main label", { hasText: "ZZP App 1" }).count()) >= 1 && (await T.locator("main label", { hasText: "ZZP App 3" }).count()) === 0);
+  check("a team member's profile opens with the details read only (fields are disabled, there is no Save details)", (await T.getByLabel("Name").first().isDisabled()) && (await T.getByRole("button", { name: "Save details" }).count()) === 0);
+  check("it has no delete, deactivate, temporary password or reset buttons", (await T.getByRole("button", { name: /Delete|Deactivate|temporary password|Reset password/ }).count()) === 0);
+  check("the access switches offer only the applications the manager holds themselves", (await T.getByRole("switch", { name: /access to ZZP App 1$/ }).count()) === 1 && (await T.getByRole("switch", { name: /access to ZZP App 3$/ }).count()) === 0);
   check("it says the person has another application only wider access can change", /1 application that only someone with wider access/.test(await main(T)), (await main(T)).slice(0, 200));
   await T.goto(BASE + `/team/${m3.id}`); await T.waitForLoadState("networkidle").catch(() => {});
   check("a person outside the team is 'not found', not forbidden (nothing is revealed)", /not found/i.test(await T.locator("body").innerText()) && !(await T.locator("body").innerText()).includes("ZZP Member3"));
@@ -224,7 +231,8 @@ try {
   check("and the audit export is closed to them", exp.status() >= 300, exp.status());
   memS = await newSession(); const M = memS.page;
   await signIn(M, m1.email, PW);
-  check("a plain user has no 'My team' item", (await M.locator("aside:visible nav a", { hasText: "My team" }).count()) === 0);
+  await M.goto(BASE + "/"); await M.waitForLoadState("networkidle").catch(() => {});
+  check("a plain user has no 'My team' card", (await M.locator('main a[href="/team"]').count()) === 0);
   await M.goto(BASE + "/team"); await M.waitForLoadState("networkidle").catch(() => {});
   check("and a plain user who opens /team is sent back to the hub", new URL(M.url()).pathname === "/", M.url());
 
@@ -232,7 +240,7 @@ try {
   section("4. Application labels, the inventory and link checks");
   await go("/administrator/inventory");
   const inv = await main(A);
-  check("the inventory lists applications with their department, address and who can open them", inv.includes("ZZP App 1") && inv.includes("ZZP Dept") && /https:\/\/example\.com\/zzp1/.test(inv) && /people? assigned/.test(inv));
+  check("the inventory lists applications with their department, address and who can open them", inv.includes("ZZP App 1") && inv.includes("ZZP Dept") && /https:\/\/example\.com\/zzp1/.test(inv) && /people? assigned, plus the Support Admin/.test(inv) && !/Super Admin/.test(inv));
   check("it explains that 'verified' means the link answered, not that features were tested", /does not mean the application.s own features were tested/.test(inv));
   await A.getByRole("button", { name: "Check ZZP App 3" }).click();
   check("a check aimed at a private address is refused and says so (the server never fetches internal addresses)", await toast(A, "private or internal network")); await A.waitForTimeout(800);
@@ -293,8 +301,10 @@ try {
   await A.locator("input[type=file]").setInputFiles(path.join(ROOT, "tests/fixtures/people.xlsx"));
   await A.getByLabel("name for row 1").waitFor({ timeout: 15000 });
   check("an Excel file is read: note rows and empty rows skipped, names and symbols intact", (await A.getByLabel("name for row 2").inputValue()) === "Ravi & Sons <Test>" && (await A.locator("tr[data-row]").count()) === 3);
-  await poll(async () => /must end with/.test((await A.locator("tr[data-row='1']").innerText()).replace(/\s+/g, " ")));
-  check("addresses outside the allowed domains are flagged and cannot be created", /must end with/.test((await A.locator("tr[data-row='1']").innerText()).replace(/\s+/g, " ")) && (await A.getByRole("button", { name: /^Create \d+ accounts?/ }).isDisabled()));
+  if ((process.env.ALLOWED_EMAIL_DOMAIN || "").trim()) {
+    await poll(async () => /must end with/.test((await A.locator("tr[data-row='1']").innerText()).replace(/\s+/g, " ")));
+    check("addresses outside the allowed domains are flagged and cannot be created", /must end with/.test((await A.locator("tr[data-row='1']").innerText()).replace(/\s+/g, " ")) && (await A.getByRole("button", { name: /^Create \d+ accounts?/ }).isDisabled()));
+  } else console.log("   (skipped: the allowed-domains check needs ALLOWED_EMAIL_DOMAIN set, for example gmail.com,example.com, for this test and the site)");
   await A.locator("input[type=file]").setInputFiles(path.join(ROOT, "tests/fixtures/people-gmail.xlsx"));
   await A.getByLabel("name for row 1").waitFor({ timeout: 15000 });
   const createBtn = A.getByRole("button", { name: /^Create \d+ accounts?/ });
@@ -322,32 +332,38 @@ try {
   check("the update changed the designation but never the name, the role or the password", x1b.designation === "Senior analyst" && x1b.name === "ZZP Xl One" && x1b.role === "member" && x1b.password_hash === null);
 
   // ------------------------------------------------------------------------------------------------------------------------------
-  section("6. One-time setup links from the profile");
+  section("6. Temporary passwords from a person's page");
   await go("/administrator/users/" + x1.id);
   check("a person who has not set a password shows as Pending invitation", /pending invitation/i.test(await main(A)));
-  await A.getByRole("button", { name: "Send setup link" }).click();
-  const links = A.getByRole("dialog", { name: "Setup links" });
-  const linkA = await links.getByLabel("Setup link for ZZP Xl One").inputValue(); await links.getByRole("button", { name: "Done", exact: true }).click();
-  await A.getByRole("button", { name: "Send setup link" }).click();
-  const linkB = await links.getByLabel("Setup link for ZZP Xl One").inputValue(); await links.getByRole("button", { name: "Done", exact: true }).click();
-  check("every new link is different", linkA !== linkB && /set-password\?token=/.test(linkB));
+  const details = A.getByRole("dialog", { name: "Sign-in details" });
+  const sendTemp = async (name) => { await A.getByRole("button", { name: "Email temporary password" }).click(); const v = await details.getByLabel(`Temporary password for ${name}`).inputValue(); await details.getByRole("button", { name: "Done", exact: true }).click(); return v; };
+  const tempA = await sendTemp("ZZP Xl One");
+  const tempB = await sendTemp("ZZP Xl One");
+  check("with no email set up, each temporary password is shown once to pass on, and every one is new", tempA !== tempB && tempB.length === 12);
   const pub = await newSession(); const P = pub.page;
-  await P.goto(linkA); check("sending a new link cancels the old one", /This link cannot be used/.test(await P.content()));
-  await P.goto(linkB); check("the new link works", /Choose your password/.test(await P.content()));
-  await P.locator("input[autocomplete=new-password]").nth(0).fill("Xl-one-pass-12345"); await P.locator("input[autocomplete=new-password]").nth(1).fill("Xl-one-pass-12345"); await P.getByRole("button", { name: /Save password/ }).click(); await P.waitForURL(/\/login/, { timeout: 20000 }).catch(() => {});
-  await signIn(P, "zzp-xl1@gmail.com", "Xl-one-pass-12345"); check("after choosing a password the person signs in", new URL(P.url()).pathname === "/", P.url()); await pub.ctx.close();
-  await go("/administrator/users/" + x1.id); check("their status is now Active", /active/i.test(await A.locator("main aside").first().innerText()) && !/pending/i.test(await A.locator("main aside").first().innerText()));
-  await go("/administrator/users/" + x2.id); await A.getByRole("button", { name: "Send setup link" }).click();
-  const x2Link = await links.getByLabel("Setup link for ZZP Xl Two & Co <T>").inputValue(); await links.getByRole("button", { name: "Done", exact: true }).click();
+  await signIn(P, "zzp-xl1@gmail.com", tempA);
+  check("sending a new one cancels the old one", new URL(P.url()).searchParams.get("error") === "1");
+  await signIn(P, "zzp-xl1@gmail.com", tempB);
+  await P.waitForURL(/change-password/, { timeout: 20000 }).catch(() => {});
+  check("the new one signs in, straight to choosing their own password", new URL(P.url()).pathname === "/change-password");
+  await P.getByLabel("Current password").fill(tempB); await P.getByLabel("New password", { exact: true }).fill("Xl-one-pass-12345"); await P.getByLabel("Repeat new password").fill("Xl-one-pass-12345");
+  await P.getByRole("button", { name: "Save password" }).click();
+  check("choosing their own password is confirmed", await toast(P, "Password changed."));
+  await pub.ctx.close();
+  const pub1b = await newSession(); await signIn(pub1b.page, "zzp-xl1@gmail.com", "Xl-one-pass-12345");
+  check("after that they sign in with their own password, to the hub", new URL(pub1b.page.url()).pathname === "/", pub1b.page.url()); await pub1b.ctx.close();
+  await go("/administrator/users/" + x1.id); const account = A.locator('section[aria-label="Account"]'); check("their status is now Active", /active/i.test(await account.innerText()) && !/pending/i.test(await account.innerText()), (await account.innerText()).replace(/\s+/g, " "));
+  await go("/administrator/users/" + x2.id); const x2Temp = await sendTemp("ZZP Xl Two & Co <T>");
   await A.getByRole("button", { name: "Deactivate" }).click(); await A.getByRole("button", { name: "Deactivate", exact: true }).last().click(); await toast(A, "deactivated"); await A.waitForTimeout(1000);
-  const pub2 = await newSession(); await pub2.page.goto(x2Link); check("a link for an account that has since been deactivated no longer works", /This link cannot be used/.test(await pub2.page.content())); await pub2.ctx.close();
-  const pub3 = await newSession(); const nolink = await pub3.page.request.get(BASE + "/set-password"); check("the set-password page without a token is a polite refusal, not an error", nolink.status() === 200 && /This link cannot be used/.test(await nolink.text())); await pub3.ctx.close();
+  const pub2 = await newSession(); await signIn(pub2.page, "zzp-xl2@gmail.com", x2Temp); check("a temporary password for an account that has since been deactivated no longer works", new URL(pub2.page.url()).searchParams.get("error") === "1"); await pub2.ctx.close();
+  const pub3 = await newSession(); const nolink = await pub3.page.request.get(BASE + "/set-password"); check("the old set-password page without a link is a polite refusal, not an error", nolink.status() === 200 && /This link cannot be used/.test(await nolink.text())); await pub3.ctx.close();
 
   // ------------------------------------------------------------------------------------------------------------------------------
   section("7. The audit log and the dashboard");
   await go("/administrator/users/audit?q=ZZP");
+  check("the old audit address opens the Admin changes tab of the Activity Log", new URL(A.url()).pathname === "/administrator/activity" && new URL(A.url()).searchParams.get("tab") === "changes");
   const at = await main(A);
-  check("the audit log lists changes with who, what and when", /by/i.test(at) && /access\.change/i.test(at) && /user\.update/i.test(at) && /app\.status/i.test(at) && /user\.invite/i.test(at) && /user\.create|import\.batch/i.test(at));
+  check("the audit log lists changes with who, what and when", /access\.change/i.test(at) && /user\.update/i.test(at) && /app\.status/i.test(at) && /user\.invite/i.test(at) && /user\.create|import\.batch/i.test(at), at.slice(0, 300));
   check("it never shows a password, a token or a setup link", !/set-password|token=|scrypt|password:/i.test(at) && !(JSON.stringify(await sql`select details from access_audit where at >= ${startedAt}`)).match(/set-password|scrypt|token/i));
   await A.getByLabel("Action").selectOption("access.change"); await A.getByRole("button", { name: "Apply" }).click(); await A.waitForLoadState("networkidle").catch(() => {});
   check("filtering by action shows only that action", (await A.locator("tbody tr .badge").allInnerTexts()).every((t) => t.trim().toLowerCase() === "access.change") && (await A.locator("tbody tr").count()) > 0);
@@ -356,10 +372,11 @@ try {
   check("the audit log exports as CSV with its filters", ex.status() === 200 && /text\/csv/.test(ex.headers()["content-type"]) && exTxt.includes("Time (IST)") && exTxt.includes("access.change") && !/set-password|scrypt/i.test(exTxt));
   const cold = await newSession(); const coldEx = await cold.page.request.get(BASE + href, { maxRedirects: 0 }); check("without signing in, the export is closed", coldEx.status() >= 300 && coldEx.status() < 400, coldEx.status()); await cold.ctx.close();
   await go("/administrator");
-  const pendingDb = (await sql`select count(*)::int n from users where is_active and password_hash is null and signup_source is distinct from 'env'`)[0].n;
+  // Pending: no password of their own yet (none at all, or only the temporary one they were sent).
+  const pendingDb = (await sql`select count(*)::int n from users where is_active and (password_hash is null or must_change_password) and signup_source is distinct from 'env'`)[0].n;
   const totalDb = (await sql`select count(*)::int n from users`)[0].n;
-  const shows = async (label, n) => poll(async () => (await A.getByRole("link", { name: label }).innerText()).includes(String(n)), 8000);
-  check("the dashboard's numbers match the database (pending invitations and total users)", (await shows(/Pending invitations/, pendingDb)) && (await shows(/Total users/, totalDb)), `${pendingDb} / ${totalDb}`);
+  const shows = async (label, n) => poll(async () => (await A.getByRole("link", { name: label }).first().innerText()).includes(String(n)), 8000);
+  check("the dashboard's numbers match the database (pending invitations and total users)", (await shows(/Pending invitation/, pendingDb)) && (await shows(/Total users/, totalDb)), `${pendingDb} / ${totalDb}`);
 
   // ------------------------------------------------------------------------------------------------------------------------------
   section("8. Keyboard, labels and a phone-sized screen");

@@ -19,19 +19,21 @@ req("dotenv").config({ path: ROOT + "/.env.local", quiet: true });
 req("dotenv").config({ path: ROOT + "/.env", quiet: true });
 const BASE = (process.env.E2E_BASE_URL || "").replace(/\/$/, "");
 if (!BASE) { console.error("Set E2E_BASE_URL, for example: E2E_BASE_URL=http://localhost:3000 npm run test:e2e"); process.exit(2); }
+if (/neon\.tech/i.test(process.env.DATABASE_URL || "") && process.env.E2E_ALLOW_NEON !== "yes") { console.error("DATABASE_URL is a Neon address. Point it (and the site) at a test database, or a Neon branch with E2E_ALLOW_NEON=yes."); process.exit(2); }
 const BROWSER = process.env.E2E_BROWSER || "chromium";
 // The same query helper for both database drivers the app supports (DB_DRIVER=neon, the default, or DB_DRIVER=pg for a local Postgres).
 const rawSql = (() => {
   if ((process.env.DB_DRIVER ?? "neon") !== "pg") return req("@neondatabase/serverless").neon(process.env.DATABASE_URL);
-  const pool = new (req("pg").Pool)({ connectionString: process.env.DATABASE_URL, max: 4, ssl: process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : false });
+  const local = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(process.env.DATABASE_URL || "");
+  const pool = new (req("pg").Pool)({ connectionString: process.env.DATABASE_URL, max: 4, ssl: local ? false : { rejectUnauthorized: true } });
   return async (strings, ...values) => (await pool.query(strings.reduce((q, t, i) => q + (i ? `$${i}` : "") + t, ""), values)).rows;
 })();
 // Every query is retried a few times: a flaky connection from the test machine must not fail the run or leave data behind.
 const sql = (...args) => retry(() => rawSql(...args), 10, 4000);
 const playwright = req("playwright-core");
 const SP = fs.mkdtempSync(path.join(os.tmpdir(), "hub-e2e-"));
-const ADMIN_EMAIL = (process.env.HEAD_ADMIN_EMAIL || "").trim().toLowerCase();
-const ADMIN_PW = process.env.HEAD_ADMIN_PASSWORD || "";
+const ADMIN_EMAIL = (process.env.SUPPORT_ADMIN_EMAIL || process.env.HEAD_ADMIN_EMAIL || "").trim().toLowerCase();
+const ADMIN_PW = (process.env.SUPPORT_ADMIN_PASSWORD || process.env.HEAD_ADMIN_PASSWORD || "").trim();
 if (!ADMIN_EMAIL || !ADMIN_PW) { console.error("HEAD_ADMIN_EMAIL and HEAD_ADMIN_PASSWORD must be set in .env: the suite signs in as the main admin."); process.exit(2); }
 const launch = () => BROWSER === "chromium"
   ? playwright.chromium.launch({ channel: process.env.E2E_CHROME_CHANNEL || "chrome", headless: true }).catch(() => playwright.chromium.launch({ headless: true }))
@@ -70,6 +72,8 @@ const snap = async () => ({
 await retry(removeTestData); // clears leftovers of any earlier interrupted run
 const before = await retry(snap);
 const browser = await launch();
+// The "Download the app" popup and banner are marked as already seen in every test browser, so they never cover a button.
+{ const open = browser.newContext.bind(browser); browser.newContext = async (o) => { const c = await open(o); await c.addInitScript(() => { try { localStorage.setItem("mccia-install-popup-seen", "1"); localStorage.setItem("mccia-install-snoozed-until", String(Date.now() + 864e5)); } catch {} }); return c; }; }
 const ctx = await browser.newContext({ viewport: { width: 1300, height: 1000 }, acceptDownloads: true });
 const page = await ctx.newPage();
 const unlockIf = async (pg) => {
