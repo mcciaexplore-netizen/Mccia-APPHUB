@@ -1,6 +1,7 @@
 /**
  * Integration test of the hub's people-and-access server code against a real Postgres: changing access, team-manager limits, the
- * directory, bulk import, one-time invitations, the audit log, revocation and deactivation. It calls the code directly (no browser, no
+ * directory, bulk import, temporary passwords, the audit log, revocation and deactivation, the roles (Support Admin in the environment;
+ * Super Admin, HR Admin and Expense Admin one person each) and the sign-in limits. It calls the code directly (no browser, no
  * web server), passing in who is acting, so every permission rule is exercised with real data.
  *
  * It WRITES to the database, so point it at a scratch database, never the live one:
@@ -24,15 +25,11 @@ process.env.DB_DRIVER = process.env.INTEGRATION_DB_DRIVER ?? "pg";
 process.env.APP_BASE_URL = "http://localhost:3999";
 process.env.HEAD_ADMIN_EMAIL = "zz-hub-env-admin@example.com";
 process.env.HEAD_ADMIN_PASSWORD = "Env-admin-pass-1";
+// Left over from when the Super Admin, HR and Expenditure accounts lived in the environment: they must now be ignored (section 12).
 process.env.SUPER_ADMIN_EMAIL = "zz-hub-env-super@example.com";
-process.env.SUPER_ADMIN_NAME = "ZZH Env Super";
 process.env.SUPER_ADMIN_PASSWORD = "Env-super-pass-1";
 process.env.HR_ADMIN_EMAIL = "zz-hub-env-hr@example.com";
-process.env.HR_ADMIN_NAME = "ZZH Env HR";
 process.env.HR_ADMIN_PASSWORD = "Env-hr-pass-1";
-process.env.EXPENDITURE_ADMIN_EMAIL = "zz-hub-env-exp@example.com";
-process.env.EXPENDITURE_ADMIN_NAME = "ZZH Env Expenditure";
-process.env.EXPENDITURE_ADMIN_PASSWORD = "Env-exp-pass-1";
 delete process.env.SMTP_HOST; // no real email from a test
 delete process.env.SMTP_FROM;
 delete process.env.ALLOWED_EMAIL_DOMAIN;
@@ -49,6 +46,7 @@ const { checkImport, commitBatch } = await import("../src/lib/import");
 const { sendInvite, inviteInfo, completeInvite, hashToken } = await import("../src/lib/invites");
 const { getAccessibleApps, getLaunchTarget } = await import("../src/lib/access");
 const { authenticate, isEnvAdmin, userFingerprint } = await import("../src/lib/auth");
+const { refuseOrSlow, record } = await import("../src/lib/sign-in-limits");
 const { hashPassword, verifyPassword } = await import("../src/lib/passwords");
 const { UserError } = await import("../src/lib/user-error");
 type User = typeof S.users.$inferSelect;
@@ -67,12 +65,21 @@ const refused = async (fn: () => Promise<unknown>): Promise<string | null> => {
 const cleanup = async () => {
   await db.delete(S.accessAudit).where(like(S.accessAudit.actorName, "ZZH %"));
   await db.delete(S.accessAudit).where(like(S.accessAudit.targetLabel, "ZZH %"));
+  await db.delete(S.loginAttempts).where(like(S.loginAttempts.email, "zz-hub-%"));
   await db.delete(S.users).where(like(S.users.email, "zz-hub-%"));
   await db.delete(S.apps).where(like(S.apps.name, "ZZH %"));
   await db.delete(S.teams).where(like(S.teams.name, "ZZH %"));
   await db.delete(S.branches).where(like(S.branches.name, "ZZH %"));
   await db.delete(S.departments).where(like(S.departments.name, "ZZH %"));
 };
+
+// The Super Admin, HR Admin and Expense Admin are one person each (enforced by the database), and the test makes its own: it cannot run
+// where real people already hold those roles.
+const holders = await db.select({ email: S.users.email }).from(S.users).where(and(inArray(S.users.role, ["super_admin", "hr_admin", "expense_admin"]), sql`${S.users.email} not like 'zz-hub-%'`));
+if (holders.length) {
+  console.error(`This database already has a Super Admin, HR Admin or Expense Admin (${holders.length}). Use a scratch database.`);
+  process.exit(2);
+}
 
 try {
   await cleanup();
@@ -223,42 +230,48 @@ try {
   check("a bad email is invalid with a message naming the value", st(3).status === "invalid" && st(3).errors[0].includes("not-an-email"));
   check("a repeated email in the file is marked duplicate and points at the first row", st(4).status === "duplicate" && st(4).errors[0].includes("Row 1"));
   check("an existing account is marked exists and is skipped under the skip policy", st(5).status === "exists" && st(5).action === "skip");
-  check("a misspelt branch needs correction and suggests the real one", st(6).status === "needs_correction" && st(6).suggestions[0].includes("ZZH Pune"), st(6));
-  check("a team that belongs to another branch is invalid and names both", st(7).status === "invalid" && st(7).errors[0].includes("ZZH Pune"));
-  check("an administrator role cannot be assigned by import", st(8).status === "invalid" && st(8).errors[0].includes("not recognised"));
-  check("an unknown application is invalid", st(9).status === "invalid" && st(9).errors[0].includes("ZZH Nope"));
+  // Only name and email are required. A branch, team, manager, role or application that cannot be matched is left empty, with a warning.
+  const warned = (n: number, text: string) => st(n).status === "valid" && st(n).errors.length === 0 && st(n).warnings.join(" ").includes(text);
+  check("a misspelt branch is left empty with a warning that suggests the real one", warned(6, "ZZH Pnue") && warned(6, "ZZH Pune"), st(6));
+  check("a team that belongs to another branch is left empty with a warning naming both", warned(7, "ZZH Accounts") && warned(7, "ZZH Pune"), st(7));
+  check("a role the import does not know adds them as a User, with a warning", warned(8, "not recognised"), st(8));
+  check("an unknown application is not given, with a warning", warned(9, "ZZH Nope"), st(9));
   check("a reporting loop inside the file marks both rows invalid", st(10).status === "invalid" && st(11).status === "invalid" && st(10).errors.join().includes("loop"));
-  check("a manager who is nowhere is invalid", st(12).status === "invalid" && st(12).errors[0].includes("ghost@example.com"));
+  check("a manager who is nowhere is left empty, with a warning", warned(12, "ghost@example.com"), st(12));
   check("a missing name is invalid", st(13).status === "invalid" && st(13).errors[0].includes("Name is missing"));
-  check("the summary counts every kind", chk.summary.total === 14 && chk.summary.willCreate === 3 && chk.summary.duplicate === 1 && chk.summary.exists === 1 && chk.summary.needsCorrection === 1, chk.summary);
+  check("the summary counts every kind", chk.summary.total === 14 && chk.summary.willCreate === 8 && chk.summary.valid === 8 && chk.summary.invalid === 4 && chk.summary.duplicate === 1 && chk.summary.exists === 1 && chk.summary.needsCorrection === 0, chk.summary);
   check("the order puts a manager before the people who report to them", chk.order.indexOf(1) < chk.order.indexOf(2) && chk.order.indexOf(2) < chk.order.indexOf(14), chk.order);
   check("checking writes nothing", (await db.select({ n: count() }).from(S.users).where(like(S.users.email, "zz-hub-imp-%")))[0].n === 0);
   check("only the super administrator may check or run an import", (await refused(() => checkImport(tm, rows, { existing: "skip" }))) !== null && (await refused(() => commitBatch(tm as never, rows, { existing: "skip" }, [1], { invite: true }))) !== null);
 
   const out1 = await commitBatch(admin, rows, { existing: "skip" }, chk.order, { invite: true });
   const o = (n: number) => out1.find((r) => r.row === n)!;
-  check("the valid rows are created", o(1).outcome === "created" && o(2).outcome === "created" && o(14).outcome === "created", out1);
+  check("the valid rows are created, including those with warnings", [1, 2, 6, 7, 8, 9, 12, 14].every((n) => o(n)?.outcome === "created") && [3, 4, 10, 11, 13].every((n) => !o(n) || o(n).outcome === "invalid"), out1);
   const boss = (await db.select().from(S.users).where(eq(S.users.email, "zz-hub-imp-boss@example.com")))[0];
   const r1u = (await db.select().from(S.users).where(eq(S.users.email, "zz-hub-imp-r1@example.com")))[0];
   const child = (await db.select().from(S.users).where(eq(S.users.email, "zz-hub-imp-child@example.com")))[0];
   check("organisation fields are saved: branch, team, designation, role", boss.branchId === bPune.id && boss.teamId === tAcc.id && boss.designation === "Head" && r1u.role === "dept_lead");
   check("reporting managers inside the file are linked in the right order", r1u.reportingManagerId === boss.id && child.reportingManagerId === r1u.id);
   check("applications from the file are assigned, and only those", JSON.stringify(await grantRows(boss.id)) === JSON.stringify(sorted(aTally.id, aCrm.id)) && JSON.stringify(await grantRows(r1u.id)) === JSON.stringify([aLedger.id]) && (await grantRows(child.id)).length === 0);
-  check("no password exists for imported people: they are pending an invitation", boss.passwordHash === null && (await listPeople(admin, pf({ status: "pending", q: "zz-hub-imp-boss" }))).total === 1);
+  const typo = (await db.select().from(S.users).where(eq(S.users.email, "zz-hub-imp-typo@example.com")))[0];
+  const badRole = (await db.select().from(S.users).where(eq(S.users.email, "zz-hub-imp-br@example.com")))[0];
+  check("what could not be matched is left empty, and an unknown role becomes a User", typo.branchId === null && badRole.role === "member" && (await grantRows((await db.select().from(S.users).where(eq(S.users.email, "zz-hub-imp-ba@example.com")))[0].id)).length === 0);
+  check("imported people get a temporary password (stored only as a hash) they must change, and show as pending", !!boss.passwordHash && boss.passwordHash.startsWith("scrypt$") && boss.mustChangePassword === true && (await listPeople(admin, pf({ status: "pending", q: "zz-hub-imp-boss" }))).total === 1);
   const inv = await db.select().from(S.userInvites).where(eq(S.userInvites.userId, boss.id));
-  check("one invitation exists, stored only as a 64-character hash, expiring in about 72 hours", inv.length === 1 && /^[0-9a-f]{64}$/.test(inv[0].tokenHash) && Math.abs(inv[0].expiresAt.getTime() - Date.now() - 72 * 3600 * 1000) < 120000);
-  check("with no mail set up the link is handed back once, marked manual", o(1).invitation === "manual" && !!o(1).link && o(1).link!.startsWith("http://localhost:3999/set-password?token="));
+  check("one invitation record exists, holding only a 64-character hash, expiring in about 7 days", inv.length === 1 && /^[0-9a-f]{64}$/.test(inv[0].tokenHash) && Math.abs(inv[0].expiresAt.getTime() - Date.now() - 168 * 3600 * 1000) < 120000);
+  check("with no mail set up the temporary password is handed back once, marked manual, and it signs them in", o(1).invitation === "manual" && /^.{12}$/.test(o(1).link ?? "") && inv[0].tokenHash === hashToken(o(1).link!) && (await authenticate(boss.email, o(1).link!))?.id === boss.id);
   check("the delivery is recorded as manual in the database", inv[0].delivery === "manual");
-  const outBad = await commitBatch(admin, rows, { existing: "skip" }, [3, 4, 6, 7, 8, 9, 10, 12, 13], { invite: true });
-  check("rows with problems are reported with their reasons and nothing is created for them", outBad.every((r) => r.outcome === "invalid" && r.message.length > 0) && (await db.select({ n: count() }).from(S.users).where(inArray(S.users.email, ["zz-hub-imp-typo@example.com", "zz-hub-imp-ba@example.com", "zz-hub-imp-noname@example.com", "zz-hub-imp-la@example.com", "zz-hub-imp-nm@example.com"])))[0].n === 0, outBad);
+  const outBad = await commitBatch(admin, rows, { existing: "skip" }, [3, 4, 10, 13], { invite: true });
+  check("rows with problems are reported with their reasons and nothing is created for them", outBad.every((r) => r.outcome === "invalid" && r.message.length > 0) && (await db.select({ n: count() }).from(S.users).where(inArray(S.users.email, ["not-an-email", "zz-hub-imp-noname@example.com", "zz-hub-imp-la@example.com"])))[0].n === 0, outBad);
   const counts = async () => JSON.stringify([
     (await db.select({ n: count() }).from(S.users).where(like(S.users.email, "zz-hub-imp-%")))[0].n,
     (await db.select({ n: count() }).from(S.userAppAccess).where(inArray(S.userAppAccess.userId, [boss.id, r1u.id, child.id])))[0].n,
     (await db.select({ n: count() }).from(S.userInvites).where(inArray(S.userInvites.userId, [boss.id, r1u.id, child.id])))[0].n,
+    (await db.select({ h: S.users.passwordHash }).from(S.users).where(eq(S.users.id, boss.id)))[0].h,
   ]);
   const snap = await counts();
   const out2 = await commitBatch(admin, rows, { existing: "skip" }, chk.order, { invite: true });
-  check("running the same import again creates no duplicates: accounts, grants and invitations are unchanged", (await counts()) === snap && out2.filter((r) => r.row === 1 || r.row === 2 || r.row === 14).every((r) => r.outcome === "skipped"), out2);
+  check("running the same import again creates no duplicates: accounts, grants, invitations and passwords are unchanged", (await counts()) === snap && out2.filter((r) => [1, 2, 6, 14].includes(r.row)).every((r) => r.outcome === "skipped"), out2);
   check("a batch may not be larger than the limit", (await refused(() => commitBatch(admin, rows, { existing: "skip" }, Array.from({ length: 26 }, (_, i) => i + 1), { invite: true })))?.includes("between 1 and") === true);
   check("a row number that is not in the file is reported, not crashed on", (await commitBatch(admin, rows, { existing: "skip" }, [999], { invite: true }))[0].outcome === "failed");
 
@@ -266,30 +279,41 @@ try {
   const asha = (await db.select().from(S.users).where(eq(S.users.id, inTeam1.id)))[0];
   check("the update policy changes designation and adds apps, but never the name, role, password or status", upd[0].outcome === "updated" && asha.designation === "Senior" && asha.name === "ZZH Asha InTeam" && asha.role === "member" && asha.passwordHash === "scrypt$16384$x$y" && (await grantRows(inTeam1.id)).includes(aOps.id));
   const noInvite = await commitBatch(admin, [R(1, { name: "ZZH No Invite", email: "zz-hub-imp-noinv@example.com" })], { existing: "skip" }, [1], { invite: false });
-  check("creating without invitations makes the account but no invitation row", noInvite[0].outcome === "created" && noInvite[0].invitation === "none" && (await db.select({ n: count() }).from(S.userInvites).innerJoin(S.users, eq(S.users.id, S.userInvites.userId)).where(eq(S.users.email, "zz-hub-imp-noinv@example.com")))[0].n === 0);
+  const noInv = (await db.select().from(S.users).where(eq(S.users.email, "zz-hub-imp-noinv@example.com")))[0];
+  check("creating without sending details makes the account with no password and no invitation row (pending until details are sent)", noInvite[0].outcome === "created" && noInvite[0].invitation === "none" && noInv.passwordHash === null && (await db.select({ n: count() }).from(S.userInvites).where(eq(S.userInvites.userId, noInv.id)))[0].n === 0);
 
-  // ------------------------------------------------------------------------------------------------ 6. invitations
-  console.log("\n== 6. One-time invitation links ==");
+  // ------------------------------------------------------------------------------------------------ 6. temporary passwords
+  console.log("\n== 6. Temporary passwords (sign-in details) ==");
   const target = (await db.select().from(S.users).where(eq(S.users.id, pending.id)))[0];
   const i1 = await sendInvite(target, admin.id);
-  check("with no mail set up the link comes back once", i1.delivery === "manual" && !!i1.link);
-  const tok1 = new URL(i1.link!).searchParams.get("token")!;
-  check("the link shows who it is for, and nothing else", (await inviteInfo(tok1))?.email === pending.email);
+  const temp1 = i1.link!;
+  check("with no mail set up the temporary password comes back once: 12 characters", i1.delivery === "manual" && /^.{12}$/.test(temp1));
+  const afterSend = (await db.select().from(S.users).where(eq(S.users.id, pending.id)))[0];
+  check("the account now has it as a scrambled password, and must choose its own at the first sign-in", afterSend.passwordHash!.startsWith("scrypt$") && afterSend.mustChangePassword === true);
+  check("it signs them in while its invitation record is open", (await authenticate(pending.email, temp1))?.id === pending.id);
+  check("the database holds only hashes, never the temporary password", (await db.select().from(S.userInvites).where(eq(S.userInvites.tokenHash, temp1))).length === 0 && (await db.select().from(S.userInvites).where(eq(S.userInvites.tokenHash, hashToken(temp1)))).length === 1);
   const i2 = await sendInvite(target, admin.id);
-  const tok2 = new URL(i2.link!).searchParams.get("token")!;
-  check("sending a new link cancels the old one", (await inviteInfo(tok1)) === null && !!(await inviteInfo(tok2)));
-  check("the database holds only hashes, never the token", (await db.select().from(S.userInvites).where(eq(S.userInvites.tokenHash, tok2))).length === 0 && (await db.select().from(S.userInvites).where(eq(S.userInvites.tokenHash, hashToken(tok2)))).length === 1);
-  check("a weak password is refused before the link is used (checked by the caller), a wrong-shaped token is refused outright", (await inviteInfo("short")) === null && (await completeInvite("../../etc/passwd", "Whatever-pass-1")) === false);
-  check("choosing a password sets it, and the person can then sign in with it", (await completeInvite(tok2, "My-own-password-9")) === true && !!(await authenticate(pending.email, "My-own-password-9")));
-  check("the stored value is a hash, not the password", (await verifyPassword("My-own-password-9", (await db.select().from(S.users).where(eq(S.users.id, pending.id)))[0].passwordHash!)) === true);
-  check("a link works once: using it again fails and does not change the password", (await completeInvite(tok2, "Another-password-9")) === false && !!(await authenticate(pending.email, "My-own-password-9")) && !(await authenticate(pending.email, "Another-password-9")));
+  const temp2 = i2.link!;
+  check("sending new details replaces the old temporary password", temp1 !== temp2 && (await authenticate(pending.email, temp1)) === null && (await authenticate(pending.email, temp2))?.id === pending.id);
+  check("only one invitation record is still open", (await db.select().from(S.userInvites).where(eq(S.userInvites.userId, pending.id))).filter((r) => !r.usedAt && r.expiresAt > new Date()).length === 1);
+  await db.update(S.userInvites).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(S.userInvites.tokenHash, hashToken(temp2)));
+  check("once its 7 days are over, the temporary password no longer signs in", (await authenticate(pending.email, temp2)) === null);
   const i3 = await sendInvite(target, admin.id);
-  const tok3 = new URL(i3.link!).searchParams.get("token")!;
-  await db.update(S.userInvites).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(S.userInvites.tokenHash, hashToken(tok3)));
-  check("an expired link is refused", (await inviteInfo(tok3)) === null && (await completeInvite(tok3, "Expired-pass-9")) === false);
-  check("the main admin cannot be sent a link, and an inactive person cannot either", ((await refused(() => sendInvite({ id: admin.id, name: "x", email: process.env.HEAD_ADMIN_EMAIL!, isActive: true }, admin.id))) ?? "").includes("environment") && ((await refused(() => sendInvite({ id: gone.id, name: gone.name, email: gone.email, isActive: false }, admin.id))) ?? "").includes("inactive"));
-  const i4 = await sendInvite({ id: gone.id, name: gone.name, email: gone.email, isActive: true }, admin.id); // pretend the check passed, then the account is inactive
-  check("a link for an account that is inactive does not work", (await inviteInfo(new URL(i4.link!).searchParams.get("token")!)) === null);
+  // What the change-password action does once they choose their own (the action itself needs a browser session, so its writes are repeated here).
+  await db.update(S.users).set({ passwordHash: await hashPassword("My-own-password-9"), mustChangePassword: false }).where(eq(S.users.id, pending.id));
+  await db.update(S.userInvites).set({ usedAt: new Date() }).where(and(eq(S.userInvites.userId, pending.id), sql`${S.userInvites.usedAt} is null`));
+  check("after choosing their own password they sign in with it, and the temporary one stops working", !!(await authenticate(pending.email, "My-own-password-9")) && (await authenticate(pending.email, i3.link!)) === null);
+  check("the stored value is a hash, not the password", (await verifyPassword("My-own-password-9", (await db.select().from(S.users).where(eq(S.users.id, pending.id)))[0].passwordHash!)) === true);
+  check("the Support Admin cannot be sent one (their password is in the settings), and an inactive person cannot either", ((await refused(() => sendInvite({ id: admin.id, name: "x", email: process.env.HEAD_ADMIN_EMAIL!, isActive: true }, admin.id))) ?? "").includes("environment") && ((await refused(() => sendInvite({ id: gone.id, name: gone.name, email: gone.email, isActive: false }, admin.id))) ?? "").includes("inactive"));
+  await sendInvite({ id: gone.id, name: gone.name, email: gone.email, isActive: true }, admin.id); // pretend the check passed: the account is still inactive
+  const goneTemp = (await db.select().from(S.users).where(eq(S.users.id, gone.id)))[0];
+  check("a temporary password for an inactive account does not sign in", goneTemp.mustChangePassword === true && (await authenticate(gone.email, "anything-at-all")) === null);
+  // Older one-time links (sent before temporary passwords) still work on /set-password until they expire.
+  const legacy = "legacy-link-token-for-the-test-0123456789";
+  await db.insert(S.userInvites).values({ userId: plain.id, tokenHash: hashToken(legacy), expiresAt: new Date(Date.now() + 3600 * 1000), createdById: admin.id });
+  check("an older one-time link still shows who it is for and sets the password once", (await inviteInfo(legacy))?.email === plain.email && (await completeInvite(legacy, "Legacy-pass-1")) === true && (await completeInvite(legacy, "Legacy-pass-2")) === false && !!(await authenticate(plain.email, "Legacy-pass-1")));
+  check("a wrong-shaped link is refused outright", (await inviteInfo("short")) === null && (await completeInvite("../../etc/passwd", "Whatever-pass-1")) === false);
+  await db.update(S.users).set({ passwordHash: "scrypt$16384$x$y" }).where(eq(S.users.id, plain.id));
 
   // ------------------------------------------------------------------------------------------------ 7. revocation and deactivation
   console.log("\n== 7. Revoking access and deactivating accounts ==");
@@ -418,78 +442,73 @@ try {
   const [areasSaved] = await db.update(S.users).set({ adminAreas: ["people", "audit"] }).where(eq(S.users.id, madeAdmin.id)).returning();
   check("an Admin's areas are stored as a list", JSON.stringify(areasSaved.adminAreas) === JSON.stringify(["people", "audit"]));
 
-  // ------------------------------------------------------------------------------------------------ 12. Environment accounts: Support Admin and Super Admin
-  console.log("\n== 12. Accounts whose password lives in the environment settings ==");
-  const SUPER_EMAIL = "zz-hub-env-super@example.com";
-  const supEnv = await authenticate("  ZZ-Hub-Env-Super@Example.com ", "Env-super-pass-1");
-  check("the Super Admin signs in with the password from the settings (any capitals, spaces ignored), and the account is made on the first sign-in", !!supEnv && supEnv.role === "super_admin" && supEnv.signupSource === "env" && supEnv.name === "ZZH Env Super" && supEnv.isActive);
-  check("a wrong password is refused", (await authenticate(SUPER_EMAIL, "Env-super-pass-2")) === null && (await authenticate(SUPER_EMAIL, "")) === null);
-  const headEnv = await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1");
-  check("the Support Admin still signs in with theirs, as before", !!headEnv && headEnv.role === "head_admin");
-  check("neither password opens the other account", (await authenticate(SUPER_EMAIL, "Env-admin-pass-1")) === null && (await authenticate("zz-hub-env-admin@example.com", "Env-super-pass-1")) === null);
-  check("isEnvAdmin is true for both, and false for an ordinary account", isEnvAdmin(SUPER_EMAIL) && isEnvAdmin("zz-hub-env-admin@example.com") && !isEnvAdmin(plain.email));
-  await db.update(S.users).set({ passwordHash: await hashPassword("Stored-pass-1") }).where(eq(S.users.id, supEnv!.id));
-  check("a password stored in the database for that address is ignored: only the settings count", (await authenticate(SUPER_EMAIL, "Stored-pass-1")) === null && !!(await authenticate(SUPER_EMAIL, "Env-super-pass-1")));
-  await db.update(S.users).set({ role: "member", isActive: false }).where(eq(S.users.id, supEnv!.id));
-  const restored = await authenticate(SUPER_EMAIL, "Env-super-pass-1");
-  check("it can never be locked out: signing in puts the role back and reactivates it, as for the Support Admin", restored?.role === "super_admin" && restored.isActive === true);
-  const fpBefore = userFingerprint({ email: SUPER_EMAIL, passwordHash: null });
-  process.env.SUPER_ADMIN_PASSWORD = "Env-super-pass-9";
-  check("changing the password in the settings signs out every older session (the fingerprint changes)", userFingerprint({ email: SUPER_EMAIL, passwordHash: null }) !== fpBefore && (await authenticate(SUPER_EMAIL, "Env-super-pass-1")) === null && !!(await authenticate(SUPER_EMAIL, "Env-super-pass-9")));
-  process.env.SUPER_ADMIN_PASSWORD = "Env-super-pass-1";
-  check("the two environment accounts have different fingerprints", userFingerprint({ email: SUPER_EMAIL, passwordHash: null }) !== userFingerprint({ email: "zz-hub-env-admin@example.com", passwordHash: null }));
-  const supPerson = await getPerson(admin, supEnv!.id);
-  check("the directory marks the Super Admin as a main admin whose password is in the settings", supPerson?.mainAdmin === true && supPerson.passwordInSettings === true);
-  check("no setup link can be made for them", (await refused(() => sendInvite({ id: supEnv!.id, name: supEnv!.name, email: supEnv!.email, isActive: true }, admin.id))) !== null);
-  process.env.SUPER_ADMIN_EMAIL = "zz-hub-env-admin@example.com"; // the same address in both places: the Support Admin wins
-  check("if both settings name the same address, it is the Support Admin's", (await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1"))?.role === "head_admin" && (await authenticate("zz-hub-env-admin@example.com", "Env-super-pass-1")) === null);
-  process.env.SUPER_ADMIN_EMAIL = SUPER_EMAIL;
-  delete process.env.SUPER_ADMIN_EMAIL;
-  check("with no SUPER_ADMIN_EMAIL at all, that address is an ordinary account again and the Support Admin is unaffected", !isEnvAdmin(SUPER_EMAIL) && !!(await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1")));
-  process.env.SUPER_ADMIN_EMAIL = SUPER_EMAIL;
-
-  // ------------------------------------------------------------------------------------------------ 13. HR and Expenditure main accounts
-  console.log("\n== 13. HR and Expenditure main accounts, and the SUPPORT_ADMIN_* names ==");
-  const HR_EMAIL = "zz-hub-env-hr@example.com", EXP_EMAIL = "zz-hub-env-exp@example.com";
-  const rowOf = async (email: string) => (await db.select().from(S.users).where(eq(S.users.email, email)))[0];
-  check("signing in with one main account makes sure all four exist, active and with no stored password", (await rowOf("zz-hub-env-admin@example.com"))?.role === "head_admin" && (await rowOf(SUPER_EMAIL))?.role === "super_admin"
-    && (await rowOf(HR_EMAIL))?.role === "member" && (await rowOf(EXP_EMAIL))?.role === "member"
-    && (await rowOf(HR_EMAIL))?.passwordHash === null && (await rowOf(EXP_EMAIL))?.isActive === true && (await rowOf(HR_EMAIL))?.name === "ZZH Env HR" && (await rowOf(EXP_EMAIL))?.name === "ZZH Env Expenditure");
-  const hrUser = await authenticate(HR_EMAIL, "Env-hr-pass-1");
-  const expUser = await authenticate(EXP_EMAIL, "Env-exp-pass-1");
-  check("HR and Expenditure sign in with the passwords from the settings, as ordinary users (not administrators)", hrUser?.role === "member" && expUser?.role === "member");
-  check("wrong passwords, and each other's, are refused", (await authenticate(HR_EMAIL, "Env-exp-pass-1")) === null && (await authenticate(EXP_EMAIL, "Env-hr-pass-1")) === null && (await authenticate(HR_EMAIL, "nope")) === null);
-  check("all four count as environment accounts", [HR_EMAIL, EXP_EMAIL, SUPER_EMAIL, "zz-hub-env-admin@example.com"].every(isEnvAdmin));
-  await db.update(S.users).set({ role: "admin", adminAreas: ["people"], isActive: false }).where(eq(S.users.id, hrUser!.id));
-  const hrFixed = await authenticate(HR_EMAIL, "Env-hr-pass-1");
-  check("they cannot be locked out: signing in switches HR on again, but keeps the role and Admin areas the Support Admin gave them", hrFixed?.role === "admin" && hrFixed.isActive === true && hrFixed.adminAreas.join() === "people");
-  await db.update(S.users).set({ role: "member", adminAreas: [] }).where(eq(S.users.id, hrUser!.id)); // back to an ordinary user for what follows
-  await db.update(S.users).set({ role: "member" }).where(eq(S.users.email, SUPER_EMAIL));
-  check("the Super Admin and the Support Admin are different: their role is put back at every sign-in", (await authenticate(SUPER_EMAIL, "Env-super-pass-1"))?.role === "super_admin");
-  check("which the profile knows, so the Role box is greyed out for them only", (await getPerson(admin, hrUser!.id))?.roleFixed === false && (await getPerson(admin, (await rowOf(SUPER_EMAIL))!.id))?.roleFixed === true);
-  const hrPerson = await getPerson(admin, hrUser!.id);
-  check("the directory marks HR as a main account whose password is in the settings", hrPerson?.mainAdmin === true && hrPerson.passwordInSettings === true && hrPerson.role === "member");
-  check("the Support Admin can give HR applications on their profile, like anyone's", (await applyAccess(admin, { userIds: [hrUser!.id], appIds: [aTally.id], mode: "add", source: "test" })).changed.length === 1 && (await grantsOf(hrUser!.id)).includes(aTally.id));
-  check("no setup link can be made for HR or Expenditure", (await refused(() => sendInvite({ id: hrUser!.id, name: "HR", email: HR_EMAIL, isActive: true }, admin.id))) !== null && (await refused(() => sendInvite({ id: expUser!.id, name: "E", email: EXP_EMAIL, isActive: true }, admin.id))) !== null);
-  process.env.HR_ADMIN_EMAIL = SUPER_EMAIL; // one address cannot be two main accounts: the one earlier in the list wins
-  check("an address set for two main accounts belongs to the first (Support, then Super, HR, Expenditure)", (await authenticate(SUPER_EMAIL, "Env-super-pass-1"))?.role === "super_admin" && (await authenticate(SUPER_EMAIL, "Env-hr-pass-1")) === null && !isEnvAdmin(HR_EMAIL));
-  process.env.HR_ADMIN_EMAIL = HR_EMAIL;
+  // ------------------------------------------------------------------------------------------------ 12. The environment account: the Support Admin only
+  console.log("\n== 12. Only the Support Admin's password lives in the environment settings ==");
+  const SUPPORT_EMAIL = "zz-hub-env-admin@example.com";
+  const headEnv = await authenticate("  ZZ-Hub-Env-Admin@Example.com ", "Env-admin-pass-1");
+  check("the Support Admin signs in with the password from the settings (any capitals, spaces ignored), and the account is made on the first sign-in", headEnv?.role === "head_admin" && headEnv.signupSource === "env" && headEnv.isActive);
+  check("a wrong or empty password is refused", (await authenticate(SUPPORT_EMAIL, "Env-admin-pass-2")) === null && (await authenticate(SUPPORT_EMAIL, "")) === null);
+  check("the old SUPER_ADMIN_* and HR_ADMIN_* settings are ignored: no environment account, no sign-in, no account made", !isEnvAdmin("zz-hub-env-super@example.com") && !isEnvAdmin("zz-hub-env-hr@example.com")
+    && (await authenticate("zz-hub-env-super@example.com", "Env-super-pass-1")) === null && (await authenticate("zz-hub-env-hr@example.com", "Env-hr-pass-1")) === null
+    && (await db.select({ n: count() }).from(S.users).where(inArray(S.users.email, ["zz-hub-env-super@example.com", "zz-hub-env-hr@example.com"])))[0].n === 0);
+  await db.update(S.users).set({ passwordHash: await hashPassword("Stored-pass-1") }).where(eq(S.users.id, headEnv!.id));
+  check("a password stored in the database for that address is ignored: only the settings count", (await authenticate(SUPPORT_EMAIL, "Stored-pass-1")) === null && !!(await authenticate(SUPPORT_EMAIL, "Env-admin-pass-1")));
+  await db.update(S.users).set({ role: "member", isActive: false }).where(eq(S.users.id, headEnv!.id));
+  const restored = await authenticate(SUPPORT_EMAIL, "Env-admin-pass-1");
+  check("it can never be locked out: signing in puts the role back and reactivates it", restored?.role === "head_admin" && restored.isActive === true);
+  const fpBefore = userFingerprint({ email: SUPPORT_EMAIL, passwordHash: null });
+  process.env.HEAD_ADMIN_PASSWORD = "Env-admin-pass-9";
+  check("changing the password in the settings signs out every older session (the fingerprint changes)", userFingerprint({ email: SUPPORT_EMAIL, passwordHash: null }) !== fpBefore && (await authenticate(SUPPORT_EMAIL, "Env-admin-pass-1")) === null && !!(await authenticate(SUPPORT_EMAIL, "Env-admin-pass-9")));
+  process.env.HEAD_ADMIN_PASSWORD = "Env-admin-pass-1";
+  const supPerson = await getPerson(admin, headEnv!.id);
+  check("the directory marks it as the main account whose password is in the settings, with its role fixed", supPerson?.mainAdmin === true && supPerson.passwordInSettings === true && supPerson.roleFixed === true);
+  check("no temporary password can be sent to it", (await refused(() => sendInvite({ id: headEnv!.id, name: headEnv!.name, email: headEnv!.email, isActive: true }, admin.id))) !== null);
   process.env.SUPPORT_ADMIN_EMAIL = "zz-hub-env-support@example.com";
   process.env.SUPPORT_ADMIN_NAME = "ZZH Env Support";
   process.env.SUPPORT_ADMIN_PASSWORD = "Env-support-pass-1";
   const sup2 = await authenticate("zz-hub-env-support@example.com", "Env-support-pass-1");
-  check("SUPPORT_ADMIN_* works as the Support Admin, and the older HEAD_ADMIN_* keeps working beside it, so changing over locks nobody out", sup2?.role === "head_admin" && sup2.name === "ZZH Env Support" && isEnvAdmin("zz-hub-env-admin@example.com") && (await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1"))?.role === "head_admin");
-  process.env.SUPPORT_ADMIN_PASSWORD = "";
-  check("an account with an email but no password is ignored: it is an ordinary account, it cannot sign in with an empty password, and the old settings still work", !isEnvAdmin("zz-hub-env-support@example.com") && (await authenticate("zz-hub-env-support@example.com", "")) === null && !!(await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1")));
-  process.env.SUPER_ADMIN_PASSWORD = "   ";
-  check("a password of only spaces counts as no password", !isEnvAdmin(SUPER_EMAIL));
-  process.env.SUPER_ADMIN_PASSWORD = "  Env-super-pass-1 \n";
-  check("spaces or a line break around a password in the settings are not part of it", (await authenticate(SUPER_EMAIL, "Env-super-pass-1"))?.role === "super_admin");
-  process.env.SUPER_ADMIN_PASSWORD = "Env-super-pass-1";
-  process.env.SUPPORT_ADMIN_PASSWORD = "Env-support-pass-1";
+  check("SUPPORT_ADMIN_* works as the Support Admin, and the older HEAD_ADMIN_* keeps working beside it, so changing over locks nobody out", sup2?.role === "head_admin" && sup2.name === "ZZH Env Support" && (await authenticate(SUPPORT_EMAIL, "Env-admin-pass-1"))?.role === "head_admin");
+  check("neither password opens the other account", (await authenticate("zz-hub-env-support@example.com", "Env-admin-pass-1")) === null && (await authenticate(SUPPORT_EMAIL, "Env-support-pass-1")) === null);
+  process.env.SUPPORT_ADMIN_PASSWORD = "   ";
+  check("an email with a password of only spaces is not an environment account and cannot sign in with an empty password", !isEnvAdmin("zz-hub-env-support@example.com") && (await authenticate("zz-hub-env-support@example.com", "")) === null);
+  process.env.SUPPORT_ADMIN_PASSWORD = "  Env-support-pass-1 \n";
+  check("spaces or a line break around a password in the settings are not part of it", (await authenticate("zz-hub-env-support@example.com", "Env-support-pass-1"))?.role === "head_admin");
   delete process.env.SUPPORT_ADMIN_EMAIL; delete process.env.SUPPORT_ADMIN_NAME; delete process.env.SUPPORT_ADMIN_PASSWORD;
-  check("with the SUPPORT_ADMIN_* settings gone, HEAD_ADMIN_* is the Support Admin again", isEnvAdmin("zz-hub-env-admin@example.com") && (await authenticate("zz-hub-env-admin@example.com", "Env-admin-pass-1"))?.role === "head_admin");
-  check("a main account cannot be created or imported as a new person", (await refused(() => checkImport(admin, [R(1, { name: "ZZH Dup HR", email: HR_EMAIL })], { existing: "skip" }).then((c) => { if (c.checks[0].errors.length) throw new UserError(c.checks[0].errors.join(" ")); }))) !== null);
+  check("the Support Admin cannot be created or imported as a new person", (await refused(() => checkImport(admin, [R(1, { name: "ZZH Dup Admin", email: SUPPORT_EMAIL })], { existing: "skip" }).then((c) => { if (c.checks[0].errors.length) throw new UserError(c.checks[0].errors.join(" ")); }))) !== null);
+
+  // ------------------------------------------------------------------------------------------------ 13. Super Admin, HR Admin and Expense Admin: one person each
+  console.log("\n== 13. The Super Admin, HR Admin and Expense Admin roles: one person each, and they decide who approves ==");
+  const { roleApprovers } = await import("../src/lib/approvals/host-adapter");
+  const hrA = await mkUser("HR Admin", { role: "hr_admin" });
+  const expA = await mkUser("Expense Admin", { role: "expense_admin" });
+  const takenBy = async (role: "super_admin" | "hr_admin" | "expense_admin") => (await mkUser(`Second ${role}`, { role }).then(() => "allowed", (e) => String((e as { cause?: { code?: string } }).cause?.code ?? (e as { code?: string }).code ?? e)));
+  check("the database refuses a second Super Admin, HR Admin or Expense Admin", (await takenBy("super_admin")) === "23505" && (await takenBy("hr_admin")) === "23505" && (await takenBy("expense_admin")) === "23505");
+  const appr = await roleApprovers();
+  check("the approvers are whoever holds each role", appr.superAdmin?.id === superAdmin.id && appr.hr?.id === hrA.id && appr.expense?.id === expA.id);
+  check("they are ordinary users for applications: nothing until the Support Admin gives it", (await getAccessibleApps(hrA)).length === 0 && (await getAccessibleApps(expA)).length === 0);
+  check("they see nobody in the directory: only the Support Admin and Admins with Users & access manage people", (await listPeople(hrA, pf({}))).total === 0 && (await listPeople(expA, pf({}))).total === 0);
+  check("they cannot change anyone's access", (await refused(() => applyAccess(hrA, { userIds: [plain.id], appIds: [aTally.id], mode: "add", source: "test" }))) !== null && (await refused(() => applyAccess(expA, { userIds: [plain.id], appIds: [aTally.id], mode: "add", source: "test" }))) !== null);
+  check("an Admin with Users & access cannot reach them either", (await getPerson(admPeople, hrA.id)) === null && (await refused(() => applyAccess(admPeople, { userIds: [expA.id], appIds: [aTally.id], mode: "add", source: "test" }))) !== null);
+  await db.update(S.users).set({ role: "member" }).where(eq(S.users.id, hrA.id));
+  check("when the HR Admin's role is taken away, there is no HR approver until someone else is given it", (await roleApprovers()).hr === null);
+  const hrB = await mkUser("New HR Admin", { role: "hr_admin" });
+  check("and the new holder becomes the HR approver", (await roleApprovers()).hr?.id === hrB.id);
+  await db.update(S.users).set({ isActive: false }).where(eq(S.users.id, expA.id));
+  check("a deactivated holder is not an approver", (await roleApprovers()).expense === null);
+
+  // ------------------------------------------------------------------------------------------------ 14. sign-in limits
+  console.log("\n== 14. Sign-in limits: recorded attempts decide them ==");
+  const V = "zz-hub-victim@example.com";
+  for (let i = 0; i < 5; i++) await record(V, "198.51.100.7", "login", false);
+  check("after 5 wrong passwords for one email from one IP, that pair is refused", await refuseOrSlow(V, "198.51.100.7", "login"));
+  check("the refused try is recorded as blocked", (await db.select({ n: count() }).from(S.loginAttempts).where(and(eq(S.loginAttempts.email, V), eq(S.loginAttempts.blocked, true))))[0].n === 1);
+  check("the same email from another IP is not refused (no lock by email alone)", !(await refuseOrSlow(V, "198.51.100.8", "login")));
+  check("unlocking Administrator and changing a password share the same limits", await refuseOrSlow(V, "198.51.100.7", "unlock") && await refuseOrSlow(V, "198.51.100.7", "password"));
+  check("16 minutes later the pair may try again", !(await refuseOrSlow(V, "198.51.100.7", "login", Date.now() + 16 * 60_000)));
+  for (let i = 0; i < 30; i++) await record(`zz-hub-spray-${i}@example.com`, "198.51.100.9", "login", false);
+  check("after 30 wrong passwords from one IP across many emails, a new email from that IP is refused", await refuseOrSlow("zz-hub-someone@example.com", "198.51.100.9", "login"));
+  check("a right password is recorded as a success with its form", await record(plain.email, "198.51.100.10", "unlock", true).then(async () => (await db.select().from(S.loginAttempts).where(eq(S.loginAttempts.email, plain.email)))[0]?.kind === "unlock"));
+
   // The Approval System is not an application to tick: the old /approvals card and the entry pages are left out of the access box, and so is a category that holds nothing else
   const { getCatalog } = await import("../src/lib/catalog");
   const [dOnlyApr] = await db.insert(S.departments).values({ name: "ZZH Approval System", icon: "ClipboardList", slug: "zzh-approval-system" }).returning();
