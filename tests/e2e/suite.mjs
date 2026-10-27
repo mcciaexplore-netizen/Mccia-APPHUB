@@ -50,6 +50,7 @@ const poll = async (fn, ms = 25000) => { const end = Date.now() + ms; let v; whi
 const retry = async (fn, tries = 14, waitMs = 5000) => { let last; for (let i = 0; i < tries; i++) { try { return await fn(); } catch (e) { last = e; await new Promise((r) => setTimeout(r, waitMs)); } } throw last; };
 const removeTestData = async () => {
   await sql`delete from access_audit where at >= ${new Date(startedAt.getTime() - 60000)}`; // what this run's own administrator actions recorded
+  await sql`delete from login_attempts where created_at >= ${new Date(startedAt.getTime() - 60000)} and (email like 'zz-%' or email = ${ADMIN_EMAIL} or email = 'nobody-here@example.com')`;
   const ids = (await sql`select id from users where email like 'zz-%'`).map((r) => r.id);
   for (const id of ids) { await sql`delete from user_app_access where user_id=${id}`; await sql`delete from activity_log where user_id=${id}`; }
   await sql`delete from users where email like 'zz-%'`;
@@ -61,7 +62,7 @@ const removeTestData = async () => {
 };
 // The same scrypt format the site uses, so a test can give a person a known password without going through the screens.
 const scryptHash = (pw) => { const salt = crypto.randomBytes(16); const key = crypto.scryptSync(pw, salt, 32, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }); return `scrypt$16384$${salt.toString("base64")}$${key.toString("base64")}`; };
-const setPassword = (email, pw) => sql`update users set password_hash = ${scryptHash(pw)} where email = ${email}`;
+const setPassword = (email, pw) => sql`update users set password_hash = ${scryptHash(pw)}, must_change_password = false where email = ${email}`;
 const snap = async () => ({
   departments: (await sql`select name,is_active from departments where kind = 'application' and name not like 'ZZ%' order by sort_order,name`),
   apps: await sql`select a.name,a.url,a.is_active,a.status,d.name dept from apps a join departments d on d.id=a.department_id where a.name not like 'ZZ%' order by a.name`,
@@ -94,12 +95,12 @@ const consoleErrors = [], pageErrors = [], dialogs = [];
 page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text().slice(0, 160)); });
 page.on("pageerror", (e) => pageErrors.push(String(e).slice(0, 160)));
 page.on("dialog", async (d) => { dialogs.push(d.message()); await d.dismiss(); });
-const go = async (p) => { await page.goto(BASE + p); await page.waitForLoadState("networkidle").catch(() => {}); };
+// A page load can be cut short by a redirect still settling from the page before (net::ERR_ABORTED): it is simply tried again once.
+const go = async (p) => { try { await page.goto(BASE + p); } catch { await page.waitForLoadState("networkidle").catch(() => {}); await page.goto(BASE + p); } await page.waitForLoadState("networkidle").catch(() => {}); };
 const main = async () => (await page.locator("main").first().innerText());
 const toast = async (t) => page.getByText(t).first().waitFor({ timeout: 20000 }).then(() => true).catch(() => false);
 const dep = async (name) => (await sql`select * from departments where kind = 'application' and name=${name}`)[0];
 const app = async (name) => (await sql`select * from apps where name=${name}`)[0];
-const sidebarLink = (n) => page.locator("aside:visible").getByRole("link", { name: n, exact: true });
 
 try {
   section("0. Sign-in gate");
@@ -107,13 +108,21 @@ try {
     const anon = await browser.newContext(); const ap0 = await anon.newPage();
     for (const p of ["/", "/administrator/users", "/go/00000000-0000-4000-8000-000000000000", "/change-password"]) { await ap0.goto(BASE + p); check("signed out, " + p + " goes to the login page", new URL(ap0.url()).pathname === "/login", ap0.url()); }
     check("the login page asks for an email and a password", (await ap0.locator("input[name=email]").count()) === 1 && (await ap0.locator("input[name=password]").count()) === 1);
-    await signIn(ap0, ADMIN_EMAIL, "definitely-wrong-1");
-    const wrongTxt = await html(ap0); check("a wrong password shows an error and stays on the login page", /Incorrect email or password/.test(wrongTxt) && new URL(ap0.url()).pathname === "/login");
-    await signIn(ap0, "nobody-here@example.com", "definitely-wrong-1");
-    check("an unknown email gets exactly the same message (no hint which emails exist)", /Incorrect email or password/.test(await html(ap0)));
-    for (let i = 0; i < 6; i++) await signIn(ap0, ADMIN_EMAIL, "wrong-attempt-" + i + "x");
+    // Wrong passwords are tried from a made-up address, so the limits they trigger never touch the rest of this run. (Off Vercel the
+    // address comes from this header; on Vercel only Vercel sets it, so a visitor cannot choose their address there.)
+    const WRONG_IP = "198.51.100.23";
+    const wc = await browser.newContext({ extraHTTPHeaders: { "x-vercel-forwarded-for": WRONG_IP } }); const wp = await wc.newPage();
+    await signIn(wp, ADMIN_EMAIL, "definitely-wrong-1");
+    const wrongTxt = await html(wp); check("a wrong password shows an error and stays on the login page", /Incorrect email or password/.test(wrongTxt) && new URL(wp.url()).pathname === "/login");
+    await signIn(wp, "nobody-here@example.com", "definitely-wrong-1");
+    check("an unknown email gets exactly the same message (no hint which emails exist)", /Incorrect email or password/.test(await html(wp)));
+    for (let i = 0; i < 4; i++) await signIn(wp, ADMIN_EMAIL, "wrong-attempt-" + i + "x");
+    await signIn(wp, ADMIN_EMAIL, ADMIN_PW);
+    check("after 5 wrong passwords from one address, even the right one is refused there for now, with the same message", new URL(wp.url()).pathname === "/login" && /Incorrect email or password/.test(await html(wp)), wp.url());
+    check("every try is recorded, the refused one marked as such", (await sql`select count(*)::int n from login_attempts where email = ${ADMIN_EMAIL} and ip_address = ${WRONG_IP} and blocked`)[0].n >= 1 && (await sql`select count(*)::int n from login_attempts where email = 'nobody-here@example.com'`)[0].n >= 1);
+    await wc.close();
     await signIn(ap0, ADMIN_EMAIL, ADMIN_PW);
-    check("after many wrong passwords the right one still works (no lockout)", new URL(ap0.url()).pathname === "/", ap0.url());
+    check("from another address the right password still works: nobody can lock an account from somewhere else", new URL(ap0.url()).pathname === "/", ap0.url());
     const sess = (await anon.cookies()).find((c) => c.name === "hub_session");
     check("the sign-in cookie is HttpOnly, SameSite=Lax" + (BASE.startsWith("https") ? " and Secure" : ""), sess && sess.httpOnly && sess.sameSite === "Lax" && (!BASE.startsWith("https") || sess.secure), JSON.stringify(sess && { httpOnly: sess.httpOnly, sameSite: sess.sameSite, secure: sess.secure }));
     await anon.close();
@@ -122,26 +131,25 @@ try {
     await signIn(page, ADMIN_EMAIL, ADMIN_PW);
   }
 
-  section("1. Hub: first load, navigation, search");
+  section("1. Hub: the home page, search");
   const r0 = await page.goto(BASE + "/"); await page.waitForLoadState("networkidle").catch(() => {});
   check("home opens after signing in", r0.status() === 200 && page.url() === BASE + "/", r0.status());
-  // Approval System is a sidebar item of its own now, so a department that holds nothing but an old Approvals card (URL /approvals) is not listed.
+  // The Approval System is a card of its own, so an old Approvals application card (URL /approvals) is never listed.
   const isApprovalsCard = (a) => /^((https?:\/\/[^/?#]+)?\/approvals\/?|\/approvals\/(hr|expenses)\/new)$/.test(a.url.trim());
-  const approvalsOnly = (name) => { const mine = before.apps.filter((a) => a.dept === name); return mine.length > 0 && mine.every(isApprovalsCard); };
-  const realDeps = before.departments.filter((d) => d.is_active && !approvalsOnly(d.name)).map((d) => d.name);
-  const links = await page.locator("aside:visible nav a").allInnerTexts();
-  check("sidebar lists every active department", realDeps.every((n) => links.some((l) => l.trim() === n)), links.map((s) => s.trim()).join(" | "));
-  check("the header shows who is signed in", (await page.locator("header").first().innerText()).includes(process.env.HEAD_ADMIN_NAME || ADMIN_EMAIL), (await page.locator("header").first().innerText()).trim());
-  for (const d of realDeps) { await sidebarLink(d).click(); await page.waitForFunction((x) => document.querySelector("main h1")?.innerText.trim() === x, d, { timeout: 15000 }).catch(() => {}); const h = await page.locator("main h1").first().innerText(); if (h.trim() !== d) check("department page title for " + d, false, h); }
-  check("each department link opens its own page", true);
-  await sidebarLink("Finance").click(); await page.waitForFunction(() => document.querySelector("main h1")?.innerText.trim() === "Finance", null, { timeout: 15000 }).catch(() => {}); await page.waitForTimeout(800);
-  const fin = await main(); const finApps = before.apps.filter((a) => a.dept === "Finance" && a.is_active).map((a) => a.name);
-  check("Finance page shows its active apps", finApps.every((n) => fin.includes(n)), finApps.join(", "));
-  await page.getByPlaceholder("Search applications").fill("payment"); await page.waitForTimeout(500);
-  check("search finds apps across departments", (await main()).includes("Search results"));
-  await page.getByPlaceholder("Search applications").fill("zzqqxx-nothing"); await page.waitForTimeout(500);
-  check("search with no match shows an empty message", /0 applications|No applications/i.test(await main()));
-  await page.getByPlaceholder("Search applications").fill("");
+  const liveApps = before.apps.filter((a) => a.is_active && !isApprovalsCard(a) && before.departments.some((d) => d.name === a.dept && d.is_active)).map((a) => a.name);
+  const homeTxt = await main();
+  check("the home page shows every active application of an active category, all on one page", liveApps.every((n) => homeTxt.includes(n)), liveApps.join(", "));
+  check("with the Approval System and Administrator cards", /Approval System/.test(homeTxt) && /Administrator/.test(homeTxt));
+  check("the header shows who is signed in", (await page.locator("header").first().innerText()).includes(process.env.SUPPORT_ADMIN_NAME || process.env.HEAD_ADMIN_NAME || ADMIN_EMAIL), (await page.locator("header").first().innerText()).trim());
+  await page.getByRole("button", { name: "Search applications" }).click();
+  await page.getByPlaceholder("Search").fill("Raise HR"); await page.waitForTimeout(400);
+  check("search narrows the cards to the matching ones", /Approval System/.test(await main()) && !/Users, access, the approval forms/.test(await main()));
+  await page.getByPlaceholder("Search").fill("zzqqxx-nothing"); await page.waitForTimeout(400);
+  check("search with no match says so", /No applications match/.test(await main()));
+  await page.getByRole("button", { name: "Close search" }).click();
+  await page.locator("main select").first().selectOption("apps"); await page.waitForTimeout(300);
+  check("the Show filter can hide the hub's own cards", !/Raise HR and expense requests/.test(await main()));
+  await page.locator("main select").first().selectOption("all");
 
   section("2. Launch redirect and bad ids");
   // The old Approvals card (URL /approvals) is hidden from the hub and has no launch route, and a path URL redirects to an absolute address, so use a real https app.
@@ -178,7 +186,6 @@ try {
   await page.reload(); await page.waitForLoadState("networkidle");
   await page.locator("tr", { hasText: "ZZ Dept B" }).getByRole("button", { name: "Active" }).click(); await page.waitForTimeout(2000);
   check("deactivating a department saves", (await dep("ZZ Dept B")).is_active === false);
-  await go("/"); check("inactive department disappears from the hub sidebar", (await sidebarLink("ZZ Dept B").count()) === 0 && (await sidebarLink("ZZ Dept A2").count()) === 1);
   await go("/administrator/departments"); await page.locator("tr", { hasText: "ZZ Dept B" }).getByRole("button", { name: "Inactive" }).click(); await page.waitForTimeout(2000);
   check("reactivating it brings it back", (await dep("ZZ Dept B")).is_active === true);
 
@@ -207,17 +214,20 @@ try {
   const so = async () => (await sql`select name from apps where department_id=${dA.id} order by sort_order,name`).map((r) => r.name).join(">");
   const s1 = await so(); await page.locator("tr", { hasText: "ZZ App Uno" }).getByRole("button", { name: "Move down" }).click(); await toast("Reordered"); await page.waitForTimeout(1200);
   check("move down reorders apps", s1 !== (await so()));
-  await go("/"); await sidebarLink("ZZ Dept A2").click(); await page.waitForTimeout(1200); const hubTxt = await main();
-  check("hub shows active apps of the department, not the inactive one", hubTxt.includes("ZZ App Uno") && !hubTxt.includes("ZZ Hidden App"));
+  await go("/"); const hubTxt = await main();
+  check("the home page shows the active apps, each with its category, not the inactive one", hubTxt.includes("ZZ App Uno") && hubTxt.includes("ZZ Dept A2") && !hubTxt.includes("ZZ Hidden App"));
   check("hub card shows the XSS-looking name as plain text", hubTxt.includes("<img src=x") && dialogs.length === 0);
   const hid = await app("ZZ Hidden App"); check("/go for an inactive app is 404", (await page.request.get(BASE + "/go/" + hid.id, { maxRedirects: 0 })).status() === 404);
   const l1 = await page.request.get(BASE + "/go/" + (await app("ZZ App Uno")).id, { maxRedirects: 0 }); check("launching an app redirects to its URL", l1.status() === 302 && l1.headers().location === "https://example.com/one", l1.headers().location); check("launching an app logs the launch",l1.status() === 302 && (await sql`select count(*)::int n from activity_log where app_id=${(await app("ZZ App Uno")).id} and action='launch'`)[0].n === 1);
   const fRow = await sql`select id from apps where name like '=HYPERLINK%'`; await page.request.get(BASE + "/go/" + fRow[0].id, { maxRedirects: 0 });
+  await sql`update departments set is_active = false where id = ${dA.id}`;
+  await go("/"); check("when a category is switched off, its applications leave the home page", !(await main()).includes("ZZ App Uno"));
+  await sql`update departments set is_active = true where id = ${dA.id}`;
 
   section("5. Users & Access: the directory and bulk add");
   await go("/administrator/users");
   const ut = await main(); check("Users & Access offers Add user and Bulk add users", (await page.getByRole("button", { name: /Add user/ }).count()) === 1 && (await page.getByRole("link", { name: /Bulk add users/ }).count()) >= 1);
-  check("the main admin row says its password lives in the settings", ut.toLowerCase().includes("main admin"));
+  check("the Support Admin's row is marked as such", (await page.locator("tr", { hasText: ADMIN_EMAIL }).first().innerText()).toLowerCase().includes("support admin"));
   for (const l of ["Filter by branch", "Filter by team", "Filter by role", "Filter by status", "Filter by application"]) check(`the directory has: ${l}`, (await page.getByLabel(l).count()) === 1);
   await go("/administrator/users/import");
   const pickFile = async (name, content) => { fs.writeFileSync(SP + "/" + name, content); await page.locator("input[type=file]").setInputFiles(SP + "/" + name); };
@@ -243,17 +253,18 @@ try {
     "Not An Email,not-an-email,,,,"].join("\r\n");
   fs.writeFileSync(SP + "/edge.csv", csv); await page.locator("input[type=file]").setInputFiles(SP + "/edge.csv");
   const createBtn = page.getByRole("button", { name: /^Create \d+ accounts?/ });
-  await poll(async () => /Create 5 accounts/.test(await createBtn.innerText()) && !(await createBtn.isDisabled()));
+  await poll(async () => /Create 7 accounts/.test(await createBtn.innerText()) && !(await createBtn.isDisabled()));
   check("blank lines are not counted as rows, and an unused column is reported", (await page.getByRole("button", { name: /^All · 11$/ }).count()) === 1 && (await main()).includes("ignored"), await createBtn.innerText());
   const rowText = async (n) => (await page.locator(`tr[data-row='${n}']`).innerText()).replace(/\s+/g, " ");
   check("a duplicate email is flagged and points at the first row", /duplicate/i.test(await rowText(6)) && /Row 5/.test(await rowText(6)), await rowText(6));
-  check("each problem row says why, with the exact value", /must end with/.test(await rowText(7)) && /No Such Branch/.test(await rowText(8)) && /No Such App/.test(await rowText(9)) && /Name is missing/.test(await rowText(10)) && /not a valid email/.test(await rowText(11)));
+  check("each problem row says why, with the exact value", /must end with/.test(await rowText(7)) && /Name is missing/.test(await rowText(10)) && /not a valid email/.test(await rowText(11)));
+  check("an unknown branch or application is only a warning: the row is still ready, and says what is left empty", /ready/i.test(await rowText(8)) && /No Such Branch/.test(await rowText(8)) && /ready/i.test(await rowText(9)) && /No Such App/.test(await rowText(9)), `${await rowText(8)} | ${await rowText(9)}`);
   check("a good row says it will be created", /ready/i.test(await rowText(1)) && /will create/.test(await rowText(1)));
   await page.getByLabel("name for row 10").fill("Fixed Name");
-  await poll(async () => /Create 6 accounts/.test(await createBtn.innerText()) && !(await createBtn.isDisabled()));
-  check("a problem can be corrected on screen before confirming (row 10 becomes ready)", /Create 6 accounts/.test(await createBtn.innerText()) && /ready/i.test(await rowText(10)), await rowText(10));
+  await poll(async () => /Create 8 accounts/.test(await createBtn.innerText()) && !(await createBtn.isDisabled()));
+  check("a problem can be corrected on screen before confirming (row 10 becomes ready)", /Create 8 accounts/.test(await createBtn.innerText()) && /ready/i.test(await rowText(10)), await rowText(10));
   await createBtn.click(); await page.getByText(/Finished\./).waitFor({ timeout: 90000 }); const sum = (await page.getByText(/Finished\./).innerText()).replace(/\s+/g, " ");
-  check("summary: 11 submitted, 6 created, 5 not imported", /11 submitted: 6 created, 0 updated, 0 skipped, 5 not imported \(invalid\), 0 failed/.test(sum), sum);
+  check("summary: 11 submitted, 8 created, 3 not imported", /11 submitted: 8 created, 0 updated, 0 skipped, 3 not imported \(invalid\), 0 failed/.test(sum), sum);
   const u = async (e) => (await sql`select id,name,email,designation,home_department_id,password_hash from users where email=${e}`)[0];
   const asha = await u("zz-asha@gmail.com"); check("designation set; BOM/CRLF handled", asha && asha.designation === "Accountant");
   check("same app listed twice gives one grant", (await sql`select count(*)::int n from user_app_access where user_id=${asha.id}`)[0].n === 1);
@@ -262,40 +273,50 @@ try {
   check("formula-looking name is stored as plain text", (await u("zz-formula@gmail.com"))?.name === "=1+1");
   check("duplicate email inside one file: first created, second not", (await u("zz-dup@gmail.com"))?.name === "Dup One");
   check("the corrected row was created with its corrected name", (await u("zz-noname@gmail.com"))?.name === "Fixed Name");
-  check("wrong domain / unknown branch / unknown app / bad email: none created", !(await u("zz-bad@yahoo.com")) && !(await u("zz-badbranch@gmail.com")) && !(await u("zz-badapp@gmail.com")) && !(await u("not-an-email")));
-  check("nobody was given a password: every imported account has none", (await sql`select count(*)::int n from users where email in ('zz-asha@gmail.com','zz-up@gmail.com','zz-nl@gmail.com','zz-formula@gmail.com','zz-dup@gmail.com','zz-noname@gmail.com') and password_hash is not null`)[0].n === 0);
-  check("each new person has exactly one invitation, stored only as a hash", (await sql`select count(*)::int n from user_invites i join users us on us.id = i.user_id where us.email like 'zz-%' and i.token_hash ~ '^[0-9a-f]{64}$'`)[0].n === 6);
+  check("wrong domain / bad email: not created", !(await u("zz-bad@yahoo.com")) && !(await u("not-an-email")));
+  check("unknown branch / unknown app: created, with the branch left empty and no application given", (await sql`select branch_id from users where email = 'zz-badbranch@gmail.com'`)[0]?.branch_id === null && (await sql`select count(*)::int n from user_app_access g join users us on us.id = g.user_id where us.email = 'zz-badapp@gmail.com'`)[0].n === 0);
+  check("nobody was given a password: every imported account has none until sign-in details are sent", (await sql`select count(*)::int n from users where email like 'zz-%' and password_hash is not null`)[0].n === 0);
+  check("and no sign-in details were sent yet (that is chosen after the import)", (await sql`select count(*)::int n from user_invites i join users us on us.id = i.user_id where us.email like 'zz-%'`)[0].n === 0);
   const rtxt = await main(); check("each error row explains why in the results", /must end with|was not found|Name is missing|not a valid email/i.test(rtxt));
   const dl = page.waitForEvent("download"); await page.getByRole("button", { name: /Download report/ }).click(); const rep = fs.readFileSync(await (await dl).path(), "utf8");
-  check("the report lists each row's result and reason, and never a password or a setup link", rep.includes("Asha Patil") && rep.includes("created") && /not imported/.test(rep) && !/token=|set-password|scrypt/i.test(rep), rep.slice(0, 200));
-  await page.getByRole("button", { name: /^Show \d+ setup links?/ }).click();
-  const ashaLink = await page.getByLabel("Setup link for Asha Patil").inputValue();
-  check("with no mail set up, each person's one-time link is shown once, for the administrator to pass on", /\/set-password\?token=/.test(ashaLink), ashaLink);
-  await page.getByRole("button", { name: "Done", exact: true }).click();
+  check("the report lists each row's result and reason, and never a password", rep.includes("Asha Patil") && rep.includes("created") && /not imported/.test(rep) && !/token=|set-password|scrypt/i.test(rep), rep.slice(0, 200));
+  const send = page.locator('[aria-label="Send sign-in details"]').first();
+  check("after the import, everyone created is listed to tick for their sign-in details", (await send.locator("li").count()) === 8);
+  const everyone = send.getByRole("checkbox", { name: /Tick everyone/ });
+  check("everyone is ticked to begin with", await everyone.isChecked());
+  if (!(await everyone.isChecked())) await everyone.check();
+  await send.getByRole("button", { name: /^Send to 8 ticked/ }).click();
+  const signDlg = page.getByRole("dialog", { name: "Sign-in details" });
+  await signDlg.getByLabel("Temporary password for Asha Patil").waitFor({ timeout: 30000 });
+  const ashaTemp = await signDlg.getByLabel("Temporary password for Asha Patil").inputValue();
+  check("with no email set up, each person's temporary password is shown once, for the administrator to pass on", ashaTemp.length === 12, ashaTemp.length);
+  await signDlg.getByRole("button", { name: "Done", exact: true }).click();
+  check("each of them now has one invitation record, stored only as a hash, and must choose their own password", (await sql`select count(*)::int n from user_invites i join users us on us.id = i.user_id where us.email like 'zz-%' and i.token_hash ~ '^[0-9a-f]{64}$'`)[0].n === 8 && (await sql`select count(*)::int n from users where email like 'zz-%' and must_change_password`)[0].n === 8);
   await page.getByRole("button", { name: "Start another import" }).click(); await pickFile("edge2.csv", csv);
   await poll(async () => /Create 0 accounts/.test(await createBtn.innerText()));
   const usersBefore = (await sql`select count(*)::int n from users where email like 'zz-%'`)[0].n;
   check("running the same file again creates no one (retries are safe): the button offers 0 and is disabled", /Create 0 accounts/.test(await createBtn.innerText()) && (await createBtn.isDisabled()));
-  check("the people already created are reported as already existing (the row with no name is simply invalid)", (await page.getByRole("button", { name: /^Already exists · 5$/ }).count()) === 1);
+  check("the people already created are reported as already existing (the row with no name is simply invalid)", (await page.getByRole("button", { name: /^Already exists · 7$/ }).count()) === 1, (await page.getByRole("group", { name: "Show rows" }).innerText()).replace(/\s+/g, " "));
   check("and no one was duplicated", (await sql`select count(*)::int n from users where email like 'zz-%'`)[0].n === usersBefore);
 
   await go("/administrator/users");
   await page.getByLabel("Filter by application").selectOption({ label: "ZZ App Uno" }); await page.waitForURL(/app=/);
   await page.waitForFunction(() => /\d+ (?:people|person) match/.test(document.querySelector("main")?.innerText ?? ""), null, { timeout: 15000 }).catch(() => {});
   const ft = (await main()).toLowerCase(); check("filtering the directory by application shows only people who hold it", ft.includes("asha patil") && !ft.includes("line"));
-  await go("/administrator/users?status=pending"); check("the 'Pending invitation' filter lists people who have not set a password", (await main()).toLowerCase().includes("asha patil") && /Pending invitation/.test(await main()));
+  await go("/administrator/users?status=pending"); check("the 'Pending invitation' filter lists people who have not chosen their own password yet", (await main()).toLowerCase().includes("asha patil") && /Pending invitation/i.test(await main()));
 
   section("6. Access: the profile, per app, templates, department Users tab");
   await go("/administrator/users/" + asha.id);
   const tree = page.locator("main");
-  check("a person's profile shows their details, organisation and access on one screen", /Application access/.test(await main()) && /Details and where they sit/.test(await main()) && /Account/.test(await main()) && /Recently opened/.test(await main()));
-  const boxes = await tree.getByRole("checkbox").count(); check("the profile shows an access checklist", boxes > 0, boxes + " checkboxes");
-  const hiddenBox = tree.locator("label", { hasText: "ZZ Hidden App" }).getByRole("checkbox").first();
-  check("access checklist includes inactive apps too", (await tree.locator("label", { hasText: "ZZ Hidden App" }).count()) >= 1);
-  await hiddenBox.check(); await page.getByRole("button", { name: "Save access" }).click(); check("save access shows a success message", await toast("Access saved")); await page.waitForTimeout(1000);
+  check("a person's page shows their overview, account, access and history on one screen", /User overview/i.test(await main()) && /Application access/i.test(await main()) && /Account/.test(await main()) && /Recently opened/i.test(await main()));
+  const switches = await tree.getByRole("switch").count(); check("the profile shows an on/off switch per application", switches > 0, switches + " switches");
+  check("the switches include inactive apps too", (await tree.getByRole("switch", { name: /access to ZZ Hidden App$/ }).count()) === 1);
+  await tree.getByRole("switch", { name: "Give access to ZZ Hidden App" }).click(); await page.getByRole("button", { name: "Save access" }).click(); check("save access shows a success message", await toast("Access saved")); await page.waitForTimeout(1000);
   check("access grant saved to the database", (await sql`select count(*)::int n from user_app_access where user_id=${asha.id}`)[0].n === 2);
-  await page.getByRole("button", { name: "Untick all" }).click(); await page.getByRole("button", { name: "Save access" }).click(); await toast("Access saved"); await page.waitForTimeout(1000);
-  check("untick all + save removes every grant", await poll(async () => (await sql`select count(*)::int n from user_app_access where user_id=${asha.id}`)[0].n === 0));
+  await page.getByRole("button", { name: "Remove all", exact: true }).click(); await page.getByRole("button", { name: "Save access" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Save changes" }).click();
+  await toast("Access saved"); await page.waitForTimeout(1000);
+  check("Remove all + save (confirmed, since access is taken away) removes every grant", await poll(async () => (await sql`select count(*)::int n from user_app_access where user_id=${asha.id}`)[0].n === 0));
   await go("/administrator/access/app/" + (await app("ZZ App Uno")).id); check("per-app access page opens", /Users with access|ZZ App Uno/.test(await main()));
   await go("/administrator/departments"); await page.locator("main").getByRole("link", { name: "ZZ Dept A2" }).click(); await page.waitForURL(/departments\//);
   const dut = (await main()).toLowerCase(); check("an application category's page has only an Applications tab (people sit in organisation departments, not in categories) and lists its applications", (await page.getByRole("tab").allInnerTexts()).map((t) => t.replace(/\s*\d+$/, "").trim()).join("|") === "Applications" && dut.includes("zz app uno"), (await page.getByRole("tab").allInnerTexts()).join("|"));
@@ -310,8 +331,7 @@ try {
 
   section("8. Notifications and navigation");
   await go("/administrator/notifications"); check("notifications panel renders", (await main()).includes("Notification Panel"));
-  await go("/administrator"); const dash = (await main()).toLowerCase(); check("/administrator is the dashboard, with real counts for people and applications", page.url().endsWith("/administrator") && ["total users", "active users", "pending invitations", "registered", "under testing", "unavailable"].every((t) => dash.includes(t)) && /\d/.test(dash), page.url());
-  await go("/administrator/apps"); check("old /administrator/apps redirects", page.url().endsWith("/administrator/departments"), page.url());
+  await go("/administrator"); const dash = (await main()).toLowerCase(); check("/administrator is the dashboard, with real counts for people and applications", page.url().endsWith("/administrator") && ["total users", "active users", "inactive users", "applications", "pending invitation", "under testing", "unavailable"].every((t) => dash.includes(t)) && /\d/.test(dash), page.url());
   const bad = await page.goto(BASE + "/administrator/departments/not-a-uuid"); check("bad department id shows the not-found page", /Page not found/i.test(await html(page)), bad.status());
   const bad2 = await page.goto(BASE + "/administrator/departments/00000000-0000-4000-8000-000000000000"); check("unknown department id shows the not-found page", /Page not found/i.test(await html(page)), bad2.status());
   const bad3 = await page.goto(BASE + "/administrator/access/user/not-a-uuid"); check("bad user id on access page is a 404", bad3.status() === 404 || bad3.status() === 200 && /not found/i.test(await html(page)), bad3.status());
@@ -322,7 +342,7 @@ try {
   const grants = async (email) => (await sql`select a.name from user_app_access g join apps a on a.id=g.app_id join users us on us.id=g.user_id where us.email=${email} order by a.name`).map((r) => r.name).join(",");
   await go("/administrator/access");
   const tabTexts = (await page.locator("nav[aria-label='Access sections'] button").allInnerTexts()).map((s) => s.trim());
-  check("the access page offers its two views (people are managed in Users & Access)", ["By application", "Templates"].every((x) => tabTexts.includes(x)) && tabTexts.length === 2 && /Users & Access/.test(await main()), tabTexts.join(" | "));
+  check("the access page offers its two views (people's own access is changed in Users)", ["By application", "Templates"].every((x) => tabTexts.includes(x)) && tabTexts.length === 2 && /open Users/.test(await main()), `${page.url()} | ${tabTexts.join(" | ")}`);
   await page.getByRole("button", { name: "Templates" }).click(); await page.getByRole("button", { name: /New template/ }).click();
   const tm = page.locator("form").filter({ has: page.getByRole("button", { name: "Save template" }) });
   await tm.getByPlaceholder("e.g. Finance Staff").fill("ZZ Template");
@@ -409,12 +429,15 @@ try {
   check("'Untick all shown' removes only the matching user", !(await grants("zz-formula@gmail.com")).includes("ZZ App Uno") && (await sql`select count(*)::int n from user_app_access where app_id=${uno.id}`)[0].n === granted);
 
   const dupU = await u("zz-dup@gmail.com"); await go("/administrator/access/user/" + dupU.id);
-  const deptBox = page.getByLabel("Select all in ZZ Dept A2"); await deptBox.check();
-  const appBox = (n) => page.locator("main label", { hasText: n }).getByRole("checkbox");
-  check("ticking a department ticks all of its applications", (await appBox("ZZ App Uno").isChecked()) && (await appBox("ZZ Hidden App").isChecked()) && (await appBox("HYPERLINK").isChecked()));
-  await appBox("ZZ Hidden App").uncheck(); check("unticking one app leaves the department partly ticked", await deptBox.evaluate((el) => el.indeterminate && !el.checked));
+  check("the old per-person access address opens the person's page", new URL(page.url()).pathname === "/administrator/users/" + dupU.id);
+  const panel = page.locator("main div.overflow-hidden", { hasText: "ZZ Dept A2" }).first();
+  await panel.getByRole("button", { name: "All on", exact: true }).click();
+  const on = async (n) => (await page.getByRole("switch", { name: new RegExp(`access to ${n}`) }).first().getAttribute("aria-checked")) === "true";
+  check("All on in a category switches on every one of its applications", (await on("ZZ App Uno")) && (await on("ZZ Hidden App")) && (await on("=HYPERLINK")));
+  await page.getByRole("switch", { name: "Remove access to ZZ Hidden App" }).click();
+  check("the category says how many are on", /4 applications · 3 enabled/.test(await panel.innerText()), (await panel.innerText()).replace(/\s+/g, " ").slice(0, 120));
   await page.getByRole("button", { name: "Save access" }).click(); await toast("Access saved"); await page.waitForTimeout(1500);
-  check("partial selection saved (3 of the department's 4 apps)", (await sql`select count(*)::int n from user_app_access where user_id=${dupU.id}`)[0].n === 3);
+  check("the partial selection is saved (3 of the category's 4 apps)", (await sql`select count(*)::int n from user_app_access where user_id=${dupU.id}`)[0].n === 3);
 
   section("8c. Icon pickers (department and application forms)");
   await go("/administrator/departments"); await page.locator("tr", { hasText: "ZZ Dept A2" }).getByRole("button", { name: "Edit" }).click();
@@ -437,27 +460,23 @@ try {
   const unoApp = await app("ZZ App Uno"), hidApp = await app("ZZ Hidden App");
   await sql`delete from user_app_access where user_id=${asha.id}`; await sql`insert into user_app_access (user_id, app_id) values (${asha.id}, ${unoApp.id})`;
   const ashaPw = "Asha-pass-12345"; const ashaEmail = "zz-asha@gmail.com";
-  // Asha was created by bulk add with no password: she opens her one-time link and chooses her own.
+  // Asha was created by bulk add and sent a temporary password: she signs in with it and must choose her own first.
   const sc = await browser.newContext(); const sp = await sc.newPage();
-  await sp.goto(ashaLink); await sp.waitForLoadState("networkidle").catch(() => {});
-  check("the one-time link greets her by name and asks her to choose a password", /Choose your password/.test(await html(sp)) && /Asha Patil/.test(await html(sp)));
-  const pw1 = sp.locator("input[autocomplete=new-password]").nth(0), pw2 = sp.locator("input[autocomplete=new-password]").nth(1), savePw = sp.getByRole("button", { name: /Save password/ });
-  await pw1.fill("abcdefghijkl"); await pw2.fill("abcdefghijkl"); await savePw.click();
-  check("a weak password is refused on that page", await sp.getByText(/one letter and one number/).first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false));
-  await pw1.fill(ashaPw); await pw2.fill("Different-pass-9"); await savePw.click();
-  check("two different passwords are refused", await sp.getByText(/do not match/).first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false));
-  await pw2.fill(ashaPw); await savePw.click(); await sp.waitForURL(/\/login\?set=1/, { timeout: 20000 }).catch(() => {});
-  check("choosing a good password sends her to sign in, with a confirmation", /Your password is saved/.test(await html(sp)), sp.url());
-  await sp.goto(ashaLink); check("the link works once only: opening it again says it cannot be used", /This link cannot be used/.test(await html(sp)));
+  await signIn(sp, ashaEmail, ashaTemp); await sp.waitForURL(/change-password/, { timeout: 20000 }).catch(() => {});
+  check("the temporary password signs her in straight to choosing her own", new URL(sp.url()).pathname === "/change-password", sp.url());
+  const cpOn = async (pg, cur, nw, again) => { await pg.locator("input[autocomplete=current-password]").fill(cur); await pg.locator("input[autocomplete=new-password]").nth(0).fill(nw); await pg.locator("input[autocomplete=new-password]").nth(1).fill(again); await pg.getByRole("button", { name: "Save password" }).click(); await pg.waitForTimeout(2500); };
+  await cpOn(sp, ashaTemp, "abcdefghijkl", "abcdefghijkl"); check("a weak password is refused", /one letter and one number/.test(await html(sp)));
+  await cpOn(sp, ashaTemp, ashaPw, "Different-pass-9"); check("two different passwords are refused", /do not match/.test(await html(sp)));
+  await cpOn(sp, ashaTemp, ashaPw, ashaPw); check("a good password is saved, with a confirmation", /Password changed/.test(await html(sp)));
   await sc.close();
+  const tc = await browser.newContext(); const tp = await tc.newPage(); await signIn(tp, ashaEmail, ashaTemp);
+  check("the temporary password no longer works", new URL(tp.url()).pathname === "/login"); await tc.close();
   const ac = await browser.newContext({ viewport: { width: 1300, height: 1000 } }); const ap = await ac.newPage();
   await signIn(ap, ashaEmail, ashaPw);
-  check("a person created by bulk add chooses their own password from the link, then signs in", new URL(ap.url()).pathname === "/", ap.url());
-  const sidebarNames = (await ap.locator("aside:visible nav a").allInnerTexts()).map((s) => s.trim()).filter((s) => s !== "Approval System"); // Approval System is the one link that is not a department
+  check("after choosing her own password she signs in with it", new URL(ap.url()).pathname === "/", ap.url());
   const hubText = await ap.locator("main").innerText();
-  check("the user's sidebar lists only departments where they have an app", sidebarNames.length === 1 && sidebarNames[0] === "ZZ Dept A2", sidebarNames.join(" | "));
-  check("the hub shows only the applications assigned to them", hubText.includes("ZZ App Uno") && !hubText.includes("ZZ Hidden App") && !hubText.includes("<img"), hubText.slice(0, 120));
-  check("no Administrator item for a normal user", (await ap.locator("aside:visible").getByRole("button", { name: "Administrator" }).count()) === 0);
+  check("the hub shows only the applications assigned to her", hubText.includes("ZZ App Uno") && !hubText.includes("ZZ Hidden App") && !hubText.includes("<img"), hubText.slice(0, 120));
+  check("no Administrator card for a normal user", !/\bAdministrator\b/.test(hubText));
   check("launching an application they were not given is a 404", (await ap.request.get(BASE + "/go/" + hidApp.id, { maxRedirects: 0 })).status() === 404);
   check("launching their own application works", (await ap.request.get(BASE + "/go/" + unoApp.id, { maxRedirects: 0 })).status() === 302);
   await ap.goto(BASE + "/administrator/users"); await ap.waitForLoadState("networkidle").catch(() => {});
@@ -469,11 +488,14 @@ try {
   await ap.goto(BASE + "/administrator/users"); await ap.waitForLoadState("networkidle").catch(() => {});
   check("someone else's unlock cookie does not open Administrator for a normal user", new URL(ap.url()).pathname === "/", ap.url());
 
-  const nobody = await browser.newContext(); const np = await nobody.newPage();
-  for (let i = 0; i < 6; i++) await signIn(np, ashaEmail, "Wrong-guess-" + i + "xx");
-  await signIn(np, ashaEmail, ashaPw); if (new URL(np.url()).pathname !== "/") await signIn(np, ashaEmail, ashaPw); // a real lockout would refuse this second try too
-  check("six wrong passwords in a row never lock a user's account", new URL(np.url()).pathname === "/", np.url());
-  await nobody.close();
+  const guesser = await browser.newContext({ extraHTTPHeaders: { "x-vercel-forwarded-for": "198.51.100.24" } }); const gp = await guesser.newPage();
+  for (let i = 0; i < 6; i++) await signIn(gp, ashaEmail, "Wrong-guess-" + i + "xx");
+  await signIn(gp, ashaEmail, ashaPw);
+  check("six wrong passwords from one address stop that address for a while, even with the right password", new URL(gp.url()).pathname === "/login", gp.url());
+  await guesser.close();
+  const owner = await browser.newContext(); const op = await owner.newPage(); await signIn(op, ashaEmail, ashaPw);
+  check("but they never lock the person out: from their own address the right password works", new URL(op.url()).pathname === "/", op.url());
+  await owner.close();
 
   // admin: create a user by hand
   await page.goto(BASE + "/administrator/users"); await page.getByRole("button", { name: /^Add user/ }).click();
@@ -486,16 +508,18 @@ try {
   check("the new account is stored with a hashed password, never the password itself", !!ui && ui.password_hash.startsWith("scrypt$") && !ui.password_hash.includes(typedPw) && ui.role === "member" && ui.status === "approved");
   const uc = await browser.newContext(); const up = await uc.newPage(); await signIn(up, "zz-ui@gmail.com", typedPw);
   check("the hand-made user can sign in with that password", new URL(up.url()).pathname === "/", up.url()); await uc.close();
-  // by default a new person gets a setup link instead: no password is typed by anyone
+  // by default a new person gets a temporary password instead: no one types a password for them
   await page.reload(); await page.getByRole("button", { name: /^Add user/ }).click();
   await submitUser("ZZ Invited", "zz-invited@gmail.com");
-  const invDlg = page.getByRole("dialog", { name: "Setup links" });
-  check("adding someone without choosing a password makes a setup link and shows it once", await invDlg.getByLabel("Setup link for ZZ Invited").waitFor({ timeout: 15000 }).then(() => true).catch(() => false));
-  const invLink = await invDlg.getByLabel("Setup link for ZZ Invited").inputValue(); await invDlg.getByRole("button", { name: "Done", exact: true }).click();
-  const inv = (await sql`select password_hash from users where email='zz-invited@gmail.com'`)[0];
-  check("that account has no password yet", !!inv && inv.password_hash === null);
-  const ic = await browser.newContext(); const ip = await ic.newPage(); await ip.goto(invLink); await ip.locator("input[autocomplete=new-password]").nth(0).fill("Invited-pass-12345"); await ip.locator("input[autocomplete=new-password]").nth(1).fill("Invited-pass-12345"); await ip.getByRole("button", { name: /Save password/ }).click(); await ip.waitForURL(/\/login/, { timeout: 20000 }).catch(() => {});
-  await signIn(ip, "zz-invited@gmail.com", "Invited-pass-12345"); check("and they can set their own password from it and sign in", new URL(ip.url()).pathname === "/", ip.url()); await ic.close();
+  const invDlg = page.getByRole("dialog", { name: "Sign-in details" });
+  check("adding someone without choosing a password makes a temporary password and shows it once", await invDlg.getByLabel("Temporary password for ZZ Invited").waitFor({ timeout: 15000 }).then(() => true).catch(() => false));
+  const invTemp = await invDlg.getByLabel("Temporary password for ZZ Invited").inputValue(); await invDlg.getByRole("button", { name: "Done", exact: true }).click();
+  const inv = (await sql`select password_hash, must_change_password from users where email='zz-invited@gmail.com'`)[0];
+  check("that account holds only a scrambled temporary password, which must be changed", !!inv && inv.password_hash.startsWith("scrypt$") && inv.must_change_password === true);
+  const ic = await browser.newContext(); const ip = await ic.newPage(); await signIn(ip, "zz-invited@gmail.com", invTemp); await ip.waitForURL(/change-password/, { timeout: 20000 }).catch(() => {});
+  await cpOn(ip, invTemp, "Invited-pass-12345", "Invited-pass-12345"); await ic.close();
+  const ic2 = await browser.newContext(); const ip2 = await ic2.newPage();
+  await signIn(ip2, "zz-invited@gmail.com", "Invited-pass-12345"); check("and they choose their own password with it, then sign in", new URL(ip2.url()).pathname === "/", ip2.url()); await ic2.close();
   await page.reload(); await page.getByRole("button", { name: /^Add user/ }).click();
   await submitUser("ZZ Dup", "zz-ui@gmail.com"); check("a duplicate email is refused", await toast("already has an account")); await page.waitForTimeout(800);
   await page.reload(); await page.getByRole("button", { name: /^Add user/ }).click();
@@ -538,6 +562,9 @@ try {
   check("Sign out returns to the login page", new URL(ap.url()).pathname === "/login", ap.url());
   await ap.goto(BASE + "/"); check("after signing out the hub is closed again", new URL(ap.url()).pathname === "/login");
   await signIn(ap, ashaEmail, ashaNew); check("the previous password no longer works after a change", new URL(ap.url()).pathname === "/login");
+  // This run has typed several deliberate wrong passwords for Asha from this address by now, which would reach the sign-in limit (5 in
+  // 15 minutes) and refuse even the right one: they are cleared so the next check tests the password change, not the limit.
+  await sql`delete from login_attempts where email = ${ashaEmail}`;
   await signIn(ap, ashaEmail, "Asha-third-pass-9"); check("the changed password signs in", new URL(ap.url()).pathname === "/", ap.url());
   await ac.close();
 
@@ -552,10 +579,8 @@ try {
   await page.goto(BASE + "/administrator/users"); await page.waitForTimeout(3500);
   await page.reload(); await page.waitForLoadState("networkidle").catch(() => {});
   check("background prefetching of other pages does not lock Administrator", new URL(page.url()).pathname === "/administrator/users", page.url());
-  await page.locator("aside:visible nav a", { hasText: "Finance" }).first().click(); await page.waitForTimeout(1800);
-  const usersLink = page.locator("aside:visible").getByRole("link", { name: "Users", exact: true });
-  if (!(await usersLink.count())) await page.locator("aside:visible").getByRole("button", { name: "Administrator" }).click();
-  await usersLink.click(); await page.waitForURL((u) => /unlock|administrator\/users/.test(u.pathname), { timeout: 20000 }).catch(() => {});
+  await rawGoto(BASE + "/"); await page.waitForLoadState("networkidle").catch(() => {}); // leave Administrator for the hub
+  await rawGoto(BASE + "/administrator/users"); await page.waitForURL((u) => /unlock|administrator\/users/.test(u.pathname), { timeout: 20000 }).catch(() => {});
   check("after leaving Administrator, going back asks for the password again", new URL(page.url()).pathname === "/unlock", page.url());
   check("the unlock page remembers where you were going", new URL(page.url()).searchParams.get("next") === "/administrator/users");
   await page.locator("input[name=password]").fill("not-the-password-1"); await page.getByRole("button", { name: "Unlock" }).click(); await page.waitForTimeout(2000);
@@ -612,14 +637,12 @@ try {
   const m = await browser.newContext({ viewport: { width: 390, height: 844 }, ...(BROWSER === "firefox" ? {} : { isMobile: true, hasTouch: true }) }); const mp = await m.newPage(); await m.addCookies(await ctx.cookies());
   const mErr = []; mp.on("pageerror", (e) => mErr.push(String(e).slice(0, 120)));
   const noOverflow = async (p, label) => { const pg = await m.newPage(); pg.on("pageerror", (e) => mErr.push(String(e).slice(0, 120))); await pg.goto(BASE + p); await unlockIf(pg); await pg.waitForLoadState("networkidle").catch(() => {}); const o = await pg.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth })); check("no sideways page scroll on " + label, o.sw <= o.iw + 1, `${o.sw} vs ${o.iw}`); await pg.close(); };
-  await mp.goto(BASE + "/"); await mp.waitForLoadState("networkidle").catch(() => {});
-  const sb = async () => { const b = await mp.locator("aside").last().boundingBox(); return b && b.x + b.width > 1; };
-  check("sidebar is off-screen until the menu button is pressed", !(await sb()));
-  await mp.getByRole("button", { name: "Open menu" }).click(); await mp.waitForTimeout(500);
-  check("menu button slides the sidebar in", await sb());
-  await mp.locator("aside").last().getByRole("button", { name: "Administrator" }).click(); await mp.waitForTimeout(300);
-  check("Administrator expands to its sections on a phone", (await mp.locator("aside").last().locator("a[href^='/administrator']").count()) === 5);
-  await mp.locator("aside").last().locator("a[href='/administrator/users']").click(); await mp.waitForURL((u) => /unlock|administrator\/users/.test(u.pathname)); await unlockIf(mp); await mp.waitForURL("**/administrator/users"); await mp.waitForLoadState("networkidle").catch(() => {}); check("tapping a section navigates", mp.url().endsWith("/administrator/users"), mp.url());
+  await mp.goto(BASE + "/administrator"); await unlockIf(mp); await mp.waitForLoadState("networkidle").catch(() => {});
+  const navVisible = async () => mp.locator('nav[aria-label="Administrator"] a', { hasText: "Users" }).first().isVisible();
+  check("on a phone, Administrator's sections are folded behind a Menu button", !(await navVisible()) && (await mp.getByRole("button", { name: /Administrator menu/ }).count()) === 1);
+  await mp.getByRole("button", { name: /Administrator menu/ }).click(); await mp.waitForTimeout(400);
+  check("the Menu button opens the list of sections", await navVisible());
+  await mp.locator('nav[aria-label="Administrator"] a', { hasText: "Users" }).first().click(); await mp.waitForURL("**/administrator/users"); await mp.waitForLoadState("networkidle").catch(() => {}); check("tapping a section navigates", mp.url().endsWith("/administrator/users"), mp.url());
   for (const [p, l] of [["/", "home"], ["/administrator", "dashboard"], ["/administrator/departments", "departments"], ["/administrator/users", "users and access"], ["/administrator/users/import", "bulk add"], ["/administrator/users/org", "branches and teams"], ["/administrator/users/audit", "audit log"], ["/administrator/inventory", "application inventory"], ["/administrator/access", "access"], ["/administrator/activity", "activity"], ["/administrator/notifications", "notifications"], [deptUrl.replace(BASE, ""), "department detail"]]) await noOverflow(p, l);
   check("no script errors on the phone layout", mErr.length === 0, mErr.join(" | "));
   await m.close();
