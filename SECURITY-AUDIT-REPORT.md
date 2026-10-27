@@ -271,16 +271,18 @@ Phase 2 runs on the branch `security-fixes`, one commit per fix.
 | H-2 | Fixed | next 16.3.7 → 16.4.3 (and eslint-config-next) |
 | M-1 | Fixed | Every attempt (success, failure, refused) recorded in login_attempts with kind (login/unlock/password) and blocked flag (migration 0018). Sign-ins tab shows them. |
 | M-2 | Fixed | zod 4.6.5 → 4.6.7 |
-| M-3 | Skipped for now (owner's decision) | Later, separate branch (plan given) |
+| M-3 | On hold | Owner's decision (27 Oct 2026). Plan ready: authenticator-app codes for the Support Admin and Admins. |
 | M-4 | Shipped in Report-Only · Manual check needed | Content-Security-Policy-Report-Only in next.config.ts (self only; inline scripts/styles allowed; frame-ancestors none). Headless Chrome on /login: no violations. Owner to check the signed-in pages in the browser console, then switch the header name to Content-Security-Policy to enforce. |
 | M-5 | Fixed (code) · Manual action needed | Daily Vercel Cron (vercel.json, 03:00 IST) calls /api/cron/cleanup-uploads, protected by a CRON_SECRET bearer check (401 without it, and refuses everyone when CRON_SECRET is unset). Deletes uploads never attached to a request, older than 24 h, never one an attachment points at. SQL checked with EXPLAIN only; **not run against any database** until Preview is confirmed to use a separate Neon branch. Add CRON_SECRET in Vercel. |
 | L-1 | Fixed | nodemailer 10.1.1 → 10.2.1. npm audit --omit=dev: 0 vulnerabilities. 4 moderate remain in the dev-only drizzle-kit (esbuild dev server), not deployed |
-| L-2 | Pending | Later, separate branch |
+| L-2 | On hold | Owner's decision. Plan ready: session version, Sign out of all devices. |
 | L-3 | Fixed | src/lib/admin-paths.ts: /approvals/admin/* counts as Administrator in the proxy (unlock needed, idle timer refreshed, no lock when moving between them), the page frame (locks when you leave) and unlockAdmin (returns to the same page). Every write on the approvals_admin API needs Administrator unlocked. Checked on a local build with fake cookies and no database: locked → /unlock?next=<same page>; unlocked → page served and timer refreshed; leaving → lock. Side effect: the '+ Add' links inside the request forms and list filters (Support Admin only) now need Administrator unlocked first. |
 | L-4 | Fixed | assertHeadAdmin / assertArea / assertStaff (every admin and staff server action and the CSV export routes) and the Approval System route() wrapper refuse someone still on a temporary password, with a plain message. changePassword and marking notifications read still work. Pages already redirected. |
-| L-5 | Skipped for now (owner's decision) | Later, separate branch |
+| L-5 | On hold | Owner's decision. Plan ready: names only, email fetched for the chosen person. |
 | L-6 | Fixed | poweredByHeader: false (X-Powered-By gone, checked on a local build); Permissions-Policy: camera, microphone, geolocation, payment, usb off. |
-| L-7 | Pending | Later, separate branch |
+| L-7 | On hold | Owner's decision. Plan ready: connect to the checked address with node:https. |
 | L-8 | Fixed | pg driver: ssl { rejectUnauthorized: true } always, except a database on localhost / 127.0.0.1 / ::1 (local development and tests). DATABASE_SSL no longer read (README updated). Production uses the Neon driver (HTTPS) unless DB_DRIVER=pg. |
 | I-1 | Fixed | src/lib/log-error.ts: every server log of a failure is now '<where>: [code] first line of the message' (160 characters at most), preferring the database driver's message over the 'Failed query … params' text. The 14 places that logged whole error objects use it. Unit-tested that query parameters and details never appear. |
 | I-2 | Fixed | src/lib/site-url.ts, used by sign-in emails and approval notifications: APP_BASE_URL; in production without it, a clear error naming the setting (the admin sees it when sending sign-in details; approval emails log it); on a Preview, VERCEL_URL; locally, localhost. The request Host header is no longer used anywhere. |
+| N-1 | On hold | "+ Add" in the request forms (Support Admin) shows "Administrator has locked…" unless Administrator was unlocked and the form reached by clicking through in the same tab, a side effect of L-3. Categories can always be added on their own page. |
+| N-2 | On hold | The Super Admin's Approval System sidebar shows the full HR and Expenditure lists, while the code describes one "Recommended" place for them. Left as it is. |
