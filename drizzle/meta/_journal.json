@@ -127,6 +127,13 @@
       "when": 1792171330153,
       "tag": "0017_hr_expense_admin_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792171331153,
+      "tag": "0018_login_attempt_kind",
+      "breakpoints": true
     }
   ]
 }

@@ -93,7 +93,7 @@ async function SignIns({ sp }: { sp: SP }) {
   const data = await listSignIns({ q: g(sp, "q") || undefined, outcome: outcome === "ok" || outcome === "failed" ? outcome : undefined, from: g(sp, "from") || undefined, to: g(sp, "to") || undefined, dir: g(sp, "dir") === "asc" ? "asc" : "desc", page });
   return (
     <div className="space-y-5">
-      <p className="text-sm text-muted">Every sign-in attempt, successful or not. Passwords are never recorded.</p>
+      <p className="text-sm text-muted">Every password attempt (signing in, unlocking Administrator, changing a password), successful or not. &ldquo;Refused&rdquo; means too many wrong passwords: the password was not checked. Passwords are never recorded.</p>
       <Filters tab="signins" sp={sp} placeholder="Email address" choice={{ name: "outcome", label: "Outcome", options: [["", "All"], ["ok", "Signed in"], ["failed", "Failed"]] }} />
       <div className="table-wrap"><table>
         <thead><tr><th>When</th><th>Email</th><th>Outcome</th><th>From (IP address)</th></tr></thead>
@@ -101,7 +101,8 @@ async function SignIns({ sp }: { sp: SP }) {
           {data.rows.map((r) => (
             <tr key={r.id}>
               <td className="whitespace-nowrap text-xs text-muted">{formatIST(r.at)}</td><td>{r.email}</td>
-              <td>{r.success ? <span className="badge badge-green">Signed in</span> : <span className="badge badge-red">Failed</span>}</td>
+              <td>{r.success ? <span className="badge badge-green">{r.kind === "unlock" ? "Unlocked Administrator" : r.kind === "password" ? "Password changed" : "Signed in"}</span>
+                : <span className="badge badge-red">{r.blocked ? "Refused: too many tries" : "Failed"}{r.kind === "unlock" ? " (Administrator)" : r.kind === "password" ? " (change password)" : ""}</span>}</td>
               <td className="text-xs text-muted">{r.ip ?? "—"}</td>
             </tr>
           ))}

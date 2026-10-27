@@ -17,7 +17,7 @@ export async function listSignIns(f: SignInFilters) {
     f.to && /^\d{4}-\d{2}-\d{2}$/.test(f.to) ? lt(loginAttempts.createdAt, new Date(dayStart(f.to).getTime() + 86_400_000)) : undefined,
   ) as SQL | undefined;
   const [rows, [{ n }]] = await Promise.all([
-    db.select({ id: loginAttempts.id, at: loginAttempts.createdAt, email: loginAttempts.email, ip: loginAttempts.ipAddress, success: loginAttempts.success })
+    db.select({ id: loginAttempts.id, at: loginAttempts.createdAt, email: loginAttempts.email, ip: loginAttempts.ipAddress, success: loginAttempts.success, kind: loginAttempts.kind, blocked: loginAttempts.blocked })
       .from(loginAttempts).where(where)
       .orderBy(f.dir === "asc" ? asc(loginAttempts.createdAt) : desc(loginAttempts.createdAt), desc(loginAttempts.id)).limit(PAGE).offset((f.page - 1) * PAGE),
     db.select({ n: count() }).from(loginAttempts).where(where),

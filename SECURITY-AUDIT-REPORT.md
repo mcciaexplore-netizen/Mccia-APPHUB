@@ -267,9 +267,9 @@ Phase 2 runs on the branch `security-fixes`, one commit per fix.
 
 | ID | Status | Notes |
 |---|---|---|
-| H-1 | Pending |  |
+| H-1 | Fixed | src/lib/sign-in-limits.ts + sign-in-rules.ts, wired into login, unlockAdmin, changePassword. Limits: email+IP 5/15 min → refused 15 min; IP 30/15 min → refused 15 min; email alone ≥10/15 min → delay 1–5 s, never locked. Same message as a wrong password. clientIp prefers x-vercel-forwarded-for / x-real-ip (set by Vercel, not spoofable). Tested: 6 rule checks + 14 checks against a local Postgres. **Manual action needed: run scripts/apply-0018-in-neon-console.sql before deploying.** |
 | H-2 | Fixed | next 16.3.7 → 16.4.3 (and eslint-config-next) |
-| M-1 | Pending |  |
+| M-1 | Fixed | Every attempt (success, failure, refused) recorded in login_attempts with kind (login/unlock/password) and blocked flag (migration 0018). Sign-ins tab shows them. |
 | M-2 | Fixed | zod 4.6.5 → 4.6.7 |
 | M-3 | Skipped for now (owner's decision) | Plan at the end of Phase 2 |
 | M-4 | Pending |  |

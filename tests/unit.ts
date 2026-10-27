@@ -10,6 +10,8 @@ import {
   type Actor, type Target,
 } from "../src/lib/rbac";
 import { isPublicAddress } from "../src/lib/net-guard";
+import { clientIp } from "../src/lib/ip";
+import { WINDOW_MS as SIR_WINDOW, refusedUntil as sirRefusedUntil, slowDownMs as sirSlowDownMs } from "../src/lib/sign-in-rules";
 import { adminTabsFor } from "../src/lib/admin-tabs";
 import { scrub } from "../src/lib/scrub";
 import { xlsxToTable } from "../src/lib/xlsx-read";
@@ -376,5 +378,21 @@ eq("net guard: ordinary public IPv4 is allowed, including just outside the priva
 eq("net guard: IPv6 loopback, unique-local, link-local, multicast and mapped private addresses are refused", ["::1", "::", "fd00::1", "fc00::1", "fe80::1", "ff02::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1", "::ffff:7f00:1"].map(isPublicAddress), Array(9).fill(false));
 eq("net guard: public IPv6 and a mapped public IPv4 are allowed, and anything that is not an address is refused", [isPublicAddress("2606:4700:4700::1111"), isPublicAddress("::ffff:8.8.8.8"), isPublicAddress("localhost"), isPublicAddress("evil.example.com"), isPublicAddress("")], [true, true, false, false, false]);
 
+// Sign-in limits (src/lib/sign-in-rules.ts): when a refusal ends, and how long a try waits.
+{
+  const m = 60_000;
+  eq("limits: 4 wrong passwords are not refused", sirRefusedUntil([0, m, 2 * m, 3 * m], 5), 0);
+  eq("limits: the 5th wrong password within 15 minutes refuses for 15 minutes after it", sirRefusedUntil([0, m, 2 * m, 3 * m, 4 * m], 5), 4 * m + SIR_WINDOW);
+  eq("limits: 5 wrong passwords spread over more than 15 minutes do not refuse", sirRefusedUntil([0, 4 * m, 8 * m, 12 * m, 16 * m], 5), 0);
+  eq("limits: order does not matter", sirRefusedUntil([4 * m, 0, 3 * m, m, 2 * m], 5), 4 * m + SIR_WINDOW);
+  eq("client IP: Vercel's own header first, then x-real-ip, then the first X-Forwarded-For address", [
+    clientIp(new Headers({ "x-vercel-forwarded-for": "1.2.3.4", "x-real-ip": "5.6.7.8", "x-forwarded-for": "9.9.9.9" })),
+    clientIp(new Headers({ "x-real-ip": "5.6.7.8", "x-forwarded-for": "9.9.9.9, 10.0.0.1" })),
+    clientIp(new Headers({ "x-forwarded-for": "9.9.9.9, 10.0.0.1" })), clientIp(new Headers()),
+  ], ["1.2.3.4", "5.6.7.8", "9.9.9.9", null]);
+  eq("limits: the email-only slow-down starts at 10 and stops growing at 5 seconds", [sirSlowDownMs(9), sirSlowDownMs(10), sirSlowDownMs(12), sirSlowDownMs(14), sirSlowDownMs(40)], [0, 1000, 3000, 5000, 5000]);
+}
+
 console.log(`\n${ok}/${ok + bad} unit checks passed`);
 process.exit(bad ? 1 : 0);
+

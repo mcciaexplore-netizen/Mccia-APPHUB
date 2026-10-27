@@ -268,6 +268,10 @@ export const loginAttempts = pgTable(
     email: text("email").notNull(),
     ipAddress: text("ip_address"),
     success: boolean("success").notNull(),
+    // Which password form: login (signing in), unlock (Administrator) or password (changing one's password).
+    kind: text("kind").notNull().default("login"),
+    // Refused by the sign-in limits without checking the password (src/lib/sign-in-limits.ts). These do not count towards the limits.
+    blocked: boolean("blocked").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [index("login_attempts_email_idx").on(t.email, t.createdAt), index("login_attempts_ip_idx").on(t.ipAddress, t.createdAt)],
