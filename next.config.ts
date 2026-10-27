@@ -40,6 +40,9 @@ const nextConfig: NextConfig = {
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
         ],
       },
+      // The single sign-on hand-off page carries a signed token in its body: no Referer at all, not even the hub's address. (A header set here wins
+      // over one set by the route, and a later entry wins over the one above, so this has to be here and not only in the route.)
+      { source: "/launch/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
     ];
   },
 };

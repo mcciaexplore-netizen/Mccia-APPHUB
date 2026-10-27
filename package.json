@@ -18,6 +18,7 @@
     "test:unit": "tsx tests/unit.ts",
     "test:integration": "tsx --require ./tests/stub-server-only.cjs tests/integration.mts",
     "test:integration:hub": "tsx --require ./tests/stub-server-only.cjs tests/hub-integration.mts",
+    "test:sso": "tsx --require ./tests/stub-server-only.cjs tests/sso-integration.mts",
     "test:e2e": "node tests/e2e/suite.mjs",
     "test:e2e:people": "node tests/e2e/people.mjs",
     "test:e2e:roles": "node tests/e2e/roles.mjs",
