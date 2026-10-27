@@ -80,14 +80,17 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
     const r = await setAdminAreas(person.id, areas);
     if (r.ok) { toast.success("What this Admin may open is saved and recorded in the audit log"); refresh(); } else toast.error(r.error);
   });
-  const saveAccess = () => start(async () => {
-    // Taking access away is confirmed first: the person loses those applications at once.
+  const saveAccess = async () => {
+    // Taking access away is confirmed first: the person loses those applications at once. The question is asked before the save starts
+    // (a dialog opened inside a transition is not shown until the transition ends, which would wait for the answer for ever).
     const removed = saved.filter((x) => !apps.includes(x));
     if (removed.length && !(await confirm({ title: "Take away access?", confirmLabel: "Save changes", danger: true,
       message: `${person.name} will lose ${removed.length} application${removed.length === 1 ? "" : "s"} straight away${apps.length > saved.length - removed.length ? ", and get the new ones ticked" : ""}.` }))) return;
-    const r = await setPersonAccess(person.id, apps);
-    if (r.ok) { setSaved(apps); toast.success(r.data.changed.length ? "Access saved and recorded in the audit log" : "Nothing to change"); refresh(); } else toast.error(r.error);
-  });
+    start(async () => {
+      const r = await setPersonAccess(person.id, apps);
+      if (r.ok) { setSaved(apps); toast.success(r.data.changed.length ? "Access saved and recorded in the audit log" : "Nothing to change"); refresh(); } else toast.error(r.error);
+    });
+  };
   const setupLink = () => start(async () => {
     const r = await sendSetupLink(person.id);
     if (!r.ok) return toast.error(r.error);
