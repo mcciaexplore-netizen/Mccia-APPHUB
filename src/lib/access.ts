@@ -10,7 +10,7 @@ import { isSuper } from "@/lib/rbac";
 export type HubApp = { id: string; name: string; description: string | null; icon: string; departmentId: string; status: "active" | "testing" | "unavailable" };
 
 /**
- * Apps this user may open: active apps in active departments. The Support Admin and the Super Admin get all of them; everyone else (an Admin included)
+ * Apps this user may open: active apps in active departments. The Support Admin gets all of them; everyone else (the Super Admin and an Admin included)
  * only the apps an admin has ticked for them. This is the single source of truth for hub visibility.
  */
 export const getAccessibleApps = cache(async (user: Pick<User, "id" | "role">): Promise<HubApp[]> => {

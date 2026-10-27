@@ -98,7 +98,7 @@ export function InventoryView({ rows, departments }: { rows: Row[]; departments:
                     onChange={(e) => start(async () => { const x = await setAppStatus(r.id, e.target.value as Row["status"]); if (x.ok) { toast.success("Label saved"); router.refresh(); } else toast.error(x.error); })}>
                     <option value="active">Active</option><option value="testing">Under testing</option><option value="unavailable">Unavailable</option>
                   </select></td>
-                <td className="text-xs"><b>{r.people}</b> {r.people === 1 ? "person" : "people"} assigned, plus the Support Admin and Super Admin<span className="block text-muted">Hub sign-in required</span></td>
+                <td className="text-xs"><b>{r.people}</b> {r.people === 1 ? "person" : "people"} assigned, plus the Support Admin<span className="block text-muted">Hub sign-in required</span></td>
                 <td className="text-xs"><span className={v.cls}>{v.label}</span>
                   {r.check && <span className="mt-1 block text-muted">{r.check.detail} {r.check.durationMs != null && `(${r.check.durationMs} ms)`}<span className="block text-subtle">{formatIST(r.check.at)}</span></span>}</td>
                 <td><div className="flex justify-end gap-1.5">
