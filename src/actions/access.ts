@@ -4,9 +4,10 @@ import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { accessTemplateApps, accessTemplates, apps } from "@/db/schema";
-import { applyAppUserChange } from "@/lib/access-ops";
+import { applyAppUserChange, applyAppUserRole } from "@/lib/access-ops";
 import { adminAction, UserError } from "@/lib/action";
 import { writeAudit } from "@/lib/audit";
+import { SSO_ROLES } from "@/lib/sso-rules";
 import { uuid, uuidList } from "@/lib/validation";
 
 /**
@@ -27,6 +28,17 @@ export async function changeAppUsers(appId: string, input: unknown) {
     const id = uuid.parse(appId);
     const v = z.object({ add: uuidList, remove: uuidList }).parse(input);
     return applyAppUserChange(admin, { appId: id, add: v.add, remove: v.remove, source: "application" });
+  });
+}
+
+/**
+ * A person's role in a single sign-on application: User or Admin. Only the Support Admin (no area, unlike the rest of this file), because
+ * it decides what the person can do inside that application.
+ */
+export async function setAppUserRole(appId: string, userId: string, role: string) {
+  return adminAction(async (admin) => {
+    const v = z.object({ appId: uuid, userId: uuid, role: z.enum(SSO_ROLES, { error: "Choose User or Admin." }) }).parse({ appId, userId, role });
+    return applyAppUserRole(admin, v);
   });
 }
 

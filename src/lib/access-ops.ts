@@ -1,10 +1,11 @@
 import "server-only";
-import { eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, userAppAccess, users, type User } from "@/db/schema";
 import { notifyUsers } from "@/lib/notifications";
 import { writeAudit, type AuditEntry } from "@/lib/audit";
-import { canGrantAny, canManageAccess, firstUngrantable, grantableApps } from "@/lib/rbac";
+import { canGrantAny, canManageAccess, firstUngrantable, grantableApps, isSuper } from "@/lib/rbac";
+import type { SsoRole } from "@/lib/sso-rules";
 import { UserError } from "@/lib/user-error";
 import { logError } from "@/lib/log-error";
 
@@ -194,4 +195,31 @@ export async function applyAppUserChange(actor: Actor, req: AppUsersRequest): Pr
   const pick = [del && sql`select 'removed' as k, user_id, app_id from del`, ins && sql`select 'added' as k, user_id, app_id from ins`].filter((x): x is SQL => x !== null);
   const rows = await run(sql`with ${sql.join(parts, sql`, `)} ${sql.join(pick, sql` union all `)}`);
   return settle(actor, { userIds: everyone, targets, appName: (id) => ({ id, name: names.get(id) ?? "Deleted application" }) }, rows, req.source, "app");
+}
+
+
+/**
+ * Sets a person's role inside a single sign-on application ("user" or "admin"; it is what the token says about them). Only the Support Admin
+ * may do this, and the person must already have the application (a role belongs to the grant). Re-granting access keeps the role: the
+ * grant statements above do nothing when the grant is already there. Audited as access.role.
+ */
+export async function applyAppUserRole(actor: Pick<User, "id" | "name" | "role">, req: { appId: string; userId: string; role: SsoRole }): Promise<{ changed: boolean }> {
+  if (!isSuper(actor)) throw new UserError("Only the Support Admin can change a person's role in an application.");
+  const [[app], [person], [grant]] = await Promise.all([
+    db.select({ name: apps.name }).from(apps).where(eq(apps.id, req.appId)),
+    db.select({ name: users.name }).from(users).where(eq(users.id, req.userId)),
+    db.select({ role: userAppAccess.appRole }).from(userAppAccess).where(and(eq(userAppAccess.appId, req.appId), eq(userAppAccess.userId, req.userId))),
+  ]);
+  if (!app) throw new UserError("That application no longer exists. Reload and try again.");
+  if (!person) throw new UserError("That user no longer exists. Reload and try again.");
+  if (!grant) throw new UserError(`${person.name} does not have access to ${app.name}. Give them access first.`);
+  if (grant.role === req.role) return { changed: false };
+  await db.update(userAppAccess).set({ appRole: req.role }).where(and(eq(userAppAccess.appId, req.appId), eq(userAppAccess.userId, req.userId)));
+  try {
+    await writeAudit(actor, [{ action: "access.role", targetType: "user", targetId: req.userId, targetLabel: person.name, details: { application: app.name, from: grant.role, to: req.role } }]);
+  } catch (e) {
+    logError("[hub] access: audit write failed", e);
+    throw new UserError("The role was changed, but the change could not be recorded in the audit log. Please tell an administrator.");
+  }
+  return { changed: true };
 }

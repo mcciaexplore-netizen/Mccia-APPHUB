@@ -8,8 +8,9 @@ const g = (sp: SP, k: string) => (typeof sp[k] === "string" ? (sp[k] as string).
 
 /** A sentence for what an entry changed, from its recorded details. Nothing secret is ever recorded, so nothing secret can show. */
 function detail(action: string, d: unknown): string {
-  const x = (d ?? {}) as { added?: string[]; removed?: string[]; before?: string[]; after?: string[]; changes?: Record<string, { from: unknown; to: unknown }>; applications?: string[]; delivery?: string; created?: number; updated?: number; skipped?: number; invalid?: number; failed?: number; source?: string; from?: string; to?: string };
+  const x = (d ?? {}) as { added?: string[]; removed?: string[]; before?: string[]; after?: string[]; changes?: Record<string, { from: unknown; to: unknown }>; applications?: string[]; delivery?: string; created?: number; updated?: number; skipped?: number; invalid?: number; failed?: number; source?: string; from?: string; to?: string; application?: string };
   if (action === "access.change") return [x.added?.length ? `Added: ${x.added.join(", ")}` : "", x.removed?.length ? `Removed: ${x.removed.join(", ")}` : "", x.after ? `Now has: ${x.after.join(", ") || "nothing"}` : ""].filter(Boolean).join(" · ");
+  if (action === "access.role") return `${x.application ? `${x.application}: ` : ""}${x.from ?? ""} → ${x.to ?? ""}`;
   if (action === "user.update" && x.changes) return Object.entries(x.changes).map(([k, v]) => `${k}: ${v.from ?? "none"} → ${v.to ?? "none"}`).join(" · ");
   if (action === "import.batch") return `Created ${x.created ?? 0}, updated ${x.updated ?? 0}, skipped ${x.skipped ?? 0}, invalid ${x.invalid ?? 0}, failed ${x.failed ?? 0}`;
   if (action === "user.invite") return `Setup link ${x.delivery ?? ""}`;
