@@ -22,6 +22,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ appI
   const target = await getLaunchTarget(user, appId);
   // Unknown, inactive, and "not yours" all get the same answer, so nobody learns which applications exist.
   if (!target) return new NextResponse("You do not have access to this application, or it does not exist. If you think you should have access, ask your administrator.", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  // An application with single sign-on is opened through /launch/<slug>, which checks everything again, logs the launch and signs the person in.
+  if (target.ssoEnabled && target.ssoSlug) return NextResponse.redirect(new URL(`/launch/${target.ssoSlug}`, req.url), 302);
   // An application marked unavailable cannot be opened (the head admin still can, to test it). Nothing is logged: nothing was opened.
   if (target.status === "unavailable" && !isSuper(user)) {
     return new NextResponse("This application is unavailable right now. Please try again later or ask your administrator.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "600" } });

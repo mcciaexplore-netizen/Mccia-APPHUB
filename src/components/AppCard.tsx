@@ -1,7 +1,8 @@
 import { ArrowRight, ArrowUpRight, Clock, Users } from "lucide-react";
 import { Icon } from "@/components/Icon";
 
-export type CardApp = { id: string; name: string; description: string | null; icon: string; status?: "active" | "testing" | "unavailable" };
+/** `ssoSlug` is set for an application with single sign-on: it opens through /launch/<ssoSlug> (which signs the person in) instead of /go/<id>. */
+export type CardApp = { id: string; name: string; description: string | null; icon: string; status?: "active" | "testing" | "unavailable"; ssoSlug?: string | null };
 
 /** One of six colour palettes (see .tile-0 to .tile-5 in globals.css), picked from the application's id so it always keeps its own. */
 const palette = (id: string) => {
@@ -62,5 +63,5 @@ export function AppCard({ app, deptName, index = 0, canOpenUnavailable = false, 
   const style = { animationDelay: `${index * 50}ms` };
   if (blocked) return <div className={cls} style={style} title={app.description ?? app.name} aria-disabled="true">{inner}</div>;
   if (href) return <a href={href} title={app.description ?? app.name} style={style} className={cls}>{inner}</a>;
-  return <a href={`/go/${app.id}`} target="_blank" rel="noopener noreferrer" title={app.description ?? app.name} style={style} className={cls}>{inner}</a>;
+  return <a href={app.ssoSlug ? `/launch/${app.ssoSlug}` : `/go/${app.id}`} target="_blank" rel="noopener noreferrer" title={app.description ?? app.name} style={style} className={cls}>{inner}</a>;
 }
