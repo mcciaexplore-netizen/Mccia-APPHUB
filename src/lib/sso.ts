@@ -14,7 +14,7 @@ import type { SsoRole } from "@/lib/sso-rules";
 
 export const SSO_ISSUER = "mccia-app-hub";
 export const SSO_KID = "hub-1";
-export const SSO_TOKEN_TTL_SECONDS = 60;
+const SSO_TOKEN_TTL_SECONDS = 60;
 
 /** The key is not usable. The code is all that is ever logged: never any part of the key. */
 export class SsoConfigError extends Error {

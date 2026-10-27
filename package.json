@@ -12,6 +12,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:seed:approvals": "tsx scripts/seed-approvals.ts",
     "db:seed:sso": "tsx scripts/sso-dev-seed.ts",
+    "sso:keygen": "node scripts/sso-keygen.mjs",
     "typecheck": "tsc --noEmit",
     "clean:scan": "node scripts/cleanup.mjs",
     "clean:fix": "node scripts/cleanup.mjs --fix",

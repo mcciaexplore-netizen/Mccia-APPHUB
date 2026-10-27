@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
  * never cached, never framed, no Referer, and a policy that lets it run one inline script (this one, by nonce) and post to one origin.
  */
 
-export const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 export const newNonce = () => randomBytes(16).toString("base64");
 

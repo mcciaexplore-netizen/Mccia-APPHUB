@@ -6,8 +6,8 @@
 export const SSO_ROLES = ["user", "admin"] as const;
 export type SsoRole = (typeof SSO_ROLES)[number];
 
-export const SSO_SLUG_MIN = 2;
-export const SSO_SLUG_MAX = 40;
+const SSO_SLUG_MIN = 2;
+const SSO_SLUG_MAX = 40;
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** What is wrong with a slug (the application's single sign-on name, used in /launch/<slug> and as the token's audience), or null when it is fine. */
