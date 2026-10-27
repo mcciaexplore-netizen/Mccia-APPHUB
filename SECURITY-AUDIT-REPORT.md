@@ -277,7 +277,7 @@ Phase 2 runs on the branch `security-fixes`, one commit per fix.
 | L-1 | Fixed | nodemailer 10.1.1 → 10.2.1. npm audit --omit=dev: 0 vulnerabilities. 4 moderate remain in the dev-only drizzle-kit (esbuild dev server), not deployed |
 | L-2 | Pending | Fix later |
 | L-3 | Pending |  |
-| L-4 | Pending |  |
+| L-4 | Fixed | assertHeadAdmin / assertArea / assertStaff (every admin and staff server action and the CSV export routes) and the Approval System route() wrapper refuse someone still on a temporary password, with a plain message. changePassword and marking notifications read still work. Pages already redirected. |
 | L-5 | Skipped for now (owner's decision) |  |
 | L-6 | Pending |  |
 | L-7 | Pending | Fix later |

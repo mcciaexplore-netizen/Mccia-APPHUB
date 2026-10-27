@@ -8,6 +8,7 @@ import { users, type User } from "@/db/schema";
 import { userFingerprint } from "@/lib/auth";
 import { canAdminister, hasArea, isSuper, isTeamManager, type AdminArea } from "@/lib/rbac";
 import { ADMIN_COOKIE, SESSION_COOKIE, verify } from "@/lib/session";
+import { UserError } from "@/lib/user-error";
 
 /**
  * The person signed in on this request, or null. The cookie only names them; the account is re-read from the database
@@ -69,16 +70,26 @@ export async function requireActivityViewer(): Promise<User> {
   return u;
 }
 
+/**
+ * The signed-in person, for server actions and route handlers. Someone still on the temporary password they were emailed must choose their
+ * own first (the pages send them to /change-password; this stops the same person calling an action or a route directly).
+ */
+async function actingUser(): Promise<User | null> {
+  const u = await getCurrentUser();
+  if (u?.mustChangePassword) throw new UserError("Choose your own password first: you are still using the temporary one.");
+  return u;
+}
+
 /** For server actions: throw instead of redirecting so the client gets a clean error. Every admin action calls this. */
 export async function assertHeadAdmin(): Promise<User> {
-  const u = await getCurrentUser();
+  const u = await actingUser();
   if (!u || !isSuper(u) || !(await adminUnlocked(u))) throw new Error("Not allowed");
   return u;
 }
 
 /** The same for one area of Administrator (see requireArea). */
 export async function assertArea(area: AdminArea): Promise<User> {
-  const u = await getCurrentUser();
+  const u = await actingUser();
   if (!u || !hasArea(u, area) || !(await adminUnlocked(u))) throw new Error("Not allowed");
   return u;
 }
@@ -88,7 +99,7 @@ export async function assertArea(area: AdminArea): Promise<User> {
  * Administrator; a team manager needs nothing more.
  */
 export async function assertStaff(): Promise<User> {
-  const u = await getCurrentUser();
+  const u = await actingUser();
   if (!u) throw new Error("Not allowed");
   if (isSuper(u) || hasArea(u, "people")) {
     if (!(await adminUnlocked(u))) throw new Error("Not allowed");

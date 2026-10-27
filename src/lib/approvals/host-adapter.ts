@@ -47,6 +47,9 @@ export const resolveAccess = cache(async (): Promise<Access> => {
   return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles: await rolesFor(host.id, host.role), place } };
 });
 
+/** Whether the person is still on the temporary password they were emailed: they must choose their own before using the module. */
+export const needsOwnPassword = async () => !!(await hostCurrentUser())?.mustChangePassword;
+
 /** Everyone who can sign in to the hub, for the Name dropdown and the approver pickers. There is no second user table. */
 export async function listUsers(): Promise<DirectoryUser[]> {
   return db
