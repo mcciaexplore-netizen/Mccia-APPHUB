@@ -199,7 +199,7 @@ export async function applyAppUserChange(actor: Actor, req: AppUsersRequest): Pr
 
 
 /**
- * Sets a person's role inside a single sign-on application ("user" or "admin"; it is what the token says about them). Only the Support Admin
+ * Sets a person's role inside a single sign-on application ("user", "admin" or "super_admin"; it is what the token says about them). Only the Support Admin
  * may do this, and the person must already have the application (a role belongs to the grant). Re-granting access keeps the role: the
  * grant statements above do nothing when the grant is already there. Audited as access.role.
  */
@@ -222,4 +222,40 @@ export async function applyAppUserRole(actor: Pick<User, "id" | "name" | "role">
     throw new UserError("The role was changed, but the change could not be recorded in the audit log. Please tell an administrator.");
   }
   return { changed: true };
+}
+
+/**
+ * Sets every role in one single sign-on application at once, from the Edit form's App roles: the people listed as admins and super admins
+ * get that role, everyone else who has the application becomes a user. Only the Support Admin, only people who already have the application,
+ * and nobody in both lists. One statement changes only the rows whose role really changes; each change is audited as access.role.
+ */
+export async function applyAppRoles(actor: Pick<User, "id" | "name" | "role">, req: { appId: string; admins: string[]; superAdmins: string[] }): Promise<{ changed: number }> {
+  if (!isSuper(actor)) throw new UserError("Only the Support Admin can change people's roles in an application.");
+  const admins = new Set(req.admins);
+  const superAdmins = new Set(req.superAdmins);
+  if (req.admins.some((id) => superAdmins.has(id))) throw new UserError("A person can be an Admin or a Super Admin, not both.");
+  const [[app], grants] = await Promise.all([
+    db.select({ name: apps.name, sso: apps.ssoEnabled }).from(apps).where(eq(apps.id, req.appId)),
+    db.select({ userId: userAppAccess.userId, role: userAppAccess.appRole, name: users.name }).from(userAppAccess)
+      .innerJoin(users, eq(users.id, userAppAccess.userId)).where(eq(userAppAccess.appId, req.appId)),
+  ]);
+  if (!app) throw new UserError("That application no longer exists. Reload and try again.");
+  if (!app.sso) throw new UserError("Roles only apply to an application with single sign-on.");
+  const granted = new Set(grants.map((g) => g.userId));
+  if ([...admins, ...superAdmins].some((id) => !granted.has(id))) throw new UserError("Everyone given a role must already have this application. Reload and try again.");
+
+  const want = (id: string): SsoRole => (superAdmins.has(id) ? "super_admin" : admins.has(id) ? "admin" : "user");
+  const changes = grants.filter((g) => g.role !== want(g.userId));
+  if (changes.length === 0) return { changed: 0 };
+  const among = (ids: Set<string>) => (ids.size ? sql`${userAppAccess.userId} in (${list([...ids])})` : sql`false`);
+  const role = sql`case when ${among(superAdmins)} then 'super_admin' when ${among(admins)} then 'admin' else 'user' end`;
+  await db.update(userAppAccess).set({ appRole: role })
+    .where(and(eq(userAppAccess.appId, req.appId), inArray(userAppAccess.userId, changes.map((c) => c.userId))));
+  try {
+    await writeAudit(actor, changes.map((c) => ({ action: "access.role", targetType: "user", targetId: c.userId, targetLabel: c.name, details: { application: app.name, from: c.role, to: want(c.userId) } })));
+  } catch (e) {
+    logError("[hub] access: audit write failed", e);
+    throw new UserError("The roles were changed, but the change could not be recorded in the audit log. Please tell an administrator.");
+  }
+  return { changed: changes.length };
 }

@@ -3,14 +3,12 @@
 import { useMemo, useState, useTransition } from "react";
 import { useToast } from "@/components/Toast";
 import { changeAppUsers, setAppUserRole } from "@/actions/access";
-import { SSO_ROLES, type SsoRole } from "@/lib/sso-rules";
+import { SSO_ROLES, SSO_ROLE_LABEL as ROLE_LABEL, type SsoRole } from "@/lib/sso-rules";
 
 type P = { id: string; name: string; email: string; designation: string | null; isActive: boolean };
 
-const ROLE_LABEL: Record<SsoRole, string> = { user: "User", admin: "Admin" };
-
 /**
- * `sso` is set for an application with single sign-on: each person who has it then shows the role they are signed in with (User or Admin).
+ * `sso` is set for an application with single sign-on: each person who has it then shows the role they are signed in with (User, Admin or Super Admin).
  * `roles` is what is stored; `canSetRole` is only true for the Support Admin, everyone else sees the role but cannot change it.
  */
 export function AppAccessEditor({ appId, people, initial, sso = false, roles = {}, canSetRole = false }: {
@@ -56,7 +54,7 @@ export function AppAccessEditor({ appId, people, initial, sso = false, roles = {
 
   return (
     <div className="space-y-4">
-      {sso && <p className="text-sm text-muted">Single sign-on is on for this application. Each person who has it is signed in as a <b>User</b> or an <b>Admin</b> of the application; {canSetRole ? "you choose which below." : "only the Support Admin can change it."} Support Admins are always Admins.</p>}
+      {sso && <p className="text-sm text-muted">Single sign-on is on for this application. Each person who has it is signed in as a <b>User</b>, an <b>Admin</b> or a <b>Super Admin</b> of the application; {canSetRole ? "you choose which below." : "only the Support Admin can change it."} Support Admins are always at least Admins.</p>}
       <div className="flex flex-wrap items-center gap-3">
         <input className="input !w-full sm:!w-64" placeholder="Search users" value={q} onChange={(e) => setQ(e.target.value)} />
         <label className="flex items-center gap-2 text-sm text-muted"><input type="checkbox" className="h-4 w-4 accent-[var(--c-primary)]" checked={onlyGranted} onChange={(e) => setOnlyGranted(e.target.checked)} /> Only users with access</label>
@@ -76,7 +74,7 @@ export function AppAccessEditor({ appId, people, initial, sso = false, roles = {
                   <td>
                     {saved.includes(p.id) ? (
                       canSetRole ? (
-                        <select aria-label={`Role of ${p.name} in this application`} className="input !h-9 !w-28 !py-0" value={appRoles[p.id] ?? "user"} disabled={pending || !value.has(p.id)} onChange={(e) => changeRole(p.id, e.target.value as SsoRole)}>
+                        <select aria-label={`Role of ${p.name} in this application`} className="input !h-9 !w-32 !py-0" value={appRoles[p.id] ?? "user"} disabled={pending || !value.has(p.id)} onChange={(e) => changeRole(p.id, e.target.value as SsoRole)}>
                           {SSO_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                         </select>
                       ) : <span className="badge badge-neutral">{ROLE_LABEL[appRoles[p.id] ?? "user"]}</span>

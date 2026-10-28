@@ -4,7 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { accessTemplateApps, accessTemplates, apps } from "@/db/schema";
-import { applyAppUserChange, applyAppUserRole } from "@/lib/access-ops";
+import { applyAppRoles, applyAppUserChange, applyAppUserRole } from "@/lib/access-ops";
 import { adminAction, UserError } from "@/lib/action";
 import { writeAudit } from "@/lib/audit";
 import { SSO_ROLES } from "@/lib/sso-rules";
@@ -32,13 +32,21 @@ export async function changeAppUsers(appId: string, input: unknown) {
 }
 
 /**
- * A person's role in a single sign-on application: User or Admin. Only the Support Admin (no area, unlike the rest of this file), because
+ * A person's role in a single sign-on application: User, Admin or Super Admin. Only the Support Admin (no area, unlike the rest of this file), because
  * it decides what the person can do inside that application.
  */
 export async function setAppUserRole(appId: string, userId: string, role: string) {
   return adminAction(async (admin) => {
-    const v = z.object({ appId: uuid, userId: uuid, role: z.enum(SSO_ROLES, { error: "Choose User or Admin." }) }).parse({ appId, userId, role });
+    const v = z.object({ appId: uuid, userId: uuid, role: z.enum(SSO_ROLES, { error: "Choose User, Admin or Super Admin." }) }).parse({ appId, userId, role });
     return applyAppUserRole(admin, v);
+  });
+}
+
+/** The Edit form's App roles: who is an Admin and who is a Super Admin of a single sign-on application. Support Admin only, like the above. */
+export async function setAppRoles(appId: string, input: unknown) {
+  return adminAction(async (admin) => {
+    const v = z.object({ admins: uuidList, superAdmins: uuidList }).parse(input);
+    return applyAppRoles(admin, { appId: uuid.parse(appId), admins: [...new Set(v.admins)], superAdmins: [...new Set(v.superAdmins)] });
   });
 }
 

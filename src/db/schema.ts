@@ -226,14 +226,14 @@ export const userAppAccess = pgTable(
       .references(() => apps.id, { onDelete: "cascade" }),
     grantedById: uuid("granted_by_id").references(() => users.id, { onDelete: "set null" }),
     grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
-    // The person's role inside a single sign-on application: "user" or "admin". Only the Support Admin changes it. Ignored by applications
-    // without single sign-on; the Support Admin is an admin in every single sign-on application whatever this says.
+    // The person's role inside a single sign-on application: "user", "admin" or "super_admin". Only the Support Admin changes it. Ignored by
+    // applications without single sign-on; the Support Admin is at least an admin in every single sign-on application whatever this says.
     appRole: text("app_role").notNull().default("user"),
   },
   (t) => [
     unique("user_app_access_user_app_uq").on(t.userId, t.appId),
     index("user_app_access_app_idx").on(t.appId),
-    check("user_app_access_app_role_check", sql`${t.appRole} in ('user', 'admin')`),
+    check("user_app_access_app_role_check", sql`${t.appRole} in ('user', 'admin', 'super_admin')`),
   ],
 );
 

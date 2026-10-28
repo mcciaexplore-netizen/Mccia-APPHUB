@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { apps, departments, userAppAccess, users } from "@/db/schema";
 import { requireArea } from "@/lib/permissions";
 import { isSuper } from "@/lib/rbac";
-import type { SsoRole } from "@/lib/sso-rules";
+import { SSO_ROLES, type SsoRole } from "@/lib/sso-rules";
 import { AppAccessEditor } from "./AppAccessEditor";
 
 export const metadata = { title: "App access · MCCIA App Hub" };
@@ -35,7 +35,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         <p className="text-sm text-muted">{app.department}</p>
       </div>
       <AppAccessEditor appId={app.id} people={people} initial={granted.map((g) => g.userId)}
-        sso={app.sso} roles={Object.fromEntries(granted.map((g) => [g.userId, g.role === "admin" ? "admin" : "user"])) as Record<string, SsoRole>} canSetRole={isSuper(me)} />
+        sso={app.sso} roles={Object.fromEntries(granted.map((g) => [g.userId, (SSO_ROLES as readonly string[]).includes(g.role) ? g.role : "user"])) as Record<string, SsoRole>} canSetRole={isSuper(me)} />
     </div>
   );
 }

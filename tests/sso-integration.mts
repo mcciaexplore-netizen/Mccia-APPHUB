@@ -341,7 +341,7 @@ try {
     const noGrant = await callAction("setAppUserRole", page, [search.id, noAccess.id, "admin"], unlocked(head));
     check("setAppUserRole: a person without the app cannot be given a role in it", noGrant.ok === false && /does not have access/.test(noGrant.error ?? ""), noGrant);
     const badRole = await callAction("setAppUserRole", page, [search.id, normal.id, "root"], unlocked(head));
-    check("setAppUserRole: only user or admin", badRole.ok === false && badRole.error === "Choose User or Admin." && (await roleOf(normal, search)) === "admin", badRole);
+    check("setAppUserRole: only user, admin or super_admin", badRole.ok === false && badRole.error === "Choose User, Admin or Super Admin." && (await roleOf(normal, search)) === "admin", badRole);
 
     // Re-granting keeps the role
     const addAgain = await callAction("changeAppUsers", page, [search.id, { add: [normal.id], remove: [] }], unlocked(head));
@@ -361,6 +361,40 @@ try {
     check("applyAppUserRole refuses everyone but the head admin, even called directly", (await Promise.all([normal, hubAdmin, superAdmin, teamLead, appAdmin].map(direct))).every((x) => x === "refused") && (await roleOf(normal, search)) === "user");
     check("applyAppUserRole allows the head admin", (await direct(head)) === "allowed" && (await roleOf(normal, search)) === "admin");
     await applyAppUserRole(head, { appId: search.id, userId: normal.id, role: "user" });
+  }
+
+  // ------------------------------------------------ App roles on the Edit form: both lists at once, through the real server action
+  {
+    await get("/administrator/inventory", unlocked(head));
+    const page = "/administrator/inventory";
+    const setRoles = (u: User, admins: string[], superAdmins: string[], appId = search.id) => callAction("setAppRoles", page, [appId, { admins, superAdmins }], unlocked(u));
+    const roleAudits = async () => (await db.select().from(S.accessAudit).where(eq(S.accessAudit.action, "access.role"))).filter((a) => a.targetLabel.startsWith("ZZSSO")).length;
+    const auditsBefore = await roleAudits();
+    for (const [label, u] of [["an Admin with the Applications area", hubAdmin], ["the Super Admin", superAdmin], ["a plain member", normal]] as const) {
+      const r = await setRoles(u, [normal.id], []);
+      check(`setAppRoles: ${label} is refused`, r.ok === false && (await roleOf(normal, search)) === "user", r);
+    }
+    const both = await setRoles(head, [normal.id], [normal.id]);
+    check("setAppRoles: one person in both lists is refused", both.ok === false && /not both/.test(both.error ?? "") && (await roleOf(normal, search)) === "user", both);
+    const stranger = await setRoles(head, [noAccess.id], []);
+    check("setAppRoles: someone without the application cannot be given a role", stranger.ok === false && /already have this application/.test(stranger.error ?? ""), stranger);
+    const notSso = await setRoles(head, [normal.id], [], plain.id);
+    check("setAppRoles: an application without single sign-on has no roles", notSso.ok === false && /single sign-on/.test(notSso.error ?? ""), notSso);
+    check("setAppRoles: the refusals changed nothing and audited nothing", (await roleAudits()) === auditsBefore && (await roleOf(appAdmin, search)) === "admin");
+
+    const good = await setRoles(head, [normal.id], [appAdmin.id]);
+    check("setAppRoles: the Support Admin sets an Admin and a Super Admin in one save; everyone else stays a user", good.ok === true
+      && (await roleOf(normal, search)) === "admin" && (await roleOf(appAdmin, search)) === "super_admin" && (await roleOf(mustChange, search)) === "user", good);
+    check("setAppRoles: one access.role audit entry per person whose role changed", (await roleAudits()) === auditsBefore + 2);
+    const superT = tokenIn(await (await get("/launch/zz-sso-search", session(appAdmin))).text());
+    if (superT) issued.push(superT);
+    check("setAppRoles: the next launch carries role super_admin for the Super Admin", !!superT && (await verifySsoToken(superT, PUBLIC_PEM, { audience: "zz-sso-search" })).claims.role === "super_admin");
+    const again = await setRoles(head, [normal.id], [appAdmin.id]);
+    check("setAppRoles: saving the same lists again changes and audits nothing", again.ok === true && (await roleAudits()) === auditsBefore + 2, again);
+    const cleared = await setRoles(head, [], []);
+    check("setAppRoles: empty lists make everyone a user", cleared.ok === true && (await roleOf(normal, search)) === "user" && (await roleOf(appAdmin, search)) === "user", cleared);
+    await setRoles(head, [appAdmin.id], []);
+    check("setAppRoles: the app's own admin is back to admin for the rest of the test", (await roleOf(appAdmin, search)) === "admin");
   }
 
   // ------------------------------------------------ the application form's actions: validation, duplicates, audit

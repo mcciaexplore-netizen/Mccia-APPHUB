@@ -3,7 +3,7 @@
  * No database and no keys, so the admin form, the server actions, the launch route and the tests all ask the same functions.
  */
 
-export const SSO_ROLES = ["user", "admin"] as const;
+export const SSO_ROLES = ["user", "admin", "super_admin"] as const;
 export type SsoRole = (typeof SSO_ROLES)[number];
 
 const SSO_SLUG_MIN = 2;
@@ -50,7 +50,13 @@ export function callbackProblem(callback: string, appUrl: string, opts: { produc
   return null;
 }
 
-/** The role a person gets in a single sign-on application: the Support Admin is always an admin; everyone else has the role set for them there (default user). */
+export const SSO_ROLE_LABEL: Record<SsoRole, string> = { user: "User", admin: "Admin", super_admin: "Super Admin" };
+
+/**
+ * The role a person gets in a single sign-on application: the one set for them there (default user). The Support Admin is at least an
+ * admin in every one, and a Super Admin where that is set for them.
+ */
 export function ssoRoleFor(hubRole: string, appRole: string | null | undefined): SsoRole {
+  if (appRole === "super_admin") return "super_admin";
   return hubRole === "head_admin" || appRole === "admin" ? "admin" : "user";
 }

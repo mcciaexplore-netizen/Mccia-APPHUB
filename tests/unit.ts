@@ -486,7 +486,8 @@ const ssoTests = (async () => {
   // Role mapping
   eq("sso role: the Support Admin is an admin everywhere, whatever the grant says", [ssoRoleFor("head_admin", null), ssoRoleFor("head_admin", "user"), ssoRoleFor("head_admin", "admin")], ["admin", "admin", "admin"]);
   eq("sso role: everyone else gets the role on their grant (default user)", [ssoRoleFor("member", "admin"), ssoRoleFor("member", "user"), ssoRoleFor("member", null), ssoRoleFor("admin", undefined), ssoRoleFor("super_admin", "user"), ssoRoleFor("dept_lead", "admin")], ["admin", "user", "user", "user", "user", "admin"]);
-  eq("sso role: only user and admin exist", [...SSO_ROLES], ["user", "admin"]);
+  eq("sso role: a Super Admin set on the grant is a super_admin, the Support Admin included", [ssoRoleFor("member", "super_admin"), ssoRoleFor("head_admin", "super_admin"), ssoRoleFor("dept_lead", "super_admin")], ["super_admin", "super_admin", "super_admin"]);
+  eq("sso role: only user, admin and super_admin exist", [...SSO_ROLES], ["user", "admin", "super_admin"]);
 
   // Slug rules
   eq("sso slug: valid ones", ["mccia-search", "ab", "a1", "x-y-z", "a".repeat(40), "app2"].map(slugProblem), [null, null, null, null, null, null]);
@@ -533,13 +534,16 @@ const ssoTests = (async () => {
   eq("sso page: a POST form to the callback with one hidden token field, an auto-submit script with the nonce, and a noscript button", [
     /<form id="sso" method="post" action="https:\/\/search\.mcciapune\.com\/api\/sso\/callback\?a=1&amp;b=&quot;2&quot;">/.test(html),
     (html.match(/<input /g) ?? []).length, html.includes('<input type="hidden" name="token" value="aaa.bbb.ccc">'),
-    html.includes(`<script nonce="${nonce}">document.getElementById("sso").submit();</script>`), /<noscript>[\s\S]*<button type="submit">/.test(html),
+    html.includes(`<script nonce="${nonce}">setTimeout(function(){document.getElementById("sso").submit();},1200);</script>`), /<noscript>[\s\S]*<button type="submit">/.test(html),
   ], [true, 1, true, true, true]);
+  eq("sso page: the signing-in screen shows the MCCIA logo, the app's name and a spinner, with its one style under the nonce", [
+    html.includes('<img class="logo" src="/mccia-logo.png" alt="MCCIA">'), html.includes("Signing you in to Search &lt;b&gt;&quot;x&quot;&lt;/b&gt;…"), html.includes('class="spin"'), html.includes(`<style nonce="${nonce}">`),
+  ], [true, true, true, true]);
   eq("sso page: the application's name cannot inject markup", html.includes("<b>") || html.includes('"x"</b>'), false);
   const hd = launchHeaders("https://search.mcciapune.com", nonce);
-  eq("sso page headers: never cached, no referrer, never framed, and a policy of nothing but this script and one form target", [
+  eq("sso page headers: never cached, no referrer, never framed, and a policy of nothing but this script and style, the hub's own images and one form target", [
     hd["Cache-Control"], hd["Referrer-Policy"], hd["X-Frame-Options"], hd["Content-Security-Policy"],
-  ], ["no-store", "no-referrer", "DENY", `default-src 'none'; script-src 'nonce-${nonce}'; form-action https://search.mcciapune.com; base-uri 'none'; frame-ancestors 'none'`]);
+  ], ["no-store", "no-referrer", "DENY", `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; img-src 'self'; form-action https://search.mcciapune.com; base-uri 'none'; frame-ancestors 'none'`]);
   eq("sso page: the refusal page says exactly what was asked and links back to the hub", [
     messageHtml("No access", "You don't have access to this app. Ask your administrator.", true).includes("You don't have access to this app. Ask your administrator."),
     messageHtml("No access", "x", true).includes('<a href="/">'), messageHtml("No access", "x").includes("<a "),
