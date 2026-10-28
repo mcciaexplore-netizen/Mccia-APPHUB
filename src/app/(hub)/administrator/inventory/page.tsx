@@ -14,7 +14,8 @@ export default async function Page() {
   const [list, latest, access, deps] = await Promise.all([
     db.select({
       id: apps.id, name: apps.name, description: apps.description, url: apps.url, icon: apps.icon, status: apps.status, isActive: apps.isActive,
-      department: departments.name, departmentActive: departments.isActive,
+      department: departments.name, departmentActive: departments.isActive, departmentId: apps.departmentId,
+      appToken: apps.appToken, ssoEnabled: apps.ssoEnabled, ssoSlug: apps.ssoSlug, ssoCallbackUrl: apps.ssoCallbackUrl,
     }).from(apps).innerJoin(departments, eq(departments.id, apps.departmentId)).orderBy(asc(departments.sortOrder), asc(apps.sortOrder), asc(apps.name)),
     db.selectDistinctOn([appChecks.appId], { appId: appChecks.appId, ok: appChecks.ok, detail: appChecks.detail, httpStatus: appChecks.httpStatus, durationMs: appChecks.durationMs, checkedAt: appChecks.checkedAt })
       .from(appChecks).orderBy(appChecks.appId, desc(appChecks.checkedAt)),
@@ -31,6 +32,7 @@ export default async function Page() {
         return {
           id: a.id, name: a.name, description: a.description, url: a.url, department: a.department, status: a.status, visible: a.isActive && a.departmentActive,
           builtIn: a.url.startsWith("/"), people: people.get(a.id) ?? 0,
+          departmentId: a.departmentId, icon: a.icon, appToken: a.appToken, isActive: a.isActive, ssoEnabled: a.ssoEnabled, ssoSlug: a.ssoSlug, ssoCallbackUrl: a.ssoCallbackUrl,
           check: c ? { ok: c.ok, detail: c.detail, httpStatus: c.httpStatus, durationMs: c.durationMs, at: c.checkedAt.toISOString() } : null,
         };
       })}

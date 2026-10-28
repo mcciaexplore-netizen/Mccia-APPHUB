@@ -3,17 +3,21 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Download, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
+import { Download, Pencil, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
-import { checkApp, checkAllApps, createApp, deleteApp, setAppStatus } from "@/actions/apps";
+import { checkApp, checkAllApps, createApp, deleteApp, setAppStatus, updateApp } from "@/actions/apps";
 import { AppForm } from "../departments/forms";
 import { toCsv } from "@/lib/csv";
 import { formatIST } from "@/lib/format";
 
 type Check = { ok: boolean; detail: string; httpStatus: number | null; durationMs: number | null; at: string };
-type Row = { id: string; name: string; description: string | null; url: string; department: string; status: "active" | "testing" | "unavailable"; visible: boolean; builtIn: boolean; people: number; check: Check | null };
+type Row = {
+  id: string; name: string; description: string | null; url: string; department: string; status: "active" | "testing" | "unavailable"; visible: boolean; builtIn: boolean; people: number; check: Check | null;
+  // What the Edit form starts from (the same fields the department page's Edit uses).
+  departmentId: string; icon: string; appToken: string | null; isActive: boolean; ssoEnabled: boolean; ssoSlug: string | null; ssoCallbackUrl: string | null;
+};
 
 const DAY = 86400000;
 /** "Link verified" only when the newest check passed and is recent. It never claims the application's own features were tested. */
@@ -32,6 +36,7 @@ export function InventoryView({ rows, departments }: { rows: Row[]; departments:
   // "Add application" on the Dashboard opens the form straight away (?add=1).
   const params = useSearchParams();
   const [adding, setAdding] = useState(() => params.get("add") === "1");
+  const [edit, setEdit] = useState<Row | null>(null);
   const [pending, start] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -103,6 +108,7 @@ export function InventoryView({ rows, departments }: { rows: Row[]; departments:
                   {r.check && <span className="mt-1 block text-muted">{r.check.detail} {r.check.durationMs != null && `(${r.check.durationMs} ms)`}<span className="block text-subtle">{formatIST(r.check.at)}</span></span>}</td>
                 <td><div className="flex justify-end gap-1.5">
                   {!r.builtIn && <button className="chip !p-1.5 text-muted" aria-label={`Check ${r.name}`} title="Check the address now" disabled={pending} onClick={() => one(r.id)}><RefreshCw size={14} className={busyId === r.id ? "animate-spin" : ""} /></button>}
+                  <button className="chip !p-1.5 text-muted" aria-label={`Edit ${r.name}`} title="Edit" disabled={pending} onClick={() => setEdit(r)}><Pencil size={14} /></button>
                   <Link className="chip !p-1.5 text-muted" aria-label={`Who can open ${r.name}`} title="Who can open it" href={`/administrator/access/app/${r.id}`}><ShieldCheck size={14} /></Link>
                   <button className="chip !p-1.5 text-brand-red" aria-label={`Delete ${r.name}`} title="Delete" disabled={pending}
                     onClick={async () => {
@@ -121,6 +127,14 @@ export function InventoryView({ rows, departments }: { rows: Row[]; departments:
         <Modal title="Add application" onClose={() => setAdding(false)}>
           <AppForm departments={departments} initial={{ departmentId: departments[0]?.id }} submitLabel="Add application" pending={pending}
             onSubmit={(v) => start(async () => { const x = await createApp(v); if (x.ok) { toast.success("Application added"); setAdding(false); router.refresh(); } else toast.error(x.error); })} />
+        </Modal>
+      )}
+      {edit && (
+        <Modal title="Edit application" onClose={() => setEdit(null)}>
+          {/* The department stays as it is, like the Edit on the department page. */}
+          <AppForm departments={[{ id: edit.departmentId, name: edit.department }]} submitLabel="Save" pending={pending}
+            initial={{ departmentId: edit.departmentId, name: edit.name, description: edit.description ?? "", url: edit.url, icon: edit.icon, appToken: edit.appToken ?? "", isActive: edit.isActive, status: edit.status, ssoEnabled: edit.ssoEnabled, ssoSlug: edit.ssoSlug ?? "", ssoCallbackUrl: edit.ssoCallbackUrl ?? "" }}
+            onSubmit={(v) => start(async () => { const x = await updateApp(edit.id, { ...v, departmentId: edit.departmentId }); if (x.ok) { toast.success("Application saved"); setEdit(null); router.refresh(); } else toast.error(x.error); })} />
         </Modal>
       )}
     </div>
