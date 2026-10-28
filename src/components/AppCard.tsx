@@ -63,5 +63,5 @@ export function AppCard({ app, deptName, index = 0, canOpenUnavailable = false, 
   const style = { animationDelay: `${index * 50}ms` };
   if (blocked) return <div className={cls} style={style} title={app.description ?? app.name} aria-disabled="true">{inner}</div>;
   if (href) return <a href={href} title={app.description ?? app.name} style={style} className={cls}>{inner}</a>;
-  return <a href={app.ssoSlug ? `/launch/${app.ssoSlug}` : `/go/${app.id}`} target="_blank" rel="noopener noreferrer" title={app.description ?? app.name} style={style} className={cls}>{inner}</a>;
+  return <a href={app.ssoSlug ? `/launch/${app.ssoSlug}` : `/go/${app.id}`} target="_self" rel="noopener noreferrer" title={app.description ?? app.name} style={style} className={cls}>{inner}</a>;
 }
