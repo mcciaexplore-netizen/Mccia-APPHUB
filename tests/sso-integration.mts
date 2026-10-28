@@ -310,7 +310,7 @@ try {
     const goPlain = await get(`/go/${plain.id}`, session(normal));
     check("/go/<id> of an ordinary app is unchanged: logs a launch and redirects to its address", goPlain.status === 302 && goPlain.headers.get("location") === "https://example.com/" && (await launches(normal, plain)) === plainBefore + 1, [goPlain.status, goPlain.headers.get("location")]);
     const home = await (await get("/", session(normal))).text();
-    check("cards: the SSO app's card links to /launch/<slug> (new tab), not /go", home.includes('href="/launch/zz-sso-search"') && !home.includes(`/go/${search.id}`) && /<a href="\/launch\/zz-sso-search" target="_blank"/.test(home));
+    check("cards: the SSO app's card links to /launch/<slug> (same tab), not /go", home.includes('href="/launch/zz-sso-search"') && !home.includes(`/go/${search.id}`) && /<a href="\/launch\/zz-sso-search" target="_self"/.test(home));
     check("cards: an ordinary app's card still links to /go/<id>", home.includes(`href="/go/${plain.id}"`));
     check("cards: an app with a slug but single sign-on switched off still links to /go/<id>", home.includes(`href="/go/${off.id}"`) && !home.includes("/launch/zz-sso-off"));
     check("cards: the callback address never reaches the page", !home.includes("/api/sso/callback"));

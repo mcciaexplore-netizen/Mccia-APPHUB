@@ -199,6 +199,23 @@ export async function applyAppUserChange(actor: Actor, req: AppUsersRequest): Pr
 
 
 /**
+ * Writes a role change, turning the database refusing "super_admin" into a plain answer. That refusal only happens while migration 0020 is
+ * not on this database (it widened the check on app_role); everything else is left to the caller's error handling.
+ */
+async function writeRoles(write: () => Promise<unknown>) {
+  try {
+    await write();
+  } catch (e) {
+    const x = e as { code?: unknown; cause?: { code?: unknown; constraint?: unknown } };
+    if ((x.code ?? x.cause?.code) === "23514" && String(x.cause?.constraint ?? "").includes("app_role")) {
+      logError("[hub] access: super_admin refused by the database (migration 0020 not applied)", e);
+      throw new UserError("Super Admin can't be saved yet: the database update for it (migration 0020) hasn't been applied. Admins can be saved; run scripts/apply-0020-in-neon-console.sql in Neon first.");
+    }
+    throw e;
+  }
+}
+
+/**
  * Sets a person's role inside a single sign-on application ("user", "admin" or "super_admin"; it is what the token says about them). Only the Support Admin
  * may do this, and the person must already have the application (a role belongs to the grant). Re-granting access keeps the role: the
  * grant statements above do nothing when the grant is already there. Audited as access.role.
@@ -214,7 +231,7 @@ export async function applyAppUserRole(actor: Pick<User, "id" | "name" | "role">
   if (!person) throw new UserError("That user no longer exists. Reload and try again.");
   if (!grant) throw new UserError(`${person.name} does not have access to ${app.name}. Give them access first.`);
   if (grant.role === req.role) return { changed: false };
-  await db.update(userAppAccess).set({ appRole: req.role }).where(and(eq(userAppAccess.appId, req.appId), eq(userAppAccess.userId, req.userId)));
+  await writeRoles(() => db.update(userAppAccess).set({ appRole: req.role }).where(and(eq(userAppAccess.appId, req.appId), eq(userAppAccess.userId, req.userId))));
   try {
     await writeAudit(actor, [{ action: "access.role", targetType: "user", targetId: req.userId, targetLabel: person.name, details: { application: app.name, from: grant.role, to: req.role } }]);
   } catch (e) {
@@ -249,8 +266,8 @@ export async function applyAppRoles(actor: Pick<User, "id" | "name" | "role">, r
   if (changes.length === 0) return { changed: 0 };
   const among = (ids: Set<string>) => (ids.size ? sql`${userAppAccess.userId} in (${list([...ids])})` : sql`false`);
   const role = sql`case when ${among(superAdmins)} then 'super_admin' when ${among(admins)} then 'admin' else 'user' end`;
-  await db.update(userAppAccess).set({ appRole: role })
-    .where(and(eq(userAppAccess.appId, req.appId), inArray(userAppAccess.userId, changes.map((c) => c.userId))));
+  await writeRoles(() => db.update(userAppAccess).set({ appRole: role })
+    .where(and(eq(userAppAccess.appId, req.appId), inArray(userAppAccess.userId, changes.map((c) => c.userId)))));
   try {
     await writeAudit(actor, changes.map((c) => ({ action: "access.role", targetType: "user", targetId: c.userId, targetLabel: c.name, details: { application: app.name, from: c.role, to: want(c.userId) } })));
   } catch (e) {
