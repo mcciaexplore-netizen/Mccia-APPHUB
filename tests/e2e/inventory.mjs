@@ -1,6 +1,6 @@
 /**
- * End-to-end test of the Inventory module's catalogue in a real browser: categories, items, the stock history behind quantity changes,
- * the dashboard figures, and who may do what (Inventory admin, Inventory staff, everyone else). Run against a site with
+ * End-to-end test of the Inventory module in a real browser: categories, items, the stock history behind quantity changes, the dashboard
+ * figures, Settings (who runs the store), requests, issues and returns, and who may do what (Inventory admin, Inventory staff, everyone else). Run against a site with
  * INVENTORY_ENABLED=true:
  *   E2E_BASE_URL=http://localhost:3000 node tests/e2e/inventory.mjs
  *
@@ -202,6 +202,142 @@ try {
     check("they can manage other people's roles", grant.status === 200 && (await rolesOf(member.id)) === "inventory_staff", grant.status);
     await api(page, "/api/inventory/roles", "PUT", { userId: member.id, role: null });
     await ctx.close();
+  }
+
+  section("Requests: anyone asks, store staff decide");
+  {
+    const stock = async () => (await item("ZZI Paper")).quantity;
+    const reqs = async () => sql`select id, quantity, status, reject_reason, requested_by_user_id from inventory_requests r where r.item_id = ${(await item("ZZI Paper")).id} order by requested_at`;
+    const { ctx: mctx, page: M } = await signedIn("zzi-member@gmail.com", PW);
+    const mr = await go(M, "/inventory/requests");
+    check("an ordinary user opens Requests and sees their own (My requests)", mr.status() === 200 && (await M.getByRole("heading", { name: "My requests" }).count()) === 1, mr.status());
+    const ask = async (qty, note) => {
+      await M.getByRole("button", { name: "New request" }).click(); const d = M.getByRole("dialog");
+      await d.getByLabel(/^Item/).selectOption({ label: `ZZI Paper (${await stock()} Ream in stock)` });
+      await d.getByLabel(/^Quantity/).fill(String(qty)); if (note) await d.getByLabel(/Note/).fill(note);
+      await d.getByRole("button", { name: "Send request" }).click(); await toast(M, "Request sent"); await M.waitForTimeout(900);
+    };
+    await ask(5, "For the board meeting"); await ask(500); await ask(1);
+    let rs = await reqs();
+    check("an ordinary user raises requests (stored as pending, under their name)", rs.length === 3 && rs.every((r) => r.status === "pending" && r.requested_by_user_id === member.id), JSON.stringify(rs));
+    const [r5, r500, r1] = rs;
+    const { ctx: sctx, page: S } = await signedIn("zzi-staff@gmail.com", PW);
+    await go(S, "/inventory/requests");
+    const staffOwn = await api(S, "/api/inventory/requests", "POST", { itemId: (await item("ZZI Paper")).id, quantity: 2 });
+    check("store staff can raise a request too", staffOwn.status === 201, staffOwn.status);
+    await M.reload(); await M.waitForLoadState("networkidle");
+    check("the ordinary user sees only their own 3 requests, not the staff member's", (await M.locator("tbody tr").count()) === 3);
+    await go(S, "/inventory/requests");
+    check("store staff see everyone's requests, with counts per status", (await S.getByRole("heading", { name: "Requests", exact: true }).count()) === 1 && /Pending\s*4/.test(await S.getByRole("tablist").innerText()), await S.getByRole("tablist").innerText());
+
+    const early = await api(S, `/api/inventory/requests/${r5.id}`, "PATCH", { action: "fulfil" });
+    check("a pending request cannot be fulfilled before it is approved (409)", early.status === 409 && /pending now/.test(early.body?.error ?? ""), JSON.stringify(early));
+    const noReason = await api(S, `/api/inventory/requests/${r1.id}`, "PATCH", { action: "reject", reason: " " });
+    check("rejecting without a reason is refused (400)", noReason.status === 400, noReason.status);
+    const row = (q) => S.locator("tr", { hasText: "ZZI Member" }).filter({ hasText: `${q} Ream` });
+    await row(5).getByRole("button", { name: "Approve" }).click(); check("approving says so", await toast(S, "Request approved"));
+    await poll(async () => (await reqs()).find((r) => r.id === r5.id)?.status === "approved");
+    const twice = await api(S, `/api/inventory/requests/${r5.id}`, "PATCH", { action: "approve" });
+    check("approving an already approved request is refused (409)", twice.status === 409, twice.status);
+    await S.waitForTimeout(800);
+    await row(1).getByRole("button", { name: "Reject" }).click(); await S.getByRole("dialog").getByLabel("Reason").fill("ZZI: use the shared stock");
+    await S.getByRole("dialog").getByRole("button", { name: "Reject request" }).click();
+    check("rejecting with a reason stores it", await toast(S, "Request rejected") && await poll(async () => (await reqs()).find((r) => r.id === r1.id)?.reject_reason === "ZZI: use the shared stock"));
+
+    await api(S, `/api/inventory/requests/${r500.id}`, "PATCH", { action: "approve" });
+    const before500 = await stock();
+    const big = await api(S, `/api/inventory/requests/${r500.id}`, "PATCH", { action: "fulfil" });
+    check("fulfilling more than is in stock is refused with the numbers, and nothing changes", big.status === 409 && new RegExp(`500 requested, ${before500} available`).test(big.body?.error ?? "")
+      && (await stock()) === before500 && (await reqs()).find((r) => r.id === r500.id)?.status === "approved", JSON.stringify(big));
+
+    await go(S, "/inventory/requests?status=approved");
+    const beforeFulfil = await stock();
+    await row(5).getByRole("button", { name: "Fulfil" }).click();
+    check("fulfilling asks first, saying how much leaves the stock", (await S.getByRole("dialog").getByText(new RegExp(`5 Ream of .ZZI Paper. will be taken out of stock \\(${beforeFulfil} available\\)`)).count()) === 1);
+    await S.getByRole("dialog").getByRole("button", { name: "Fulfil" }).click();
+    check("fulfilling says so", await toast(S, "Request fulfilled"));
+    await poll(async () => (await reqs()).find((r) => r.id === r5.id)?.status === "fulfilled");
+    const [fm] = await sql`select kind, delta, quantity_after, issued_to_user_id, request_id from inventory_stock_movements where request_id = ${r5.id}`;
+    check("fulfilling takes 5 out of stock and records an issue to the requester, linked to the request", (await stock()) === beforeFulfil - 5 && fm?.kind === "issue" && fm.delta === -5
+      && fm.quantity_after === beforeFulfil - 5 && fm.issued_to_user_id === member.id, JSON.stringify(fm));
+
+    // Two people fulfil the same request at the same moment: exactly one of them does it.
+    const [race] = await sql`insert into inventory_requests (item_id, quantity, status, requested_by_user_id, requested_by_name) values (${(await item("ZZI Paper")).id}, 3, 'approved', ${member.id}, 'ZZI Member') returning id`;
+    const beforeRace = await stock();
+    const both = await Promise.all([api(S, `/api/inventory/requests/${race.id}`, "PATCH", { action: "fulfil" }), api(S, `/api/inventory/requests/${race.id}`, "PATCH", { action: "fulfil" })]);
+    check("two fulfils of the same request at the same moment: one succeeds, one is refused, the stock goes down once",
+      both.map((b) => b.status).sort().join() === "200,409" && (await stock()) === beforeRace - 3 && (await sql`select count(*)::int n from inventory_stock_movements where request_id = ${race.id}`)[0].n === 1, both.map((b) => b.status).join());
+
+    await M.reload(); await M.waitForLoadState("networkidle");
+    const mine = await M.locator("tbody").innerText();
+    check("the requester sees Fulfilled, and Rejected with the reason", /Fulfilled/i.test(mine) && /Rejected/i.test(mine) && /use the shared stock/.test(mine));
+    const audits = (await sql`select action from access_audit where action like 'inventory.request_%' and target_label = 'ZZI Paper'`).map((a) => a.action);
+    check("raising, approving, rejecting and fulfilling are all in the audit log", ["inventory.request_raised", "inventory.request_approved", "inventory.request_rejected", "inventory.request_fulfilled"].every((a) => audits.includes(a)), [...new Set(audits)].join());
+    await mctx.close(); await sctx.close();
+  }
+
+  section("Issues & returns");
+  {
+    const stock = async () => (await item("ZZI Paper")).quantity;
+    const paperId = (await item("ZZI Paper")).id;
+    const { ctx: sctx, page: S } = await signedIn("zzi-staff@gmail.com", PW);
+    const ir = await go(S, "/inventory/issues");
+    check("store staff open Issues & returns", ir.status() === 200 && (await S.getByRole("heading", { name: "Issues & returns" }).count()) === 1, ir.status());
+    const before = await stock();
+    await S.getByRole("button", { name: "Issue item" }).click(); let d = S.getByRole("dialog");
+    await d.getByLabel(/^Item/).selectOption({ label: `ZZI Paper (${before} Ream in stock)` });
+    await d.getByLabel(/^Quantity/).fill("3"); await d.getByLabel("Issued to (a hub user)").selectOption({ label: "ZZI Member" });
+    await d.getByLabel(/Event/).fill("ZZI Workshop"); await d.getByRole("button", { name: "Issue", exact: true }).click();
+    check("issuing to a hub user says so", await toast(S, "Item issued"));
+    await poll(async () => (await stock()) === before - 3);
+    const [iss] = await sql`select id, kind, delta, quantity_after, issued_to_user_id, issued_to_name, event_name from inventory_stock_movements where item_id = ${paperId} and kind = 'issue' and event_name = 'ZZI Workshop'`;
+    check("issuing takes the stock out and records who received it", (await stock()) === before - 3 && iss?.delta === -3 && iss.issued_to_user_id === member.id && iss.issued_to_name === "ZZI Member", JSON.stringify(iss));
+    const visitor = await api(S, "/api/inventory/issues", "POST", { itemId: paperId, quantity: 2, name: "ZZI Visitor", eventName: "ZZI Expo" });
+    check("issuing to a typed name works too", visitor.status === 201, JSON.stringify(visitor));
+    const nobody = await api(S, "/api/inventory/issues", "POST", { itemId: paperId, quantity: 1 });
+    check("issuing to nobody is refused (400)", nobody.status === 400, nobody.status);
+    const now = await stock();
+    const tooMany = await api(S, "/api/inventory/issues", "POST", { itemId: paperId, quantity: now + 1, name: "ZZI Greedy" });
+    check("issuing more than is in stock is refused with the numbers, and nothing changes", tooMany.status === 409 && new RegExp(`${now + 1} asked for, ${now} available`).test(tooMany.body?.error ?? "") && (await stock()) === now, JSON.stringify(tooMany));
+    const race = await Promise.all([1, 2].map(() => api(S, "/api/inventory/issues", "POST", { itemId: paperId, quantity: now, name: "ZZI Racer" })));
+    check("two issues of everything that is left, at the same moment: one succeeds, the other is refused, stock never goes below zero",
+      race.map((r) => r.status).sort().join() === "201,409" && (await stock()) === 0, race.map((r) => r.status).join());
+    const racer = (await sql`select id from inventory_stock_movements where issued_to_name = 'ZZI Racer'`)[0];
+    await api(S, `/api/inventory/issues/${racer.id}/return`, "POST", { quantity: now });
+
+    await go(S, "/inventory/issues");
+    const issueRow = S.locator("tr", { hasText: "ZZI Workshop" });
+    await issueRow.getByRole("button", { name: /Mark .* returned/ }).click(); d = S.getByRole("dialog");
+    await d.getByLabel("Quantity returned").fill("1"); await d.getByRole("button", { name: "Record return" }).click();
+    check("a partial return says so", await toast(S, "Return recorded"));
+    await S.waitForTimeout(1000);
+    check("…and the list shows 1 of 3 back", (await S.locator("tr", { hasText: "ZZI Workshop" }).getByText("1 of 3 back").count()) === 1);
+    const s1 = await stock();
+    const over = await api(S, `/api/inventory/issues/${iss.id}/return`, "POST", { quantity: 5 });
+    check("returning more than is still out is refused (409: only 2 still out) and nothing changes", over.status === 409 && /Only 2 still out/.test(over.body?.error ?? "") && (await stock()) === s1, JSON.stringify(over));
+    const rest = await api(S, `/api/inventory/issues/${iss.id}/return`, "POST", { quantity: 2, note: "ZZI good condition" });
+    check("returning the rest puts it back in stock", rest.status === 200 && (await stock()) === s1 + 2, rest.status);
+    const again = await api(S, `/api/inventory/issues/${iss.id}/return`, "POST", { quantity: 1 });
+    check("returning once everything is back is refused", again.status === 409 && /already come back/.test(again.body?.error ?? ""), JSON.stringify(again));
+    await go(S, "/inventory/issues?show=returned");
+    check("the Returned list shows it as All returned", (await S.locator("tr", { hasText: "ZZI Workshop" }).getByText("All returned").count()) === 1);
+    const rm = await sql`select delta, issue_id from inventory_stock_movements where issue_id = ${iss.id} and kind = 'return' order by created_at`;
+    check("each return is a movement pointing back at its issue", rm.length === 2 && rm[0].delta === 1 && rm[1].delta === 2, JSON.stringify(rm));
+    const ia = (await sql`select action from access_audit where action in ('inventory.item_issued', 'inventory.item_returned') and target_label = 'ZZI Paper'`).map((a) => a.action);
+    check("issues and returns are in the audit log", ia.includes("inventory.item_issued") && ia.includes("inventory.item_returned"), [...new Set(ia)].join());
+    await sctx.close();
+
+    const { ctx: mctx, page: M } = await signedIn("zzi-member@gmail.com", PW);
+    await go(M, "/inventory/issues?show=all");
+    const mineText = await M.locator("tbody").innerText();
+    check("an ordinary user sees what was issued to them (the fulfilled request and the workshop issue), not other people's",
+      (await M.getByRole("heading", { name: "Issued to me" }).count()) === 1 && /From a request/i.test(mineText) && /ZZI Workshop/.test(mineText) && !/ZZI Visitor|ZZI Racer/.test(mineText));
+    check("they have no Issue or Mark returned buttons", (await M.getByRole("button", { name: /Issue item|Mark .* returned/ }).count()) === 0);
+    const p1 = await api(M, "/api/inventory/issues", "POST", { itemId: paperId, quantity: 1, name: "ZZI Self" });
+    const p2 = await api(M, `/api/inventory/issues/${iss.id}/return`, "POST", { quantity: 1 });
+    const p3 = await api(M, `/api/inventory/requests/${(await sql`select id from inventory_requests where status = 'approved' and item_id = ${paperId} limit 1`)[0].id}`, "PATCH", { action: "fulfil" });
+    check("they are refused (403) when issuing, recording a return or deciding a request through the API", [p1.status, p2.status, p3.status].join() === "403,403,403", [p1.status, p2.status, p3.status].join());
+    await mctx.close();
   }
 
   section("Inventory staff and everyone else: view only");

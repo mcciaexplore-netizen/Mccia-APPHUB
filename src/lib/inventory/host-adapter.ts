@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { users } from "@/db/schema";
+import { departments, users } from "@/db/schema";
 import { inventoryUserRoles } from "@/db/inventory-schema";
 import { getCurrentUser as hostCurrentUser } from "@/lib/permissions";
 import { ALL_ROLES, canManageRoles, type InventoryRole } from "./inventory.manifest";
@@ -51,4 +51,13 @@ export async function listUsers(): Promise<DirectoryUser[]> {
     .from(users)
     .where(and(eq(users.isActive, true), eq(users.status, "approved")))
     .orderBy(asc(users.name));
+}
+
+/** The organisation's departments (not the hub's application categories), for "issued to department". */
+export async function listDepartments(): Promise<{ id: string; name: string }[]> {
+  return db
+    .select({ id: departments.id, name: departments.name })
+    .from(departments)
+    .where(and(eq(departments.kind, "organisation"), eq(departments.isActive, true)))
+    .orderBy(asc(departments.sortOrder), asc(departments.name));
 }

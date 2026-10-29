@@ -45,11 +45,10 @@ export default async function InventoryDashboard() {
             <h2 className="flex items-center gap-2 text-xl"><Package size={18} className="text-primary" /> Browse items</h2>
             <p className="text-sm text-muted">See what the store keeps and how much is in stock.</p>
           </Link>
-          <section className="glass !rounded-md space-y-2 p-5 sm:p-6">
+          <Link href="/inventory/requests" className="glass glass-hover !rounded-md space-y-2 p-5 sm:p-6">
             <h2 className="flex items-center gap-2 text-xl"><ClipboardList size={18} className="text-primary" /> Request an item</h2>
-            <p className="text-sm text-muted">Ask the store for stationery, equipment or anything else it keeps, and follow your requests here.</p>
-            <span className="badge badge-neutral">Coming soon</span>
-          </section>
+            <p className="text-sm text-muted">Ask the store for stationery, equipment or anything else it keeps, and follow your requests.</p>
+          </Link>
           <section className="glass !rounded-md space-y-2 p-5 sm:p-6">
             <h2 className="flex items-center gap-2 text-xl"><Wrench size={18} className="text-primary" /> Report a maintenance problem</h2>
             <p className="text-sm text-muted">Tell the admin team about something broken, with a photo, and see when it is fixed.</p>
@@ -70,7 +69,7 @@ export default async function InventoryDashboard() {
         <Stat label="Units in stock" value={formatCount(s.units)} />
         <Stat label="Stock value" value={formatRupees(s.valuePaise)} />
         <Stat label="Low on stock" value={formatCount(s.lowStock)} warn={s.lowStock > 0} href="/inventory/items?low=1" />
-        <Stat label="Requests waiting" value={formatCount(s.pendingRequests)} warn={s.pendingRequests > 0} />
+        <Stat label="Requests waiting" value={formatCount(s.pendingRequests)} warn={s.pendingRequests > 0} href="/inventory/requests?status=pending" />
         <Stat label="Open maintenance tickets" value={formatCount(s.openTickets)} />
       </section>
 

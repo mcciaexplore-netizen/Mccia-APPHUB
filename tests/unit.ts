@@ -30,7 +30,7 @@ import {
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import { canManageRoles, navFor } from "../src/lib/inventory/inventory.manifest";
-import { rupeesToPaise, roleInput } from "../src/lib/inventory/validation";
+import { issueInput, requestDecision, requestInput, returnInput, rupeesToPaise, roleInput } from "../src/lib/inventory/validation";
 import {
   commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, planProblemMessage, planSteps, STATUS_LABEL, wrongFormMessage,
   type RuleLike,
@@ -453,6 +453,17 @@ eq("inventory menu: Settings only for role managers, Categories only for Invento
   navLabels(["requester", "inventory_admin"], true).includes("Categories"), navLabels(["requester"], false).includes("Items"),
 ], [false, true, false, true, true]);
 eq("inventory rupees: amounts become paise; bad input is refused", [rupeesToPaise("1,250.50"), rupeesToPaise("₹ 35"), rupeesToPaise(""), rupeesToPaise("1.234"), rupeesToPaise("-5"), rupeesToPaise("abc")], [125050, 3500, null, "invalid", "invalid", "invalid"]);
+const okParse = (schema: { safeParse: (v: unknown) => { success: boolean } }, v: unknown) => schema.safeParse(v).success;
+eq("inventory requests: an item and a whole quantity of at least 1; a reject needs a reason", [
+  okParse(requestInput, { itemId: "11111111-1111-4111-8111-111111111111", quantity: "3" }), okParse(requestInput, { itemId: "11111111-1111-4111-8111-111111111111", quantity: 0 }), okParse(requestInput, { itemId: "11111111-1111-4111-8111-111111111111", quantity: 1.5 }),
+  okParse(requestDecision, { action: "approve" }), okParse(requestDecision, { action: "reject", reason: "  " }), okParse(requestDecision, { action: "reject", reason: "Out of budget" }),
+  okParse(requestDecision, { action: "fulfil" }), okParse(requestDecision, { action: "delete" }),
+], [true, false, false, true, false, true, true, false]);
+eq("inventory issues: to a hub user or a typed name (one is needed); returns are whole numbers of at least 1", [
+  okParse(issueInput, { itemId: "11111111-1111-4111-8111-111111111111", quantity: 2, userId: "11111111-1111-4111-8111-111111111111" }), okParse(issueInput, { itemId: "11111111-1111-4111-8111-111111111111", quantity: 2, name: "Guest speaker", eventName: "AGM" }),
+  okParse(issueInput, { itemId: "11111111-1111-4111-8111-111111111111", quantity: 2, userId: "", name: "" }), okParse(issueInput, { itemId: "11111111-1111-4111-8111-111111111111", quantity: -1, name: "X" }),
+  okParse(returnInput, { quantity: "2" }), okParse(returnInput, { quantity: 0 }),
+], [true, true, false, false, true, false]);
 eq("inventory role input: Admin, Staff or none; anything else is refused", [
   roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: "inventory_admin" }).success, roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: null }).success,
   roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: "requester" }).success, roleInput.safeParse({ userId: "x", role: null }).success,
