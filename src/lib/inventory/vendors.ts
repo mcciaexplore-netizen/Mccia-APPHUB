@@ -8,9 +8,9 @@ import type { InventoryUser } from "./host-adapter";
 import type { VendorInput } from "./validation";
 
 /**
- * The vendor directory: mainly a reference list for purchase orders and inward goods. A vendor named on a purchase order or a stock
- * movement is "in use" and can only be deactivated (hidden from new choices, kept for the records); an unused one can be deleted.
- * Every change is recorded in the hub's audit log as inventory.vendor_*.
+ * The vendor directory: mainly a reference list for purchase orders and inward goods. Any vendor can be deleted: purchase orders keep the
+ * vendor's name (they store it themselves) and they, stock movements and items just lose the link. Deactivating hides a vendor from new
+ * choices instead. Every change is recorded in the hub's audit log as inventory.vendor_*.
  */
 
 type Actor = Pick<InventoryUser, "id" | "name">;
@@ -60,19 +60,19 @@ export async function updateVendor(id: string, v: VendorInput, actor: Actor) {
   if (before.active !== v.active) await audit(actor, v.active ? "vendor_activate" : "vendor_deactivate", id, v.name);
 }
 
-/** Deletes a vendor nothing refers to, in one statement that checks it is unused. One in use must be deactivated instead. */
+/**
+ * Deletes a vendor. Purchase orders keep the vendor's name (and email) as they were written; their link to the directory, and that of stock
+ * movements and items, is cleared by the database (on delete set null). Counted in the audit entry.
+ */
 export async function deleteVendor(id: string, actor: Actor) {
   const res = (await db.execute(sql`
-    with used as (
-      select exists (select 1 from inventory_purchase_orders where vendor_id = ${id}) or exists (select 1 from inventory_stock_movements where vendor_id = ${id}) as used
+    with refs as (
+      select (select count(*) from inventory_purchase_orders where vendor_id = ${id})::int as pos, (select count(*) from inventory_stock_movements where vendor_id = ${id})::int as movements
     ), gone as (
-      delete from inventory_vendors where id = ${id} and not (select used from used) returning name
+      delete from inventory_vendors where id = ${id} returning name
     )
-    select (select name from gone) as name, (select used from used) as used, exists (select 1 from inventory_vendors where id = ${id}) as existed`)) as unknown as {
-    rows: { name: string | null; used: boolean; existed: boolean }[];
-  };
+    select (select name from gone) as name, refs.pos, refs.movements from refs`)) as unknown as { rows: { name: string | null; pos: number; movements: number }[] };
   const row = res.rows[0];
-  if (!row?.existed) throw new InventoryError("That vendor no longer exists. Reload and try again.", 404);
-  if (row.used || !row.name) throw new InventoryError("This vendor is on purchase orders or stock records, so it can't be deleted. Deactivate it instead.", 409);
-  await audit(actor, "vendor_delete", id, row.name);
+  if (!row?.name) throw new InventoryError("That vendor no longer exists. Reload and try again.", 404);
+  await audit(actor, "vendor_delete", id, row.name, { purchaseOrdersKeepingTheName: row.pos, stockMovementsUnlinked: row.movements });
 }

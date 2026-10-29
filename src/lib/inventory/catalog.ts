@@ -128,21 +128,27 @@ export async function updateItem(id: string, v: ItemInput, actor: Actor) {
 }
 
 /**
- * Removes an item that has no history. One with stock movements or requests cannot be deleted (its history would be lost): it can be
- * made inactive instead, which hides it everywhere but keeps its records.
+ * Removes an item for good, together with everything that refers to it: its stock movements (issues, returns, inward goods,
+ * adjustments, recounts), its requests and its purchase-order lines. ONE statement, so it all goes or none of it does. What was removed
+ * is counted in the audit entry. (To hide an item but keep its history, untick Active instead.)
  */
 export async function deleteItem(id: string, actor: Actor) {
   const res = (await db.execute(sql`
-    with used as (
-      select exists (select 1 from inventory_stock_movements where item_id = ${id}) or exists (select 1 from inventory_requests where item_id = ${id}) as used
+    with movements as (
+      delete from inventory_stock_movements where item_id = ${id} returning id
+    ), requests as (
+      delete from inventory_requests where item_id = ${id} returning id
+    ), po_lines as (
+      delete from inventory_purchase_order_lines where item_id = ${id} returning id
     ), gone as (
-      delete from inventory_items where id = ${id} and not (select used from used) returning name
+      delete from inventory_items where id = ${id} returning name
     )
-    select (select name from gone) as name, (select used from used) as used, exists (select 1 from inventory_items where id = ${id}) as existed`)) as unknown as { rows: { name: string | null; used: boolean; existed: boolean }[] };
+    select (select name from gone) as name, (select count(*) from movements)::int as movements, (select count(*) from requests)::int as requests,
+      (select count(*) from po_lines)::int as po_lines`)) as unknown as { rows: { name: string | null; movements: number; requests: number; po_lines: number }[] };
   const row = res.rows[0];
-  if (!row?.existed) throw new InventoryError("That item no longer exists. Reload and try again.", 404);
-  if (row.used || !row.name) throw new InventoryError("This item has stock history, so it can't be deleted. Edit it and untick Active to hide it instead.", 409);
-  await audit(actor, "item_delete", id, row.name);
+  if (!row?.name) throw new InventoryError("That item no longer exists. Reload and try again.", 404);
+  await audit(actor, "item_delete", id, row.name, { stockMovements: row.movements, requests: row.requests, purchaseOrderLines: row.po_lines });
+  return { movements: row.movements, requests: row.requests, purchaseOrderLines: row.po_lines };
 }
 
 /* ---------------------------------------------------------------- dashboard */

@@ -10,8 +10,5 @@ export const PATCH = route<{ id: string }>({ roles: ["inventory_admin"] }, async
   return ok();
 });
 
-/** Only an item with no history can be deleted; otherwise it is made inactive instead (see deleteItem). */
-export const DELETE = route<{ id: string }>({ roles: ["inventory_admin"] }, async ({ user, params }) => {
-  await deleteItem(idParam(params.id), user);
-  return ok();
-});
+/** Deletes an item with its stock history, requests and purchase-order lines (see deleteItem). Inventory admin only. */
+export const DELETE = route<{ id: string }>({ roles: ["inventory_admin"] }, async ({ user, params }) => ok(await deleteItem(idParam(params.id), user)));

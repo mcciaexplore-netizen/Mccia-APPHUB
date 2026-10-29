@@ -10,7 +10,7 @@ export const PATCH = route<{ id: string }>({ roles: ["inventory_admin"] }, async
   return ok();
 });
 
-/** Only a vendor nothing refers to can be deleted; one on purchase orders or stock records is deactivated instead. */
+/** Deletes a vendor; purchase orders keep its name. Inventory admin only. */
 export const DELETE = route<{ id: string }>({ roles: ["inventory_admin"] }, async ({ user, params }) => {
   await deleteVendor(idParam(params.id), user);
   return ok();

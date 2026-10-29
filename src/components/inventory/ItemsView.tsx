@@ -92,7 +92,7 @@ export function ItemsView({ items, categories, canEdit, filters }: { items: Item
   // Asked before the transition starts: a dialog opened inside one never shows.
   const remove = async (item: ItemView) => {
     if (!(await confirm({ title: "Delete this item?", confirmLabel: "Delete", danger: true,
-      message: `“${item.name}” will be removed for good. An item with stock history can't be deleted; untick Active on it instead to hide it.` }))) return;
+      message: `“${item.name}” will be removed for good, together with its whole stock history, its requests and its lines on purchase orders. To hide it but keep its history, edit it and untick Active instead.` }))) return;
     start(async () => {
       try { await inventoryApi(`/api/inventory/items/${item.id}`, "DELETE"); toast.success("Item deleted"); router.refresh(); } catch (e) { toast.error((e as Error).message); }
     });

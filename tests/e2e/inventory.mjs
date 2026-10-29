@@ -155,9 +155,10 @@ try {
   await A.waitForTimeout(800);
   check("with 30 in stock it is no longer low", (await A.locator("tr", { hasText: "ZZI Paper" }).getByLabel("Low on stock").count()) === 0);
 
-  await A.getByRole("button", { name: "Delete ZZI Paper" }).click(); await A.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
-  check("an item with stock history cannot be deleted, and the message says to untick Active instead", await toast(A, "untick Active"));
-  check("…and it is still there", !!(await item("ZZI Paper")));
+  await A.getByRole("button", { name: "Delete ZZI Paper" }).click();
+  check("deleting an item with history asks first, saying its whole history goes with it", (await A.getByRole("dialog").getByText(/together with its whole stock history/).count()) === 1);
+  await A.keyboard.press("Escape");
+  check("…and closing the question deletes nothing", !!(await item("ZZI Paper")));
   await A.waitForTimeout(1200);
   await A.getByRole("button", { name: "Delete ZZI Pen" }).click(); await A.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
   check("an item with no history can be deleted", await toast(A, "Item deleted") && await poll(async () => !(await item("ZZI Pen"))));
@@ -380,9 +381,7 @@ try {
     const [admin] = await sql`select id from users where email = ${ADMIN_EMAIL}`;
     await sql`insert into inventory_purchase_orders (vendor_id, vendor_name, created_by_user_id, created_by_name) values (${v1.id}, 'ZZI Paper House', ${admin.id}, 'ZZI test')`;
     await go(A, "/inventory/vendors");
-    check("a vendor on a purchase order has no Delete button; an unused one does", (await A.getByRole("button", { name: "Delete ZZI Paper House" }).count()) === 0 && (await A.getByRole("button", { name: "Delete ZZI Unused Traders" }).count()) === 1);
-    const delUsed = await api(A, `/api/inventory/vendors/${v1.id}`, "DELETE");
-    check("deleting a vendor on a purchase order is refused (409), saying to deactivate it", delUsed.status === 409 && /Deactivate it instead/.test(delUsed.body?.error ?? "") && !!(await vendor("ZZI Paper House")), JSON.stringify(delUsed));
+    check("every vendor has a Delete button, also one on a purchase order", (await A.getByRole("button", { name: "Delete ZZI Paper House" }).count()) === 1 && (await A.getByRole("button", { name: "Delete ZZI Unused Traders" }).count()) === 1);
     await A.getByRole("button", { name: "Deactivate ZZI Paper House" }).click();
     check("deactivating says so and stores it", await toast(A, "Vendor deactivated") && await poll(async () => (await vendor("ZZI Paper House")).active === false));
     await A.waitForTimeout(800);
@@ -639,6 +638,30 @@ try {
     const del = await api(page, `/api/inventory/items/${paperId}`, "DELETE");
     check(`${who} is refused when deleting through the API (403)`, del.status === 403 && !!(await item("ZZI Paper")), del.status);
     await ctx.close();
+  }
+  section("Deleting always works");
+  {
+    const paper = await item("ZZI Paper");
+    const refs = async () => (await sql`select (select count(*) from inventory_stock_movements where item_id = ${paper.id})::int as movements, (select count(*) from inventory_requests where item_id = ${paper.id})::int as requests,
+      (select count(*) from inventory_purchase_order_lines where item_id = ${paper.id})::int as po_lines`)[0];
+    const before = await refs();
+    const posBefore = (await sql`select count(*)::int n from inventory_purchase_orders where vendor_name like 'ZZI%'`)[0].n;
+    check("ZZI Paper has a full history to delete (movements, requests and purchase-order lines)", before.movements > 5 && before.requests > 2 && before.po_lines > 0, JSON.stringify(before));
+    await go(A, "/inventory/items");
+    await A.getByRole("button", { name: "Delete ZZI Paper" }).click(); await A.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
+    check("deleting an item with history works", await toast(A, "Item deleted") && await poll(async () => !(await item("ZZI Paper"))));
+    check("…and its stock movements, requests and purchase-order lines are gone with it", JSON.stringify(await refs()) === JSON.stringify({ movements: 0, requests: 0, po_lines: 0 }), JSON.stringify(await refs()));
+    check("…while the purchase orders themselves stay", (await sql`select count(*)::int n from inventory_purchase_orders where vendor_name like 'ZZI%'`)[0].n === posBefore);
+    const [del] = await sql`select details from access_audit where action = 'inventory.item_delete' and target_id = ${paper.id}`;
+    check("…and the audit entry counts what was removed", del?.details?.stockMovements === before.movements && del.details.requests === before.requests && del.details.purchaseOrderLines === before.po_lines, JSON.stringify(del?.details));
+    const house = (await sql`select id from inventory_vendors where name = 'ZZI Paper House'`)[0];
+    await go(A, "/inventory/vendors?inactive=1");
+    await A.getByRole("button", { name: "Delete ZZI Paper House" }).click();
+    check("deleting a vendor on purchase orders explains they keep its name", (await A.getByRole("dialog").getByText(/keep the name as it was written/).count()) === 1);
+    await A.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
+    check("deleting a vendor that is on purchase orders works", await toast(A, "Vendor deleted") && await poll(async () => !(await sql`select 1 from inventory_vendors where id = ${house.id}`).length));
+    const kept = await sql`select vendor_id, vendor_name from inventory_purchase_orders where vendor_name = 'ZZI Paper House'`;
+    check("…its purchase orders stay, with the vendor's name, just no longer linked", kept.length > 0 && kept.every((k) => k.vendor_id === null && k.vendor_name === "ZZI Paper House"), JSON.stringify(kept));
   }
   check("no JavaScript errors in the browser", pageErrors.length === 0, pageErrors.join(" | "));
 } catch (e) {

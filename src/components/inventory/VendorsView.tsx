@@ -63,7 +63,8 @@ export function VendorsView({ vendors, canEdit, filters }: { vendors: VendorView
   const toggle = (v: VendorView) => run(() => inventoryApi(`/api/inventory/vendors/${v.id}`, "PATCH", toBody(v, !v.active)), v.active ? "Vendor deactivated" : "Vendor active again");
   // Asked before the transition starts: a dialog opened inside one never shows.
   const remove = async (v: VendorView) => {
-    if (!(await confirm({ title: "Delete this vendor?", confirmLabel: "Delete", danger: true, message: `“${v.name}” will be removed for good.` }))) return;
+    if (!(await confirm({ title: "Delete this vendor?", confirmLabel: "Delete", danger: true,
+      message: `“${v.name}” will be removed from the directory for good.${v.inUse ? " Purchase orders and stock records that name it keep the name as it was written." : ""} To hide it but keep it in the directory, deactivate it instead.` }))) return;
     run(() => inventoryApi(`/api/inventory/vendors/${v.id}`, "DELETE"), "Vendor deleted");
   };
 
@@ -98,7 +99,7 @@ export function VendorsView({ vendors, canEdit, filters }: { vendors: VendorView
                   <button className="chip !p-1.5 text-muted" aria-label={`Edit ${v.name}`} title="Edit" disabled={pending} onClick={() => setEditing(v)}><Pencil size={14} /></button>
                   <button className="chip !p-1.5 text-muted" aria-label={`${v.active ? "Deactivate" : "Activate"} ${v.name}`} title={v.active ? "Deactivate" : "Activate"} disabled={pending} onClick={() => toggle(v)}>
                     {v.active ? <EyeOff size={14} /> : <Eye size={14} />}</button>
-                  {!v.inUse && <button className="chip !p-1.5 text-brand-red" aria-label={`Delete ${v.name}`} title="Delete" disabled={pending} onClick={() => remove(v)}><Trash2 size={14} /></button>}
+                  <button className="chip !p-1.5 text-brand-red" aria-label={`Delete ${v.name}`} title="Delete" disabled={pending} onClick={() => remove(v)}><Trash2 size={14} /></button>
                 </div></td>
               )}
             </tr>
