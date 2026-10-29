@@ -28,7 +28,8 @@ const ADMIN = ["inventory_admin"] as const;
 
 export const inventoryNav: InventoryNavItem[] = [
   { label: "Dashboard", href: "/inventory" },
-  { label: "Items & stock", href: "/inventory/items", roles: STAFF, disabled: true },
+  { label: "Items", href: "/inventory/items" },
+  { label: "Categories", href: "/inventory/categories", roles: ADMIN },
   { label: "Requests", href: "/inventory/requests", disabled: true },
   { label: "Issues & returns", href: "/inventory/issues", roles: STAFF, disabled: true },
   { label: "Purchases", href: "/inventory/purchases", roles: STAFF, disabled: true },

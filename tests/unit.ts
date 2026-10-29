@@ -375,12 +375,22 @@ eq(`guards: every one of the ${actionCount} server actions goes through adminAct
 eq("guards: the reviewed list holds only actions that really exist", [...SELF_CHECKING].filter((n) => !readdirSync(actionsDir).some((f) => readFileSync(new URL(f, actionsDir), "utf8").includes(`export async function ${n}(`))), []);
 
 // The same for plain route handlers (downloads, the launch route): each must check the session or the administrator itself. The Approval System's
-// routes go through its own route() wrapper, which does it centrally, so they are covered by its own tests.
+// and the Inventory module's routes go through their own route() wrappers, which do it centrally (Inventory's are checked just below).
 const appDir = new URL("../src/app/", import.meta.url);
-const routeFiles = (readdirSync(appDir, { recursive: true }) as string[]).filter((f) => /(^|\/)route\.ts$/.test(f) && !/^(api\/approvals|approvals)\//.test(f));
+const allRouteFiles = (readdirSync(appDir, { recursive: true }) as string[]).filter((f) => /(^|\/)route\.ts$/.test(f));
+const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory)\//.test(f));
 // A Vercel Cron route has no sign-in: it must check CRON_SECRET instead.
 const openRoutes = routeFiles.filter((f) => !/\b(assertHeadAdmin|assertArea|getCurrentUser|requireUser|requireHeadAdmin|requireArea|requireAdministrator)\(|process\.env\.CRON_SECRET/.test(readFileSync(new URL(f, appDir), "utf8")));
-eq(`guards: all ${routeFiles.length} route handlers outside the Approval System check who is asking`, openRoutes, []);
+eq(`guards: all ${routeFiles.length} route handlers outside the Approval System and Inventory check who is asking`, openRoutes, []);
+// Every handler an Inventory route file exports is wrapped in the Inventory guard's route() (sign-in, roles, same-site writes, clean errors).
+const inventoryRoutes = allRouteFiles.filter((f) => /^api\/inventory\//.test(f));
+const unwrapped = inventoryRoutes.flatMap((f) => {
+  const src = readFileSync(new URL(f, appDir), "utf8");
+  const handlers = [...src.matchAll(/export (?:const|async function|function) (GET|POST|PUT|PATCH|DELETE)\b(.*)/g)];
+  const imported = /from "@\/lib\/inventory\/guard"/.test(src);
+  return handlers.filter(([, , rest]) => !imported || !/^\s*=\s*route[<(]/.test(rest)).map(([, method]) => `${f}:${method}`);
+});
+eq(`guards: every handler in the ${inventoryRoutes.length} Inventory route files goes through the Inventory guard's route()`, [inventoryRoutes.length > 0, unwrapped], [true, []]);
 
 // The application check must never be steered at an internal network
 eq("net guard: private, loopback, metadata and reserved IPv4 are refused", ["127.0.0.1", "10.0.0.5", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255"].map(isPublicAddress), Array(10).fill(false));

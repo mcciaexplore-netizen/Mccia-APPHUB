@@ -3,7 +3,7 @@ import { cache } from "react";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { inventoryUserRoles } from "@/db/inventory-schema";
-import { adminUnlocked, getCurrentUser as hostCurrentUser } from "@/lib/permissions";
+import { getCurrentUser as hostCurrentUser } from "@/lib/permissions";
 import { ALL_ROLES, type InventoryRole } from "./inventory.manifest";
 
 /**
@@ -35,12 +35,6 @@ export const resolveAccess = cache(async (): Promise<Access> => {
 
 /** Whether the person is still on the temporary password they were emailed: they must choose their own before using the module. */
 export const needsOwnPassword = async () => !!(await hostCurrentUser())?.mustChangePassword;
-
-/** Whether the person has unlocked Administrator with their password recently (asked again before admin changes, as in Approvals). */
-export const administratorUnlocked = async () => {
-  const host = await hostCurrentUser();
-  return !!host && (await adminUnlocked(host));
-};
 
 export const hasRole = (user: Pick<InventoryUser, "roles"> | null | undefined, role: InventoryRole) => !!user && user.roles.includes(role);
 export const hasAnyRole = (user: Pick<InventoryUser, "roles"> | null | undefined, roles: readonly InventoryRole[]) => !!user && roles.some((r) => user.roles.includes(r));

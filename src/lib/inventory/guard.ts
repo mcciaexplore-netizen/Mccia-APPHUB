@@ -4,7 +4,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { ZodError, type ZodType } from "zod";
 import { InventoryError } from "./errors";
 import { inventoryEnabled } from "./flags";
-import { administratorUnlocked, hasAnyRole, needsOwnPassword, resolveAccess, type InventoryRole, type InventoryUser } from "./host-adapter";
+import { hasAnyRole, needsOwnPassword, resolveAccess, type InventoryRole, type InventoryUser } from "./host-adapter";
+import { idSchema } from "./validation";
 import { logError } from "@/lib/log-error";
 
 /**
@@ -44,7 +45,8 @@ function sameOrigin(req: NextRequest): boolean {
 /**
  * Wraps every route handler: 404 when the module is off, 401/403 for people who may not be here, a same-origin check on writes, and one
  * place that turns validation and database errors into clean JSON. `roles` lists the roles that may call it (any one is enough).
- * An inventory_admin-only write also needs Administrator unlocked, like the hub's own admin changes.
+ * Unlike Approvals' set-up screens, an inventory_admin's changes do not ask for Administrator to be unlocked: the store is run from
+ * /inventory, which is not part of Administrator (opening it locks Administrator again), and an Inventory admin need not be a hub admin.
  */
 export function route<P extends Record<string, string> = Record<never, never>>(
   opts: { roles?: InventoryRole[] },
@@ -59,8 +61,6 @@ export function route<P extends Record<string, string> = Record<never, never>>(
       if (opts.roles?.length && !hasAnyRole(a.user, opts.roles)) return fail("Not allowed.", 403);
       const write = !["GET", "HEAD", "OPTIONS"].includes(req.method);
       if (write && !sameOrigin(req)) return fail("Not allowed.", 403);
-      const adminOnly = !!opts.roles?.length && opts.roles.every((r) => r === "inventory_admin");
-      if (write && adminOnly && !(await administratorUnlocked())) return fail("Administrator has locked. Open Administrator and enter your password again, then try once more.", 403);
       return await fn({ req, user: a.user, params: await ctx.params });
     } catch (e) {
       if (e instanceof InventoryError) return fail(e.message, e.status);
@@ -85,3 +85,10 @@ export async function readJson<T>(req: NextRequest, schema: ZodType<T>): Promise
 }
 
 export const ok = (data: object = {}, status = 200) => NextResponse.json({ ok: true, ...data }, { status });
+
+/** A URL id that does not parse is a missing page, not a bad request. */
+export const idParam = (raw: string) => {
+  const id = idSchema.safeParse(raw);
+  if (!id.success) throw new InventoryError("Not found.", 404);
+  return id.data;
+};
