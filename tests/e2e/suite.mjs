@@ -522,6 +522,23 @@ try {
   await signIn(ap, ashaEmail, ashaPw); check("the old password no longer works", new URL(ap.url()).pathname === "/login");
   await signIn(ap, ashaEmail, ashaNew); check("the new password works", new URL(ap.url()).pathname === "/", ap.url());
 
+  // admin: reset password for someone still on a temporary password that has run out (an invited person who never chose their own).
+  // Before the fix the reset said "Password reset" but sign-in refused the new password, because the account stayed "temporary".
+  const tempEmail = "zz-temp-reset@gmail.com", tempNew = "Temp-reset-pass-55";
+  const [tempUser] = await sql`insert into users (name, email, password_hash, must_change_password, status) values ('ZZ Temp Reset', ${tempEmail}, ${scryptHash("Old-temp-pass-11")}, true, 'approved') returning id`;
+  await sql`insert into user_invites (user_id, token_hash, expires_at) values (${tempUser.id}, ${"0".repeat(64)}, now() - interval '1 day')`;
+  await sql`insert into login_attempts (email, ip_address, kind, success, blocked) values (${tempEmail}, '203.0.113.9', 'login', false, false), (${tempEmail}, '203.0.113.9', 'login', false, false)`;
+  await userPage(tempEmail);
+  await urow(tempEmail).getByRole("button", { name: /^Reset password for/ }).click();
+  const trf = page.locator("form").filter({ has: page.getByRole("button", { name: "Reset password", exact: true }) }); await trf.locator("input.font-mono").fill(tempNew); await trf.getByRole("button", { name: "Reset password", exact: true }).click();
+  check("reset for a person on an expired temporary password shows a success message", await toast("Password reset")); await page.waitForTimeout(1500);
+  const [tempAfter] = await sql`select must_change_password, (select count(*)::int from user_invites i where i.user_id = u.id and i.used_at is null) open_invites, (select count(*)::int from login_attempts a where a.email = u.email and not a.success) wrong_tries from users u where u.id = ${tempUser.id}`;
+  check("after the reset the password is no longer temporary, no temporary password is left open, and earlier wrong tries are cleared", tempAfter.must_change_password === false && tempAfter.open_invites === 0 && tempAfter.wrong_tries === 0, JSON.stringify(tempAfter));
+  const tempCtx = await browser.newContext(); const tempPage = await tempCtx.newPage();
+  await signIn(tempPage, tempEmail, tempNew);
+  check("they sign in with the new password and land on the hub, not on 'choose your own password'", new URL(tempPage.url()).pathname === "/", tempPage.url());
+  await tempCtx.close();
+
   // user: change own password, sign out
   await ap.goto(BASE + "/change-password");
   const cp = async (cur, nw, again) => { await ap.locator("input[autocomplete=current-password]").fill(cur); await ap.locator("input[autocomplete=new-password]").nth(0).fill(nw); await ap.locator("input[autocomplete=new-password]").nth(1).fill(again); await ap.getByRole("button", { name: "Save password" }).click(); await ap.waitForTimeout(2500); };

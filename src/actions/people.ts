@@ -1,9 +1,9 @@
 "use server";
 
-import { and, count, eq, inArray, ne, notInArray } from "drizzle-orm";
+import { and, count, eq, gt, inArray, isNull, ne, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { apps, branches, teams, userAppAccess, users, type User } from "@/db/schema";
+import { apps, branches, loginAttempts, teams, userAppAccess, userInvites, users, type User } from "@/db/schema";
 import { applyAccess, previewAccess, type AccessMode, MAX_PEOPLE } from "@/lib/access-ops";
 import { createAccount } from "@/lib/accounts";
 import { adminAction, staffAction, UserError } from "@/lib/action";
@@ -17,6 +17,7 @@ import type { Role } from "@/db/schema";
 import { notifyUsers } from "@/lib/notifications";
 import { checkOrg } from "@/lib/org";
 import { hashPassword, passwordSchema } from "@/lib/passwords";
+import { WINDOW_MS } from "@/lib/sign-in-rules";
 import { parsePeopleFilters, peopleIds } from "@/lib/people";
 import { ADMIN_AREAS, AREA_LABEL, ASSIGNABLE_ROLES, canChangeRole, canDeactivate, canEditPerson, canManageAccess, isSupport, PROMOTABLE_ROLES, SINGLE_HOLDER_ROLES } from "@/lib/rbac";
 import { emailSchema, uuid, uuidList } from "@/lib/validation";
@@ -233,7 +234,11 @@ export async function setAdminAreas(id: string, areas: unknown) {
   });
 }
 
-/** For someone who cannot receive email: the administrator types a password. It is hashed at once and never recorded anywhere. */
+/**
+ * For someone who cannot receive email: the administrator types a password. It is hashed at once and never recorded anywhere. It becomes
+ * their own password, the same as changing it themselves: no longer temporary, any temporary password still open is used up, and their
+ * recent wrong passwords are forgotten so an earlier lockout does not block the new one.
+ */
 export async function setPersonPassword(id: string, password: unknown) {
   return adminAction("people", async (admin) => {
     uuid.parse(id);
@@ -242,7 +247,10 @@ export async function setPersonPassword(id: string, password: unknown) {
     if (!u) throw new UserError("User not found.");
     if (!canEditPerson(admin, { id, role: u.role })) throw new UserError("You cannot change that person's password.");
     if (isEnvAdmin(u.email)) throw new UserError("This account's password is set in the environment settings.");
-    await db.update(users).set({ passwordHash: await hashPassword(pw) }).where(eq(users.id, id)); // also signs them out everywhere
+    await db.update(users).set({ passwordHash: await hashPassword(pw), mustChangePassword: false }).where(eq(users.id, id)); // also signs them out everywhere
+    await db.update(userInvites).set({ usedAt: new Date() }).where(and(eq(userInvites.userId, id), isNull(userInvites.usedAt)));
+    // Attempts are stored with the email lowercased; the limits read back two windows, so that is what is cleared.
+    await db.delete(loginAttempts).where(and(eq(loginAttempts.email, u.email.trim().toLowerCase()), eq(loginAttempts.success, false), gt(loginAttempts.createdAt, new Date(Date.now() - 2 * WINDOW_MS))));
     await writeAudit(admin, [{ action: "user.password_set", targetType: "user", targetId: id, targetLabel: u.name }]);
   });
 }
