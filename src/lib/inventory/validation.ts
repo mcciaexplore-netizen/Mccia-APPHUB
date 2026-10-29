@@ -105,3 +105,42 @@ export const vendorInput = z.object({
   active: z.boolean().optional().default(true),
 });
 export type VendorInput = z.output<typeof vendorInput>;
+
+/** One line of a purchase order: a catalogue item or a free-text description (one is needed), a quantity, and a rate in rupees (required). */
+export const poLineInput = z
+  .object({
+    itemId: z.union([idSchema, z.literal("")]).optional().transform((v) => (v ? v : null)),
+    description: optionalText(200),
+    quantity: positive("Quantity"),
+    rate: z.string().max(20).transform((v, ctx) => {
+      const p = rupeesToPaise(v);
+      if (p === null || p === "invalid") {
+        ctx.addIssue({ code: "custom", message: p === null ? "Each line needs a rate" : "Rate must be an amount in rupees, such as 1250 or 1,250.50" });
+        return z.NEVER;
+      }
+      return p;
+    }),
+  })
+  .refine((l) => l.itemId || l.description, { message: "Each line needs an item from the catalogue or a description", path: ["description"] });
+
+/** A purchase order: a vendor from the directory or a typed name (one is needed), notes, and 1 to 100 lines. */
+export const poInput = z
+  .object({
+    vendorId: z.union([idSchema, z.literal("")]).optional().transform((v) => (v ? v : null)),
+    vendorName: optionalText(120),
+    notes: optionalText(1000),
+    lines: z.array(poLineInput).min(1, "Add at least one line").max(100, "A purchase order can have at most 100 lines"),
+  })
+  .refine((v) => v.vendorId || v.vendorName, { message: "Choose a vendor or type the vendor's name", path: ["vendorName"] });
+export type PoInput = z.output<typeof poInput>;
+
+/** Receiving goods on a sent purchase order: how many of each line arrived now (0 for none), an optional challan number, and whether to close it. */
+export const receiveInput = z
+  .object({
+    lines: z.array(z.object({ lineId: idSchema, quantity: z.coerce.number().int("Quantities must be whole numbers").min(0, "Quantities cannot be negative").max(1_000_000) })).max(100),
+    challanNo: optionalText(60),
+    close: z.boolean().optional().default(false),
+  })
+  .transform((v) => ({ ...v, lines: v.lines.filter((l) => l.quantity > 0) }))
+  .refine((v) => v.lines.length > 0 || v.close, { message: "Enter what arrived, or tick that nothing more is coming", path: ["lines"] });
+export type ReceiveInput = z.output<typeof receiveInput>;

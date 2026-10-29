@@ -1,11 +1,11 @@
 /**
  * End-to-end test of the Inventory module in a real browser: categories, items, the stock history behind quantity changes, the dashboard
- * figures, Settings (who runs the store), requests, issues and returns, vendors, and who may do what (Inventory admin, Inventory staff, everyone else). Run against a site with
+ * figures, Settings (who runs the store), requests, issues and returns, vendors, purchase orders, and who may do what (Inventory admin, Inventory staff, everyone else). Run against a site with
  * INVENTORY_ENABLED=true:
  *   E2E_BASE_URL=http://localhost:3000 node tests/e2e/inventory.mjs
  *
  * It WRITES to the database the site uses, but only rows named "ZZI"/"zzi-": categories, items and their stock movements, requests,
- * vendors and one purchase order, and a few people and their Inventory roles. Everything is removed when it finishes (and at the start, if an earlier run was interrupted), and it
+ * vendors and purchase orders (to "ZZI" vendors), and a few people and their Inventory roles. Everything is removed when it finishes (and at the start, if an earlier run was interrupted), and it
  * checks that every other inventory row is exactly as before. It refuses a Neon database unless E2E_ALLOW_NEON=yes.
  */
 import { createRequire } from "node:module";
@@ -46,6 +46,9 @@ const removeTestData = async () => {
   const items = (await sql`select id from inventory_items where name like 'ZZI%'`).map((r) => r.id);
   for (const id of items) { await sql`delete from inventory_stock_movements where item_id = ${id}`; await sql`delete from inventory_requests where item_id = ${id}`; }
   await sql`delete from inventory_items where name like 'ZZI%'`;
+  // This run's purchase orders are recorded in the audit log under their PO number, so those entries go by the order's id.
+  const pos = (await sql`select id from inventory_purchase_orders where vendor_name like 'ZZI%'`).map((x) => x.id);
+  for (const id of pos) await sql`delete from access_audit where action like 'inventory.po_%' and target_id = ${id}`;
   await sql`delete from inventory_purchase_orders where vendor_name like 'ZZI%'`;
   await sql`delete from inventory_vendors where name like 'ZZI%'`;
   await sql`delete from inventory_categories where name like 'ZZI%'`;
@@ -394,6 +397,126 @@ try {
       const p1 = await api(page, "/api/inventory/vendors", "POST", { name: "ZZI Sneaky Vendor" });
       const p2 = await api(page, `/api/inventory/vendors/${v1.id}`, "PATCH", { name: "ZZI Renamed", active: false });
       check(`${who} is refused (403) when adding or changing a vendor through the API`, p1.status === 403 && p2.status === 403 && !!(await vendor("ZZI Paper House")), `${p1.status},${p2.status}`);
+      await ctx.close();
+    }
+  }
+
+  section("Purchase orders");
+  {
+    const stock = async () => (await item("ZZI Paper")).quantity;
+    const paper = await item("ZZI Paper");
+    const vendorRow = (await sql`select id from inventory_vendors where name = 'ZZI Paper House'`)[0];
+    const po = async (id) => (await sql`select * from inventory_purchase_orders where id = ${id}`)[0];
+    const lines = async (id) => sql`select id, item_id, description, quantity, rate_paise, received_quantity from inventory_purchase_order_lines where purchase_order_id = ${id} order by sort`;
+    // The number the next order of this financial year should get (India time, April to March).
+    const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", year: "numeric", month: "numeric" }).formatToParts(new Date());
+    const y = Number(parts.find((x) => x.type === "year").value), m = Number(parts.find((x) => x.type === "month").value), fy = m >= 4 ? y : y - 1;
+    const prefix = `PO-${fy}-${String((fy + 1) % 100).padStart(2, "0")}-`;
+    const highest = async () => Math.max(0, ...(await sql`select po_no from inventory_purchase_orders where po_no like ${prefix + "%"}`).map((x) => Number(x.po_no.slice(prefix.length))));
+    const expected = `${prefix}${String((await highest()) + 1).padStart(4, "0")}`;
+
+    const lr = await go(A, "/inventory/purchase-orders");
+    check("an Inventory admin opens Purchase orders", lr.status() === 200 && (await A.getByRole("heading", { name: "Purchase orders" }).count()) === 1, lr.status());
+    await go(A, "/inventory/purchase-orders/new");
+    await A.getByLabel("Vendor", { exact: false }).first().selectOption({ label: "ZZI Paper House" });
+    await A.getByLabel("Line 1 item").selectOption({ label: `ZZI Paper (Ream)` });
+    check("choosing a catalogue item fills in its rate", (await A.getByLabel("Line 1 rate").inputValue()) === "1250.50", await A.getByLabel("Line 1 rate").inputValue());
+    await A.getByLabel("Line 1 quantity").fill("10");
+    await A.getByRole("button", { name: "Add line" }).click();
+    await A.getByLabel("Line 2 description").fill("ZZI Printer service"); await A.getByLabel("Line 2 quantity").fill("1"); await A.getByLabel("Line 2 rate").fill("500");
+    await A.getByRole("button", { name: "Create draft" }).click();
+    check("creating a purchase order says which number it got", await toast(A, `${expected} created as a draft`), expected);
+    await A.waitForURL(/\/inventory\/purchase-orders\/[0-9a-f-]{36}$/, { timeout: 20000 }).catch(() => {});
+    const poId = new URL(A.url()).pathname.split("/").pop();
+    let p1 = await po(poId), l1 = await lines(poId);
+    check("it is a draft with the next number of the financial year, the vendor from the directory, and both lines", p1?.status === "draft" && p1.po_no === expected && p1.vendor_id === vendorRow.id
+      && l1.length === 2 && l1[0].item_id === paper.id && l1[0].description === "ZZI Paper" && l1[0].quantity === 10 && Number(l1[0].rate_paise) === 125050 && l1[1].item_id === null && Number(l1[1].rate_paise) === 50000, JSON.stringify({ p1, l1 }));
+    check("the order page shows the total (₹13,005)", /13,005/.test(await A.locator("main").first().innerText()));
+
+    const bad = await Promise.all([
+      api(A, "/api/inventory/purchase-orders", "POST", { vendorName: "ZZI X", lines: [] }),
+      api(A, "/api/inventory/purchase-orders", "POST", { vendorName: "ZZI X", lines: [{ quantity: 1, rate: "5" }] }),
+      api(A, "/api/inventory/purchase-orders", "POST", { lines: [{ description: "ZZI A", quantity: 1, rate: "5" }] }),
+    ]);
+    check("an order with no lines, a line with no item or description, or no vendor is refused (400)", bad.every((b) => b.status === 400), bad.map((b) => b.status).join());
+
+    await A.getByRole("link", { name: "Edit" }).click(); await A.waitForURL(/\/edit$/);
+    await A.getByLabel("Line 1 quantity").fill("12");
+    await A.getByRole("button", { name: "Remove line 2" }).click();
+    await A.getByRole("button", { name: "Add line" }).click();
+    await A.getByLabel("Line 2 description").fill("ZZI Toner (not stocked)"); await A.getByLabel("Line 2 quantity").fill("1"); await A.getByLabel("Line 2 rate").fill("2,000");
+    await A.getByRole("button", { name: "Save draft" }).click();
+    check("editing a draft (change, remove and add lines) saves", await toast(A, "Draft saved"));
+    l1 = await poll(async () => { const x = await lines(poId); return x.length === 2 && x[1].description === "ZZI Toner (not stocked)" ? x : null; });
+    check("…and the order now has exactly the edited lines", !!l1 && l1[0].quantity === 12 && Number(l1[1].rate_paise) === 200000, JSON.stringify(l1));
+
+    await A.waitForURL(new RegExp(`/inventory/purchase-orders/${poId}$`), { timeout: 20000 }).catch(() => {});
+    await A.getByRole("button", { name: "Mark as sent" }).click(); await A.getByRole("dialog").getByRole("button", { name: "Mark as sent" }).click();
+    check("sending says so", await toast(A, `${expected} marked as sent`) && await poll(async () => (await po(poId)).status === "sent"));
+    check("…and records when it was sent", !!(await po(poId)).sent_at);
+    const editSent = await api(A, `/api/inventory/purchase-orders/${poId}`, "PATCH", { vendorName: "ZZI X", lines: [{ description: "ZZI A", quantity: 1, rate: "5" }] });
+    check("a sent order can no longer be edited (409)", editSent.status === 409 && /sent now/.test(editSent.body?.error ?? ""), JSON.stringify(editSent));
+    await go(A, `/inventory/purchase-orders/${poId}/edit`);
+    check("its Edit page sends you back to the order", new URL(A.url()).pathname === `/inventory/purchase-orders/${poId}`);
+
+    const s0 = await stock();
+    await A.getByRole("button", { name: "Receive goods" }).click(); let d = A.getByRole("dialog");
+    await d.getByLabel("Arrived now: ZZI Paper").fill("5"); await d.getByLabel("Arrived now: ZZI Toner (not stocked)").fill("0");
+    await d.getByLabel(/challan/i).fill("ZZI-CH-1"); await d.getByRole("button", { name: "Record receipt" }).click();
+    check("receiving says so", await toast(A, "Goods received"));
+    await poll(async () => (await stock()) === s0 + 5);
+    const [mv] = await sql`select kind, delta, quantity_after, vendor_id, purchase_order_id, challan_no, rate_paise from inventory_stock_movements where purchase_order_id = ${poId}`;
+    check("a partial receipt adds 5 to stock with an inward movement carrying the vendor, the order, the rate and the challan", (await stock()) === s0 + 5 && mv?.kind === "inward" && mv.delta === 5
+      && mv.quantity_after === s0 + 5 && mv.vendor_id === vendorRow.id && mv.challan_no === "ZZI-CH-1" && Number(mv.rate_paise) === 125050, JSON.stringify(mv));
+    check("…and the order stays sent, shown as partly received", (await po(poId)).status === "sent" && !!(await poll(async () => /Partly received/i.test(await A.locator("main").first().innerText()), 10000)));
+
+    const lineId = (await lines(poId))[0].id, tonerId = (await lines(poId))[1].id;
+    const over = await api(A, `/api/inventory/purchase-orders/${poId}/receive`, "POST", { lines: [{ lineId, quantity: 8 }] });
+    check("receiving more than is still to come is refused and nothing changes", over.status === 409 && (await stock()) === s0 + 5 && (await lines(poId))[0].received_quantity === 5, JSON.stringify(over));
+    const race = await Promise.all([1, 2].map(() => api(A, `/api/inventory/purchase-orders/${poId}/receive`, "POST", { lines: [{ lineId, quantity: 7 }] })));
+    check("the same 7 recorded twice at the same moment: one is added, the other is refused, stock goes up once",
+      race.map((x) => x.status).sort().join() === "200,409" && (await stock()) === s0 + 12 && (await lines(poId))[0].received_quantity === 12, race.map((x) => `${x.status} ${x.body?.error ?? ""}`).join(" | "));
+    check("…and with the toner line still to come, the order is not closed yet", (await po(poId)).status === "sent");
+    const closeIt = await api(A, `/api/inventory/purchase-orders/${poId}/receive`, "POST", { lines: [{ lineId: tonerId, quantity: 0 }], close: true });
+    check("closing with nothing more coming marks it received, without touching stock for the non-catalogue line", closeIt.status === 200 && (await po(poId)).status === "received" && !!(await po(poId)).received_at && (await stock()) === s0 + 12, JSON.stringify(closeIt));
+    const afterClose = await api(A, `/api/inventory/purchase-orders/${poId}/receive`, "POST", { lines: [{ lineId: tonerId, quantity: 1 }] });
+    const cancelReceived = await api(A, `/api/inventory/purchase-orders/${poId}/cancel`, "POST");
+    check("a received order can no longer be received on or cancelled (409)", afterClose.status === 409 && cancelReceived.status === 409, `${afterClose.status},${cancelReceived.status}`);
+
+    // Full receipt closes by itself; numbering continues; two created at once get two numbers.
+    const p2 = await api(A, "/api/inventory/purchase-orders", "POST", { vendorName: "ZZI Typed Vendor", lines: [{ itemId: paper.id, quantity: 3, rate: "100" }] });
+    check("the next order gets the next number", p2.status === 201 && p2.body?.purchaseOrder?.poNo === `${prefix}${String(Number(expected.slice(prefix.length)) + 1).padStart(4, "0")}`, JSON.stringify(p2.body));
+    const p2id = p2.body.purchaseOrder.id;
+    await api(A, `/api/inventory/purchase-orders/${p2id}/send`, "POST");
+    const full = await api(A, `/api/inventory/purchase-orders/${p2id}/receive`, "POST", { lines: [{ lineId: (await lines(p2id))[0].id, quantity: 3 }] });
+    check("receiving everything closes the order by itself", full.status === 200 && full.body?.closed === true && (await po(p2id)).status === "received", JSON.stringify(full.body));
+    const twin = await Promise.all([1, 2].map(() => api(A, "/api/inventory/purchase-orders", "POST", { vendorName: "ZZI Twin", lines: [{ description: "ZZI Twin", quantity: 1, rate: "1" }] })));
+    const twinNos = twin.map((t) => t.body?.purchaseOrder?.poNo).sort();
+    check("two orders created at the same moment get two different, consecutive numbers", twin.every((t) => t.status === 201) && twinNos[0] !== twinNos[1]
+      && Number(twinNos[1].slice(prefix.length)) - Number(twinNos[0].slice(prefix.length)) === 1, twinNos.join(", "));
+
+    const [draftId, sentId] = twin.map((t) => t.body.purchaseOrder.id);
+    await api(A, `/api/inventory/purchase-orders/${sentId}/send`, "POST");
+    await go(A, `/inventory/purchase-orders/${draftId}`);
+    await A.getByRole("button", { name: "Cancel order" }).click(); await A.getByRole("dialog").getByRole("button", { name: "Cancel order" }).click();
+    check("a draft can be cancelled", await toast(A, "cancelled") && await poll(async () => (await po(draftId)).status === "cancelled"));
+    const cancelSent = await api(A, `/api/inventory/purchase-orders/${sentId}/cancel`, "POST");
+    const sendCancelled = await api(A, `/api/inventory/purchase-orders/${draftId}/send`, "POST");
+    check("a sent order can be cancelled; a cancelled one cannot be sent (409)", cancelSent.status === 200 && (await po(sentId)).status === "cancelled" && sendCancelled.status === 409, `${cancelSent.status},${sendCancelled.status}`);
+    await go(A, "/inventory/purchase-orders?status=received");
+    const recvList = await A.locator("tbody").innerText();
+    check("the Received filter lists the received orders and not the cancelled ones", recvList.includes(expected) && !recvList.includes(twinNos[0]));
+    const pa = (await sql`select distinct action from access_audit where action like 'inventory.po_%' and target_id in (${poId}, ${draftId})`).map((x) => x.action);
+    check("created, updated, sent, received and cancelled are in the audit log", ["inventory.po_created", "inventory.po_updated", "inventory.po_sent", "inventory.po_received", "inventory.po_cancelled"].every((x) => pa.includes(x)), pa.join());
+
+    for (const [who, email] of [["Inventory staff", "zzi-staff@gmail.com"], ["a plain user", "zzi-member@gmail.com"]]) {
+      const { ctx, page } = await signedIn(email, PW);
+      const r = await go(page, "/inventory/purchase-orders");
+      const r2 = await go(page, `/inventory/purchase-orders/${poId}`);
+      check(`${who} cannot open purchase orders (not found) and has no menu link`, r.status() === 404 && r2.status() === 404, `${r.status()},${r2.status()}`);
+      await go(page, "/inventory/items");
+      const w = await api(page, "/api/inventory/purchase-orders", "POST", { vendorName: "ZZI Sneaky", lines: [{ description: "ZZI", quantity: 1, rate: "1" }] });
+      check(`${who} sees no Purchase orders link and is refused (403) through the API`, w.status === 403 && (await page.getByRole("navigation", { name: "Inventory" }).getByText("Purchase orders").count()) === 0, w.status);
       await ctx.close();
     }
   }

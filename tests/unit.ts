@@ -30,7 +30,8 @@ import {
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import { canManageRoles, navFor } from "../src/lib/inventory/inventory.manifest";
-import { issueInput, requestDecision, requestInput, returnInput, rupeesToPaise, roleInput, vendorInput } from "../src/lib/inventory/validation";
+import { issueInput, poInput, receiveInput, requestDecision, requestInput, returnInput, rupeesToPaise, roleInput, vendorInput } from "../src/lib/inventory/validation";
+import { financialYear, nextPoNo, poPrefix } from "../src/lib/inventory/po-number";
 import {
   commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, planProblemMessage, planSteps, STATUS_LABEL, wrongFormMessage,
   type RuleLike,
@@ -470,6 +471,23 @@ eq("inventory vendors: GSTIN and PAN in their official formats (stored in capita
   vendor({ gstin: "27ABCDE1234F1Z" }), vendor({ pan: "ABCD1234F" }), vendor({ email: "not-an-email" }), vendor({ phone: "call me" }),
   (vendor({ email: "", phone: "", gstin: "", pan: "" }) as { email: null; gstin: null }).gstin, vendor({ name: " " }),
 ], ["27ABCDE1234F1Z5", "ABCDE1234F", "refused", "refused", "refused", "refused", null, "refused"]);
+eq("inventory PO numbers: the financial year turns at midnight on 1 April, India time", [
+  financialYear(new Date("2027-03-31T18:29:59Z")), financialYear(new Date("2027-03-31T18:30:00Z")), financialYear(new Date("2026-04-01T00:00:00+05:30")),
+  financialYear(new Date("2027-01-15T12:00:00Z")), financialYear(new Date("2099-12-31T12:00:00Z")), poPrefix(new Date("2026-10-29T10:00:00Z")),
+], ["2026-27", "2027-28", "2026-27", "2026-27", "2099-00", "PO-2026-27-"]);
+eq("inventory PO numbers: the next serial of the year, starting at 0001, past 9999, ignoring other years", [
+  nextPoNo("PO-2026-27-", null), nextPoNo("PO-2026-27-", "PO-2026-27-0041"), nextPoNo("PO-2026-27-", "PO-2026-27-9999"), nextPoNo("PO-2027-28-", "PO-2026-27-0041"),
+], ["PO-2026-27-0001", "PO-2026-27-0042", "PO-2026-27-10000", "PO-2027-28-0001"]);
+eq("inventory PO input: a vendor (chosen or typed) and 1-100 lines, each with an item or a description, a quantity and a rate", [
+  okParse(poInput, { vendorName: "X", lines: [{ description: "Chairs", quantity: 2, rate: "1500" }] }), okParse(poInput, { vendorId: "11111111-1111-4111-8111-111111111111", lines: [{ itemId: "11111111-1111-4111-8111-111111111111", quantity: 1, rate: "0" }] }),
+  okParse(poInput, { lines: [{ description: "Chairs", quantity: 2, rate: "1500" }] }), okParse(poInput, { vendorName: "X", lines: [] }),
+  okParse(poInput, { vendorName: "X", lines: [{ quantity: 2, rate: "1" }] }), okParse(poInput, { vendorName: "X", lines: [{ description: "A", quantity: 2, rate: "" }] }),
+  okParse(poInput, { vendorName: "X", lines: Array.from({ length: 101 }, () => ({ description: "A", quantity: 1, rate: "1" })) }),
+], [true, true, false, false, false, false, false]);
+eq("inventory receipts: lines with 0 are dropped; nothing at all is refused unless the order is being closed", [
+  (receiveInput.safeParse({ lines: [{ lineId: "11111111-1111-4111-8111-111111111111", quantity: "0" }, { lineId: "11111111-1111-4111-8111-111111111111", quantity: 3 }] }) as { data?: { lines: unknown[] } }).data?.lines.length,
+  okParse(receiveInput, { lines: [{ lineId: "11111111-1111-4111-8111-111111111111", quantity: 0 }] }), okParse(receiveInput, { lines: [], close: true }), okParse(receiveInput, { lines: [{ lineId: "11111111-1111-4111-8111-111111111111", quantity: -1 }] }),
+], [1, false, true, false]);
 eq("inventory role input: Admin, Staff or none; anything else is refused", [
   roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: "inventory_admin" }).success, roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: null }).success,
   roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: "requester" }).success, roleInput.safeParse({ userId: "x", role: null }).success,
