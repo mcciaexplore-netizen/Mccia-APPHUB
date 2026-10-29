@@ -5,6 +5,7 @@ import { cardFacts, getAccessibleApps } from "@/lib/access";
 import { resolveAccess } from "@/lib/approvals/host-adapter";
 import { reviewItemsFor } from "@/lib/approvals/request-queries";
 import { approvalsEnabled } from "@/lib/approvals/flags";
+import { inventoryEnabled } from "@/lib/inventory/flags";
 import { canAdminister, isSuper } from "@/lib/rbac";
 import { HomeClient, type HomeApp, type HubCard } from "./HomeClient";
 
@@ -32,6 +33,7 @@ export default async function HomePage() {
   ]);
   const cards: HubCard[] = [
     ...(approvalsEnabled() ? [{ id: "hub-approvals", name: "Approval System", description: "Raise HR and expense requests, and review the ones waiting for you.", icon: "ClipboardList", href: "/approvals", waiting }] : []),
+    ...(inventoryEnabled() ? [{ id: "hub-inventory", name: "Inventory", description: "Request items, follow your requests and report maintenance problems.", icon: "Package", href: "/inventory" }] : []),
     ...(canAdminister(user) ? [{ id: "hub-administrator", name: "Administrator", description: "Users, access, the approval forms, notifications and the activity log.", icon: "Shield", href: "/administrator" }] : []),
     ...(user.role === "dept_lead"
       ? [

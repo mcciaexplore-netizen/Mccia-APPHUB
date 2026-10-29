@@ -6,8 +6,8 @@ config();
 
 export default defineConfig({
   dialect: "postgresql",
-  // The Approvals module keeps its apr_ tables in their own file; both feed the same migration journal.
-  schema: ["./src/db/schema.ts", "./src/db/approvals-schema.ts"],
+  // The Approvals and Inventory modules keep their apr_ and inventory_ tables in their own files; all feed the same migration journal.
+  schema: ["./src/db/schema.ts", "./src/db/approvals-schema.ts", "./src/db/inventory-schema.ts"],
   out: "./drizzle",
   dbCredentials: { url: process.env.DATABASE_URL! },
 });

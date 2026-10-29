@@ -148,6 +148,13 @@
       "when": 1793189112164,
       "tag": "0020_app_super_admin_role",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793265850722,
+      "tag": "0021_inventory_module",
+      "breakpoints": true
     }
   ]
 }
