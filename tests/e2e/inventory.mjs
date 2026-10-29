@@ -62,9 +62,11 @@ const snap = async () => JSON.stringify([
 
 await removeTestData();
 const before = await snap();
-await sql`insert into users (name, email, password_hash, status) values ('ZZI Member', 'zzi-member@gmail.com', ${hash(PW)}, 'approved')`;
+const [member] = await sql`insert into users (name, email, password_hash, status) values ('ZZI Member', 'zzi-member@gmail.com', ${hash(PW)}, 'approved') returning id`;
 const [staff] = await sql`insert into users (name, email, password_hash, status) values ('ZZI Staff', 'zzi-staff@gmail.com', ${hash(PW)}, 'approved') returning id`;
 await sql`insert into inventory_user_roles (user_id, role) values (${staff.id}, 'inventory_staff')`;
+const [admin2] = await sql`insert into users (name, email, password_hash, status) values ('ZZI Admin', 'zzi-admin@gmail.com', ${hash(PW)}, 'approved') returning id`;
+await sql`insert into inventory_user_roles (user_id, role) values (${admin2.id}, 'inventory_admin')`;
 
 const browser = await launch();
 const pageErrors = [];
@@ -80,6 +82,8 @@ const signedIn = async (email, password) => {
 };
 const go = async (page, p) => { const r = await page.goto(BASE + p); await page.waitForLoadState("networkidle").catch(() => {}); return r; };
 const toast = (page, text) => page.getByText(text).first().waitFor({ timeout: 15000 }).then(() => true).catch(() => false);
+const rolesOf = async (id) => (await sql`select role from inventory_user_roles where user_id = ${id} order by role`).map((x) => x.role).join(",");
+const roleAudits = async (id) => (await sql`select action, details->>'role' as role from access_audit where target_id = ${id} and action like 'inventory.role_%' order by at, action`).map((x) => `${x.action.replace("inventory.", "")}:${x.role}`);
 const item = async (name) => (await sql`select * from inventory_items where name = ${name}`)[0];
 const movements = async (name) => sql`select m.kind, m.delta, m.quantity_after, m.reason, m.actor_name from inventory_stock_movements m join inventory_items i on i.id = m.item_id where i.name = ${name} order by m.created_at`;
 const api = (page, url, method, body) => page.evaluate(async ([u, m, b]) => { const r = await fetch(u, { method: m, headers: { "Content-Type": "application/json" }, body: b ? JSON.stringify(b) : undefined }); return { status: r.status, body: await r.json().catch(() => null) }; }, [url, method, body]);
@@ -161,6 +165,45 @@ try {
   check("the category is deleted", await toast(A, "Category deleted") && await poll(async () => !(await sql`select 1 from inventory_categories where name = 'ZZI Stationery'`).length));
   check("…and its item is still there, without a category", (await item("ZZI Paper"))?.category_id === null);
 
+  section("Settings: who runs the store");
+  const set = await go(A, "/inventory/settings");
+  check("the Support Admin opens Settings, which lists the hub's users", set.status() === 200 && (await A.locator("tr", { hasText: "ZZI Member" }).count()) === 1, set.status());
+  check("the Support Admin's own row is a fixed Admin label, not a choice", (await A.locator("tr", { hasText: ADMIN_EMAIL }).getByText("Admin (Support Admin)").count()) === 1 && (await A.locator("tr", { hasText: ADMIN_EMAIL }).locator("select").count()) === 0);
+  const roleSelect = (name) => A.getByLabel(`Inventory role of ${name}`);
+  await roleSelect("ZZI Member").selectOption("inventory_staff");
+  check("making someone Staff says so and stores it", await toast(A, "ZZI Member is now Staff") && await poll(async () => (await rolesOf(member.id)) === "inventory_staff"));
+  check("…and records inventory.role_granted in the hub's audit log", JSON.stringify(await roleAudits(member.id)) === JSON.stringify(["role_granted:inventory_staff"]), JSON.stringify(await roleAudits(member.id)));
+  await A.waitForTimeout(1200);
+  await roleSelect("ZZI Member").selectOption("inventory_admin");
+  check("Staff to Admin leaves exactly one role, Admin", await toast(A, "ZZI Member is now Admin") && await poll(async () => (await rolesOf(member.id)) === "inventory_admin"));
+  check("…recorded as Staff removed and Admin granted", JSON.stringify(await roleAudits(member.id)) === JSON.stringify(["role_granted:inventory_staff", "role_granted:inventory_admin", "role_revoked:inventory_staff"]), JSON.stringify(await roleAudits(member.id)));
+  await A.waitForTimeout(1200);
+  await roleSelect("ZZI Member").selectOption("none");
+  check("removing someone's admin role asks first", (await A.getByRole("dialog").getByText(/will no longer be able to change items/).count()) === 1);
+  await A.getByRole("dialog").getByRole("button", { name: "Remove" }).click();
+  check("…and then removes it, recorded as inventory.role_revoked", await toast(A, "has no Inventory role now") && await poll(async () => (await rolesOf(member.id)) === "")
+    && (await roleAudits(member.id)).at(-1) === "role_revoked:inventory_admin");
+  const supportId = (await sql`select id from users where email = ${ADMIN_EMAIL}`)[0].id;
+  const supportChange = await api(A, "/api/inventory/roles", "PUT", { userId: supportId, role: null });
+  check("the Support Admin's own Admin role cannot be changed here (409)", supportChange.status === 409 && /always an Inventory admin/.test(supportChange.body?.error ?? ""), JSON.stringify(supportChange));
+  const bad = await api(A, "/api/inventory/roles", "PUT", { userId: member.id, role: "requester" });
+  check("a role that is not Admin, Staff or none is refused (400)", bad.status === 400, bad.status);
+
+  section("An Inventory admin cannot remove their own admin role");
+  {
+    const { ctx, page } = await signedIn("zzi-admin@gmail.com", PW);
+    const r = await go(page, "/inventory/settings");
+    check("an Inventory admin (not a hub admin) opens Settings", r.status() === 200, r.status());
+    const own = page.getByLabel("Inventory role of ZZI Admin");
+    check("in their own row only Admin can be chosen", (await own.locator("option:disabled").count()) === 2);
+    const selfRemove = await api(page, "/api/inventory/roles", "PUT", { userId: admin2.id, role: "inventory_staff" });
+    check("removing their own admin role through the API is refused (409) and changes nothing", selfRemove.status === 409 && /your own admin role/.test(selfRemove.body?.error ?? "") && (await rolesOf(admin2.id)) === "inventory_admin", JSON.stringify(selfRemove));
+    const grant = await api(page, "/api/inventory/roles", "PUT", { userId: member.id, role: "inventory_staff" });
+    check("they can manage other people's roles", grant.status === 200 && (await rolesOf(member.id)) === "inventory_staff", grant.status);
+    await api(page, "/api/inventory/roles", "PUT", { userId: member.id, role: null });
+    await ctx.close();
+  }
+
   section("Inventory staff and everyone else: view only");
   for (const [who, email] of [["Inventory staff", "zzi-staff@gmail.com"], ["a plain user", "zzi-member@gmail.com"]]) {
     const { ctx, page } = await signedIn(email, PW);
@@ -168,6 +211,11 @@ try {
     check(`${who} can open the item list and sees the items`, r.status() === 200 && (await page.locator("tr", { hasText: "ZZI Paper" }).count()) === 1, r.status());
     check(`${who} has no Add, Edit or Delete buttons`, (await page.getByRole("button", { name: /Add item|^Edit |^Delete / }).count()) === 0);
     check(`${who} cannot open Categories (not found)`, (await go(page, "/inventory/categories")).status() === 404);
+    check(`${who} cannot open Settings (not found), and has no Settings link`, (await go(page, "/inventory/settings")).status() === 404);
+    await go(page, "/inventory/items");
+    check(`${who} sees no Settings link in the Inventory menu`, (await page.getByRole("navigation", { name: "Inventory" }).getByText("Settings").count()) === 0);
+    const roleChange = await api(page, "/api/inventory/roles", "PUT", { userId: member.id, role: "inventory_admin" });
+    check(`${who} is refused when changing roles through the API (403)`, roleChange.status === 403 && (await rolesOf(member.id)) === "", roleChange.status);
     await go(page, "/inventory/items");
     const post = await api(page, "/api/inventory/items", "POST", { name: "ZZI Sneaky", unit: "Nos", quantity: 1, minQuantity: 0 });
     check(`${who} is refused when adding an item through the API (403)`, post.status === 403 && !(await item("ZZI Sneaky")), post.status);

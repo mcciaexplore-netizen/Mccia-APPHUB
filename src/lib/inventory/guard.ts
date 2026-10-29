@@ -23,6 +23,13 @@ export async function requirePage(...anyOf: InventoryRole[]): Promise<InventoryU
   return a.user;
 }
 
+/** For Settings: an Inventory admin, or the hub's Super Admin or Support Admin (see canManageRoles). Anyone else: not found. */
+export async function requireRoleManager(): Promise<InventoryUser> {
+  const user = await requirePage();
+  if (!user.canManageRoles) notFound();
+  return user;
+}
+
 type Ctx<P> = { req: NextRequest; user: InventoryUser; params: P };
 
 const pgCode = (e: unknown): string | undefined => {
@@ -44,12 +51,13 @@ function sameOrigin(req: NextRequest): boolean {
 
 /**
  * Wraps every route handler: 404 when the module is off, 401/403 for people who may not be here, a same-origin check on writes, and one
- * place that turns validation and database errors into clean JSON. `roles` lists the roles that may call it (any one is enough).
+ * place that turns validation and database errors into clean JSON. `roles` lists the roles that may call it (any one is enough);
+ * `manageRoles` limits it to the people who may manage roles (see canManageRoles).
  * Unlike Approvals' set-up screens, an inventory_admin's changes do not ask for Administrator to be unlocked: the store is run from
  * /inventory, which is not part of Administrator (opening it locks Administrator again), and an Inventory admin need not be a hub admin.
  */
 export function route<P extends Record<string, string> = Record<never, never>>(
-  opts: { roles?: InventoryRole[] },
+  opts: { roles?: InventoryRole[]; manageRoles?: boolean },
   fn: (c: Ctx<P>) => Promise<Response>,
 ) {
   return async (req: NextRequest, ctx: { params: Promise<P> }): Promise<Response> => {
@@ -59,6 +67,7 @@ export function route<P extends Record<string, string> = Record<never, never>>(
       if (a.status === "anonymous") return fail("Please sign in.", 401);
       if (await needsOwnPassword()) return fail("Choose your own password first: you are still using the temporary one.", 403);
       if (opts.roles?.length && !hasAnyRole(a.user, opts.roles)) return fail("Not allowed.", 403);
+      if (opts.manageRoles && !a.user.canManageRoles) return fail("Not allowed.", 403);
       const write = !["GET", "HEAD", "OPTIONS"].includes(req.method);
       if (write && !sameOrigin(req)) return fail("Not allowed.", 403);
       return await fn({ req, user: a.user, params: await ctx.params });

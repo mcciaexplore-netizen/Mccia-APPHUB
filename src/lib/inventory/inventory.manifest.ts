@@ -13,6 +13,12 @@ export const ALL_ROLES: readonly InventoryRole[] = ["requester", "inventory_staf
 /** The roles that run the store. Everyone else gets the requester's pages only. */
 export const STAFF_ROLES: readonly InventoryRole[] = ["inventory_staff", "inventory_admin"];
 export const ROLE_LABEL: Record<InventoryRole, string> = { requester: "Requester", inventory_staff: "Inventory staff", inventory_admin: "Inventory admin" };
+/** The two roles that are granted (in inventory_user_roles). A person holds at most one of them. */
+export const GRANTED_ROLES = ["inventory_admin", "inventory_staff"] as const;
+export type GrantedRole = (typeof GRANTED_ROLES)[number];
+
+/** Who may open Settings and grant or remove the roles above: an Inventory admin, and the hub's Super Admin and Support Admin. */
+export const canManageRoles = (hubRole: string, roles: readonly InventoryRole[]) => roles.includes("inventory_admin") || hubRole === "super_admin" || hubRole === "head_admin";
 
 export type InventoryNavItem = {
   label: string;
@@ -21,6 +27,8 @@ export type InventoryNavItem = {
   roles?: readonly InventoryRole[];
   /** Not built yet: shown greyed out with a "Coming soon" tag, and not a link. */
   disabled?: boolean;
+  /** Only for people who may manage roles (see canManageRoles), whatever their module roles. */
+  manageRoles?: boolean;
 };
 
 const STAFF = STAFF_ROLES;
@@ -36,7 +44,8 @@ export const inventoryNav: InventoryNavItem[] = [
   { label: "Purchase orders", href: "/inventory/purchase-orders", roles: STAFF, disabled: true },
   { label: "Vendors", href: "/inventory/vendors", roles: STAFF, disabled: true },
   { label: "Maintenance", href: "/inventory/maintenance", disabled: true },
-  { label: "Settings", href: "/inventory/admin/settings", roles: ADMIN, disabled: true },
+  { label: "Settings", href: "/inventory/settings", manageRoles: true },
 ];
 
-export const navFor = (roles: readonly InventoryRole[]) => inventoryNav.filter((i) => !i.roles || i.roles.some((r) => roles.includes(r)));
+export const navFor = (roles: readonly InventoryRole[], mayManageRoles = false) =>
+  inventoryNav.filter((i) => (i.manageRoles ? mayManageRoles : !i.roles || i.roles.some((r) => roles.includes(r))));

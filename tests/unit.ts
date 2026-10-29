@@ -29,6 +29,8 @@ import {
   FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
+import { canManageRoles, navFor } from "../src/lib/inventory/inventory.manifest";
+import { rupeesToPaise, roleInput } from "../src/lib/inventory/validation";
 import {
   commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, planProblemMessage, planSteps, STATUS_LABEL, wrongFormMessage,
   type RuleLike,
@@ -440,6 +442,22 @@ eq("admin paths: Administrator and the Approval System's admin pages count; noth
 
 
 // Single sign-on (src/lib/sso.ts, sso-rules.ts, sso-page.ts): the token contract, the rules for a slug and a callback address, and the hand-off page.
+// Inventory: who may manage roles, what the menu shows each person, and the form rules
+eq("inventory roles: Settings is for an Inventory admin and the hub's Super Admin and Support Admin, nobody else", [
+  canManageRoles("member", ["requester", "inventory_admin"]), canManageRoles("super_admin", ["requester"]), canManageRoles("head_admin", ["requester", "inventory_admin"]),
+  canManageRoles("member", ["requester", "inventory_staff"]), canManageRoles("admin", ["requester"]), canManageRoles("hr_admin", ["requester"]),
+], [true, true, true, false, false, false]);
+const navLabels = (roles: Parameters<typeof navFor>[0], manage: boolean) => navFor(roles, manage).map((i) => i.label);
+eq("inventory menu: Settings only for role managers, Categories only for Inventory admins, Items for everyone", [
+  navLabels(["requester"], false).includes("Settings"), navLabels(["requester"], true).includes("Settings"), navLabels(["requester", "inventory_staff"], false).includes("Categories"),
+  navLabels(["requester", "inventory_admin"], true).includes("Categories"), navLabels(["requester"], false).includes("Items"),
+], [false, true, false, true, true]);
+eq("inventory rupees: amounts become paise; bad input is refused", [rupeesToPaise("1,250.50"), rupeesToPaise("₹ 35"), rupeesToPaise(""), rupeesToPaise("1.234"), rupeesToPaise("-5"), rupeesToPaise("abc")], [125050, 3500, null, "invalid", "invalid", "invalid"]);
+eq("inventory role input: Admin, Staff or none; anything else is refused", [
+  roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: "inventory_admin" }).success, roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: null }).success,
+  roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: "requester" }).success, roleInput.safeParse({ userId: "x", role: null }).success,
+], [true, true, false, false]);
+
 const ssoTests = (async () => {
   const pair = () => {
     const { privateKey, publicKey } = generateKeyPairSync("ed25519");

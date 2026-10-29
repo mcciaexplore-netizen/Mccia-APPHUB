@@ -42,3 +42,6 @@ export const itemInput = z.object({
   active: z.boolean().optional().default(true),
 });
 export type ItemInput = z.output<typeof itemInput>;
+
+/** Settings: the one Inventory role a person should hold, or null for none. */
+export const roleInput = z.object({ userId: idSchema, role: z.enum(["inventory_admin", "inventory_staff"], { error: "Choose Admin, Staff or None." }).nullable() });

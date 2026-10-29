@@ -1,10 +1,11 @@
 import "server-only";
 import { cache } from "react";
-import { eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
+import { users } from "@/db/schema";
 import { inventoryUserRoles } from "@/db/inventory-schema";
 import { getCurrentUser as hostCurrentUser } from "@/lib/permissions";
-import { ALL_ROLES, type InventoryRole } from "./inventory.manifest";
+import { ALL_ROLES, canManageRoles, type InventoryRole } from "./inventory.manifest";
 
 /**
  * The only file in the Inventory module that knows about the host: its session and its user table. Everything else asks here, the same
@@ -12,7 +13,8 @@ import { ALL_ROLES, type InventoryRole } from "./inventory.manifest";
  */
 
 export type { InventoryRole };
-export type InventoryUser = { id: string; name: string; email: string; roles: InventoryRole[] };
+/** `hubRole` is the person's role in the hub; `canManageRoles` says whether they may open Settings (see canManageRoles). */
+export type InventoryUser = { id: string; name: string; email: string; roles: InventoryRole[]; hubRole: string; canManageRoles: boolean };
 export type Access = { status: "anonymous" } | { status: "ok"; user: InventoryUser };
 
 const isRole = (r: string): r is InventoryRole => (ALL_ROLES as readonly string[]).includes(r);
@@ -30,7 +32,8 @@ async function rolesFor(userId: string, hubRole: string): Promise<InventoryRole[
 export const resolveAccess = cache(async (): Promise<Access> => {
   const host = await hostCurrentUser();
   if (!host) return { status: "anonymous" };
-  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles: await rolesFor(host.id, host.role) } };
+  const roles = await rolesFor(host.id, host.role);
+  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles, hubRole: host.role, canManageRoles: canManageRoles(host.role, roles) } };
 });
 
 /** Whether the person is still on the temporary password they were emailed: they must choose their own before using the module. */
@@ -38,3 +41,14 @@ export const needsOwnPassword = async () => !!(await hostCurrentUser())?.mustCha
 
 export const hasRole = (user: Pick<InventoryUser, "roles"> | null | undefined, role: InventoryRole) => !!user && user.roles.includes(role);
 export const hasAnyRole = (user: Pick<InventoryUser, "roles"> | null | undefined, roles: readonly InventoryRole[]) => !!user && roles.some((r) => user.roles.includes(r));
+
+export type DirectoryUser = { id: string; name: string; email: string; hubRole: string };
+
+/** Everyone who can sign in to the hub (active and approved), for Settings. There is no second user table. */
+export async function listUsers(): Promise<DirectoryUser[]> {
+  return db
+    .select({ id: users.id, name: users.name, email: users.email, hubRole: users.role })
+    .from(users)
+    .where(and(eq(users.isActive, true), eq(users.status, "approved")))
+    .orderBy(asc(users.name));
+}
