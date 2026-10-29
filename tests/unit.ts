@@ -20,7 +20,7 @@ import { scrub } from "../src/lib/scrub";
 import { xlsxToTable } from "../src/lib/xlsx-read";
 import { createPublicKey, generateKeyPairSync } from "node:crypto";
 import { SSO_ISSUER, SSO_KID, SsoConfigError, buildClaims, loadSigningKey, signSsoToken, verifySsoToken } from "../src/lib/sso";
-import { SSO_ROLES, callbackProblem, slugProblem, ssoRoleFor } from "../src/lib/sso-rules";
+import { SSO_TOKEN_ROLE, callbackProblem, slugProblem } from "../src/lib/sso-rules";
 import { autoPostHtml, launchHeaders, messageHtml } from "../src/lib/sso-page";
 import { appInput } from "../src/lib/validation";
 import { safeNext } from "../src/lib/session";
@@ -452,11 +452,11 @@ const ssoTests = (async () => {
 
   // Signing and verifying with the matching public key
   const key = await loadSigningKey(hub.env);
-  const token = await signSsoToken(key, buildClaims({ slug: AUD, user: person, role: "admin" }));
+  const token = await signSsoToken(key, buildClaims({ slug: AUD, user: person, role: "user" }));
   const ok1 = await verifySsoToken(token, hub.publicPem, { audience: AUD });
   eq("sso token: three dot-separated parts; header is EdDSA / JWT / hub-1", [token.split(".").length, ok1.header], [3, { alg: "EdDSA", typ: "JWT", kid: "hub-1" }]);
   eq("sso token: verifies with the matching public key and carries the claims", [ok1.claims.iss, ok1.claims.aud, ok1.claims.sub, ok1.claims.email, ok1.claims.name, ok1.claims.role, ok1.claims.exp - ok1.claims.iat],
-    [SSO_ISSUER, AUD, person.id, person.email, person.name, "admin", 60]);
+    [SSO_ISSUER, AUD, person.id, person.email, person.name, "user", 60]);
   eq("sso token: the key id constant is hub-1", SSO_KID, "hub-1");
   eq("sso token: a wrong audience is rejected", await why(() => verifySsoToken(token, hub.publicPem, { audience: "some-other-app" })), "ERR_JWT_CLAIM_VALIDATION_FAILED");
   const old = await signSsoToken(key, buildClaims({ slug: AUD, user: person, role: "user", now: Date.now() - 5 * 60 * 1000 }));
@@ -470,7 +470,7 @@ const ssoTests = (async () => {
   const forged = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(p, "base64url").toString()), role: "admin", email: "someone-else@mcciapune.com" })).toString("base64url");
   eq("sso token: a tampered payload is rejected", await why(() => verifySsoToken(`${h}.${forged}.${sig}`, hub.publicPem, { audience: AUD })), "ERR_JWS_SIGNATURE_VERIFICATION_FAILED");
   const other = pair();
-  const strangers = await signSsoToken(await loadSigningKey(other.env), buildClaims({ slug: AUD, user: person, role: "admin" }));
+  const strangers = await signSsoToken(await loadSigningKey(other.env), buildClaims({ slug: AUD, user: person, role: "user" }));
   eq("sso token: a token signed by a different key is rejected", await why(() => verifySsoToken(strangers, hub.publicPem, { audience: AUD })), "ERR_JWS_SIGNATURE_VERIFICATION_FAILED");
   eq("sso token: an unsigned (alg none) token is rejected", await why(() => verifySsoToken(`${Buffer.from('{"alg":"none"}').toString("base64url")}.${p}.`, hub.publicPem, { audience: AUD })) === "accepted", false);
 
@@ -484,10 +484,7 @@ const ssoTests = (async () => {
   eq("sso key: the public key is what the private key makes", createPublicKey(Buffer.from(hub.env, "base64").toString()).export({ type: "spki", format: "pem" }), hub.publicPem);
 
   // Role mapping
-  eq("sso role: the Support Admin is an admin everywhere, whatever the grant says", [ssoRoleFor("head_admin", null), ssoRoleFor("head_admin", "user"), ssoRoleFor("head_admin", "admin")], ["admin", "admin", "admin"]);
-  eq("sso role: everyone else gets the role on their grant (default user)", [ssoRoleFor("member", "admin"), ssoRoleFor("member", "user"), ssoRoleFor("member", null), ssoRoleFor("admin", undefined), ssoRoleFor("super_admin", "user"), ssoRoleFor("dept_lead", "admin")], ["admin", "user", "user", "user", "user", "admin"]);
-  eq("sso role: a Super Admin set on the grant is a super_admin, the Support Admin included", [ssoRoleFor("member", "super_admin"), ssoRoleFor("head_admin", "super_admin"), ssoRoleFor("dept_lead", "super_admin")], ["super_admin", "super_admin", "super_admin"]);
-  eq("sso role: only user, admin and super_admin exist", [...SSO_ROLES], ["user", "admin", "super_admin"]);
+  eq("sso role: every token says user; each application decides roles itself", SSO_TOKEN_ROLE, "user");
 
   // Slug rules
   eq("sso slug: valid ones", ["mccia-search", "ab", "a1", "x-y-z", "a".repeat(40), "app2"].map(slugProblem), [null, null, null, null, null, null]);

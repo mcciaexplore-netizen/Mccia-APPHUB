@@ -7,7 +7,6 @@ import { db } from "@/db";
 import { apps, departments, userAppAccess, users } from "@/db/schema";
 import { requireArea } from "@/lib/permissions";
 import { isSuper } from "@/lib/rbac";
-import { SSO_ROLES, type SsoRole } from "@/lib/sso-rules";
 import { AppAccessEditor } from "./AppAccessEditor";
 
 export const metadata = { title: "App access · MCCIA App Hub" };
@@ -18,12 +17,12 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (!z.string().uuid().safeParse(id).success) notFound();
   // The application and the people lists are read together; a missing application is still a 404.
   const [[app], people, granted] = await Promise.all([
-    db.select({ id: apps.id, name: apps.name, department: departments.name, sso: apps.ssoEnabled })
+    db.select({ id: apps.id, name: apps.name, department: departments.name })
       .from(apps).innerJoin(departments, eq(departments.id, apps.departmentId)).where(eq(apps.id, id)),
     // The Support Admin already sees every app, so they are not listed. An Admin reaches only plain users.
     db.select({ id: users.id, name: users.name, email: users.email, designation: users.designation, isActive: users.isActive })
       .from(users).where(isSuper(me) ? notInArray(users.role, ["head_admin"]) : inArray(users.role, ["member", "dept_lead"])).orderBy(users.name),
-    db.select({ userId: userAppAccess.userId, role: userAppAccess.appRole }).from(userAppAccess).where(eq(userAppAccess.appId, id)),
+    db.select({ userId: userAppAccess.userId }).from(userAppAccess).where(eq(userAppAccess.appId, id)),
   ]);
   if (!app) notFound();
 
@@ -34,8 +33,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         <h2 className="text-2xl">{app.name}</h2>
         <p className="text-sm text-muted">{app.department}</p>
       </div>
-      <AppAccessEditor appId={app.id} people={people} initial={granted.map((g) => g.userId)}
-        sso={app.sso} roles={Object.fromEntries(granted.map((g) => [g.userId, (SSO_ROLES as readonly string[]).includes(g.role) ? g.role : "user"])) as Record<string, SsoRole>} canSetRole={isSuper(me)} />
+      <AppAccessEditor appId={app.id} people={people} initial={granted.map((g) => g.userId)} />
     </div>
   );
 }

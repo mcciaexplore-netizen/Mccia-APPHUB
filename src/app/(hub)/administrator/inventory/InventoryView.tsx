@@ -8,9 +8,7 @@ import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import { checkApp, checkAllApps, createApp, deleteApp, setAppStatus, updateApp } from "@/actions/apps";
-import { setAppRoles } from "@/actions/access";
 import { AppForm } from "../departments/forms";
-import { initialRoleLists, sameRoleLists, type RoleHolder } from "../departments/AppRoles";
 import { toCsv } from "@/lib/csv";
 import { formatIST } from "@/lib/format";
 
@@ -19,8 +17,6 @@ type Row = {
   id: string; name: string; description: string | null; url: string; department: string; status: "active" | "testing" | "unavailable"; visible: boolean; builtIn: boolean; people: number; check: Check | null;
   // What the Edit form starts from (the same fields the department page's Edit uses).
   departmentId: string; icon: string; appToken: string | null; isActive: boolean; ssoEnabled: boolean; ssoSlug: string | null; ssoCallbackUrl: string | null;
-  // Who has it and their role, for the App roles section: only for a single sign-on application, and only when the Support Admin is looking.
-  roleHolders: RoleHolder[] | null;
 };
 
 const DAY = 86400000;
@@ -136,18 +132,9 @@ export function InventoryView({ rows, departments }: { rows: Row[]; departments:
       {edit && (
         <Modal title="Edit application" onClose={() => setEdit(null)}>
           {/* The department stays as it is, like the Edit on the department page. */}
-          <AppForm departments={[{ id: edit.departmentId, name: edit.department }]} submitLabel="Save" pending={pending} roleHolders={edit.roleHolders}
+          <AppForm departments={[{ id: edit.departmentId, name: edit.department }]} submitLabel="Save" pending={pending}
             initial={{ departmentId: edit.departmentId, name: edit.name, description: edit.description ?? "", url: edit.url, icon: edit.icon, appToken: edit.appToken ?? "", isActive: edit.isActive, status: edit.status, ssoEnabled: edit.ssoEnabled, ssoSlug: edit.ssoSlug ?? "", ssoCallbackUrl: edit.ssoCallbackUrl ?? "" }}
-            onSubmit={(v, roles) => start(async () => {
-              const x = await updateApp(edit.id, { ...v, departmentId: edit.departmentId });
-              if (!x.ok) return toast.error(x.error);
-              // The roles are saved after the application, so single sign-on is already on when they are checked.
-              if (roles && edit.roleHolders && !sameRoleLists(roles, initialRoleLists(edit.roleHolders))) {
-                const y = await setAppRoles(edit.id, roles);
-                if (!y.ok) { router.refresh(); return toast.error(`Application saved, but the roles were not: ${y.error}`); }
-              }
-              toast.success("Application saved"); setEdit(null); router.refresh();
-            })} />
+            onSubmit={(v) => start(async () => { const x = await updateApp(edit.id, { ...v, departmentId: edit.departmentId }); if (x.ok) { toast.success("Application saved"); setEdit(null); router.refresh(); } else toast.error(x.error); })} />
         </Modal>
       )}
     </div>

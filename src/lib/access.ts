@@ -55,14 +55,14 @@ export async function getLaunchTarget(user: Pick<User, "id" | "role">, appId: st
 /**
  * Resolves a single sign-on application by its slug for /launch/<slug>, or null when there is no such application, single sign-on is not
  * switched on for it, or it (or its department) is inactive: all of those are "not found". Unlike getLaunchTarget it also says whether
- * this person may open it, so the route can answer "no access" differently from "not found". The Support Admin may open every one and is
- * an admin in each; everyone else needs a grant, and gets the role stored on it.
+ * this person may open it, so the route can answer "no access" differently from "not found". The Support Admin may open every one;
+ * everyone else needs a grant.
  */
 export async function getSsoTarget(user: Pick<User, "id" | "role">, slug: string) {
   const [row] = await db
     .select({
       id: apps.id, name: apps.name, url: apps.url, departmentId: apps.departmentId, status: apps.status, callbackUrl: apps.ssoCallbackUrl,
-      grantId: userAppAccess.id, appRole: userAppAccess.appRole,
+      grantId: userAppAccess.id,
     })
     .from(apps)
     .innerJoin(departments, eq(departments.id, apps.departmentId))

@@ -226,8 +226,8 @@ export const userAppAccess = pgTable(
       .references(() => apps.id, { onDelete: "cascade" }),
     grantedById: uuid("granted_by_id").references(() => users.id, { onDelete: "set null" }),
     grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
-    // The person's role inside a single sign-on application: "user", "admin" or "super_admin". Only the Support Admin changes it. Ignored by
-    // applications without single sign-on; the Support Admin is at least an admin in every single sign-on application whatever this says.
+    // No longer used: the hub only decides who may open an application, and every single sign-on token says role "user"; each application
+    // sets roles itself. Kept (always "user" for new grants) so no migration is needed.
     appRole: text("app_role").notNull().default("user"),
   },
   (t) => [

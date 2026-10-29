@@ -1,11 +1,10 @@
 import "server-only";
-import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, userAppAccess, users, type User } from "@/db/schema";
 import { notifyUsers } from "@/lib/notifications";
 import { writeAudit, type AuditEntry } from "@/lib/audit";
-import { canGrantAny, canManageAccess, firstUngrantable, grantableApps, isSuper } from "@/lib/rbac";
-import type { SsoRole } from "@/lib/sso-rules";
+import { canGrantAny, canManageAccess, firstUngrantable, grantableApps } from "@/lib/rbac";
 import { UserError } from "@/lib/user-error";
 import { logError } from "@/lib/log-error";
 
@@ -195,84 +194,4 @@ export async function applyAppUserChange(actor: Actor, req: AppUsersRequest): Pr
   const pick = [del && sql`select 'removed' as k, user_id, app_id from del`, ins && sql`select 'added' as k, user_id, app_id from ins`].filter((x): x is SQL => x !== null);
   const rows = await run(sql`with ${sql.join(parts, sql`, `)} ${sql.join(pick, sql` union all `)}`);
   return settle(actor, { userIds: everyone, targets, appName: (id) => ({ id, name: names.get(id) ?? "Deleted application" }) }, rows, req.source, "app");
-}
-
-
-/**
- * Writes a role change, turning the database refusing "super_admin" into a plain answer. That refusal only happens while migration 0020 is
- * not on this database (it widened the check on app_role); everything else is left to the caller's error handling.
- */
-async function writeRoles(write: () => Promise<unknown>) {
-  try {
-    await write();
-  } catch (e) {
-    const x = e as { code?: unknown; cause?: { code?: unknown; constraint?: unknown } };
-    if ((x.code ?? x.cause?.code) === "23514" && String(x.cause?.constraint ?? "").includes("app_role")) {
-      logError("[hub] access: super_admin refused by the database (migration 0020 not applied)", e);
-      throw new UserError("Super Admin can't be saved yet: the database update for it (migration 0020) hasn't been applied. Admins can be saved; run scripts/apply-0020-in-neon-console.sql in Neon first.");
-    }
-    throw e;
-  }
-}
-
-/**
- * Sets a person's role inside a single sign-on application ("user", "admin" or "super_admin"; it is what the token says about them). Only the Support Admin
- * may do this, and the person must already have the application (a role belongs to the grant). Re-granting access keeps the role: the
- * grant statements above do nothing when the grant is already there. Audited as access.role.
- */
-export async function applyAppUserRole(actor: Pick<User, "id" | "name" | "role">, req: { appId: string; userId: string; role: SsoRole }): Promise<{ changed: boolean }> {
-  if (!isSuper(actor)) throw new UserError("Only the Support Admin can change a person's role in an application.");
-  const [[app], [person], [grant]] = await Promise.all([
-    db.select({ name: apps.name }).from(apps).where(eq(apps.id, req.appId)),
-    db.select({ name: users.name }).from(users).where(eq(users.id, req.userId)),
-    db.select({ role: userAppAccess.appRole }).from(userAppAccess).where(and(eq(userAppAccess.appId, req.appId), eq(userAppAccess.userId, req.userId))),
-  ]);
-  if (!app) throw new UserError("That application no longer exists. Reload and try again.");
-  if (!person) throw new UserError("That user no longer exists. Reload and try again.");
-  if (!grant) throw new UserError(`${person.name} does not have access to ${app.name}. Give them access first.`);
-  if (grant.role === req.role) return { changed: false };
-  await writeRoles(() => db.update(userAppAccess).set({ appRole: req.role }).where(and(eq(userAppAccess.appId, req.appId), eq(userAppAccess.userId, req.userId))));
-  try {
-    await writeAudit(actor, [{ action: "access.role", targetType: "user", targetId: req.userId, targetLabel: person.name, details: { application: app.name, from: grant.role, to: req.role } }]);
-  } catch (e) {
-    logError("[hub] access: audit write failed", e);
-    throw new UserError("The role was changed, but the change could not be recorded in the audit log. Please tell an administrator.");
-  }
-  return { changed: true };
-}
-
-/**
- * Sets every role in one single sign-on application at once, from the Edit form's App roles: the people listed as admins and super admins
- * get that role, everyone else who has the application becomes a user. Only the Support Admin, only people who already have the application,
- * and nobody in both lists. One statement changes only the rows whose role really changes; each change is audited as access.role.
- */
-export async function applyAppRoles(actor: Pick<User, "id" | "name" | "role">, req: { appId: string; admins: string[]; superAdmins: string[] }): Promise<{ changed: number }> {
-  if (!isSuper(actor)) throw new UserError("Only the Support Admin can change people's roles in an application.");
-  const admins = new Set(req.admins);
-  const superAdmins = new Set(req.superAdmins);
-  if (req.admins.some((id) => superAdmins.has(id))) throw new UserError("A person can be an Admin or a Super Admin, not both.");
-  const [[app], grants] = await Promise.all([
-    db.select({ name: apps.name, sso: apps.ssoEnabled }).from(apps).where(eq(apps.id, req.appId)),
-    db.select({ userId: userAppAccess.userId, role: userAppAccess.appRole, name: users.name }).from(userAppAccess)
-      .innerJoin(users, eq(users.id, userAppAccess.userId)).where(eq(userAppAccess.appId, req.appId)),
-  ]);
-  if (!app) throw new UserError("That application no longer exists. Reload and try again.");
-  if (!app.sso) throw new UserError("Roles only apply to an application with single sign-on.");
-  const granted = new Set(grants.map((g) => g.userId));
-  if ([...admins, ...superAdmins].some((id) => !granted.has(id))) throw new UserError("Everyone given a role must already have this application. Reload and try again.");
-
-  const want = (id: string): SsoRole => (superAdmins.has(id) ? "super_admin" : admins.has(id) ? "admin" : "user");
-  const changes = grants.filter((g) => g.role !== want(g.userId));
-  if (changes.length === 0) return { changed: 0 };
-  const among = (ids: Set<string>) => (ids.size ? sql`${userAppAccess.userId} in (${list([...ids])})` : sql`false`);
-  const role = sql`case when ${among(superAdmins)} then 'super_admin' when ${among(admins)} then 'admin' else 'user' end`;
-  await writeRoles(() => db.update(userAppAccess).set({ appRole: role })
-    .where(and(eq(userAppAccess.appId, req.appId), inArray(userAppAccess.userId, changes.map((c) => c.userId)))));
-  try {
-    await writeAudit(actor, changes.map((c) => ({ action: "access.role", targetType: "user", targetId: c.userId, targetLabel: c.name, details: { application: app.name, from: c.role, to: want(c.userId) } })));
-  } catch (e) {
-    logError("[hub] access: audit write failed", e);
-    throw new UserError("The roles were changed, but the change could not be recorded in the audit log. Please tell an administrator.");
-  }
-  return { changed: changes.length };
 }

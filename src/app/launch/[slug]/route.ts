@@ -8,7 +8,7 @@ import { getCurrentUser } from "@/lib/permissions";
 import { isSuper } from "@/lib/rbac";
 import { SsoConfigError, buildClaims, loadSigningKey, signSsoToken } from "@/lib/sso";
 import { autoPostHtml, launchHeaders, messageHeaders, messageHtml, newNonce } from "@/lib/sso-page";
-import { callbackProblem, slugProblem, ssoRoleFor } from "@/lib/sso-rules";
+import { SSO_TOKEN_ROLE, callbackProblem, slugProblem } from "@/lib/sso-rules";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     let token: string;
     try {
       const key = await loadSigningKey();
-      token = await signSsoToken(key, buildClaims({ slug, user, role: ssoRoleFor(user.role, target.appRole) }));
+      token = await signSsoToken(key, buildClaims({ slug, user, role: SSO_TOKEN_ROLE }));
     } catch (e) {
       return notSetUp(e instanceof SsoConfigError ? e.code : "sign_failed");
     }

@@ -7,7 +7,7 @@ import type { SsoRole } from "@/lib/sso-rules";
  * The application checks it with the hub's public key. Nothing here touches the database; the route that calls it decides who may get one.
  *
  *   header  { alg: "EdDSA", typ: "JWT", kid: "hub-1" }
- *   claims  iss "mccia-app-hub" · aud <the application's SSO slug> · sub <hub user id> · email · name · role "user"|"admin"|"super_admin" · iat · exp (iat + 60 s) · jti
+ *   claims  iss "mccia-app-hub" · aud <the application's SSO slug> · sub <hub user id> · email · name · role "user" (always; the application decides roles itself) · iat · exp (iat + 60 s) · jti
  *
  * The private key lives only in the SSO_PRIVATE_KEY setting: the base64 of a PKCS8 PEM Ed25519 private key, on one line (scripts/sso-keygen.mjs makes one).
  */

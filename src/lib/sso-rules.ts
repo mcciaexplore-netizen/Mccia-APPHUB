@@ -3,8 +3,12 @@
  * No database and no keys, so the admin form, the server actions, the launch route and the tests all ask the same functions.
  */
 
-export const SSO_ROLES = ["user", "admin", "super_admin"] as const;
-export type SsoRole = (typeof SSO_ROLES)[number];
+/**
+ * The role every single sign-on token carries. The hub only decides who may open an application; what someone may do inside it is
+ * the application's own decision (its own settings), so the token never claims more than this.
+ */
+export const SSO_TOKEN_ROLE = "user" as const;
+export type SsoRole = typeof SSO_TOKEN_ROLE;
 
 const SSO_SLUG_MIN = 2;
 const SSO_SLUG_MAX = 40;
@@ -50,13 +54,3 @@ export function callbackProblem(callback: string, appUrl: string, opts: { produc
   return null;
 }
 
-export const SSO_ROLE_LABEL: Record<SsoRole, string> = { user: "User", admin: "Admin", super_admin: "Super Admin" };
-
-/**
- * The role a person gets in a single sign-on application: the one set for them there (default user). The Support Admin is at least an
- * admin in every one, and a Super Admin where that is set for them.
- */
-export function ssoRoleFor(hubRole: string, appRole: string | null | undefined): SsoRole {
-  if (appRole === "super_admin") return "super_admin";
-  return hubRole === "head_admin" || appRole === "admin" ? "admin" : "user";
-}
