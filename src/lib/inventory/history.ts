@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { inventoryItems as items, inventoryPurchaseOrders as pos, inventoryRequests as reqs, inventoryStockMovements as m, inventoryVendors as vendors } from "@/db/inventory-schema";
 
 /**
- * Read-only stock history for store staff: every movement (Stock movements) and the inward ones only (Purchases). Filters arrive as
+ * Read-only stock history for Inventory admins: every movement (Stock movements) and the inward ones only (Purchases). Filters arrive as
  * text from the address and are checked here; dates are whole days in India time ("from" and "to" both included).
  */
 

@@ -44,7 +44,7 @@ function NewRequest({ items, pending, onSubmit }: { items: ItemOption[]; pending
   );
 }
 
-/** Requests: everyone raises them and follows their own; store staff see all of them and approve, reject or fulfil. */
+/** Requests: everyone raises them and follows their own; Inventory admins see all of them and approve, reject or fulfil. */
 export function RequestsView({ rows, items, canManage, status, counts }: { rows: RequestView[]; items: ItemOption[]; canManage: boolean; status: Status | ""; counts?: Record<Status, number> }) {
   const router = useRouter();
   const toast = useToast();

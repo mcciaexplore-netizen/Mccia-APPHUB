@@ -4,8 +4,8 @@ import { requestDecision } from "@/lib/inventory/validation";
 
 export const dynamic = "force-dynamic";
 
-/** Store staff: approve, reject (with a reason) or fulfil a request. Fulfilling takes the stock out and is refused if there is not enough. */
-export const PATCH = route<{ id: string }>({ roles: ["inventory_staff", "inventory_admin"] }, async ({ req, user, params }) => {
+/** Inventory admins: approve, reject (with a reason) or fulfil a request. Fulfilling takes the stock out and is refused if there is not enough. */
+export const PATCH = route<{ id: string }>({ roles: ["inventory_admin"] }, async ({ req, user, params }) => {
   const id = idParam(params.id);
   const d = await readJson(req, requestDecision);
   if (d.action === "approve") await approveRequest(id, user);

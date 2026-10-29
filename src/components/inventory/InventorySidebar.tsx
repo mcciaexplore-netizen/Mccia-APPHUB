@@ -10,7 +10,7 @@ const row = (active: boolean) =>
   }`;
 
 /** The Inventory module's own sidebar: what this person's roles let them open, with the pages not built yet greyed out. */
-export function InventorySidebar({ roles, canManageRoles = false }: { roles: InventoryRole[]; canManageRoles?: boolean }) {
+export function InventorySidebar({ roles }: { roles: InventoryRole[] }) {
   const pathname = usePathname();
   // A section stays highlighted on its own pages (a purchase order under Purchase orders); the dashboard only on itself.
   const active = (href: string) => pathname === href || (href !== "/inventory" && pathname.startsWith(`${href}/`));
@@ -18,7 +18,7 @@ export function InventorySidebar({ roles, canManageRoles = false }: { roles: Inv
     <nav aria-label="Inventory" className="rounded-[14px] border border-gray-200 bg-white py-3">
       <p className="px-4 pb-2 text-[0.66rem] font-bold uppercase tracking-widest text-subtle">Inventory</p>
       <ul>
-        {navFor(roles, canManageRoles).map((i) => (
+        {navFor(roles).map((i) => (
           <li key={i.href}>
             {i.disabled ? (
               <span className="flex min-h-10 cursor-default items-center gap-2 border-l-2 border-transparent pl-4 pr-3 text-sm font-semibold text-subtle" aria-disabled="true">

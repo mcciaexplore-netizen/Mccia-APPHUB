@@ -9,9 +9,9 @@ export const metadata = { title: "Purchases · Inventory · MCCIA App Hub" };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 
-/** Goods that came into stock (inward movements), with vendor, PO, challan and rate, for store staff. Read only. */
+/** Goods that came into stock (inward movements), with vendor, PO, challan and rate, for Inventory admins. Read only. */
 export default async function PurchasesPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  await requirePage("inventory_staff", "inventory_admin");
+  await requirePage("inventory_admin");
   const sp = await searchParams;
   const f = { vendor: one(sp.vendor), from: one(sp.from), to: one(sp.to) };
   const [{ rows, totalPaise, capped }, vendors] = await Promise.all([listInward({ vendorId: f.vendor, from: f.from, to: f.to }), listVendors({ includeInactive: true })]);

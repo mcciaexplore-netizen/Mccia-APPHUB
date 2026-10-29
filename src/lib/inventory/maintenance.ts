@@ -7,9 +7,9 @@ import { InventoryError } from "./errors";
 import type { InventoryUser } from "./host-adapter";
 
 /**
- * Maintenance tickets: anyone reports a problem (with an optional photo); store staff move it from open to in progress to resolved, with a
+ * Maintenance tickets: anyone reports a problem (with an optional photo); Inventory admins move it from open to in progress to resolved, with a
  * resolution note and photo. Photos are kept as data URLs in the ticket row and never read with the list: each is served on its own by
- * /api/inventory/maintenance/<id>/photo, to the person who raised it and to store staff. Audited as inventory.ticket_raised /
+ * /api/inventory/maintenance/<id>/photo, to the person who raised it and to Inventory admins. Audited as inventory.ticket_raised /
  * ticket_updated / ticket_resolved.
  */
 
@@ -23,7 +23,7 @@ export type TicketRow = {
   raisedAt: Date; resolvedByName: string | null; resolvedAt: Date | null; resolutionNote: string | null; hasResolutionPhoto: boolean;
 };
 
-/** Everyone's tickets (store staff) or only the person's own, open ones first. The photos themselves are not read here. */
+/** Everyone's tickets (Inventory admins) or only the person's own, open ones first. The photos themselves are not read here. */
 export async function listTickets(f: { mineOnly?: string; status?: TicketStatus }): Promise<TicketRow[]> {
   const where: SQL[] = [];
   if (f.mineOnly) where.push(eq(t.raisedByUserId, f.mineOnly));

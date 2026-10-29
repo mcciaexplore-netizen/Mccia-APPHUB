@@ -9,7 +9,6 @@ import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import { checkApp, checkAllApps, createApp, deleteApp, setAppStatus, updateApp } from "@/actions/apps";
 import { AppForm } from "../departments/forms";
-import { InventoryRolesTable, type InventoryRoleRow } from "@/components/inventory/RolesView";
 import { toCsv } from "@/lib/csv";
 import { formatIST } from "@/lib/format";
 
@@ -30,11 +29,7 @@ function verification(r: Row): { label: string; cls: string } {
 }
 
 /** Every application the hub lists: what it is, where it points, who can open it, and the result of the last real check. */
-export function InventoryView({ rows, departments, inventoryRoles }: {
-  rows: Row[]; departments: { id: string; name: string }[];
-  /** The built-in Inventory module's roles: given only to the Support Admin, while Inventory is switched on. */
-  inventoryRoles?: { rows: InventoryRoleRow[]; meId: string } | null;
-}) {
+export function InventoryView({ rows, departments }: { rows: Row[]; departments: { id: string; name: string }[] }) {
   const router = useRouter();
   const toast = useToast();
   const confirm = useConfirm();
@@ -42,7 +37,6 @@ export function InventoryView({ rows, departments, inventoryRoles }: {
   const params = useSearchParams();
   const [adding, setAdding] = useState(() => params.get("add") === "1");
   const [edit, setEdit] = useState<Row | null>(null);
-  const [rolesOpen, setRolesOpen] = useState(false);
   const [pending, start] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -95,22 +89,6 @@ export function InventoryView({ rows, departments, inventoryRoles }: {
       <div className="table-wrap"><table>
         <thead><tr><th>Application</th><th>Department</th><th>Address</th><th>Label</th><th>Who can open it</th><th>Last check</th><th className="text-right">Actions</th></tr></thead>
         <tbody>
-          {inventoryRoles && (
-            // The Inventory module is built into the hub, not a row of the application list: this fixed row only opens its roles.
-            <tr>
-              <td><b>Inventory</b><span className="badge badge-neutral ml-2">Built into the hub</span>
-                <span className="block text-xs text-muted">Items, requests, issues, purchase orders, vendors and maintenance.</span></td>
-              <td>Built into the hub</td>
-              <td className="text-xs text-muted">/inventory</td>
-              <td className="text-xs text-muted">—</td>
-              <td className="text-xs">Everyone signed in<span className="block text-muted">
-                {inventoryRoles.rows.filter((x) => x.role === "inventory_admin").length} admins · {inventoryRoles.rows.filter((x) => x.role === "inventory_staff").length} staff</span></td>
-              <td><span className="badge badge-neutral">Built into the hub</span></td>
-              <td><div className="flex justify-end gap-1.5">
-                <button className="chip !p-1.5 text-muted" aria-label="Edit Inventory roles" title="Roles: who runs the store" onClick={() => setRolesOpen(true)}><Pencil size={14} /></button>
-              </div></td>
-            </tr>
-          )}
           {rows.map((r) => {
             const v = verification(r);
             return (
@@ -149,14 +127,6 @@ export function InventoryView({ rows, departments, inventoryRoles }: {
         <Modal title="Add application" onClose={() => setAdding(false)}>
           <AppForm departments={departments} initial={{ departmentId: departments[0]?.id }} submitLabel="Add application" pending={pending}
             onSubmit={(v) => start(async () => { const x = await createApp(v); if (x.ok) { toast.success("Application added"); setAdding(false); router.refresh(); } else toast.error(x.error); })} />
-        </Modal>
-      )}
-      {rolesOpen && inventoryRoles && (
-        <Modal title="Inventory: roles" onClose={() => setRolesOpen(false)}>
-          <div className="space-y-3">
-            <p className="text-sm text-muted">Who runs the store. <b>Admin</b>: everything in Inventory, including its Settings. <b>Staff</b>: items, stock, requests and purchases. <b>None</b>: they can still browse the catalogue and ask for items, like everyone in the hub. Inventory admins can also change this in Inventory → Settings.</p>
-            <InventoryRolesTable rows={inventoryRoles.rows} meId={inventoryRoles.meId} />
-          </div>
         </Modal>
       )}
       {edit && (

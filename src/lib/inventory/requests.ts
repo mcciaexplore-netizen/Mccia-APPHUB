@@ -7,7 +7,7 @@ import { InventoryError } from "./errors";
 import type { InventoryUser } from "./host-adapter";
 
 /**
- * Requisitions: anyone signed in asks the store for an item; store staff approve, reject (with a reason) or fulfil.
+ * Requisitions: anyone signed in asks the store for an item; Inventory admins approve, reject (with a reason) or fulfil.
  * pending → approved → fulfilled, or pending → rejected. Every step is a conditional update on the status it starts from, so two people
  * acting at once cannot both succeed. Fulfilling takes the stock out, writes the issue movement and closes the request in ONE statement.
  */
@@ -24,7 +24,7 @@ export type RequestRow = {
   requestedByUserId: string; requestedByName: string; requestedAt: Date; resolvedByName: string | null; resolvedAt: Date | null; rejectReason: string | null;
 };
 
-/** Everyone's requests (store staff), or only the person's own. Newest first; waiting ones first when not filtered. */
+/** Everyone's requests (Inventory admins), or only the person's own. Newest first; waiting ones first when not filtered. */
 export async function listRequests(f: { mineOnly?: string; status?: RequestStatus }): Promise<RequestRow[]> {
   const where: SQL[] = [];
   if (f.mineOnly) where.push(eq(inventoryRequests.requestedByUserId, f.mineOnly));

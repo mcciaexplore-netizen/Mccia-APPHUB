@@ -1,24 +1,26 @@
 /**
- * What the Inventory module is, for the host: its roles and its menu. Pure data (no server code), so the client sidebar can import it too.
+ * What the Inventory module is, for the host: who may open it, its roles and its menu. Pure data and functions (no server code), so the
+ * client sidebar and the unit tests can import it too.
  *
- * Roles:
- *   requester        everyone signed in to the hub: raise a request for an item, report a maintenance problem, follow their own
- *   inventory_staff  run the store: items and stock, issues and returns, requests, purchases, purchase orders, vendors, tickets
- *   inventory_admin  everything staff can do, plus who holds these roles and the module's settings
- * Staff and admin are granted in inventory_user_roles; the Support Admin is always an inventory_admin.
+ * Access works like every other application in the hub: the Support Admin can always open it; everyone else needs to have been given the
+ * Inventory application (a row in Administrator → Applications whose URL is /inventory) with the shield button.
+ *
+ * Roles come from the person's role in the hub; nothing is granted inside the module:
+ *   inventory_admin  the Support Admin, the Super Admin and Admins: everything (items, categories, vendors, purchase orders, requests,
+ *                    issues and returns, maintenance, the stock history and purchases)
+ *   requester        everyone else who may open it: the dashboard, the item list (to look), and their own requests and maintenance tickets
  */
 
-export type InventoryRole = "requester" | "inventory_staff" | "inventory_admin";
-export const ALL_ROLES: readonly InventoryRole[] = ["requester", "inventory_staff", "inventory_admin"];
-/** The roles that run the store. Everyone else gets the requester's pages only. */
-export const STAFF_ROLES: readonly InventoryRole[] = ["inventory_staff", "inventory_admin"];
-export const ROLE_LABEL: Record<InventoryRole, string> = { requester: "Requester", inventory_staff: "Inventory staff", inventory_admin: "Inventory admin" };
-/** The two roles that are granted (in inventory_user_roles). A person holds at most one of them. */
-export const GRANTED_ROLES = ["inventory_admin", "inventory_staff"] as const;
-export type GrantedRole = (typeof GRANTED_ROLES)[number];
+export type InventoryRole = "requester" | "inventory_admin";
+export const ALL_ROLES: readonly InventoryRole[] = ["requester", "inventory_admin"];
+export const ROLE_LABEL: Record<InventoryRole, string> = { requester: "User", inventory_admin: "Inventory admin" };
 
-/** Who may open Settings and grant or remove the roles above: an Inventory admin, and the hub's Super Admin and Support Admin. */
-export const canManageRoles = (hubRole: string, roles: readonly InventoryRole[]) => roles.includes("inventory_admin") || hubRole === "super_admin" || hubRole === "head_admin";
+/** The hub roles that run the store. */
+const ADMIN_HUB_ROLES = ["head_admin", "super_admin", "admin"];
+export const inventoryRoleFor = (hubRole: string): InventoryRole => (ADMIN_HUB_ROLES.includes(hubRole) ? "inventory_admin" : "requester");
+
+/** The application rows that stand for this module: their URL is the module's own path (as /approvals is for the Approval System). */
+export const INVENTORY_URL_PATTERN = "^/inventory/?$";
 
 export type InventoryNavItem = {
   label: string;
@@ -27,11 +29,8 @@ export type InventoryNavItem = {
   roles?: readonly InventoryRole[];
   /** Not built yet: shown greyed out with a "Coming soon" tag, and not a link. */
   disabled?: boolean;
-  /** Only for people who may manage roles (see canManageRoles), whatever their module roles. */
-  manageRoles?: boolean;
 };
 
-const STAFF = STAFF_ROLES;
 const ADMIN = ["inventory_admin"] as const;
 
 export const inventoryNav: InventoryNavItem[] = [
@@ -39,14 +38,12 @@ export const inventoryNav: InventoryNavItem[] = [
   { label: "Items", href: "/inventory/items" },
   { label: "Categories", href: "/inventory/categories", roles: ADMIN },
   { label: "Requests", href: "/inventory/requests" },
-  { label: "Issues & returns", href: "/inventory/issues" },
-  { label: "Stock movements", href: "/inventory/movements", roles: STAFF },
-  { label: "Purchases", href: "/inventory/purchases", roles: STAFF },
+  { label: "Issues & returns", href: "/inventory/issues", roles: ADMIN },
+  { label: "Stock movements", href: "/inventory/movements", roles: ADMIN },
+  { label: "Purchases", href: "/inventory/purchases", roles: ADMIN },
   { label: "Purchase orders", href: "/inventory/purchase-orders", roles: ADMIN },
-  { label: "Vendors", href: "/inventory/vendors" },
+  { label: "Vendors", href: "/inventory/vendors", roles: ADMIN },
   { label: "Maintenance", href: "/inventory/maintenance" },
-  { label: "Settings", href: "/inventory/settings", manageRoles: true },
 ];
 
-export const navFor = (roles: readonly InventoryRole[], mayManageRoles = false) =>
-  inventoryNav.filter((i) => (i.manageRoles ? mayManageRoles : !i.roles || i.roles.some((r) => roles.includes(r))));
+export const navFor = (roles: readonly InventoryRole[]) => inventoryNav.filter((i) => !i.roles || i.roles.some((r) => roles.includes(r)));

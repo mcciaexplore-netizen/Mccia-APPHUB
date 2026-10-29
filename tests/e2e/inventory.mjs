@@ -1,12 +1,12 @@
 /**
  * End-to-end test of the Inventory module in a real browser: categories, items, the stock history behind quantity changes, the dashboard
- * figures, Settings (who runs the store), requests, issues and returns, vendors, purchase orders, maintenance tickets, the stock movement
- * and purchase histories, and who may do what (Inventory admin, Inventory staff, everyone else). Run against a site with
+ * figures, who may open it (the hub's application access) and their role in it (from the hub role), requests, issues and returns,
+ * vendors, purchase orders, maintenance tickets, the stock movement and purchase histories, and what each person may do (Inventory admin or user). Run against a site with
  * INVENTORY_ENABLED=true:
  *   E2E_BASE_URL=http://localhost:3000 node tests/e2e/inventory.mjs
  *
  * It WRITES to the database the site uses, but only rows named "ZZI"/"zzi-": categories, items and their stock movements, requests,
- * vendors and purchase orders (to "ZZI" vendors), and a few people and their Inventory roles. Everything is removed when it finishes (and at the start, if an earlier run was interrupted), and it
+ * vendors and purchase orders (to "ZZI" vendors), a few people, and a "ZZI Inventory" application (URL /inventory) given to them. Everything is removed when it finishes (and at the start, if an earlier run was interrupted), and it
  * checks that every other inventory row is exactly as before. It refuses a Neon database unless E2E_ALLOW_NEON=yes.
  */
 import { createRequire } from "node:module";
@@ -58,8 +58,12 @@ const removeTestData = async () => {
   await sql`delete from inventory_maintenance_tickets where title like 'ZZI%'`;
   await sql`delete from access_audit where action like 'inventory.%' and target_label like 'ZZI%' and at >= ${new Date(startedAt.getTime() - 60000)}`;
   const people = (await sql`select id from users where email like 'zzi-%'`).map((r) => r.id);
-  for (const id of people) { await sql`delete from inventory_user_roles where user_id = ${id}`; await sql`delete from activity_log where user_id = ${id}`; }
+  for (const id of people) await sql`delete from activity_log where user_id = ${id}`;
   await sql`delete from users where email like 'zzi-%'`;
+  // The "ZZI Inventory" application (URL /inventory) this run gives people, and its category. Their grants go with them.
+  for (const a of await sql`select id from apps where name like 'ZZI%'`) await sql`delete from activity_log where app_id = ${a.id}`;
+  await sql`delete from apps where name like 'ZZI%'`;
+  await sql`delete from departments where name like 'ZZI%'`;
 };
 // Every inventory row that is not this test's own, so the end can prove none of it changed.
 const snap = async () => JSON.stringify([
@@ -69,17 +73,20 @@ const snap = async () => JSON.stringify([
   await sql`select count(*)::int n from inventory_purchase_orders where vendor_name not like 'ZZI%'`,
   await sql`select id, status from inventory_maintenance_tickets where title not like 'ZZI%' order by id`,
   await sql`select count(*)::int n from inventory_stock_movements m join inventory_items i on i.id = m.item_id where i.name not like 'ZZI%'`,
-  await sql`select user_id, role from inventory_user_roles where user_id not in (select id from users where email like 'zzi-%') order by user_id, role`,
 ]);
 
 await removeTestData();
 const before = await snap();
 const [member] = await sql`insert into users (name, email, password_hash, status) values ('ZZI Member', 'zzi-member@gmail.com', ${hash(PW)}, 'approved') returning id`;
-const [staff] = await sql`insert into users (name, email, password_hash, status) values ('ZZI Staff', 'zzi-staff@gmail.com', ${hash(PW)}, 'approved') returning id`;
-await sql`insert into inventory_user_roles (user_id, role) values (${staff.id}, 'inventory_staff')`;
-await sql`insert into users (name, email, password_hash, status) values ('ZZI Other', 'zzi-other@gmail.com', ${hash(PW)}, 'approved')`;
-const [admin2] = await sql`insert into users (name, email, password_hash, status) values ('ZZI Admin', 'zzi-admin@gmail.com', ${hash(PW)}, 'approved') returning id`;
-await sql`insert into inventory_user_roles (user_id, role) values (${admin2.id}, 'inventory_admin')`;
+// "staff" is a hub Admin, so an Inventory admin; "other" is an ordinary user who is NOT given the Inventory application.
+const [staff] = await sql`insert into users (name, email, password_hash, status, role) values ('ZZI Staff', 'zzi-staff@gmail.com', ${hash(PW)}, 'approved', 'admin') returning id`;
+const [other] = await sql`insert into users (name, email, password_hash, status) values ('ZZI Other', 'zzi-other@gmail.com', ${hash(PW)}, 'approved') returning id`;
+// Access works like any other application: an application whose URL is /inventory, given to the people who may open Inventory.
+const [invDept] = await sql`insert into departments (kind, name, icon) values ('application', 'ZZI Dept', 'Package') returning id`;
+const [invApp] = await sql`insert into apps (department_id, name, url, icon) values (${invDept.id}, 'ZZI Inventory', '/inventory', 'Package') returning id`;
+const grant = (userId) => sql`insert into user_app_access (user_id, app_id) values (${userId}, ${invApp.id}) on conflict do nothing`;
+const ungrant = (userId) => sql`delete from user_app_access where user_id = ${userId} and app_id = ${invApp.id}`;
+await grant(member.id); await grant(staff.id);
 
 const browser = await launch();
 const pageErrors = [];
@@ -95,8 +102,6 @@ const signedIn = async (email, password) => {
 };
 const go = async (page, p) => { const r = await page.goto(BASE + p); await page.waitForLoadState("networkidle").catch(() => {}); return r; };
 const toast = (page, text) => page.getByText(text).first().waitFor({ timeout: 15000 }).then(() => true).catch(() => false);
-const rolesOf = async (id) => (await sql`select role from inventory_user_roles where user_id = ${id} order by role`).map((x) => x.role).join(",");
-const roleAudits = async (id) => (await sql`select action, details->>'role' as role from access_audit where target_id = ${id} and action like 'inventory.role_%' order by at, action`).map((x) => `${x.action.replace("inventory.", "")}:${x.role}`);
 const item = async (name) => (await sql`select * from inventory_items where name = ${name}`)[0];
 const movements = async (name) => sql`select m.kind, m.delta, m.quantity_after, m.reason, m.actor_name from inventory_stock_movements m join inventory_items i on i.id = m.item_id where i.name = ${name} order by m.created_at`;
 const api = (page, url, method, body) => page.evaluate(async ([u, m, b]) => { const r = await fetch(u, { method: m, headers: { "Content-Type": "application/json" }, body: b ? JSON.stringify(b) : undefined }); return { status: r.status, body: await r.json().catch(() => null) }; }, [url, method, body]);
@@ -179,69 +184,41 @@ try {
   check("the category is deleted", await toast(A, "Category deleted") && await poll(async () => !(await sql`select 1 from inventory_categories where name = 'ZZI Stationery'`).length));
   check("…and its item is still there, without a category", (await item("ZZI Paper"))?.category_id === null);
 
-  section("Settings: who runs the store");
-  const set = await go(A, "/inventory/settings");
-  check("the Support Admin opens Settings, which lists the hub's users", set.status() === 200 && (await A.locator("tr", { hasText: "ZZI Member" }).count()) === 1, set.status());
-  check("the Support Admin's own row is a fixed Admin label, not a choice", (await A.locator("tr", { hasText: ADMIN_EMAIL }).getByText("Admin (Support Admin)").count()) === 1 && (await A.locator("tr", { hasText: ADMIN_EMAIL }).locator("select").count()) === 0);
-  const roleSelect = (name) => A.getByLabel(`Inventory role of ${name}`);
-  await roleSelect("ZZI Member").selectOption("inventory_staff");
-  check("making someone Staff says so and stores it", await toast(A, "ZZI Member is now Staff") && await poll(async () => (await rolesOf(member.id)) === "inventory_staff"));
-  check("…and records inventory.role_granted in the hub's audit log", JSON.stringify(await roleAudits(member.id)) === JSON.stringify(["role_granted:inventory_staff"]), JSON.stringify(await roleAudits(member.id)));
-  await A.waitForTimeout(1200);
-  await roleSelect("ZZI Member").selectOption("inventory_admin");
-  check("Staff to Admin leaves exactly one role, Admin", await toast(A, "ZZI Member is now Admin") && await poll(async () => (await rolesOf(member.id)) === "inventory_admin"));
-  check("…recorded as Staff removed and Admin granted", JSON.stringify(await roleAudits(member.id)) === JSON.stringify(["role_granted:inventory_staff", "role_granted:inventory_admin", "role_revoked:inventory_staff"]), JSON.stringify(await roleAudits(member.id)));
-  await A.waitForTimeout(1200);
-  await roleSelect("ZZI Member").selectOption("none");
-  check("removing someone's admin role asks first", (await A.getByRole("dialog").getByText(/will no longer be able to change items/).count()) === 1);
-  await A.getByRole("dialog").getByRole("button", { name: "Remove" }).click();
-  check("…and then removes it, recorded as inventory.role_revoked", await toast(A, "has no Inventory role now") && await poll(async () => (await rolesOf(member.id)) === "")
-    && (await roleAudits(member.id)).at(-1) === "role_revoked:inventory_admin");
-  const supportId = (await sql`select id from users where email = ${ADMIN_EMAIL}`)[0].id;
-  const supportChange = await api(A, "/api/inventory/roles", "PUT", { userId: supportId, role: null });
-  check("the Support Admin's own Admin role cannot be changed here (409)", supportChange.status === 409 && /always an Inventory admin/.test(supportChange.body?.error ?? ""), JSON.stringify(supportChange));
-  const bad = await api(A, "/api/inventory/roles", "PUT", { userId: member.id, role: "requester" });
-  check("a role that is not Admin, Staff or none is refused (400)", bad.status === 400, bad.status);
-
-  section("Administrator → Applications: the built-in Inventory row");
+  section("Access: like any other application");
   {
-    await go(A, "/administrator/inventory");
-    if (new URL(A.url()).pathname === "/unlock") {
-      await A.locator("input[name=password]").fill(ADMIN_PW); await A.getByRole("button", { name: "Unlock" }).click();
-      await A.waitForURL((u) => u.pathname === "/administrator/inventory", { timeout: 30000 }).catch(() => {});
-      await A.waitForLoadState("networkidle").catch(() => {});
-    }
-    const row = A.locator("tr", { hasText: "Items, requests, issues, purchase orders" });
-    await row.first().waitFor({ timeout: 30000 }).catch(() => {}); // the page streams in behind a loading placeholder
-    check("the Support Admin sees a fixed Inventory row, marked built into the hub, with only an Edit roles pencil", (await row.count()) === 1
-      && (await row.getByRole("button").count()) === 1 && (await row.getByRole("button", { name: "Edit Inventory roles" }).count()) === 1);
-    await row.getByRole("button", { name: "Edit Inventory roles" }).click();
-    const d = A.getByRole("dialog", { name: "Inventory: roles" });
-    await d.getByLabel("Inventory role of ZZI Member").selectOption("inventory_staff");
-    check("changing a role there saves it in the same place as Inventory → Settings", await toast(A, "ZZI Member is now Staff") && await poll(async () => (await rolesOf(member.id)) === "inventory_staff"));
-    check("…and is recorded the same way (inventory.role_granted)", (await roleAudits(member.id)).at(-1) === "role_granted:inventory_staff", JSON.stringify(await roleAudits(member.id)));
-    await A.waitForTimeout(1000);
-    await d.getByLabel("Inventory role of ZZI Member").selectOption("none");
-    check("…and removing it there works too", await toast(A, "has no Inventory role now") && await poll(async () => (await rolesOf(member.id)) === ""));
-    await A.keyboard.press("Escape");
-    const appRows = (await A.locator("tbody tr").count()) - 1 - (await A.locator("tbody tr", { hasText: "No applications yet" }).count());
-    check("the other applications' rows keep their own Edit buttons (one per application)", (await A.getByRole("button", { name: /^Edit (?!Inventory roles)/ }).count()) === appRows, appRows);
-    await go(A, "/inventory/settings");
-  }
+    const { ctx: octx, page: O } = await signedIn("zzi-other@gmail.com", PW);
+    check("someone not given the Inventory application has no card for it on the home page", (await O.getByText("ZZI Inventory").count()) === 0);
+    await O.goto(BASE + "/inventory"); await O.waitForLoadState("networkidle").catch(() => {});
+    check("…and opening /inventory sends them back to the hub's home", new URL(O.url()).pathname === "/", O.url());
+    await O.goto(BASE + "/inventory/items"); await O.waitForLoadState("networkidle").catch(() => {});
+    check("…from any Inventory page", new URL(O.url()).pathname === "/", O.url());
+    const sneak = await api(O, "/api/inventory/requests", "POST", { itemId: (await item("ZZI Paper")).id, quantity: 1 });
+    check("…and the API refuses them (403, saying to ask the administrator)", sneak.status === 403 && /don't have access to Inventory/.test(sneak.body?.error ?? ""), JSON.stringify(sneak));
+    await grant(other.id);
+    await O.goto(BASE + "/inventory"); await O.waitForLoadState("networkidle").catch(() => {});
+    check("once given the application, they can open Inventory, as a user", new URL(O.url()).pathname === "/inventory" && /Signed in as ZZI Other · User/.test(await O.locator("main").first().innerText()), O.url());
+    await ungrant(other.id);
+    await octx.close();
 
-  section("An Inventory admin cannot remove their own admin role");
-  {
-    const { ctx, page } = await signedIn("zzi-admin@gmail.com", PW);
-    const r = await go(page, "/inventory/settings");
-    check("an Inventory admin (not a hub admin) opens Settings", r.status() === 200, r.status());
-    const own = page.getByLabel("Inventory role of ZZI Admin");
-    check("in their own row only Admin can be chosen", (await own.locator("option:disabled").count()) === 2);
-    const selfRemove = await api(page, "/api/inventory/roles", "PUT", { userId: admin2.id, role: "inventory_staff" });
-    check("removing their own admin role through the API is refused (409) and changes nothing", selfRemove.status === 409 && /your own admin role/.test(selfRemove.body?.error ?? "") && (await rolesOf(admin2.id)) === "inventory_admin", JSON.stringify(selfRemove));
-    const grant = await api(page, "/api/inventory/roles", "PUT", { userId: member.id, role: "inventory_staff" });
-    check("they can manage other people's roles", grant.status === 200 && (await rolesOf(member.id)) === "inventory_staff", grant.status);
-    await api(page, "/api/inventory/roles", "PUT", { userId: member.id, role: null });
-    await ctx.close();
+    const { ctx: mctx, page: M } = await signedIn("zzi-member@gmail.com", PW);
+    await M.waitForTimeout(1500);
+    check("someone given it sees Inventory as an ordinary application card on the home page", (await M.getByText("ZZI Inventory").count()) === 1);
+    await M.goto(BASE + `/go/${invApp.id}`); await M.waitForURL(/\/inventory$/, { timeout: 20000 }).catch(() => {});
+    check("…which opens /inventory (through /go, like every application)", new URL(M.url()).pathname === "/inventory", M.url());
+    check("an ordinary user is a user in Inventory: no store dashboard", /· User/.test(await M.locator("main").first().innerText()) && (await M.getByText("Units in stock").count()) === 0);
+    await mctx.close();
+
+    const { ctx: sctx, page: S } = await signedIn("zzi-staff@gmail.com", PW);
+    await go(S, "/inventory");
+    check("a hub Admin is an Inventory admin: the store dashboard and the admin menu", /· Inventory admin/.test(await S.locator("main").first().innerText()) && (await S.getByRole("navigation", { name: "Inventory" }).getByText("Purchase orders").count()) === 1);
+    check("there is no Settings page or menu link any more", (await S.getByRole("navigation", { name: "Inventory" }).getByText("Settings").count()) === 0 && (await go(S, "/inventory/settings")).status() === 404);
+    await ungrant(staff.id);
+    await S.goto(BASE + "/inventory"); await S.waitForLoadState("networkidle").catch(() => {});
+    check("a hub Admin without the application cannot open Inventory either (sent home)", new URL(S.url()).pathname === "/", S.url());
+    await grant(staff.id);
+    await sctx.close();
+    await go(A, "/inventory");
+    check("the Support Admin can always open it, with nothing given (like every application)", /· Inventory admin/.test(await A.locator("main").first().innerText()));
   }
 
   section("Requests: anyone asks, store staff decide");
@@ -368,11 +345,10 @@ try {
     await sctx.close();
 
     const { ctx: mctx, page: M } = await signedIn("zzi-member@gmail.com", PW);
-    await go(M, "/inventory/issues?show=all");
-    const mineText = await M.locator("tbody").innerText();
-    check("an ordinary user sees what was issued to them (the fulfilled request and the workshop issue), not other people's",
-      (await M.getByRole("heading", { name: "Issued to me" }).count()) === 1 && /From a request/i.test(mineText) && /ZZI Workshop/.test(mineText) && !/ZZI Visitor|ZZI Racer/.test(mineText));
-    check("they have no Issue or Mark returned buttons", (await M.getByRole("button", { name: /Issue item|Mark .* returned/ }).count()) === 0);
+    const ir2 = await go(M, "/inventory/issues?show=all");
+    await go(M, "/inventory");
+    const issuesLink = await M.getByRole("navigation", { name: "Inventory" }).getByText("Issues & returns").count();
+    check("an ordinary user cannot open Issues & returns (not found), and has no menu link to it", ir2.status() === 404 && issuesLink === 0, `${ir2.status()}, links ${issuesLink}`);
     const p1 = await api(M, "/api/inventory/issues", "POST", { itemId: paperId, quantity: 1, name: "ZZI Self" });
     const p2 = await api(M, `/api/inventory/issues/${iss.id}/return`, "POST", { quantity: 1 });
     const p3 = await api(M, `/api/inventory/requests/${(await sql`select id from inventory_requests where status = 'approved' and item_id = ${paperId} limit 1`)[0].id}`, "PATCH", { action: "fulfil" });
@@ -420,11 +396,12 @@ try {
     check("add, edit, deactivate and delete are in the audit log", ["inventory.vendor_create", "inventory.vendor_update", "inventory.vendor_deactivate", "inventory.vendor_delete"].every((a) => va.includes(a)), [...new Set(va)].join());
     await api(A, `/api/inventory/vendors/${v1.id}`, "PATCH", { name: "ZZI Paper House", active: true });
 
-    for (const [who, email] of [["Inventory staff", "zzi-staff@gmail.com"], ["a plain user", "zzi-member@gmail.com"]]) {
+    for (const [who, email] of [["a plain user", "zzi-member@gmail.com"]]) {
       const { ctx, page } = await signedIn(email, PW);
       const r = await go(page, "/inventory/vendors");
-      check(`${who} can look at the vendors but has no Add, Edit, Deactivate or Delete`, r.status() === 200 && (await page.locator("tr", { hasText: "ZZI Paper House" }).count()) === 1
-        && (await page.getByRole("button", { name: /Add vendor|^Edit |^Deactivate |^Delete / }).count()) === 0, r.status());
+      await go(page, "/inventory");
+      const vendorsLink = await page.getByRole("navigation", { name: "Inventory" }).getByText("Vendors").count();
+      check(`${who} cannot open Vendors (not found), and has no menu link to it`, r.status() === 404 && vendorsLink === 0, `${r.status()}, links ${vendorsLink}`);
       const p1 = await api(page, "/api/inventory/vendors", "POST", { name: "ZZI Sneaky Vendor" });
       const p2 = await api(page, `/api/inventory/vendors/${v1.id}`, "PATCH", { name: "ZZI Renamed", active: false });
       check(`${who} is refused (403) when adding or changing a vendor through the API`, p1.status === 403 && p2.status === 403 && !!(await vendor("ZZI Paper House")), `${p1.status},${p2.status}`);
@@ -540,7 +517,7 @@ try {
     const pa = (await sql`select distinct action from access_audit where action like 'inventory.po_%' and target_id in (${poId}, ${draftId})`).map((x) => x.action);
     check("created, updated, sent, received and cancelled are in the audit log", ["inventory.po_created", "inventory.po_updated", "inventory.po_sent", "inventory.po_received", "inventory.po_cancelled"].every((x) => pa.includes(x)), pa.join());
 
-    for (const [who, email] of [["Inventory staff", "zzi-staff@gmail.com"], ["a plain user", "zzi-member@gmail.com"]]) {
+    for (const [who, email] of [["a plain user", "zzi-member@gmail.com"]]) {
       const { ctx, page } = await signedIn(email, PW);
       const r = await go(page, "/inventory/purchase-orders");
       const r2 = await go(page, `/inventory/purchase-orders/${poId}`);
@@ -582,12 +559,14 @@ try {
     const own = await photoOf(M, t1.id);
     check("the person who reported it can see the photo (the image itself, as image/png)", own.status === 200 && own.type === "image/png" && own.size === PNG.length, JSON.stringify(own));
     await mctx.close();
+    await grant(other.id); // someone who may open Inventory, but did not report this ticket
     const { ctx: octx, page: O } = await signedIn("zzi-other@gmail.com", PW);
     await go(O, "/inventory/maintenance");
     check("another ordinary user does not see the ticket, and cannot open its photo (404)", (await O.getByText("ZZI Projector not turning on").count()) === 0 && (await photoOf(O, t1.id)).status === 404);
     const otherUpdate = await api(O, `/api/inventory/maintenance/${t1.id}`, "PATCH", { status: "resolved" });
     check("…nor change it (403)", otherUpdate.status === 403, otherUpdate.status);
     await octx.close();
+    await ungrant(other.id);
 
     const { ctx: sctx, page: S } = await signedIn("zzi-staff@gmail.com", PW);
     await go(S, "/inventory/maintenance");
@@ -645,18 +624,13 @@ try {
     await m3ctx.close();
   }
 
-  section("Inventory staff and everyone else: view only");
-  for (const [who, email] of [["Inventory staff", "zzi-staff@gmail.com"], ["a plain user", "zzi-member@gmail.com"]]) {
+  section("Ordinary users: view only");
+  for (const [who, email] of [["a plain user", "zzi-member@gmail.com"]]) {
     const { ctx, page } = await signedIn(email, PW);
     const r = await go(page, "/inventory/items");
     check(`${who} can open the item list and sees the items`, r.status() === 200 && (await page.locator("tr", { hasText: "ZZI Paper" }).count()) === 1, r.status());
     check(`${who} has no Add, Edit or Delete buttons`, (await page.getByRole("button", { name: /Add item|^Edit |^Delete / }).count()) === 0);
     check(`${who} cannot open Categories (not found)`, (await go(page, "/inventory/categories")).status() === 404);
-    check(`${who} cannot open Settings (not found), and has no Settings link`, (await go(page, "/inventory/settings")).status() === 404);
-    await go(page, "/inventory/items");
-    check(`${who} sees no Settings link in the Inventory menu`, (await page.getByRole("navigation", { name: "Inventory" }).getByText("Settings").count()) === 0);
-    const roleChange = await api(page, "/api/inventory/roles", "PUT", { userId: member.id, role: "inventory_admin" });
-    check(`${who} is refused when changing roles through the API (403)`, roleChange.status === 403 && (await rolesOf(member.id)) === "", roleChange.status);
     await go(page, "/inventory/items");
     const post = await api(page, "/api/inventory/items", "POST", { name: "ZZI Sneaky", unit: "Nos", quantity: 1, minQuantity: 0 });
     check(`${who} is refused when adding an item through the API (403)`, post.status === 403 && !(await item("ZZI Sneaky")), post.status);

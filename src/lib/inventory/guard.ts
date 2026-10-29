@@ -13,21 +13,18 @@ import { logError } from "@/lib/log-error";
  * and layouts, route for API handlers.
  */
 
-/** For pages and layouts. Off, or not allowed for this role, looks like a page that does not exist; not signed in goes to the hub's sign-in. */
+/**
+ * For pages and layouts. Off, or a page this person's role does not open, looks like a page that does not exist; not signed in goes to
+ * the hub's sign-in; signed in without access to the Inventory application goes back to the hub's home.
+ */
 export async function requirePage(...anyOf: InventoryRole[]): Promise<InventoryUser> {
   if (!inventoryEnabled()) notFound();
   const a = await resolveAccess();
   if (a.status === "anonymous") redirect("/login");
+  if (a.status === "no_access") redirect("/");
   if (await needsOwnPassword()) redirect("/change-password");
   if (anyOf.length && !hasAnyRole(a.user, anyOf)) notFound();
   return a.user;
-}
-
-/** For Settings: an Inventory admin, or the hub's Super Admin or Support Admin (see canManageRoles). Anyone else: not found. */
-export async function requireRoleManager(): Promise<InventoryUser> {
-  const user = await requirePage();
-  if (!user.canManageRoles) notFound();
-  return user;
 }
 
 type Ctx<P> = { req: NextRequest; user: InventoryUser; params: P };
@@ -51,13 +48,12 @@ function sameOrigin(req: NextRequest): boolean {
 
 /**
  * Wraps every route handler: 404 when the module is off, 401/403 for people who may not be here, a same-origin check on writes, and one
- * place that turns validation and database errors into clean JSON. `roles` lists the roles that may call it (any one is enough);
- * `manageRoles` limits it to the people who may manage roles (see canManageRoles).
+ * place that turns validation and database errors into clean JSON. `roles` lists the roles that may call it (any one is enough).
  * Unlike Approvals' set-up screens, an inventory_admin's changes do not ask for Administrator to be unlocked: the store is run from
  * /inventory, which is not part of Administrator (opening it locks Administrator again), and an Inventory admin need not be a hub admin.
  */
 export function route<P extends Record<string, string> = Record<never, never>>(
-  opts: { roles?: InventoryRole[]; manageRoles?: boolean },
+  opts: { roles?: InventoryRole[] },
   fn: (c: Ctx<P>) => Promise<Response>,
 ) {
   return async (req: NextRequest, ctx: { params: Promise<P> }): Promise<Response> => {
@@ -65,9 +61,9 @@ export function route<P extends Record<string, string> = Record<never, never>>(
     try {
       const a = await resolveAccess();
       if (a.status === "anonymous") return fail("Please sign in.", 401);
+      if (a.status === "no_access") return fail("You don't have access to Inventory. Ask your administrator.", 403);
       if (await needsOwnPassword()) return fail("Choose your own password first: you are still using the temporary one.", 403);
       if (opts.roles?.length && !hasAnyRole(a.user, opts.roles)) return fail("Not allowed.", 403);
-      if (opts.manageRoles && !a.user.canManageRoles) return fail("Not allowed.", 403);
       const write = !["GET", "HEAD", "OPTIONS"].includes(req.method);
       if (write && !sameOrigin(req)) return fail("Not allowed.", 403);
       return await fn({ req, user: a.user, params: await ctx.params });

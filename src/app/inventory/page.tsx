@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { AlertTriangle, ClipboardList, History, Package, Wrench } from "lucide-react";
-import { STAFF_ROLES, ROLE_LABEL } from "@/lib/inventory/inventory.manifest";
+import { ROLE_LABEL } from "@/lib/inventory/inventory.manifest";
 import { dashboardStats, lowStockItems, recentMovements } from "@/lib/inventory/catalog";
 import { formatCount, formatRupees } from "@/lib/inventory/format";
 import { requirePage } from "@/lib/inventory/guard";
-import { hasAnyRole } from "@/lib/inventory/host-adapter";
+import { hasRole } from "@/lib/inventory/host-adapter";
 import { formatIST } from "@/lib/format";
 
 /** The Inventory dashboard: real figures from the active items, the items running low and the latest stock movements. */
@@ -26,8 +26,8 @@ function Stat({ label, value, warn, href }: { label: string; value: string | num
 
 export default async function InventoryDashboard() {
   const user = await requirePage();
-  const staff = hasAnyRole(user, STAFF_ROLES);
-  const role = user.roles.includes("inventory_admin") ? "inventory_admin" : staff ? "inventory_staff" : "requester";
+  const admin = hasRole(user, "inventory_admin");
+  const role = admin ? "inventory_admin" : "requester";
 
   const heading = (
     <div>
@@ -36,7 +36,7 @@ export default async function InventoryDashboard() {
     </div>
   );
 
-  if (!staff) {
+  if (!admin) {
     return (
       <div className="page-enter space-y-6">
         {heading}

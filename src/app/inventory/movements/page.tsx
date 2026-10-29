@@ -12,9 +12,9 @@ const KIND: Record<string, { label: string; cls: string }> = {
 };
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 
-/** Every change to stock, newest first, for store staff. Read only. */
+/** Every change to stock, newest first, for Inventory admins. Read only. */
 export default async function MovementsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  await requirePage("inventory_staff", "inventory_admin");
+  await requirePage("inventory_admin");
   const sp = await searchParams;
   const f = { item: one(sp.item), kind: one(sp.kind), from: one(sp.from), to: one(sp.to), page: Number(one(sp.page)) || 1 };
   const [{ rows, total, page }, items] = await Promise.all([listMovements({ itemId: f.item, kind: f.kind, from: f.from, to: f.to, page: f.page }), listItems({ includeInactive: true })]);

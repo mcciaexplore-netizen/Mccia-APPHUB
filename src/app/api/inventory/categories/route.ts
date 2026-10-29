@@ -4,8 +4,8 @@ import { categoryInput } from "@/lib/inventory/validation";
 
 export const dynamic = "force-dynamic";
 
-/** Every category, for the item form's dropdown. Anyone who may open Inventory. */
-export const GET = route({}, async () => ok({ categories: await listCategories() }));
+/** Every category, for the item form's dropdown. Inventory admins only. */
+export const GET = route({ roles: ["inventory_admin"] }, async () => ok({ categories: await listCategories() }));
 
 export const POST = route({ roles: ["inventory_admin"] }, async ({ req, user }) => {
   const v = await readJson(req, categoryInput);

@@ -51,7 +51,7 @@ function PhotoField({ label, onChange }: { label: string; onChange: (dataUrl: st
 
 const photoUrl = (id: string, which: "report" | "resolution") => `/api/inventory/maintenance/${id}/photo?which=${which}`;
 
-/** Maintenance tickets. Everyone reports problems and follows their own; store staff see all of them and resolve them. */
+/** Maintenance tickets. Everyone reports problems and follows their own; Inventory admins see all of them and resolve them. */
 export function MaintenanceView({ rows, canManage, status, counts }: { rows: TicketView[]; canManage: boolean; status: Status | ""; counts?: Record<Status, number> }) {
   const router = useRouter();
   const toast = useToast();

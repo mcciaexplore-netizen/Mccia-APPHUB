@@ -29,8 +29,8 @@ import {
   FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
-import { canManageRoles, navFor } from "../src/lib/inventory/inventory.manifest";
-import { issueInput, poInput, receiveInput, ticketInput, ticketUpdate, requestDecision, requestInput, returnInput, rupeesToPaise, roleInput, vendorInput } from "../src/lib/inventory/validation";
+import { INVENTORY_URL_PATTERN, inventoryRoleFor, navFor } from "../src/lib/inventory/inventory.manifest";
+import { issueInput, poInput, receiveInput, ticketInput, ticketUpdate, requestDecision, requestInput, returnInput, rupeesToPaise, vendorInput } from "../src/lib/inventory/validation";
 import { financialYear, nextPoNo, poPrefix } from "../src/lib/inventory/po-number";
 import { MAX_PHOTO_BYTES, checkPhoto, sniffPhoto } from "../src/lib/inventory/photos";
 import {
@@ -444,16 +444,20 @@ eq("admin paths: Administrator and the Approval System's admin pages count; noth
 
 
 // Single sign-on (src/lib/sso.ts, sso-rules.ts, sso-page.ts): the token contract, the rules for a slug and a callback address, and the hand-off page.
-// Inventory: who may manage roles, what the menu shows each person, and the form rules
-eq("inventory roles: Settings is for an Inventory admin and the hub's Super Admin and Support Admin, nobody else", [
-  canManageRoles("member", ["requester", "inventory_admin"]), canManageRoles("super_admin", ["requester"]), canManageRoles("head_admin", ["requester", "inventory_admin"]),
-  canManageRoles("member", ["requester", "inventory_staff"]), canManageRoles("admin", ["requester"]), canManageRoles("hr_admin", ["requester"]),
-], [true, true, true, false, false, false]);
-const navLabels = (roles: Parameters<typeof navFor>[0], manage: boolean) => navFor(roles, manage).map((i) => i.label);
-eq("inventory menu: Settings only for role managers, Categories only for Inventory admins, Items for everyone", [
-  navLabels(["requester"], false).includes("Settings"), navLabels(["requester"], true).includes("Settings"), navLabels(["requester", "inventory_staff"], false).includes("Categories"),
-  navLabels(["requester", "inventory_admin"], true).includes("Categories"), navLabels(["requester"], false).includes("Items"),
-], [false, true, false, true, true]);
+// Inventory: the role each hub role gets, which application rows stand for the module, what the menu shows each person, and the form rules
+eq("inventory roles come from the hub role: Support Admin, Super Admin and Admin run the store; everyone else is a user", [
+  inventoryRoleFor("head_admin"), inventoryRoleFor("super_admin"), inventoryRoleFor("admin"), inventoryRoleFor("member"), inventoryRoleFor("hr_admin"),
+  inventoryRoleFor("expense_admin"), inventoryRoleFor("dept_lead"),
+], ["inventory_admin", "inventory_admin", "inventory_admin", "requester", "requester", "requester", "requester"]);
+eq("inventory access: only an application whose URL is /inventory stands for the module", ["/inventory", "/inventory/", "/inventory/items", "/inventory-old", "https://mccia-inventory-management.vercel.app/", "/approvals"]
+  .map((u) => new RegExp(INVENTORY_URL_PATTERN).test(u)), [true, true, false, false, false, false]);
+const navLabels = (roles: Parameters<typeof navFor>[0]) => navFor(roles).map((i) => i.label);
+eq("inventory menu: no Settings any more; Categories, purchase orders and the stock history for Inventory admins; Items and requests for everyone", [
+  navLabels(["requester", "inventory_admin"]).includes("Settings"), navLabels(["requester"]).includes("Categories"), navLabels(["requester"]).includes("Purchase orders"),
+  navLabels(["requester"]).includes("Stock movements"), navLabels(["requester", "inventory_admin"]).includes("Categories"), navLabels(["requester"]).includes("Items"), navLabels(["requester"]).includes("Requests"),
+], [false, false, false, false, true, true, true]);
+eq("inventory menu: an ordinary user sees exactly the dashboard, items, their requests and maintenance; an admin sees all ten", [navLabels(["requester"]), navLabels(["requester", "inventory_admin"]).length],
+  [["Dashboard", "Items", "Requests", "Maintenance"], 10]);
 eq("inventory rupees: amounts become paise; bad input is refused", [rupeesToPaise("1,250.50"), rupeesToPaise("₹ 35"), rupeesToPaise(""), rupeesToPaise("1.234"), rupeesToPaise("-5"), rupeesToPaise("abc")], [125050, 3500, null, "invalid", "invalid", "invalid"]);
 const okParse = (schema: { safeParse: (v: unknown) => { success: boolean } }, v: unknown) => schema.safeParse(v).success;
 eq("inventory requests: an item and a whole quantity of at least 1; a reject needs a reason", [
@@ -504,10 +508,6 @@ eq("inventory tickets: a title is needed; the photo is optional and checked; a s
   okParse(ticketInput, { title: "Fan broken" }), okParse(ticketInput, { title: " " }), okParse(ticketInput, { title: "A", photo: dataUrl("image/png", GIF) }), okParse(ticketInput, { title: "A", photo: "" }),
   okParse(ticketUpdate, { status: "in_progress" }), okParse(ticketUpdate, { status: "closed" }),
 ], [true, false, false, true, true, false]);
-eq("inventory role input: Admin, Staff or none; anything else is refused", [
-  roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: "inventory_admin" }).success, roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: null }).success,
-  roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: "requester" }).success, roleInput.safeParse({ userId: "x", role: null }).success,
-], [true, true, false, false]);
 
 const ssoTests = (async () => {
   const pair = () => {

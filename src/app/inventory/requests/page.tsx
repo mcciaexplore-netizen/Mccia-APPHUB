@@ -1,16 +1,15 @@
 import { RequestsView } from "@/components/inventory/RequestsView";
 import { listItems } from "@/lib/inventory/catalog";
 import { requirePage } from "@/lib/inventory/guard";
-import { hasAnyRole } from "@/lib/inventory/host-adapter";
-import { STAFF_ROLES } from "@/lib/inventory/inventory.manifest";
+import { hasRole } from "@/lib/inventory/host-adapter";
 import { REQUEST_STATUSES, listRequests, statusCounts, type RequestStatus } from "@/lib/inventory/requests";
 
 export const metadata = { title: "Requests · Inventory · MCCIA App Hub" };
 
-/** Everyone raises requests and sees their own; store staff (Inventory staff and admins) see all of them and act on them. */
+/** Everyone raises requests and sees their own; Inventory admins see all of them and act on them. */
 export default async function RequestsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePage();
-  const canManage = hasAnyRole(user, STAFF_ROLES);
+  const canManage = hasRole(user, "inventory_admin");
   const raw = (await searchParams).status;
   const status = canManage && (REQUEST_STATUSES as readonly string[]).includes(String(raw)) ? (raw as RequestStatus) : "";
   const [rows, items, counts] = await Promise.all([

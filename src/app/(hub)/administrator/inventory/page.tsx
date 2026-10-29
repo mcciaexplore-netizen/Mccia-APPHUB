@@ -3,9 +3,6 @@ import { db } from "@/db";
 import { appChecks, apps, departments, userAppAccess } from "@/db/schema";
 import { isApprovalsUrl } from "@/lib/approvals/approvals.manifest";
 import { requireArea } from "@/lib/permissions";
-import { isSuper } from "@/lib/rbac";
-import { inventoryEnabled } from "@/lib/inventory/flags";
-import { listRoleRows } from "@/lib/inventory/roles";
 import { InventoryView } from "./InventoryView";
 
 export const metadata = { title: "Applications · MCCIA App Hub" };
@@ -13,9 +10,7 @@ export const metadata = { title: "Applications · MCCIA App Hub" };
 export const maxDuration = 60;
 
 export default async function Page() {
-  const me = await requireArea("apps");
-  // The built-in Inventory module's roles, for the Support Admin only (Inventory admins manage them in Inventory → Settings).
-  const inventoryRoles = isSuper(me) && inventoryEnabled() ? { rows: await listRoleRows(), meId: me.id } : null;
+  await requireArea("apps");
   const [list, latest, access, deps] = await Promise.all([
     db.select({
       id: apps.id, name: apps.name, description: apps.description, url: apps.url, icon: apps.icon, status: apps.status, isActive: apps.isActive,
@@ -31,7 +26,6 @@ export default async function Page() {
   const people = new Map(access.map((a) => [a.appId, a.n]));
   return (
     <InventoryView
-      inventoryRoles={inventoryRoles}
       departments={deps}
       rows={list.filter((a) => !isApprovalsUrl(a.url)).map((a) => {
         const c = check.get(a.id);

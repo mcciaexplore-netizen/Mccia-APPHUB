@@ -4,8 +4,8 @@ import { returnInput } from "@/lib/inventory/validation";
 
 export const dynamic = "force-dynamic";
 
-/** Store staff take back some or all of what is still out on one issue; the stock goes back up. */
-export const POST = route<{ id: string }>({ roles: ["inventory_staff", "inventory_admin"] }, async ({ req, user, params }) => {
+/** Inventory admins take back some or all of what is still out on one issue; the stock goes back up. */
+export const POST = route<{ id: string }>({ roles: ["inventory_admin"] }, async ({ req, user, params }) => {
   const v = await readJson(req, returnInput);
   await returnIssue(idParam(params.id), v.quantity, v.note, user);
   return ok();

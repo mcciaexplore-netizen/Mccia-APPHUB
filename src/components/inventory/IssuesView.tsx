@@ -55,7 +55,7 @@ function IssueForm({ items, people, departments, pending, onSubmit }: { items: I
   );
 }
 
-/** Issues and returns. Store staff issue items and take them back; everyone else sees what has been issued to them. */
+/** Issues and returns. Inventory admins issue items and take them back; everyone else sees what has been issued to them. */
 export function IssuesView({ rows, items, people, departments, canManage, filter }: {
   rows: IssueView[]; items: ItemOption[]; people: Option[]; departments: Option[]; canManage: boolean; filter: Filter;
 }) {

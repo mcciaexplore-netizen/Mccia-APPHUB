@@ -44,23 +44,20 @@ export const itemInput = z.object({
 });
 export type ItemInput = z.output<typeof itemInput>;
 
-/** Settings: the one Inventory role a person should hold, or null for none. */
-export const roleInput = z.object({ userId: idSchema, role: z.enum(["inventory_admin", "inventory_staff"], { error: "Choose Admin, Staff or None." }).nullable() });
-
 const positive = (what: string) =>
   z.coerce.number({ error: `${what} must be a number` }).int(`${what} must be a whole number`).min(1, `${what} must be at least 1`).max(1_000_000, `${what} is too large`);
 
 /** Anyone: ask the store for an item. */
 export const requestInput = z.object({ itemId: idSchema, quantity: positive("Quantity"), note: optionalText(500) });
 
-/** Store staff: what to do with a request. Rejecting needs a reason the requester will see. */
+/** Inventory admins: what to do with a request. Rejecting needs a reason the requester will see. */
 export const requestDecision = z.discriminatedUnion("action", [
   z.object({ action: z.literal("approve") }),
   z.object({ action: z.literal("reject"), reason: z.string().trim().min(1, "Give a reason for rejecting").max(500) }),
   z.object({ action: z.literal("fulfil") }),
 ]);
 
-/** Store staff: issue an item directly. It goes to a hub user, or to a name typed in; a department and an event are optional. */
+/** Inventory admins: issue an item directly. It goes to a hub user, or to a name typed in; a department and an event are optional. */
 export const issueInput = z
   .object({
     itemId: idSchema,
@@ -74,7 +71,7 @@ export const issueInput = z
   .refine((v) => v.userId || v.name, { message: "Choose who it is issued to, or type their name", path: ["name"] });
 export type IssueInput = z.output<typeof issueInput>;
 
-/** Store staff: how many of an issue came back (at most what is still out). */
+/** Inventory admins: how many of an issue came back (at most what is still out). */
 export const returnInput = z.object({ quantity: positive("Quantity returned"), note: optionalText(500) });
 
 const upperOptional = (max: number, pattern: RegExp, message: string) =>
@@ -167,7 +164,7 @@ export const ticketInput = z.object({
 
 export const TICKET_STATUSES = ["open", "in_progress", "resolved"] as const;
 
-/** Store staff: move a ticket on, with a resolution note and photo. A photo left out keeps the one already there. */
+/** Inventory admins: move a ticket on, with a resolution note and photo. A photo left out keeps the one already there. */
 export const ticketUpdate = z.object({
   status: z.enum(TICKET_STATUSES, { error: "Choose Open, In progress or Resolved." }),
   resolutionNote: optionalText(2000),

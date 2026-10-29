@@ -7,7 +7,7 @@ import { listUsers, type InventoryUser } from "./host-adapter";
 import type { IssueInput } from "./validation";
 
 /**
- * Issues and returns. An issue is an "issue" row in inventory_stock_movements (from store staff directly, or from a fulfilled request);
+ * Issues and returns. An issue is an "issue" row in inventory_stock_movements (from Inventory admins directly, or from a fulfilled request);
  * each return is a "return" row pointing back at it (issue_id). What is still out is the issue's quantity minus its returns, worked out
  * from the history every time, so it cannot drift. Each change of stock is ONE statement that also writes its movement.
  */
@@ -23,7 +23,7 @@ export type IssueRow = {
 };
 export type IssueFilter = "out" | "returned" | "all";
 
-/** Every issue (store staff), or only those made to one person. "out": something still to come back; "returned": all of it is back. */
+/** Every issue (Inventory admins), or only those made to one person. "out": something still to come back; "returned": all of it is back. */
 export async function listIssues(f: { toUser?: string; filter?: IssueFilter }): Promise<IssueRow[]> {
   const res = (await db.execute(sql`
     select m.id, m.item_id, i.name as item, i.unit, -m.delta as quantity, coalesce(r.back, 0)::int as returned, (-m.delta - coalesce(r.back, 0))::int as outstanding,
