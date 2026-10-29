@@ -7,16 +7,17 @@ import { useToast } from "@/components/Toast";
 import type { GrantedRole } from "@/lib/inventory/inventory.manifest";
 import { inventoryApi } from "./api";
 
+export type InventoryRoleRow = Row;
 type Row = { userId: string; name: string; email: string; supportAdmin: boolean; role: GrantedRole | null };
 type Choice = GrantedRole | "none";
 
 const CHOICE_LABEL: Record<Choice, string> = { inventory_admin: "Admin", inventory_staff: "Staff", none: "None" };
 
 /**
- * Who runs the store. Admin: everything, including this screen. Staff: items, stock, requests and purchases. None: they can still look
- * at the catalogue and ask for items, like everyone signed in to the hub. Same idea as the Approval System's access screen.
+ * The role list and its changes: search, "only people with a role", and an Admin / Staff / None choice per person. Used by Inventory →
+ * Settings (Inventory admins) and by Administrator → Applications → Inventory (the Support Admin); both save through /api/inventory/roles.
  */
-export function RolesView({ rows, meId }: { rows: Row[]; meId: string }) {
+export function InventoryRolesTable({ rows, meId }: { rows: Row[]; meId: string }) {
   const router = useRouter();
   const toast = useToast();
   const confirm = useConfirm();
@@ -43,12 +44,8 @@ export function RolesView({ rows, meId }: { rows: Row[]; meId: string }) {
   };
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl">Settings</h1>
-        <p className="text-sm text-muted">Who runs the store. <b>Admin</b>: everything, including this screen. <b>Staff</b>: items, stock, requests and purchases. <b>None</b>: they can still browse the catalogue and ask for items, like everyone in the hub.</p>
-        <p className="mt-1 text-sm text-muted">{counts.admin} admin{counts.admin === 1 ? "" : "s"} · {counts.staff} staff · every change is recorded in the Activity Log.</p>
-      </div>
+    <div className="space-y-4">
+      <p className="text-sm text-muted">{counts.admin} admin{counts.admin === 1 ? "" : "s"} · {counts.staff} staff · every change is recorded in the Activity Log.</p>
       <div className="flex flex-wrap items-center gap-3">
         <input className="input !w-full sm:!w-64" placeholder="Search people" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search people" />
         <label className="flex items-center gap-2 text-sm text-muted"><input type="checkbox" className="h-4 w-4" checked={only} onChange={(e) => setOnly(e.target.checked)} /> Only people with a role</label>
@@ -76,6 +73,20 @@ export function RolesView({ rows, meId }: { rows: Row[]; meId: string }) {
           {shown.length === 0 && <tr><td colSpan={2} className="text-subtle">No one matches.</td></tr>}
         </tbody>
       </table></div>
+    </div>
+  );
+}
+
+/** Who runs the store. Admin: everything, including this screen. Staff: items, stock, requests and purchases. None: they can still look
+ * at the catalogue and ask for items, like everyone signed in to the hub. Same idea as the Approval System's access screen. */
+export function RolesView({ rows, meId }: { rows: Row[]; meId: string }) {
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl">Settings</h1>
+        <p className="text-sm text-muted">Who runs the store. <b>Admin</b>: everything, including this screen. <b>Staff</b>: items, stock, requests and purchases. <b>None</b>: they can still browse the catalogue and ask for items, like everyone in the hub.</p>
+      </div>
+      <InventoryRolesTable rows={rows} meId={meId} />
     </div>
   );
 }

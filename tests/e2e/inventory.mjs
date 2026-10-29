@@ -203,6 +203,32 @@ try {
   const bad = await api(A, "/api/inventory/roles", "PUT", { userId: member.id, role: "requester" });
   check("a role that is not Admin, Staff or none is refused (400)", bad.status === 400, bad.status);
 
+  section("Administrator → Applications: the built-in Inventory row");
+  {
+    await go(A, "/administrator/inventory");
+    if (new URL(A.url()).pathname === "/unlock") {
+      await A.locator("input[name=password]").fill(ADMIN_PW); await A.getByRole("button", { name: "Unlock" }).click();
+      await A.waitForURL((u) => u.pathname === "/administrator/inventory", { timeout: 30000 }).catch(() => {});
+      await A.waitForLoadState("networkidle").catch(() => {});
+    }
+    const row = A.locator("tr", { hasText: "Items, requests, issues, purchase orders" });
+    await row.first().waitFor({ timeout: 30000 }).catch(() => {}); // the page streams in behind a loading placeholder
+    check("the Support Admin sees a fixed Inventory row, marked built into the hub, with only an Edit roles pencil", (await row.count()) === 1
+      && (await row.getByRole("button").count()) === 1 && (await row.getByRole("button", { name: "Edit Inventory roles" }).count()) === 1);
+    await row.getByRole("button", { name: "Edit Inventory roles" }).click();
+    const d = A.getByRole("dialog", { name: "Inventory: roles" });
+    await d.getByLabel("Inventory role of ZZI Member").selectOption("inventory_staff");
+    check("changing a role there saves it in the same place as Inventory → Settings", await toast(A, "ZZI Member is now Staff") && await poll(async () => (await rolesOf(member.id)) === "inventory_staff"));
+    check("…and is recorded the same way (inventory.role_granted)", (await roleAudits(member.id)).at(-1) === "role_granted:inventory_staff", JSON.stringify(await roleAudits(member.id)));
+    await A.waitForTimeout(1000);
+    await d.getByLabel("Inventory role of ZZI Member").selectOption("none");
+    check("…and removing it there works too", await toast(A, "has no Inventory role now") && await poll(async () => (await rolesOf(member.id)) === ""));
+    await A.keyboard.press("Escape");
+    const appRows = (await A.locator("tbody tr").count()) - 1 - (await A.locator("tbody tr", { hasText: "No applications yet" }).count());
+    check("the other applications' rows keep their own Edit buttons (one per application)", (await A.getByRole("button", { name: /^Edit (?!Inventory roles)/ }).count()) === appRows, appRows);
+    await go(A, "/inventory/settings");
+  }
+
   section("An Inventory admin cannot remove their own admin role");
   {
     const { ctx, page } = await signedIn("zzi-admin@gmail.com", PW);
