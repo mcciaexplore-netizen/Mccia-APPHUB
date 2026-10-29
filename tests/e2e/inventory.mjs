@@ -1,11 +1,11 @@
 /**
  * End-to-end test of the Inventory module in a real browser: categories, items, the stock history behind quantity changes, the dashboard
- * figures, Settings (who runs the store), requests, issues and returns, and who may do what (Inventory admin, Inventory staff, everyone else). Run against a site with
+ * figures, Settings (who runs the store), requests, issues and returns, vendors, and who may do what (Inventory admin, Inventory staff, everyone else). Run against a site with
  * INVENTORY_ENABLED=true:
  *   E2E_BASE_URL=http://localhost:3000 node tests/e2e/inventory.mjs
  *
- * It WRITES to the database the site uses, but only rows named "ZZI"/"zzi-": two categories, a few items and their stock movements, two
- * people and their Inventory roles. Everything is removed when it finishes (and at the start, if an earlier run was interrupted), and it
+ * It WRITES to the database the site uses, but only rows named "ZZI"/"zzi-": categories, items and their stock movements, requests,
+ * vendors and one purchase order, and a few people and their Inventory roles. Everything is removed when it finishes (and at the start, if an earlier run was interrupted), and it
  * checks that every other inventory row is exactly as before. It refuses a Neon database unless E2E_ALLOW_NEON=yes.
  */
 import { createRequire } from "node:module";
@@ -46,6 +46,8 @@ const removeTestData = async () => {
   const items = (await sql`select id from inventory_items where name like 'ZZI%'`).map((r) => r.id);
   for (const id of items) { await sql`delete from inventory_stock_movements where item_id = ${id}`; await sql`delete from inventory_requests where item_id = ${id}`; }
   await sql`delete from inventory_items where name like 'ZZI%'`;
+  await sql`delete from inventory_purchase_orders where vendor_name like 'ZZI%'`;
+  await sql`delete from inventory_vendors where name like 'ZZI%'`;
   await sql`delete from inventory_categories where name like 'ZZI%'`;
   await sql`delete from access_audit where action like 'inventory.%' and target_label like 'ZZI%' and at >= ${new Date(startedAt.getTime() - 60000)}`;
   const people = (await sql`select id from users where email like 'zzi-%'`).map((r) => r.id);
@@ -56,6 +58,8 @@ const removeTestData = async () => {
 const snap = async () => JSON.stringify([
   await sql`select id, name, category_id, quantity, min_quantity, rate_paise, active from inventory_items where name not like 'ZZI%' order by id`,
   await sql`select id, name from inventory_categories where name not like 'ZZI%' order by id`,
+  await sql`select id, name, email, gstin, active from inventory_vendors where name not like 'ZZI%' order by id`,
+  await sql`select count(*)::int n from inventory_purchase_orders where vendor_name not like 'ZZI%'`,
   await sql`select count(*)::int n from inventory_stock_movements m join inventory_items i on i.id = m.item_id where i.name not like 'ZZI%'`,
   await sql`select user_id, role from inventory_user_roles where user_id not in (select id from users where email like 'zzi-%') order by user_id, role`,
 ]);
@@ -338,6 +342,60 @@ try {
     const p3 = await api(M, `/api/inventory/requests/${(await sql`select id from inventory_requests where status = 'approved' and item_id = ${paperId} limit 1`)[0].id}`, "PATCH", { action: "fulfil" });
     check("they are refused (403) when issuing, recording a return or deciding a request through the API", [p1.status, p2.status, p3.status].join() === "403,403,403", [p1.status, p2.status, p3.status].join());
     await mctx.close();
+  }
+
+  section("Vendors");
+  {
+    const vendor = async (name) => (await sql`select * from inventory_vendors where name = ${name}`)[0];
+    const vr = await go(A, "/inventory/vendors");
+    check("an Inventory admin opens Vendors", vr.status() === 200 && (await A.getByRole("heading", { name: "Vendors" }).count()) === 1, vr.status());
+    await A.getByRole("button", { name: "Add vendor" }).click(); let d = A.getByRole("dialog");
+    await d.getByLabel("Name", { exact: true }).fill("ZZI Paper House"); await d.getByLabel("GSTIN").fill("27ABCDE1234F1Z");
+    await d.getByRole("button", { name: "Add vendor" }).click();
+    check("a GSTIN in the wrong format is refused with an example", await toast(A, "GSTIN must be 15 characters") && !(await vendor("ZZI Paper House")));
+    await d.getByLabel("GSTIN").fill("27abcde1234f1z5"); await d.getByLabel("PAN").fill("abcde1234f"); await d.getByLabel("Email").fill("Sales@ZZI-Paper.example");
+    await d.getByLabel("Phone").fill("+91 20 1234 5678"); await d.getByLabel("Address").fill("ZZI Road, Pune");
+    await d.getByRole("button", { name: "Add vendor" }).click();
+    check("adding a vendor says so", await toast(A, "Vendor added"));
+    const v1 = await poll(() => vendor("ZZI Paper House"));
+    check("it is stored with GSTIN and PAN in capitals and the email in small letters", v1?.gstin === "27ABCDE1234F1Z5" && v1.pan === "ABCDE1234F" && v1.email === "sales@zzi-paper.example" && v1.active === true, JSON.stringify(v1));
+    const dup = await api(A, "/api/inventory/vendors", "POST", { name: "zzi paper house" });
+    check("the same name in other capitals is refused (409)", dup.status === 409, dup.status);
+    await api(A, "/api/inventory/vendors", "POST", { name: "ZZI Unused Traders" });
+    await go(A, "/inventory/vendors");
+    await A.getByRole("button", { name: "Edit ZZI Paper House" }).click(); d = A.getByRole("dialog");
+    await d.getByLabel("Phone").fill("020 9999 0000"); await d.getByRole("button", { name: "Save" }).click();
+    check("editing a vendor saves", await toast(A, "Vendor saved") && await poll(async () => (await vendor("ZZI Paper House")).phone === "020 9999 0000"));
+
+    // Put the vendor on a purchase order, so it is in use.
+    const [admin] = await sql`select id from users where email = ${ADMIN_EMAIL}`;
+    await sql`insert into inventory_purchase_orders (vendor_id, vendor_name, created_by_user_id, created_by_name) values (${v1.id}, 'ZZI Paper House', ${admin.id}, 'ZZI test')`;
+    await go(A, "/inventory/vendors");
+    check("a vendor on a purchase order has no Delete button; an unused one does", (await A.getByRole("button", { name: "Delete ZZI Paper House" }).count()) === 0 && (await A.getByRole("button", { name: "Delete ZZI Unused Traders" }).count()) === 1);
+    const delUsed = await api(A, `/api/inventory/vendors/${v1.id}`, "DELETE");
+    check("deleting a vendor on a purchase order is refused (409), saying to deactivate it", delUsed.status === 409 && /Deactivate it instead/.test(delUsed.body?.error ?? "") && !!(await vendor("ZZI Paper House")), JSON.stringify(delUsed));
+    await A.getByRole("button", { name: "Deactivate ZZI Paper House" }).click();
+    check("deactivating says so and stores it", await toast(A, "Vendor deactivated") && await poll(async () => (await vendor("ZZI Paper House")).active === false));
+    await A.waitForTimeout(800);
+    check("an inactive vendor is hidden from the list…", (await A.locator("tr", { hasText: "ZZI Paper House" }).count()) === 0);
+    await go(A, "/inventory/vendors?inactive=1");
+    check("…and shown, marked Inactive, with Show inactive", /Inactive/i.test(await A.locator("tr", { hasText: "ZZI Paper House" }).innerText()));
+    await A.getByRole("button", { name: "Delete ZZI Unused Traders" }).click(); await A.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
+    check("an unused vendor can be deleted", await toast(A, "Vendor deleted") && await poll(async () => !(await vendor("ZZI Unused Traders"))));
+    const va = (await sql`select action from access_audit where action like 'inventory.vendor_%' and target_label like 'ZZI%'`).map((a) => a.action);
+    check("add, edit, deactivate and delete are in the audit log", ["inventory.vendor_create", "inventory.vendor_update", "inventory.vendor_deactivate", "inventory.vendor_delete"].every((a) => va.includes(a)), [...new Set(va)].join());
+    await api(A, `/api/inventory/vendors/${v1.id}`, "PATCH", { name: "ZZI Paper House", active: true });
+
+    for (const [who, email] of [["Inventory staff", "zzi-staff@gmail.com"], ["a plain user", "zzi-member@gmail.com"]]) {
+      const { ctx, page } = await signedIn(email, PW);
+      const r = await go(page, "/inventory/vendors");
+      check(`${who} can look at the vendors but has no Add, Edit, Deactivate or Delete`, r.status() === 200 && (await page.locator("tr", { hasText: "ZZI Paper House" }).count()) === 1
+        && (await page.getByRole("button", { name: /Add vendor|^Edit |^Deactivate |^Delete / }).count()) === 0, r.status());
+      const p1 = await api(page, "/api/inventory/vendors", "POST", { name: "ZZI Sneaky Vendor" });
+      const p2 = await api(page, `/api/inventory/vendors/${v1.id}`, "PATCH", { name: "ZZI Renamed", active: false });
+      check(`${who} is refused (403) when adding or changing a vendor through the API`, p1.status === 403 && p2.status === 403 && !!(await vendor("ZZI Paper House")), `${p1.status},${p2.status}`);
+      await ctx.close();
+    }
   }
 
   section("Inventory staff and everyone else: view only");

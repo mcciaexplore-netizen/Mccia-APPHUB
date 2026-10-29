@@ -75,3 +75,33 @@ export type IssueInput = z.output<typeof issueInput>;
 
 /** Store staff: how many of an issue came back (at most what is still out). */
 export const returnInput = z.object({ quantity: positive("Quantity returned"), note: optionalText(500) });
+
+const upperOptional = (max: number, pattern: RegExp, message: string) =>
+  z.string().trim().max(max).optional().transform((v, ctx) => {
+    const t = (v ?? "").replace(/\s+/g, "").toUpperCase();
+    if (!t) return null;
+    if (!pattern.test(t)) {
+      ctx.addIssue({ code: "custom", message });
+      return z.NEVER;
+    }
+    return t;
+  });
+
+/** A vendor: the name is required; GSTIN and PAN, when given, must be in their official formats (stored in capitals). */
+export const vendorInput = z.object({
+  name: name("Name"),
+  email: z.union([z.string().trim().toLowerCase().email("Email is not a valid address").max(200), z.literal("")]).optional().transform((v) => (v ? v : null)),
+  phone: z.string().trim().max(40).optional().transform((v, ctx) => {
+    if (!v) return null;
+    if (!/^[+\d][\d\s()-]{5,}$/.test(v)) {
+      ctx.addIssue({ code: "custom", message: "Phone can only hold digits, spaces, +, ( ) and -" });
+      return z.NEVER;
+    }
+    return v;
+  }),
+  address: optionalText(500),
+  gstin: upperOptional(20, /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/, "GSTIN must be 15 characters, like 27ABCDE1234F1Z5"),
+  pan: upperOptional(15, /^[A-Z]{5}\d{4}[A-Z]$/, "PAN must be 10 characters, like ABCDE1234F"),
+  active: z.boolean().optional().default(true),
+});
+export type VendorInput = z.output<typeof vendorInput>;

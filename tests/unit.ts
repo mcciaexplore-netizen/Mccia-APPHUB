@@ -30,7 +30,7 @@ import {
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import { canManageRoles, navFor } from "../src/lib/inventory/inventory.manifest";
-import { issueInput, requestDecision, requestInput, returnInput, rupeesToPaise, roleInput } from "../src/lib/inventory/validation";
+import { issueInput, requestDecision, requestInput, returnInput, rupeesToPaise, roleInput, vendorInput } from "../src/lib/inventory/validation";
 import {
   commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, planProblemMessage, planSteps, STATUS_LABEL, wrongFormMessage,
   type RuleLike,
@@ -464,6 +464,12 @@ eq("inventory issues: to a hub user or a typed name (one is needed); returns are
   okParse(issueInput, { itemId: "11111111-1111-4111-8111-111111111111", quantity: 2, userId: "", name: "" }), okParse(issueInput, { itemId: "11111111-1111-4111-8111-111111111111", quantity: -1, name: "X" }),
   okParse(returnInput, { quantity: "2" }), okParse(returnInput, { quantity: 0 }),
 ], [true, true, false, false, true, false]);
+const vendor = (v: Record<string, unknown>) => { const r = vendorInput.safeParse({ name: "ZZ Vendor", ...v }); return r.success ? r.data : "refused"; };
+eq("inventory vendors: GSTIN and PAN in their official formats (stored in capitals, spaces dropped); email and phone checked; blanks are empty", [
+  (vendor({ gstin: "27abcde1234f1z5", pan: "abcde 1234f" }) as { gstin: string; pan: string }).gstin, (vendor({ pan: "abcde1234f" }) as { pan: string }).pan,
+  vendor({ gstin: "27ABCDE1234F1Z" }), vendor({ pan: "ABCD1234F" }), vendor({ email: "not-an-email" }), vendor({ phone: "call me" }),
+  (vendor({ email: "", phone: "", gstin: "", pan: "" }) as { email: null; gstin: null }).gstin, vendor({ name: " " }),
+], ["27ABCDE1234F1Z5", "ABCDE1234F", "refused", "refused", "refused", "refused", null, "refused"]);
 eq("inventory role input: Admin, Staff or none; anything else is refused", [
   roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: "inventory_admin" }).success, roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: null }).success,
   roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: "requester" }).success, roleInput.safeParse({ userId: "x", role: null }).success,
