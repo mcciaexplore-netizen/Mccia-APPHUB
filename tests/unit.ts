@@ -30,8 +30,9 @@ import {
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import { canManageRoles, navFor } from "../src/lib/inventory/inventory.manifest";
-import { issueInput, poInput, receiveInput, requestDecision, requestInput, returnInput, rupeesToPaise, roleInput, vendorInput } from "../src/lib/inventory/validation";
+import { issueInput, poInput, receiveInput, ticketInput, ticketUpdate, requestDecision, requestInput, returnInput, rupeesToPaise, roleInput, vendorInput } from "../src/lib/inventory/validation";
 import { financialYear, nextPoNo, poPrefix } from "../src/lib/inventory/po-number";
+import { MAX_PHOTO_BYTES, checkPhoto, sniffPhoto } from "../src/lib/inventory/photos";
 import {
   commentRequired, decisionMode, escalationApprover, MODE_WORDS, formFor, formatRequestNo, planProblemMessage, planSteps, STATUS_LABEL, wrongFormMessage,
   type RuleLike,
@@ -488,6 +489,21 @@ eq("inventory receipts: lines with 0 are dropped; nothing at all is refused unle
   (receiveInput.safeParse({ lines: [{ lineId: "11111111-1111-4111-8111-111111111111", quantity: "0" }, { lineId: "11111111-1111-4111-8111-111111111111", quantity: 3 }] }) as { data?: { lines: unknown[] } }).data?.lines.length,
   okParse(receiveInput, { lines: [{ lineId: "11111111-1111-4111-8111-111111111111", quantity: 0 }] }), okParse(receiveInput, { lines: [], close: true }), okParse(receiveInput, { lines: [{ lineId: "11111111-1111-4111-8111-111111111111", quantity: -1 }] }),
 ], [1, false, true, false]);
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]), JPG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2]), GIF = Buffer.from("GIF89a....");
+const dataUrl = (type: string, b: Buffer) => `data:${type};base64,${b.toString("base64")}`;
+const photoResult = (u: string) => { const r = checkPhoto(u); return r.ok ? r.type : r.error; };
+eq("inventory photos: JPEG and PNG by their own first bytes; the label is corrected from the bytes; anything else refused", [
+  sniffPhoto(PNG), sniffPhoto(JPG), sniffPhoto(GIF), photoResult(dataUrl("image/png", PNG)), photoResult(dataUrl("image/jpeg", JPG)), photoResult(dataUrl("image/jpeg", PNG)),
+  photoResult(dataUrl("image/png", GIF)), photoResult(dataUrl("image/gif", GIF)), photoResult("not a data url"),
+], ["image/png", "image/jpeg", null, "image/png", "image/jpeg", "image/png", "That file is not really a JPEG or PNG image.", "Only JPEG or PNG photos can be attached.",
+  "The photo could not be read. Choose a JPEG or PNG image."]);
+eq("inventory photos: at most 2 MB (checked before decoding)", [
+  photoResult(dataUrl("image/png", Buffer.concat([PNG, Buffer.alloc(MAX_PHOTO_BYTES - PNG.length)]))), photoResult(dataUrl("image/png", Buffer.concat([PNG, Buffer.alloc(MAX_PHOTO_BYTES)]))),
+], ["image/png", "The photo is larger than 2 MB. Choose a smaller one."]);
+eq("inventory tickets: a title is needed; the photo is optional and checked; a status is open, in progress or resolved", [
+  okParse(ticketInput, { title: "Fan broken" }), okParse(ticketInput, { title: " " }), okParse(ticketInput, { title: "A", photo: dataUrl("image/png", GIF) }), okParse(ticketInput, { title: "A", photo: "" }),
+  okParse(ticketUpdate, { status: "in_progress" }), okParse(ticketUpdate, { status: "closed" }),
+], [true, false, false, true, true, false]);
 eq("inventory role input: Admin, Staff or none; anything else is refused", [
   roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: "inventory_admin" }).success, roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: null }).success,
   roleInput.safeParse({ userId: "11111111-1111-4111-8111-111111111111", role: "requester" }).success, roleInput.safeParse({ userId: "x", role: null }).success,

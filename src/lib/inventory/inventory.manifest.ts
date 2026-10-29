@@ -40,10 +40,11 @@ export const inventoryNav: InventoryNavItem[] = [
   { label: "Categories", href: "/inventory/categories", roles: ADMIN },
   { label: "Requests", href: "/inventory/requests" },
   { label: "Issues & returns", href: "/inventory/issues" },
-  { label: "Purchases", href: "/inventory/purchases", roles: STAFF, disabled: true },
+  { label: "Stock movements", href: "/inventory/movements", roles: STAFF },
+  { label: "Purchases", href: "/inventory/purchases", roles: STAFF },
   { label: "Purchase orders", href: "/inventory/purchase-orders", roles: ADMIN },
   { label: "Vendors", href: "/inventory/vendors" },
-  { label: "Maintenance", href: "/inventory/maintenance", disabled: true },
+  { label: "Maintenance", href: "/inventory/maintenance" },
   { label: "Settings", href: "/inventory/settings", manageRoles: true },
 ];
 

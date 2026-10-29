@@ -1,6 +1,7 @@
 /**
  * End-to-end test of the Inventory module in a real browser: categories, items, the stock history behind quantity changes, the dashboard
- * figures, Settings (who runs the store), requests, issues and returns, vendors, purchase orders, and who may do what (Inventory admin, Inventory staff, everyone else). Run against a site with
+ * figures, Settings (who runs the store), requests, issues and returns, vendors, purchase orders, maintenance tickets, the stock movement
+ * and purchase histories, and who may do what (Inventory admin, Inventory staff, everyone else). Run against a site with
  * INVENTORY_ENABLED=true:
  *   E2E_BASE_URL=http://localhost:3000 node tests/e2e/inventory.mjs
  *
@@ -52,6 +53,9 @@ const removeTestData = async () => {
   await sql`delete from inventory_purchase_orders where vendor_name like 'ZZI%'`;
   await sql`delete from inventory_vendors where name like 'ZZI%'`;
   await sql`delete from inventory_categories where name like 'ZZI%'`;
+  const tickets = (await sql`select id from inventory_maintenance_tickets where title like 'ZZI%'`).map((x) => x.id);
+  for (const id of tickets) await sql`delete from access_audit where action like 'inventory.ticket_%' and target_id = ${id}`;
+  await sql`delete from inventory_maintenance_tickets where title like 'ZZI%'`;
   await sql`delete from access_audit where action like 'inventory.%' and target_label like 'ZZI%' and at >= ${new Date(startedAt.getTime() - 60000)}`;
   const people = (await sql`select id from users where email like 'zzi-%'`).map((r) => r.id);
   for (const id of people) { await sql`delete from inventory_user_roles where user_id = ${id}`; await sql`delete from activity_log where user_id = ${id}`; }
@@ -63,6 +67,7 @@ const snap = async () => JSON.stringify([
   await sql`select id, name from inventory_categories where name not like 'ZZI%' order by id`,
   await sql`select id, name, email, gstin, active from inventory_vendors where name not like 'ZZI%' order by id`,
   await sql`select count(*)::int n from inventory_purchase_orders where vendor_name not like 'ZZI%'`,
+  await sql`select id, status from inventory_maintenance_tickets where title not like 'ZZI%' order by id`,
   await sql`select count(*)::int n from inventory_stock_movements m join inventory_items i on i.id = m.item_id where i.name not like 'ZZI%'`,
   await sql`select user_id, role from inventory_user_roles where user_id not in (select id from users where email like 'zzi-%') order by user_id, role`,
 ]);
@@ -72,6 +77,7 @@ const before = await snap();
 const [member] = await sql`insert into users (name, email, password_hash, status) values ('ZZI Member', 'zzi-member@gmail.com', ${hash(PW)}, 'approved') returning id`;
 const [staff] = await sql`insert into users (name, email, password_hash, status) values ('ZZI Staff', 'zzi-staff@gmail.com', ${hash(PW)}, 'approved') returning id`;
 await sql`insert into inventory_user_roles (user_id, role) values (${staff.id}, 'inventory_staff')`;
+await sql`insert into users (name, email, password_hash, status) values ('ZZI Other', 'zzi-other@gmail.com', ${hash(PW)}, 'approved')`;
 const [admin2] = await sql`insert into users (name, email, password_hash, status) values ('ZZI Admin', 'zzi-admin@gmail.com', ${hash(PW)}, 'approved') returning id`;
 await sql`insert into inventory_user_roles (user_id, role) values (${admin2.id}, 'inventory_admin')`;
 
@@ -519,6 +525,99 @@ try {
       check(`${who} sees no Purchase orders link and is refused (403) through the API`, w.status === 403 && (await page.getByRole("navigation", { name: "Inventory" }).getByText("Purchase orders").count()) === 0, w.status);
       await ctx.close();
     }
+  }
+
+  section("Maintenance tickets");
+  {
+    const PNG = Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000", "hex");
+    const JPG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const ticket = async (title) => (await sql`select * from inventory_maintenance_tickets where title = ${title}`)[0];
+    const { ctx: mctx, page: M } = await signedIn("zzi-member@gmail.com", PW);
+    const mr = await go(M, "/inventory/maintenance");
+    check("an ordinary user opens Maintenance (My maintenance tickets)", mr.status() === 200 && (await M.getByRole("heading", { name: "My maintenance tickets" }).count()) === 1, mr.status());
+    await M.getByRole("button", { name: "Report a problem" }).click(); let d = M.getByRole("dialog");
+    await d.getByLabel("What is wrong").fill("ZZI Projector not turning on"); await d.getByLabel("Where").fill("ZZI Hall 2"); await d.getByLabel(/Details/).fill("Blinks red");
+    await d.getByLabel("Photo", { exact: true }).setInputFiles({ name: "zzi.png", mimeType: "image/png", buffer: PNG });
+    await d.getByText("Attached: zzi.png").waitFor({ timeout: 10000 });
+    await d.getByRole("button", { name: "Send report" }).click();
+    check("reporting a problem with a photo says so", await toast(M, "Problem reported"));
+    const t1 = await poll(() => ticket("ZZI Projector not turning on"));
+    check("it is stored as open, under their name, with the photo as a PNG data URL", t1?.status === "open" && t1.raised_by_user_id === member.id && /^data:image\/png;base64,/.test(t1.photo_url ?? ""), JSON.stringify({ ...t1, photo_url: t1?.photo_url?.slice(0, 30) }));
+    await M.getByRole("button", { name: "Report a problem" }).click(); d = M.getByRole("dialog");
+    await d.getByLabel("Photo", { exact: true }).setInputFiles({ name: "zzi.gif", mimeType: "image/gif", buffer: Buffer.from("GIF89a") });
+    check("choosing a GIF is refused in the browser", await toast(M, "Only JPEG or PNG photos"));
+    await d.getByLabel("Photo", { exact: true }).setInputFiles({ name: "zzi-big.jpg", mimeType: "image/jpeg", buffer: Buffer.concat([JPG, Buffer.alloc(2 * 1024 * 1024)]) });
+    check("choosing a photo over 2 MB is refused in the browser", await toast(M, "larger than 2 MB"));
+    await M.keyboard.press("Escape");
+    const fake = await api(M, "/api/inventory/maintenance", "POST", { title: "ZZI Fake", photo: `data:image/png;base64,${Buffer.from("GIF89a fake").toString("base64")}` });
+    const big = await api(M, "/api/inventory/maintenance", "POST", { title: "ZZI Big", photo: `data:image/jpeg;base64,${Buffer.concat([JPG, Buffer.alloc(2 * 1024 * 1024)]).toString("base64")}` });
+    check("the server refuses a file that only claims to be a PNG, and one over 2 MB (400), and stores neither", fake.status === 400 && /not really a JPEG or PNG/.test(fake.body?.error ?? "") && big.status === 400 && !(await ticket("ZZI Fake")) && !(await ticket("ZZI Big")), `${fake.status} ${fake.body?.error} | ${big.status}`);
+
+    const photoOf = (pg, id, which = "report") => pg.evaluate(async (u) => { const r = await fetch(u); return { status: r.status, type: r.headers.get("content-type"), size: (await r.arrayBuffer()).byteLength }; }, `/api/inventory/maintenance/${id}/photo?which=${which}`);
+    const own = await photoOf(M, t1.id);
+    check("the person who reported it can see the photo (the image itself, as image/png)", own.status === 200 && own.type === "image/png" && own.size === PNG.length, JSON.stringify(own));
+    await mctx.close();
+    const { ctx: octx, page: O } = await signedIn("zzi-other@gmail.com", PW);
+    await go(O, "/inventory/maintenance");
+    check("another ordinary user does not see the ticket, and cannot open its photo (404)", (await O.getByText("ZZI Projector not turning on").count()) === 0 && (await photoOf(O, t1.id)).status === 404);
+    const otherUpdate = await api(O, `/api/inventory/maintenance/${t1.id}`, "PATCH", { status: "resolved" });
+    check("…nor change it (403)", otherUpdate.status === 403, otherUpdate.status);
+    await octx.close();
+
+    const { ctx: sctx, page: S } = await signedIn("zzi-staff@gmail.com", PW);
+    await go(S, "/inventory/maintenance");
+    check("store staff see everyone's tickets, with counts per status", (await S.getByRole("heading", { name: "Maintenance", exact: true }).count()) === 1 && /Open\s*\d/.test(await S.getByRole("tablist").innerText()));
+    check("…and can open the photo", (await photoOf(S, t1.id)).status === 200);
+    await S.getByRole("button", { name: "Update ZZI Projector not turning on" }).click(); d = S.getByRole("dialog");
+    await d.getByLabel("Status").selectOption("in_progress"); await d.getByLabel("Resolution note").fill("ZZI Lamp ordered"); await d.getByRole("button", { name: "Save" }).click();
+    check("moving it to In progress with a note saves", await toast(S, "Ticket updated") && await poll(async () => (await ticket("ZZI Projector not turning on")).status === "in_progress"));
+    await S.waitForTimeout(800);
+    await S.getByRole("button", { name: "Update ZZI Projector not turning on" }).click(); d = S.getByRole("dialog");
+    await d.getByLabel("Status").selectOption("resolved"); await d.getByLabel("Resolution note").fill("ZZI Lamp replaced");
+    await d.getByLabel("Photo after the fix").setInputFiles({ name: "zzi-fixed.jpg", mimeType: "image/jpeg", buffer: JPG });
+    await d.getByText("Attached: zzi-fixed.jpg").waitFor({ timeout: 10000 });
+    await d.getByRole("button", { name: "Save" }).click();
+    check("resolving with a note and a photo says so", await toast(S, "Ticket resolved"));
+    const t2 = await poll(async () => { const x = await ticket("ZZI Projector not turning on"); return x.status === "resolved" ? x : null; });
+    check("it is resolved, by the staff member, with the time, the note and a JPEG photo", t2?.resolved_by_user_id === staff.id && !!t2.resolved_at && t2.resolution_note === "ZZI Lamp replaced" && /^data:image\/jpeg;base64,/.test(t2.resolution_photo_url ?? ""), JSON.stringify({ ...t2, photo_url: null, resolution_photo_url: t2?.resolution_photo_url?.slice(0, 30) }));
+    const reopen = await api(S, `/api/inventory/maintenance/${t1.id}`, "PATCH", { status: "open", resolutionNote: "ZZI Came back" });
+    const t3 = await ticket("ZZI Projector not turning on");
+    check("reopening clears who resolved it and when, and keeps the photo", reopen.status === 200 && t3.status === "open" && !t3.resolved_at && !t3.resolved_by_user_id && !!t3.resolution_photo_url, JSON.stringify(reopen));
+    const ta = (await sql`select action from access_audit where target_id = ${t1.id} order by at`).map((x) => x.action);
+    check("raised, updated and resolved are in the audit log", ["inventory.ticket_raised", "inventory.ticket_updated", "inventory.ticket_resolved"].every((x) => ta.includes(x)), ta.join());
+
+    const { ctx: m2ctx, page: M2 } = await signedIn("zzi-member@gmail.com", PW);
+    await go(M2, "/inventory/maintenance");
+    const mine = await M2.locator("main").first().innerText();
+    check("the reporter sees their ticket's progress and the work note", /ZZI Projector not turning on/.test(mine) && /ZZI Came back/.test(mine));
+    const resPhoto = await photoOf(M2, t1.id, "resolution");
+    check("…and the photo after the fix (image/jpeg)", resPhoto.status === 200 && resPhoto.type === "image/jpeg", JSON.stringify(resPhoto));
+    await m2ctx.close();
+
+    section("Stock movements and purchases (read only)");
+    await go(S, "/inventory/movements");
+    const all = await S.locator("tbody").innerText();
+    check("store staff open Stock movements and see the history (issues, returns, inward, recounts)", /ZZI Paper/.test(all) && /Issue/i.test(all) && /Inward/i.test(all));
+    await S.getByLabel("Kind").selectOption("recount"); await S.getByLabel("Item").selectOption({ label: "ZZI Paper" }); await S.getByRole("button", { name: "Show" }).click();
+    await S.waitForURL(/kind=recount/);
+    const rec = await S.locator("tbody tr").allInnerTexts();
+    check("filtering by item and kind shows only that item's recounts", rec.length >= 1 && rec.every((x) => /ZZI Paper/.test(x) && /Recount/i.test(x)), rec.join(" | ").slice(0, 200));
+    await go(S, `/inventory/movements?from=2099-01-01`);
+    check("a date range with nothing in it says so", /No stock movements match/.test(await S.locator("tbody").innerText()));
+    await go(S, "/inventory/movements?kind=inward");
+    check("an inward movement links to its purchase order", (await S.locator("tbody a", { hasText: /^PO-/ }).count()) >= 1);
+    await go(S, "/inventory/purchases");
+    const pur = await S.locator("tbody").innerText();
+    check("Purchases lists goods received, with vendor, PO number and challan", /ZZI Paper/.test(pur) && /ZZI Paper House/.test(pur) && /PO-\d{4}-\d{2}-\d{4}/.test(pur) && /ZZI-CH-1/.test(pur));
+    const vendorId = (await sql`select id from inventory_vendors where name = 'ZZI Paper House'`)[0].id;
+    await go(S, `/inventory/purchases?vendor=${vendorId}`);
+    const byVendor = await S.locator("tbody tr").allInnerTexts();
+    check("filtering purchases by vendor shows only that vendor's receipts", byVendor.length >= 1 && byVendor.every((x) => /ZZI Paper House/.test(x)), byVendor.length);
+    await sctx.close();
+    const { ctx: m3ctx, page: M3 } = await signedIn("zzi-member@gmail.com", PW);
+    const n1 = await go(M3, "/inventory/movements"), n2 = await go(M3, "/inventory/purchases");
+    check("an ordinary user cannot open Stock movements or Purchases (not found)", n1.status() === 404 && n2.status() === 404, `${n1.status()},${n2.status()}`);
+    await m3ctx.close();
   }
 
   section("Inventory staff and everyone else: view only");

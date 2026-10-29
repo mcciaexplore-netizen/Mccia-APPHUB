@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { checkPhoto } from "./photos";
 
 /**
  * What the Inventory forms may send. No server-only imports, so the client forms use the same rules. Money arrives as rupees typed by a
@@ -144,3 +145,31 @@ export const receiveInput = z
   .transform((v) => ({ ...v, lines: v.lines.filter((l) => l.quantity > 0) }))
   .refine((v) => v.lines.length > 0 || v.close, { message: "Enter what arrived, or tick that nothing more is coming", path: ["lines"] });
 export type ReceiveInput = z.output<typeof receiveInput>;
+
+/** An optional photo as a data URL, checked by its real contents (JPEG or PNG, at most 2 MB). Empty or missing: no photo. */
+const optionalPhoto = z.string().max(3_000_000, "The photo is larger than 2 MB. Choose a smaller one.").optional().transform((v, ctx) => {
+  if (!v) return null;
+  const p = checkPhoto(v);
+  if (!p.ok) {
+    ctx.addIssue({ code: "custom", message: p.error });
+    return z.NEVER;
+  }
+  return p.dataUrl;
+});
+
+/** Anyone: report a maintenance problem. */
+export const ticketInput = z.object({
+  title: z.string().trim().min(1, "Say briefly what the problem is").max(120, "The title is too long (at most 120 characters)"),
+  description: optionalText(2000),
+  location: optionalText(120),
+  photo: optionalPhoto,
+});
+
+export const TICKET_STATUSES = ["open", "in_progress", "resolved"] as const;
+
+/** Store staff: move a ticket on, with a resolution note and photo. A photo left out keeps the one already there. */
+export const ticketUpdate = z.object({
+  status: z.enum(TICKET_STATUSES, { error: "Choose Open, In progress or Resolved." }),
+  resolutionNote: optionalText(2000),
+  resolutionPhoto: optionalPhoto,
+});
