@@ -155,6 +155,13 @@
       "when": 1793265850722,
       "tag": "0021_inventory_module",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793278516729,
+      "tag": "0022_app_admins",
+      "breakpoints": true
     }
   ]
 }

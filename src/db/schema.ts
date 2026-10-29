@@ -213,6 +213,26 @@ export const userDepartmentAccess = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.departmentId] })],
 );
 
+/**
+ * Who is an admin of an application ("App Admins" on its Edit form, set by the Support Admin). It is what an application is told about a
+ * person: role "admin" in the single sign-on token for these people, "user" for everyone else; for the Inventory module, Inventory admin.
+ * It does not give access: an App Admin still needs the application (user_app_access) to open it. Rows go with the app or the person.
+ */
+export const appAdmins = pgTable(
+  "app_admins",
+  {
+    appId: uuid("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    addedById: uuid("added_by_id").references(() => users.id, { onDelete: "set null" }),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.userId] }), index("app_admins_user_idx").on(t.userId)],
+);
+
 /** Which apps a user may open. Head admins implicitly see every app and need no rows. */
 export const userAppAccess = pgTable(
   "user_app_access",

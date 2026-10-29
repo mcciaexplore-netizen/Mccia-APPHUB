@@ -4,11 +4,12 @@
  */
 
 /**
- * The role every single sign-on token carries. The hub only decides who may open an application; what someone may do inside it is
- * the application's own decision (its own settings), so the token never claims more than this.
+ * The role a single sign-on token carries: "admin" for the application's App Admins (its Edit form in Administrator → Applications),
+ * "user" for everyone else who may open it. The application decides what each role may do.
  */
-export const SSO_TOKEN_ROLE = "user" as const;
-export type SsoRole = typeof SSO_TOKEN_ROLE;
+export const SSO_ROLES = ["user", "admin"] as const;
+export type SsoRole = (typeof SSO_ROLES)[number];
+export const ssoTokenRole = (isAppAdmin: boolean): SsoRole => (isAppAdmin ? "admin" : "user");
 
 const SSO_SLUG_MIN = 2;
 const SSO_SLUG_MAX = 40;

@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { apps, departments, userAppAccess, users } from "@/db/schema";
+import { departments, users } from "@/db/schema";
 import { getCurrentUser as hostCurrentUser } from "@/lib/permissions";
 import { INVENTORY_URL_PATTERN, inventoryRoleFor, type InventoryRole } from "./inventory.manifest";
 
@@ -12,32 +12,32 @@ import { INVENTORY_URL_PATTERN, inventoryRoleFor, type InventoryRole } from "./i
  */
 
 export type { InventoryRole };
-/** `hubRole` is the person's role in the hub; their Inventory role comes from it (see inventoryRoleFor). */
+/** `hubRole` is the person's role in the hub. Their Inventory role: see inventoryRoleFor. */
 export type InventoryUser = { id: string; name: string; email: string; roles: InventoryRole[]; hubRole: string };
 export type Access = { status: "anonymous" } | { status: "no_access" } | { status: "ok"; user: InventoryUser };
 
 /**
- * Whether this person may open Inventory, by the hub's own rule for applications: the Support Admin always; anyone else only if they have
- * been given an active Inventory application (URL /inventory) in an active category. One query.
+ * For the active Inventory application (URL /inventory, in an active category): whether this person has been given it (the hub's own rule
+ * for applications), and whether they are one of its App Admins. One query.
  */
-async function hasInventoryAccess(userId: string, hubRole: string): Promise<boolean> {
-  if (hubRole === "head_admin") return true;
-  const [row] = await db
-    .select({ id: apps.id })
-    .from(apps)
-    .innerJoin(departments, eq(departments.id, apps.departmentId))
-    .innerJoin(userAppAccess, and(eq(userAppAccess.appId, apps.id), eq(userAppAccess.userId, userId)))
-    .where(and(eq(apps.isActive, true), eq(departments.isActive, true), sql`${apps.url} ~ ${INVENTORY_URL_PATTERN}`))
-    .limit(1);
-  return !!row;
+async function inventoryStanding(userId: string): Promise<{ access: boolean; admin: boolean }> {
+  const res = (await db.execute(sql`
+    select coalesce(bool_or(ua.user_id is not null), false) as access, coalesce(bool_or(ad.user_id is not null), false) as admin
+    from apps a
+    join departments d on d.id = a.department_id
+    left join user_app_access ua on ua.app_id = a.id and ua.user_id = ${userId}
+    left join app_admins ad on ad.app_id = a.id and ad.user_id = ${userId}
+    where a.is_active and d.is_active and a.url ~ ${INVENTORY_URL_PATTERN}`)) as unknown as { rows: { access: boolean; admin: boolean }[] };
+  return { access: !!res.rows[0]?.access, admin: !!res.rows[0]?.admin };
 }
 
-/** Who is asking, whether they may open Inventory, and their role in it (from their hub role). */
+/** Who is asking, whether they may open Inventory (the Support Admin always), and their role in it (see inventoryRoleFor). */
 export const resolveAccess = cache(async (): Promise<Access> => {
   const host = await hostCurrentUser();
   if (!host) return { status: "anonymous" };
-  if (!(await hasInventoryAccess(host.id, host.role))) return { status: "no_access" };
-  const role = inventoryRoleFor(host.role);
+  const standing = host.role === "head_admin" ? { access: true, admin: true } : await inventoryStanding(host.id);
+  if (!standing.access) return { status: "no_access" };
+  const role = inventoryRoleFor(host.role, standing.admin);
   const roles: InventoryRole[] = role === "inventory_admin" ? ["requester", "inventory_admin"] : ["requester"];
   return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles, hubRole: host.role } };
 });

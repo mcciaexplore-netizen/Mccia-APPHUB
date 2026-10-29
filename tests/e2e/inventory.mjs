@@ -57,6 +57,7 @@ const removeTestData = async () => {
   for (const id of tickets) await sql`delete from access_audit where action like 'inventory.ticket_%' and target_id = ${id}`;
   await sql`delete from inventory_maintenance_tickets where title like 'ZZI%'`;
   await sql`delete from access_audit where action like 'inventory.%' and target_label like 'ZZI%' and at >= ${new Date(startedAt.getTime() - 60000)}`;
+  await sql`delete from access_audit where action like 'app.%' and target_label like 'ZZI%' and at >= ${new Date(startedAt.getTime() - 60000)}`; // App Admins changes on the test application
   const people = (await sql`select id from users where email like 'zzi-%'`).map((r) => r.id);
   for (const id of people) await sql`delete from activity_log where user_id = ${id}`;
   await sql`delete from users where email like 'zzi-%'`;
@@ -87,6 +88,10 @@ const [invApp] = await sql`insert into apps (department_id, name, url, icon) val
 const grant = (userId) => sql`insert into user_app_access (user_id, app_id) values (${userId}, ${invApp.id}) on conflict do nothing`;
 const ungrant = (userId) => sql`delete from user_app_access where user_id = ${userId} and app_id = ${invApp.id}`;
 await grant(member.id); await grant(staff.id);
+// Inventory admins are the Inventory application's App Admins (its Edit form); "staff" is one.
+const makeAppAdmin = (userId) => sql`insert into app_admins (app_id, user_id) values (${invApp.id}, ${userId}) on conflict do nothing`;
+const dropAppAdmin = (userId) => sql`delete from app_admins where app_id = ${invApp.id} and user_id = ${userId}`;
+await makeAppAdmin(staff.id);
 
 const browser = await launch();
 const pageErrors = [];
@@ -210,15 +215,51 @@ try {
 
     const { ctx: sctx, page: S } = await signedIn("zzi-staff@gmail.com", PW);
     await go(S, "/inventory");
-    check("a hub Admin is an Inventory admin: the store dashboard and the admin menu", /· Inventory admin/.test(await S.locator("main").first().innerText()) && (await S.getByRole("navigation", { name: "Inventory" }).getByText("Purchase orders").count()) === 1);
+    check("an App Admin of the Inventory application is an Inventory admin: the store dashboard and the admin menu", /· Inventory admin/.test(await S.locator("main").first().innerText()) && (await S.getByRole("navigation", { name: "Inventory" }).getByText("Purchase orders").count()) === 1);
     check("there is no Settings page or menu link any more", (await S.getByRole("navigation", { name: "Inventory" }).getByText("Settings").count()) === 0 && (await go(S, "/inventory/settings")).status() === 404);
+    await dropAppAdmin(staff.id);
+    await go(S, "/inventory");
+    check("a hub Admin who is not an App Admin is only a user in Inventory", /· User/.test(await S.locator("main").first().innerText()) && (await S.getByRole("navigation", { name: "Inventory" }).getByText("Purchase orders").count()) === 0);
+    await makeAppAdmin(staff.id);
     await ungrant(staff.id);
     await S.goto(BASE + "/inventory"); await S.waitForLoadState("networkidle").catch(() => {});
-    check("a hub Admin without the application cannot open Inventory either (sent home)", new URL(S.url()).pathname === "/", S.url());
+    check("an App Admin without the application itself cannot open Inventory (sent home): App Admins still need access", new URL(S.url()).pathname === "/", S.url());
     await grant(staff.id);
     await sctx.close();
     await go(A, "/inventory");
     check("the Support Admin can always open it, with nothing given (like every application)", /· Inventory admin/.test(await A.locator("main").first().innerText()));
+
+    // App Admins on the application's Edit form in Administrator → Applications.
+    await go(A, "/administrator/inventory");
+    if (new URL(A.url()).pathname === "/unlock") {
+      await A.locator("input[name=password]").fill(ADMIN_PW); await A.getByRole("button", { name: "Unlock" }).click();
+      await A.waitForURL((u) => u.pathname === "/administrator/inventory", { timeout: 30000 }).catch(() => {});
+    }
+    await A.getByRole("button", { name: "Edit ZZI Inventory" }).waitFor({ timeout: 30000 });
+    await A.getByRole("button", { name: "Edit ZZI Inventory" }).click();
+    let d = A.getByRole("dialog");
+    check("the Edit form has an App Admins section, showing the current App Admin as a tag", (await d.getByText("App Admins", { exact: true }).count()) === 1
+      && (await d.getByRole("button", { name: "Remove ZZI Staff from App Admins" }).count()) === 1);
+    await d.getByLabel("Search people to add as App Admins").fill("zzi-other");
+    check("the search marks someone who has not been given the application", /no access yet/.test(await d.getByRole("button", { name: /ZZI Other/ }).innerText()));
+    await d.getByLabel("Search people to add as App Admins").fill("zzi-member");
+    await d.getByRole("button", { name: /ZZI Member/ }).click();
+    await d.getByRole("button", { name: "Save" }).click();
+    check("saving the form saves the App Admins with it", await toast(A, "Application saved")
+      && await poll(async () => (await sql`select count(*)::int n from app_admins where app_id = ${invApp.id} and user_id = ${member.id}`)[0].n === 1));
+    const [aa] = await sql`select details from access_audit where action = 'app.admins' and target_id = ${invApp.id} order by at desc limit 1`;
+    check("…recorded in the audit log as app.admins, naming who was added", JSON.stringify(aa?.details) === JSON.stringify({ added: ["ZZI Member"], removed: [] }), JSON.stringify(aa?.details));
+    const { ctx: m2, page: M2 } = await signedIn("zzi-member@gmail.com", PW);
+    await go(M2, "/inventory");
+    check("the person made an App Admin is now an Inventory admin", /· Inventory admin/.test(await M2.locator("main").first().innerText()));
+    await A.waitForTimeout(800);
+    await A.getByRole("button", { name: "Edit ZZI Inventory" }).click(); d = A.getByRole("dialog");
+    await d.getByRole("button", { name: "Remove ZZI Member from App Admins" }).click();
+    await d.getByRole("button", { name: "Save" }).click();
+    check("removing them there saves too", await toast(A, "Application saved") && await poll(async () => (await sql`select count(*)::int n from app_admins where app_id = ${invApp.id} and user_id = ${member.id}`)[0].n === 0));
+    await go(M2, "/inventory");
+    check("…and they are a user again", /· User/.test(await M2.locator("main").first().innerText()));
+    await m2.close();
   }
 
   section("Requests: anyone asks, store staff decide");

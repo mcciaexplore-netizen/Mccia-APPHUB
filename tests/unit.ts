@@ -20,7 +20,7 @@ import { scrub } from "../src/lib/scrub";
 import { xlsxToTable } from "../src/lib/xlsx-read";
 import { createPublicKey, generateKeyPairSync } from "node:crypto";
 import { SSO_ISSUER, SSO_KID, SsoConfigError, buildClaims, loadSigningKey, signSsoToken, verifySsoToken } from "../src/lib/sso";
-import { SSO_TOKEN_ROLE, callbackProblem, slugProblem } from "../src/lib/sso-rules";
+import { SSO_ROLES, callbackProblem, slugProblem, ssoTokenRole } from "../src/lib/sso-rules";
 import { autoPostHtml, launchHeaders, messageHtml } from "../src/lib/sso-page";
 import { appInput } from "../src/lib/validation";
 import { safeNext } from "../src/lib/session";
@@ -445,10 +445,10 @@ eq("admin paths: Administrator and the Approval System's admin pages count; noth
 
 // Single sign-on (src/lib/sso.ts, sso-rules.ts, sso-page.ts): the token contract, the rules for a slug and a callback address, and the hand-off page.
 // Inventory: the role each hub role gets, which application rows stand for the module, what the menu shows each person, and the form rules
-eq("inventory roles come from the hub role: Support Admin, Super Admin and Admin run the store; everyone else is a user", [
-  inventoryRoleFor("head_admin"), inventoryRoleFor("super_admin"), inventoryRoleFor("admin"), inventoryRoleFor("member"), inventoryRoleFor("hr_admin"),
-  inventoryRoleFor("expense_admin"), inventoryRoleFor("dept_lead"),
-], ["inventory_admin", "inventory_admin", "inventory_admin", "requester", "requester", "requester", "requester"]);
+eq("inventory roles: the Support Admin and the Inventory application's App Admins run the store; everyone else, whatever their hub role, is a user", [
+  inventoryRoleFor("head_admin", false), inventoryRoleFor("member", true), inventoryRoleFor("super_admin", false), inventoryRoleFor("admin", false),
+  inventoryRoleFor("admin", true), inventoryRoleFor("member", false),
+], ["inventory_admin", "inventory_admin", "requester", "requester", "inventory_admin", "requester"]);
 eq("inventory access: only an application whose URL is /inventory stands for the module", ["/inventory", "/inventory/", "/inventory/items", "/inventory-old", "https://mccia-inventory-management.vercel.app/", "/approvals"]
   .map((u) => new RegExp(INVENTORY_URL_PATTERN).test(u)), [true, true, false, false, false, false]);
 const navLabels = (roles: Parameters<typeof navFor>[0]) => navFor(roles).map((i) => i.label);
@@ -563,7 +563,7 @@ const ssoTests = (async () => {
   eq("sso key: the public key is what the private key makes", createPublicKey(Buffer.from(hub.env, "base64").toString()).export({ type: "spki", format: "pem" }), hub.publicPem);
 
   // Role mapping
-  eq("sso role: every token says user; each application decides roles itself", SSO_TOKEN_ROLE, "user");
+  eq("sso role: App Admins get admin in the token, everyone else user; no other role exists", [ssoTokenRole(true), ssoTokenRole(false), [...SSO_ROLES]], ["admin", "user", ["user", "admin"]]);
 
   // Slug rules
   eq("sso slug: valid ones", ["mccia-search", "ab", "a1", "x-y-z", "a".repeat(40), "app2"].map(slugProblem), [null, null, null, null, null, null]);

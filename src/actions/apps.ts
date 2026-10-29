@@ -7,7 +7,8 @@ import { adminAction, UserError } from "@/lib/action";
 import { checkUrl } from "@/lib/app-checks";
 import { writeAudit } from "@/lib/audit";
 import { isApprovalsUrl } from "@/lib/approvals/approvals.manifest";
-import { appInput, uuid } from "@/lib/validation";
+import { appInput, uuid, uuidList } from "@/lib/validation";
+import { setAppAdmins as applyAppAdmins } from "@/lib/app-admins";
 
 async function nextOrder(departmentId: string) {
   const rows = await db.select({ s: apps.sortOrder }).from(apps).where(eq(apps.departmentId, departmentId));
@@ -65,6 +66,11 @@ export async function updateApp(id: string, input: unknown) {
     if (v.ssoCallbackUrl !== undefined && cur.ssoCallbackUrl !== v.ssoCallbackUrl) changes.push("SSO callback address"); // like the address, the callback itself is not recorded
     if (changes.length) await writeAudit(admin, [{ action: "app.update", targetType: "app", targetId: cur.id, targetLabel: v.name, details: { changed: changes } }]);
   });
+}
+
+/** The application's App Admins (its Edit form), as the full list. Support Admin only: no area, unlike the rest of this file. */
+export async function setAppAdmins(appId: string, userIds: unknown) {
+  return adminAction(async (admin) => applyAppAdmins(admin, uuid.parse(appId), uuidList.parse(userIds)));
 }
 
 /** Apps are never hard-deleted so the activity log keeps its history. */

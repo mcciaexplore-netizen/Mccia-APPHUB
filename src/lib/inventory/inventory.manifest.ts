@@ -5,9 +5,9 @@
  * Access works like every other application in the hub: the Support Admin can always open it; everyone else needs to have been given the
  * Inventory application (a row in Administrator → Applications whose URL is /inventory) with the shield button.
  *
- * Roles come from the person's role in the hub; nothing is granted inside the module:
- *   inventory_admin  the Support Admin, the Super Admin and Admins: everything (items, categories, vendors, purchase orders, requests,
- *                    issues and returns, maintenance, the stock history and purchases)
+ * Roles come from the hub; nothing is granted inside the module:
+ *   inventory_admin  the Support Admin, and the App Admins of the Inventory application (its Edit form in Administrator → Applications):
+ *                    everything (items, categories, vendors, purchase orders, requests, issues and returns, maintenance, the stock history)
  *   requester        everyone else who may open it: the dashboard, the item list (to look), and their own requests and maintenance tickets
  */
 
@@ -15,9 +15,8 @@ export type InventoryRole = "requester" | "inventory_admin";
 export const ALL_ROLES: readonly InventoryRole[] = ["requester", "inventory_admin"];
 export const ROLE_LABEL: Record<InventoryRole, string> = { requester: "User", inventory_admin: "Inventory admin" };
 
-/** The hub roles that run the store. */
-const ADMIN_HUB_ROLES = ["head_admin", "super_admin", "admin"];
-export const inventoryRoleFor = (hubRole: string): InventoryRole => (ADMIN_HUB_ROLES.includes(hubRole) ? "inventory_admin" : "requester");
+/** Inventory admin: the Support Admin always, anyone else only as an App Admin of the Inventory application. */
+export const inventoryRoleFor = (hubRole: string, isAppAdmin: boolean): InventoryRole => (hubRole === "head_admin" || isAppAdmin ? "inventory_admin" : "requester");
 
 /** The application rows that stand for this module: their URL is the module's own path (as /approvals is for the Approval System). */
 export const INVENTORY_URL_PATTERN = "^/inventory/?$";

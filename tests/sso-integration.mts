@@ -247,7 +247,11 @@ try {
       return { status: r.status, role: t ? (await verifySsoToken(t, PUBLIC_PEM, { audience: slug })).claims.role : null };
     };
     check("role: a person with a plain grant gets user", (await roleFor(normal)).role === "user");
-    check("role: a grant stored as admin earlier still gives user (the stored role is no longer read)", (await roleFor(appAdmin)).role === "user");
+    check("role: a grant stored as admin earlier still gives user (the old per-grant role is not read)", (await roleFor(appAdmin)).role === "user");
+    await db.insert(S.appAdmins).values({ appId: search.id, userId: appAdmin.id });
+    check("role: an App Admin of the application gets admin", (await roleFor(appAdmin)).role === "admin");
+    await db.delete(S.appAdmins).where(eq(S.appAdmins.userId, appAdmin.id));
+    check("role: once removed from App Admins, user again", (await roleFor(appAdmin)).role === "user");
     const h = await roleFor(head);
     check("role: the Support Admin gets user too, with no grant at all", h.status === 200 && h.role === "user" && (await db.select().from(S.userAppAccess).where(eq(S.userAppAccess.userId, head.id))).length === 0, h);
     const hd = await roleFor(head, "zz-sso-down");

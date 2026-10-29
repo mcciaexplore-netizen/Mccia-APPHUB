@@ -7,6 +7,7 @@ import { AppCard } from "@/components/AppCard";
 import { useToast } from "@/components/Toast";
 import { DEFAULT_ICON } from "@/lib/icons";
 import { callbackProblem, slugProblem } from "@/lib/sso-rules";
+import { AppAdmins, type AppAdminsData } from "./AppAdmins";
 
 type Res = { ok: true } | { ok: false; error: string };
 
@@ -50,15 +51,20 @@ export type AppVals = {
   ssoEnabled: boolean; ssoSlug: string; ssoCallbackUrl: string;
 };
 
-/** An application always belongs to one department. With a single department given, it is fixed and shown as text. */
-export function AppForm({ departments, initial, submitLabel, onSubmit, pending }: {
-  departments: Pick<Department, "id" | "name">[]; initial?: Partial<AppVals>; submitLabel: string; pending: boolean; onSubmit: (v: AppVals) => void;
+/**
+ * An application always belongs to one department. With a single department given, it is fixed and shown as text. `admins` (editing an
+ * application in Administrator → Applications) adds the App Admins section; the picked list comes back as onSubmit's second value.
+ */
+export function AppForm({ departments, initial, submitLabel, onSubmit, pending, admins }: {
+  departments: Pick<Department, "id" | "name">[]; initial?: Partial<AppVals>; submitLabel: string; pending: boolean; onSubmit: (v: AppVals, adminIds?: string[]) => void;
+  admins?: AppAdminsData;
 }) {
   const [v, setV] = useState<AppVals>({
     departmentId: initial?.departmentId ?? departments[0]?.id ?? "", name: initial?.name ?? "",
     description: initial?.description ?? "", url: initial?.url ?? "https://", icon: initial?.icon ?? DEFAULT_ICON, appToken: initial?.appToken ?? "", isActive: initial?.isActive ?? true, status: initial?.status ?? "active",
     ssoEnabled: initial?.ssoEnabled ?? false, ssoSlug: initial?.ssoSlug ?? "", ssoCallbackUrl: initial?.ssoCallbackUrl ?? "",
   });
+  const [adminIds, setAdminIds] = useState<string[]>(admins?.selected ?? []);
   const set = <K extends keyof AppVals>(k: K, val: AppVals[K]) => setV((s) => ({ ...s, [k]: val }));
   const urlBad = v.url.length > 8 && !/^(https:\/\/\S+|\/(?!\/)\S*)$/.test(v.url);
   // The same rules the server applies (src/lib/sso-rules.ts), shown while typing. Only once something has been typed.
@@ -66,7 +72,7 @@ export function AppForm({ departments, initial, submitLabel, onSubmit, pending }
   const callbackBad = v.ssoEnabled && v.ssoCallbackUrl.trim() ? callbackProblem(v.ssoCallbackUrl.trim(), v.url.trim()) : null;
   return (
     <div className="grid gap-6 md:grid-cols-[1fr_11rem]">
-      <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); onSubmit(v); }}>
+      <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); onSubmit(v, admins ? adminIds : undefined); }}>
         <Field label="Name"><input className="input" value={v.name} onChange={(e) => set("name", e.target.value)} required maxLength={80} /></Field>
         <Field label="Description (one line)"><input className="input" value={v.description} onChange={(e) => set("description", e.target.value)} maxLength={140} /></Field>
         <Field label="URL (https, or a path on this site such as /approvals)">
@@ -104,6 +110,7 @@ export function AppForm({ departments, initial, submitLabel, onSubmit, pending }
             </>
           )}
         </div>
+        {admins && <AppAdmins data={admins} value={adminIds} onChange={setAdminIds} />}
         <Field label="Availability label">
           <select className="input" value={v.status} onChange={(e) => set("status", e.target.value as AppVals["status"])}>
             <option value="active">Active (working)</option><option value="testing">Under testing (shown with a label)</option><option value="unavailable">Unavailable (shown, cannot be opened)</option>

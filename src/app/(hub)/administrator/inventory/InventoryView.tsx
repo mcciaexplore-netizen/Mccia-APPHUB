@@ -7,8 +7,9 @@ import { Download, Pencil, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-r
 import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
-import { checkApp, checkAllApps, createApp, deleteApp, setAppStatus, updateApp } from "@/actions/apps";
+import { checkApp, checkAllApps, createApp, deleteApp, setAppAdmins, setAppStatus, updateApp } from "@/actions/apps";
 import { AppForm } from "../departments/forms";
+import type { AdminPerson } from "../departments/AppAdmins";
 import { toCsv } from "@/lib/csv";
 import { formatIST } from "@/lib/format";
 
@@ -17,6 +18,8 @@ type Row = {
   id: string; name: string; description: string | null; url: string; department: string; status: "active" | "testing" | "unavailable"; visible: boolean; builtIn: boolean; people: number; check: Check | null;
   // What the Edit form starts from (the same fields the department page's Edit uses).
   departmentId: string; icon: string; appToken: string | null; isActive: boolean; ssoEnabled: boolean; ssoSlug: string | null; ssoCallbackUrl: string | null;
+  // Its App Admins, and who has been given it (to mark an App Admin who cannot open it yet).
+  adminIds: string[]; accessIds: string[];
 };
 
 const DAY = 86400000;
@@ -29,7 +32,11 @@ function verification(r: Row): { label: string; cls: string } {
 }
 
 /** Every application the hub lists: what it is, where it points, who can open it, and the result of the last real check. */
-export function InventoryView({ rows, departments }: { rows: Row[]; departments: { id: string; name: string }[] }) {
+export function InventoryView({ rows, departments, people, canSetAdmins }: {
+  rows: Row[]; departments: { id: string; name: string }[];
+  /** Everyone who can be picked as an App Admin, and whether this person may change App Admins (the Support Admin). */
+  people: AdminPerson[]; canSetAdmins: boolean;
+}) {
   const router = useRouter();
   const toast = useToast();
   const confirm = useConfirm();
@@ -133,8 +140,19 @@ export function InventoryView({ rows, departments }: { rows: Row[]; departments:
         <Modal title="Edit application" onClose={() => setEdit(null)}>
           {/* The department stays as it is, like the Edit on the department page. */}
           <AppForm departments={[{ id: edit.departmentId, name: edit.department }]} submitLabel="Save" pending={pending}
+            admins={{ people, accessIds: edit.accessIds, selected: edit.adminIds, canEdit: canSetAdmins }}
             initial={{ departmentId: edit.departmentId, name: edit.name, description: edit.description ?? "", url: edit.url, icon: edit.icon, appToken: edit.appToken ?? "", isActive: edit.isActive, status: edit.status, ssoEnabled: edit.ssoEnabled, ssoSlug: edit.ssoSlug ?? "", ssoCallbackUrl: edit.ssoCallbackUrl ?? "" }}
-            onSubmit={(v) => start(async () => { const x = await updateApp(edit.id, { ...v, departmentId: edit.departmentId }); if (x.ok) { toast.success("Application saved"); setEdit(null); router.refresh(); } else toast.error(x.error); })} />
+            onSubmit={(v, adminIds) => start(async () => {
+              const x = await updateApp(edit.id, { ...v, departmentId: edit.departmentId });
+              if (!x.ok) return toast.error(x.error);
+              // App Admins are saved after the application, and only when they changed (only the Support Admin can change them).
+              const changed = !!adminIds && (adminIds.length !== edit.adminIds.length || adminIds.some((id) => !edit.adminIds.includes(id)));
+              if (canSetAdmins && changed) {
+                const y = await setAppAdmins(edit.id, adminIds);
+                if (!y.ok) { router.refresh(); return toast.error(`Application saved, but the App Admins were not: ${y.error}`); }
+              }
+              toast.success("Application saved"); setEdit(null); router.refresh();
+            })} />
         </Modal>
       )}
     </div>
