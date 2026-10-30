@@ -37,18 +37,32 @@ const isLocalDatabase = (url: string) => {
   }
 };
 
+/**
+ * The address without ?sslmode=...: node-postgres lets it override the ssl setting below (sslmode=require now means "check the
+ * certificate", which fails on Supabase), and the addresses Supabase hands out often carry it.
+ */
+const withoutSslMode = (url: string) => {
+  try {
+    const u = new URL(url);
+    u.searchParams.delete("sslmode");
+    return u.toString();
+  } catch {
+    return url;
+  }
+};
+
 function createDb() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set");
 
   if ((process.env.DB_DRIVER ?? "neon") === "pg") {
     const pool = new Pool({
-      connectionString: url,
+      connectionString: withoutSslMode(url),
       // 5 by default. With many people using the site at once, raise it with DB_POOL_MAX (stay under the database's own connection limit).
       max: Math.max(1, Math.min(100, Number(process.env.DB_POOL_MAX) || 5)),
-      // Always encrypted, with the server's certificate checked, except for a database on this same machine (local development and
-      // tests), which has no certificate to check. DATABASE_SSL is no longer read.
-      ssl: isLocalDatabase(url) ? false : { rejectUnauthorized: true },
+      // Always encrypted, except for a database on this same machine (local development and tests), which has no certificate. The
+      // server's certificate is not checked: Supabase signs it with its own certificate authority, which Node does not know.
+      ssl: isLocalDatabase(url) ? false : { rejectUnauthorized: false },
     });
     return drizzlePg(pool, { schema });
   }

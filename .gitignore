@@ -50,3 +50,6 @@ backups/
 # single sign-on key files (see scripts/sso-keygen.mjs)
 sso-private.b64
 sso-public.b64
+
+# data export for the Supabase move (personal data, password hashes): never commit (see scripts/export-neon-data.mjs)
+scripts/neon-data-export.sql
