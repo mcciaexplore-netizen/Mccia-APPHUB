@@ -546,10 +546,10 @@ eq("cabs roles: MCCIA Cabs access makes a user; a cab_drivers row a driver; an A
 eq("cabs access: each section is the application whose URL is exactly its path", ["/cabs", "/cabs/", "/cabs/driver", "/cabs/admin", "/cabs/book", "/cabs-old", "https://cabs.example.com/cabs"].map((u) => [
   new RegExp(CABS_USER_URL_PATTERN).test(u), new RegExp(CABS_DRIVER_URL_PATTERN).test(u), new RegExp(CABS_ADMIN_URL_PATTERN).test(u)]),
   [[true, false, false], [true, false, false], [false, true, false], [false, false, true], [false, false, false], [false, false, false], [false, false, false]]);
-eq("cabs menus: 3 staff pages, 2 driver pages, 5 admin pages, each shown only to its role", [
+eq("cabs menus: 3 staff pages, 2 driver pages, 5 admin pages, each shown only to its roles (Cabs admins see the driver pages too)", [
   cabNavFor("staff", ["cab_user"]).map((i) => i.label), cabNavFor("driver", ["cab_driver"]).map((i) => i.label), cabNavFor("admin", ["cab_admin"]).map((i) => i.label),
-  cabNavFor("admin", ["cab_user", "cab_driver"]).length, cabNavFor("driver", ["cab_user", "cab_admin"]).length, [CAB_NAV.staff.title, CAB_NAV.driver.title, CAB_NAV.admin.title],
-], [["Dashboard", "Book a Ride", "My Rides"], ["Dashboard", "My Rides"], ["Dashboard", "All Rides", "Drivers", "Vehicles", "Audit Log"], 0, 0, ["MCCIA Cabs", "Cabs Driver", "Cabs Admin"]]);
+  cabNavFor("admin", ["cab_user", "cab_driver"]).length, cabNavFor("driver", ["cab_user", "cab_admin"]).length, cabNavFor("driver", ["cab_user"]).length, [CAB_NAV.staff.title, CAB_NAV.driver.title, CAB_NAV.admin.title],
+], [["Dashboard", "Book a Ride", "My Rides"], ["Dashboard", "My Rides"], ["Dashboard", "All Rides", "Drivers", "Vehicles", "Audit Log"], 0, 2, 0, ["MCCIA Cabs", "Cabs Driver", "Cabs Admin"]]);
 {
   const now = Date.parse("2026-11-02T04:00:00Z"); // 09:30 in India
   eq("cabs times: a datetime-local value is India time; a full ISO time keeps its own offset; junk is refused", [

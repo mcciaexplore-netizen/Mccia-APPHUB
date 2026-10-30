@@ -144,6 +144,10 @@ try {
     && (await S.page.locator('nav[aria-label="MCCIA Cabs"] a').allInnerTexts()).map((t) => t.trim()).join("|") === "App Hub|Dashboard|Book a Ride|My Rides");
   await go(S.page, "/cabs/admin"); check("staffer: Cabs Admin sends them back to the hub", new URL(S.page.url()).pathname === "/");
   await go(S.page, "/cabs/driver"); check("staffer: Cabs Driver sends them back to the hub", new URL(S.page.url()).pathname === "/");
+  await go(A.page, "/cabs/driver");
+  check("admin: opens Cabs Driver too (to see it as a driver does), with its menu", new URL(A.page.url()).pathname === "/cabs/driver"
+    && (await A.page.locator('nav[aria-label="Cabs Driver"] a').allInnerTexts()).map((t) => t.trim()).join("|") === "App Hub|Dashboard|My Rides");
+  check("admin: but cannot start a ride as a driver (403)", (await api(A.page, "/api/cabs/rides/00000000-0000-4000-8000-000000000000/start", "POST")).status === 403);
   await go(O.page, "/cabs"); check("someone without MCCIA Cabs is sent back to the hub", new URL(O.page.url()).pathname === "/");
   check("API: no MCCIA Cabs, no booking (403)", (await api(O.page, "/api/cabs/rides", "POST", { pickup: "a", dropoff: "b", scheduledFor: istSlot(1, 10) })).status === 403);
   check("API: a staffer cannot manage vehicles (403)", (await api(S.page, "/api/cabs/vehicles", "POST", { numberPlate: "ZZC 99", model: "x", capacity: 4 })).status === 403);
@@ -223,9 +227,13 @@ try {
     both.map((x) => x.status).sort().join(",") === "200,409" && both.some((x) => x.body?.error === "Ride already assigned"), JSON.stringify(both));
   const r3 = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Office", dropoff: "ZZC Hotel", scheduledFor: istSlot(3, 9) })).body;
   await api(A.page, `/api/cabs/drivers/${dr2.id}/availability`, "POST", { available: false });
+  await go(D2.page, "/cabs/driver"); check("a driver marked unavailable cannot open Cabs Driver", new URL(D2.page.url()).pathname === "/");
   const off = await api(A.page, `/api/cabs/rides/${r3.id}/assign`, "POST", { driverId: dr2.id, vehicleId: v2.id });
   check("an unavailable driver cannot be given a ride (409)", off.status === 409 && /Driver not available/.test(off.body?.error), JSON.stringify(off));
   await api(A.page, `/api/cabs/drivers/${dr2.id}/availability`, "POST", { available: true });
+  await sql`update cab_drivers set email = 'ZZC-Driver2@Gmail.com' where id = ${dr2.id}`; // as if typed into the database by hand
+  await go(D2.page, "/cabs/driver"); check("available again, and a driver email stored with capitals still matches the hub email", new URL(D2.page.url()).pathname === "/cabs/driver");
+  await sql`update cab_drivers set email = 'zzc-driver2@gmail.com' where id = ${dr2.id}`;
   const inactive = await api(A.page, `/api/cabs/rides/${r3.id}/assign`, "POST", { driverId: dr2.id, vehicleId: v3.id });
   check("an inactive vehicle cannot be given a ride (409)", inactive.status === 409 && /Vehicle inactive/.test(inactive.body?.error), JSON.stringify(inactive));
   check("…and the ride is still pending after both refusals", (await ride(r3.id)).status === "pending");

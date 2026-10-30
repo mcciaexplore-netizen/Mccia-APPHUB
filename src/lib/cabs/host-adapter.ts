@@ -21,13 +21,14 @@ type Standing = { userAccess: boolean; adminAppAdmin: boolean; driverId: string 
 /**
  * One query: whether the person has been given the MCCIA Cabs application (URL /cabs), whether they are an App Admin of the Cabs Admin
  * application (URL /cabs/admin) and have been given it (being an App Admin does not give access, as everywhere in the hub), and the
- * driver row with their email (drivers are not tied to hub accounts otherwise). Only active applications in active categories count.
+ * available driver row with their email, compared without regard to case (drivers are not tied to hub accounts otherwise). Only active
+ * applications in active categories count.
  */
 async function cabsStanding(userId: string, email: string): Promise<Standing> {
   const res = (await db.execute(sql`
     select coalesce(bool_or(a.url ~ ${CABS_USER_URL_PATTERN} and ua.user_id is not null), false) as user_access,
       coalesce(bool_or(a.url ~ ${CABS_ADMIN_URL_PATTERN} and ua.user_id is not null and ad.user_id is not null), false) as admin_app_admin,
-      (select id from cab_drivers where email = ${email.trim().toLowerCase()}) as driver_id
+      (select id from cab_drivers where lower(email) = ${email.trim().toLowerCase()} and is_available limit 1) as driver_id
     from apps a
     join departments d on d.id = a.department_id
     left join user_app_access ua on ua.app_id = a.id and ua.user_id = ${userId}

@@ -9,7 +9,7 @@
  *
  * Roles:
  *   cab_admin   the Support Admin, and the App Admins of the Cabs Admin application
- *   cab_driver  anyone with an active row in cab_drivers (added on Cabs Admin → Drivers)
+ *   cab_driver  anyone signed in whose email is an available driver's in cab_drivers (added on Cabs Admin → Drivers)
  *   cab_user    anyone who has been given the MCCIA Cabs application
  */
 
@@ -21,8 +21,8 @@ export const CABS_USER_URL_PATTERN = "^/cabs/?$";
 export const CABS_DRIVER_URL_PATTERN = "^/cabs/driver/?$";
 export const CABS_ADMIN_URL_PATTERN = "^/cabs/admin/?$";
 
-/** The role each section needs. */
-export const SECTION_ROLE: Record<CabSection, CabRole> = { staff: "cab_user", driver: "cab_driver", admin: "cab_admin" };
+/** The roles that open each section (any one is enough). Cabs admins also open Cabs Driver, to see it as a driver does. */
+export const SECTION_ROLES: Record<CabSection, readonly CabRole[]> = { staff: ["cab_user"], driver: ["cab_driver", "cab_admin"], admin: ["cab_admin"] };
 
 /** A person's roles from what the hub says about them (see the header). */
 export function cabRolesFor(input: { hubRole: string; userAccess: boolean; adminAppAdmin: boolean; isDriver: boolean }): CabRole[] {
@@ -54,8 +54,8 @@ export const CAB_NAV: Record<CabSection, { title: string; items: CabNavItem[] }>
   ] },
 };
 
-/** A section's menu, for someone holding its role; nothing for anyone else. */
-export const navFor = (section: CabSection, roles: readonly CabRole[]): CabNavItem[] => (roles.includes(SECTION_ROLE[section]) ? CAB_NAV[section].items : []);
+/** A section's menu, for someone holding one of its roles; nothing for anyone else. */
+export const navFor = (section: CabSection, roles: readonly CabRole[]): CabNavItem[] => (SECTION_ROLES[section].some((r) => roles.includes(r)) ? CAB_NAV[section].items : []);
 
 export const RIDE_STATUS_LABEL = { pending: "Pending", assigned: "Assigned", in_progress: "In progress", completed: "Completed", cancelled: "Cancelled" } as const;
 export type RideStatus = keyof typeof RIDE_STATUS_LABEL;

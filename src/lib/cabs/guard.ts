@@ -2,10 +2,10 @@ import "server-only";
 import { notFound, redirect } from "next/navigation";
 import { NextResponse, type NextRequest } from "next/server";
 import { ZodError, type ZodType } from "zod";
-import { SECTION_ROLE, type CabSection } from "./cabs.manifest";
+import { SECTION_ROLES, type CabSection } from "./cabs.manifest";
 import { CabsError } from "./errors";
 import { cabsEnabled } from "./flags";
-import { hasAnyRole, hasRole, needsOwnPassword, resolveAccess, type CabRole, type CabUser } from "./host-adapter";
+import { hasAnyRole, needsOwnPassword, resolveAccess, type CabRole, type CabUser } from "./host-adapter";
 import { idSchema } from "./validation";
 import { logError } from "@/lib/log-error";
 
@@ -13,14 +13,14 @@ import { logError } from "@/lib/log-error";
 
 /**
  * For pages and layouts of one section. Off looks like a page that does not exist; not signed in goes to the hub's sign-in; signed in
- * without that section's role goes back to the hub's home (it is a separate application there).
+ * without one of that section's roles goes back to the hub's home (it is a separate application there). Cabs admins open Cabs Driver too.
  */
 async function requireSection(section: CabSection): Promise<CabUser> {
   if (!cabsEnabled()) notFound();
   const a = await resolveAccess();
   if (a.status === "anonymous") redirect("/login");
   if (await needsOwnPassword()) redirect("/change-password");
-  if (!hasRole(a.user, SECTION_ROLE[section])) redirect("/");
+  if (!hasAnyRole(a.user, SECTION_ROLES[section])) redirect("/");
   return a.user;
 }
 export const requireCabsPage = () => requireSection("staff");
