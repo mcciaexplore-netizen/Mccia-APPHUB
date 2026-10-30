@@ -1,18 +1,20 @@
 import Link from "next/link";
 import { AlertTriangle, ClipboardCheck, ClipboardList, History, Package, Truck, Users, Wrench, type LucideIcon } from "lucide-react";
-import { ROLE_LABEL, SEES_ITEMS, type InventoryRole } from "@/lib/inventory/inventory.manifest";
+import { ROLE_LABEL, SEES_ALL_BRANCHES, SEES_ITEMS, type InventoryRole } from "@/lib/inventory/inventory.manifest";
+import { NO_BRANCH_MESSAGE } from "@/lib/inventory/branches";
 import { dashboardStats, lowStockItems, recentMovements } from "@/lib/inventory/catalog";
 import { formatCount, formatRupees } from "@/lib/inventory/format";
 import { requirePage } from "@/lib/inventory/guard";
-import { canManagePeople, hasAnyRole, hasRole } from "@/lib/inventory/host-adapter";
+import { canManagePeople, hasAnyRole, hasRole, listBranches } from "@/lib/inventory/host-adapter";
 import { formatIST } from "@/lib/format";
 
 /**
- * The Inventory dashboard: a card for each thing this person can do (by their role), and for Inventory admins the real figures from the
- * active items, the items running low and the latest stock movements.
+ * The Inventory dashboard: a card for each thing this person can do (by their role), and the real figures from the active items. Inventory
+ * admins and Staff see every branch together, with a branch filter, plus the items running low and the latest stock movements; a user sees
+ * their own branch's figures (or, with no branch, why they cannot request).
  */
 
-const KIND_LABEL: Record<string, string> = { inward: "Inward", issue: "Issue", return: "Return", adjust: "Adjust", recount: "Recount" };
+const KIND_LABEL: Record<string, string> = { inward: "Inward", issue: "Issue", return: "Return", adjust: "Adjust", recount: "Recount", transfer: "Transfer" };
 
 type Card = { href: string; icon: LucideIcon; title: string; text: string; roles?: readonly InventoryRole[]; people?: boolean };
 const ADMIN = ["inventory_admin"] as const;
@@ -55,9 +57,10 @@ function Stat({ label, value, warn, href }: { label: string; value: string | num
   return href ? <Link href={href} className={`${cls} glass-hover`}>{body}</Link> : <div className={cls}>{body}</div>;
 }
 
-export default async function InventoryDashboard() {
+export default async function InventoryDashboard({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePage();
   const admin = hasRole(user, "inventory_admin");
+  const allBranches = hasAnyRole(user, SEES_ALL_BRANCHES);
   const role: InventoryRole = admin ? "inventory_admin" : hasRole(user, "inventory_staff") ? "inventory_staff" : "requester";
   const people = admin && (await canManagePeople());
   const cards = CARDS.filter((c) => (!c.roles || hasAnyRole(user, c.roles)) && (!c.people || people));
@@ -66,6 +69,7 @@ export default async function InventoryDashboard() {
     <div>
       <h1 className="text-2xl">Inventory</h1>
       <p className="text-sm text-muted">Signed in as {user.name} · {ROLE_LABEL[role]}</p>
+      <p className={`text-sm ${user.branchName ? "text-muted" : "font-semibold text-[#b45309]"}`}>{user.branchName ? `Branch: ${user.branchName}` : "No branch assigned"}</p>
     </div>
   );
   const actions = (
@@ -74,27 +78,52 @@ export default async function InventoryDashboard() {
     </nav>
   );
 
-  if (!admin) {
+  // A user: their own branch's figures only (no value or requests of others), or why they cannot request.
+  if (!allBranches) {
+    const mine = user.branchId ? await dashboardStats(user.branchId) : null;
     return (
       <div className="page-enter space-y-6">
         {heading}
+        {!user.branchId && <p role="status" className="rounded-md border border-[#fcd34d] bg-[#fff8e1] px-4 py-3 text-sm font-semibold text-[#b45309]">{NO_BRANCH_MESSAGE}</p>}
         {actions}
+        {mine && (
+          <section aria-label={`At ${user.branchName}`} className="grid gap-4 sm:grid-cols-3">
+            <Stat label={`Items at ${user.branchName}`} value={formatCount(mine.items)} />
+            <Stat label="Units in stock" value={formatCount(mine.units)} />
+            <Stat label="Low on stock" value={formatCount(mine.lowStock)} warn={mine.lowStock > 0} />
+          </section>
+        )}
       </div>
     );
   }
 
-  const [s, low, moves] = await Promise.all([dashboardStats(), lowStockItems(8), recentMovements(8)]);
+  // Inventory admins and Staff: every branch together, or the one chosen.
+  const branchList = await listBranches();
+  const raw = (await searchParams).branch;
+  const branch = branchList.find((b) => b.id === (Array.isArray(raw) ? raw[0] : raw));
+  const withBranch = (href: string) => (branch ? `${href}${href.includes("?") ? "&" : "?"}branch=${branch.id}` : href);
+  const [s, low, moves] = await Promise.all([dashboardStats(branch?.id), lowStockItems(8, branch?.id), recentMovements(8, branch?.id)]);
   return (
     <div className="page-enter space-y-6">
       {heading}
       {actions}
 
-      <section aria-label="Summary" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-        <Stat label="Items" value={formatCount(s.items)} href="/inventory/items" />
+      <form method="get" action="/inventory" className="flex flex-wrap items-end gap-3">
+        <label className="block"><span className="label-xs mb-1.5 block">Branch</span>
+          <select name="branch" className="input !w-auto" defaultValue={branch?.id ?? ""}>
+            <option value="">All branches</option>
+            {branchList.map((b) => <option key={b.id} value={b.id}>{b.name}{b.active ? "" : " (inactive)"}</option>)}
+          </select></label>
+        <button className="btn btn-primary btn-sm">Show</button>
+        {branch && <Link href="/inventory" className="btn btn-ghost btn-sm">All branches</Link>}
+      </form>
+
+      <section aria-label={branch ? `Summary for ${branch.name}` : "Summary for all branches"} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+        <Stat label="Items" value={formatCount(s.items)} href={withBranch("/inventory/items")} />
         <Stat label="Units in stock" value={formatCount(s.units)} />
         <Stat label="Stock value" value={formatRupees(s.valuePaise)} />
-        <Stat label="Low on stock" value={formatCount(s.lowStock)} warn={s.lowStock > 0} href="/inventory/items?low=1" />
-        <Stat label="Requests waiting" value={formatCount(s.pendingRequests)} warn={s.pendingRequests > 0} href="/inventory/requests?status=pending" />
+        <Stat label="Low on stock" value={formatCount(s.lowStock)} warn={s.lowStock > 0} href={withBranch("/inventory/items?low=1")} />
+        <Stat label="Requests waiting" value={formatCount(s.pendingRequests)} warn={s.pendingRequests > 0} href={withBranch("/inventory/requests?status=pending")} />
         <Stat label="Open maintenance tickets" value={formatCount(s.openTickets)} href="/inventory/maintenance?status=open" />
       </section>
 
@@ -102,13 +131,13 @@ export default async function InventoryDashboard() {
         <section className="glass !rounded-md space-y-3 p-5 sm:p-6" aria-label="Low on stock">
           <div className="flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-xl"><AlertTriangle size={18} className="text-brand-red" /> Low on stock</h2>
-            {s.lowStock > low.length && <Link href="/inventory/items?low=1" className="text-sm text-primary hover:underline">All {s.lowStock}</Link>}
+            {s.lowStock > low.length && <Link href={withBranch("/inventory/items?low=1")} className="text-sm text-primary hover:underline">All {s.lowStock}</Link>}
           </div>
           {low.length === 0 ? <p className="text-sm text-muted">Nothing is below its minimum stock.</p> : (
             <div className="table-wrap"><table>
               <thead><tr><th>Item</th><th className="text-right">In stock</th><th className="text-right">Minimum</th></tr></thead>
               <tbody>{low.map((i) => (
-                <tr key={i.id}><td>{i.name}</td><td className="text-right font-semibold text-brand-red">{formatCount(i.quantity)} {i.unit}</td><td className="text-right text-muted">{formatCount(i.minQuantity)}</td></tr>
+                <tr key={`${i.id}:${i.branchId}`}><td>{i.name}{!branch && <span className="block text-xs text-muted">{i.branchName}</span>}</td><td className="text-right font-semibold text-brand-red">{formatCount(i.quantity)} {i.unit}</td><td className="text-right text-muted">{formatCount(i.minQuantity)}</td></tr>
               ))}</tbody>
             </table></div>
           )}
@@ -121,7 +150,7 @@ export default async function InventoryDashboard() {
               <li key={m.id} className="flex items-center justify-between gap-3 py-2.5">
                 <span className="min-w-0">
                   <span className="badge badge-neutral mr-2">{KIND_LABEL[m.kind] ?? m.kind}</span><b>{m.item}</b>
-                  <span className="block truncate text-xs text-muted">{m.issuedToName ?? m.eventName ?? m.reason ?? ""}{m.actorName ? ` · by ${m.actorName}` : ""}</span>
+                  <span className="block truncate text-xs text-muted">{!branch && `${m.branchName} · `}{m.issuedToName ?? m.eventName ?? m.reason ?? ""}{m.actorName ? ` · by ${m.actorName}` : ""}</span>
                 </span>
                 <span className="shrink-0 text-right">
                   <span className={`block font-semibold ${m.delta < 0 ? "text-brand-red" : "text-[var(--c-green-text)]"}`}>{m.delta > 0 ? `+${m.delta}` : m.delta}</span>

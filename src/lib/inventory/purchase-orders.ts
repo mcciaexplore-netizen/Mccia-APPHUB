@@ -1,6 +1,7 @@
 import "server-only";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
+import { branches } from "@/db/schema";
 import { inventoryItems, inventoryPurchaseOrderLines, inventoryPurchaseOrders, inventoryStockMovements, inventoryVendors } from "@/db/inventory-schema";
 import { writeAudit } from "@/lib/audit";
 import { InventoryError } from "./errors";
@@ -10,7 +11,7 @@ import type { PoInput, ReceiveInput } from "./validation";
 
 /**
  * Purchase orders. draft → sent → received, and draft or sent → cancelled. A draft can be edited; sending fixes it. Receiving records what
- * arrived on each line, adds it to the stock of catalogue items with an "inward" movement (vendor, PO, rate, challan), and closes the PO
+ * arrived on each line, adds it to the receiving branch's stock of catalogue items with an "inward" movement (vendor, PO, rate, challan), and closes the PO
  * once everything is in or the admin says nothing more is coming. Every change is ONE statement (the production driver has no
  * transactions). Recorded in the hub's audit log as inventory.po_created / po_updated / po_sent / po_received / po_cancelled.
  */
@@ -66,8 +67,9 @@ export async function getPurchaseOrder(id: string) {
       .where(eq(inventoryPurchaseOrderLines.purchaseOrderId, id)).orderBy(asc(inventoryPurchaseOrderLines.sort)),
     db.select({
       id: inventoryStockMovements.id, item: inventoryItems.name, quantity: inventoryStockMovements.delta, challanNo: inventoryStockMovements.challanNo,
-      actorName: inventoryStockMovements.actorName, createdAt: inventoryStockMovements.createdAt,
+      actorName: inventoryStockMovements.actorName, createdAt: inventoryStockMovements.createdAt, branchName: branches.name,
     }).from(inventoryStockMovements).innerJoin(inventoryItems, eq(inventoryItems.id, inventoryStockMovements.itemId))
+      .innerJoin(branches, eq(branches.id, inventoryStockMovements.branchId))
       .where(and(eq(inventoryStockMovements.purchaseOrderId, id), eq(inventoryStockMovements.kind, "inward"))).orderBy(desc(inventoryStockMovements.createdAt)),
   ]);
   return { ...po, lines, receipts, totalPaise: lines.reduce((t, l) => t + l.quantity * l.ratePaise, 0) };
@@ -181,11 +183,11 @@ export async function cancelPurchaseOrder(id: string, actor: Actor) {
 }
 
 /**
- * Records goods arriving on a sent order, in ONE statement: each line's received quantity goes up (never past what was ordered), the
- * stock of each catalogue item goes up by what arrived, an inward movement is written per line (vendor, PO, rate, challan), and the order
+ * Records goods arriving on a sent order at one branch, in ONE statement: each line's received quantity goes up (never past what was
+ * ordered), the branch's stock of each catalogue item goes up by what arrived (the branch starts keeping an item it did not have), an inward movement is written per line (vendor, PO, rate, challan), and the order
  * becomes received when nothing is left to come or `close` says nothing more will. Any line asked for more than is left: nothing changes.
  */
-export async function receivePurchaseOrder(id: string, v: ReceiveInput, actor: Actor) {
+export async function receivePurchaseOrder(id: string, v: ReceiveInput, branch: { id: string; name: string }, actor: Actor) {
   const input = v.lines.length
     ? sql`select * from (values ${sql.join(v.lines.map((l) => sql`(${l.lineId}::uuid, ${l.quantity}::int)`), sql`, `)}) as x(line_id, qty)`
     : sql`select null::uuid as line_id, null::int as qty where false`;
@@ -205,10 +207,14 @@ export async function receivePurchaseOrder(id: string, v: ReceiveInput, actor: A
     ), per_item as (
       select item_id, sum(qty)::int as qty from recv where item_id is not null group by item_id
     ), stock as (
-      update inventory_items it set quantity = it.quantity + p.qty from per_item p where it.id = p.item_id returning it.id, it.quantity
+      insert into inventory_branch_stock (item_id, branch_id, quantity) select item_id, ${branch.id}, qty from per_item
+      on conflict (item_id, branch_id) do update set quantity = inventory_branch_stock.quantity + excluded.quantity
+      returning item_id as id, quantity
+    ), total as (
+      update inventory_items it set quantity = it.quantity + p.qty from per_item p where it.id = p.item_id
     ), movement as (
-      insert into inventory_stock_movements (item_id, kind, delta, quantity_after, reason, vendor_id, purchase_order_id, challan_no, rate_paise, actor_user_id, actor_name)
-      select r.item_id, 'inward', r.qty, s.quantity, 'Received on ' || po.po_no, po.vendor_id, ${id}, ${v.challanNo}, r.rate_paise, ${actor.id}, ${actor.name}
+      insert into inventory_stock_movements (item_id, kind, delta, quantity_after, reason, vendor_id, purchase_order_id, challan_no, rate_paise, branch_id, actor_user_id, actor_name)
+      select r.item_id, 'inward', r.qty, s.quantity, 'Received on ' || po.po_no, po.vendor_id, ${id}, ${v.challanNo}, r.rate_paise, ${branch.id}, ${actor.id}, ${actor.name}
       from recv r join stock s on s.id = r.item_id cross join po
       returning id
     ), remaining as (
@@ -228,7 +234,7 @@ export async function receivePurchaseOrder(id: string, v: ReceiveInput, actor: A
     throw new InventoryError("A line was given more than is still to come. Reload to see what has already arrived; nothing was changed.", 409);
   }
   if (row.lines > 0 || row.closed === 1) {
-    await audit(actor, "po_received", id, row.po_no ?? "", { lines: row.lines, stockMovements: row.movements, challanNo: v.challanNo, closed: row.closed === 1 });
+    await audit(actor, "po_received", id, row.po_no ?? "", { lines: row.lines, stockMovements: row.movements, challanNo: v.challanNo, closed: row.closed === 1, branch: branch.name });
   }
   // Someone recorded a receipt on the same lines at the same moment: theirs counted first, and a line that would now go past what was
   // ordered was left out (each line is checked again as it is updated). Say so rather than report a success.

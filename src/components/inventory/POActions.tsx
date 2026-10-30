@@ -12,8 +12,10 @@ import { inventoryApi } from "./api";
 
 type Line = { id: string; label: string; unit: string | null; quantity: number; receivedQuantity: number; inCatalogue: boolean };
 
-/** What can be done with one purchase order now: edit and send a draft, receive goods on a sent order, cancel either. */
-export function POActions({ id, poNo, vendorName, status, lines }: { id: string; poNo: string; vendorName: string; status: PoStatus; lines: Line[] }) {
+/** What can be done with one purchase order now: edit and send a draft, receive goods on a sent order (at a branch), cancel either. */
+export function POActions({ id, poNo, vendorName, status, lines, branches, ownBranchId }: {
+  id: string; poNo: string; vendorName: string; status: PoStatus; lines: Line[]; branches: { id: string; name: string }[]; ownBranchId: string | null;
+}) {
   const router = useRouter();
   const toast = useToast();
   const confirm = useConfirm();
@@ -23,6 +25,7 @@ export function POActions({ id, poNo, vendorName, status, lines }: { id: string;
   const [qty, setQty] = useState<Record<string, string>>({});
   const [challanNo, setChallanNo] = useState("");
   const [close, setClose] = useState(false);
+  const [branchId, setBranchId] = useState("");
 
   const run = (fn: () => Promise<unknown>, done: string, after?: () => void) => start(async () => {
     try { await fn(); toast.success(done); after?.(); router.refresh(); } catch (e) { toast.error((e as Error).message); }
@@ -37,9 +40,12 @@ export function POActions({ id, poNo, vendorName, status, lines }: { id: string;
       message: status === "sent" ? "Nothing more will be received on it. Anything already received stays in stock." : "The draft will be kept, marked as cancelled." }))) return;
     run(() => inventoryApi(`/api/inventory/purchase-orders/${id}/cancel`, "POST"), `${poNo} cancelled`);
   };
-  const openReceive = () => { setQty(Object.fromEntries(open.map((l) => [l.id, String(l.quantity - l.receivedQuantity)]))); setChallanNo(""); setClose(false); setReceiving(true); };
+  const openReceive = () => {
+    setQty(Object.fromEntries(open.map((l) => [l.id, String(l.quantity - l.receivedQuantity)]))); setChallanNo(""); setClose(false);
+    setBranchId(branches.some((b) => b.id === ownBranchId) ? (ownBranchId ?? "") : (branches[0]?.id ?? "")); setReceiving(true);
+  };
   const receive = () => run(() => inventoryApi(`/api/inventory/purchase-orders/${id}/receive`, "POST", {
-    lines: open.map((l) => ({ lineId: l.id, quantity: qty[l.id] || "0" })), challanNo, close,
+    lines: open.map((l) => ({ lineId: l.id, quantity: qty[l.id] || "0" })), challanNo, close, branchId,
   }), "Goods received; stock updated", () => setReceiving(false));
 
   if (status === "received" || status === "cancelled") return null;
@@ -55,7 +61,12 @@ export function POActions({ id, poNo, vendorName, status, lines }: { id: string;
       {receiving && (
         <Modal title={`Receive goods on ${poNo}`} onClose={() => setReceiving(false)}>
           <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); receive(); }}>
-            <p className="text-sm text-muted">Enter what arrived now (0 for a line that did not). Catalogue items go into stock at once.</p>
+            <p className="text-sm text-muted">Enter what arrived now (0 for a line that did not). Catalogue items go into the branch&apos;s stock at once.</p>
+            <label className="block"><span className="label-xs mb-1.5 block">Arrived at branch</span>
+              <select className="input" value={branchId} onChange={(e) => setBranchId(e.target.value)} required>
+                <option value="">Choose a branch</option>
+                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select></label>
             <div className="table-wrap"><table>
               <thead><tr><th>Line</th><th className="text-right">Still to come</th><th className="w-32">Arrived now</th></tr></thead>
               <tbody>{open.map((l) => (

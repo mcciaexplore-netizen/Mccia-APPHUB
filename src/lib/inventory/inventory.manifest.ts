@@ -23,6 +23,11 @@ export const inventoryRoleFor = (hubRole: string, isAppAdmin: boolean, isAppStaf
 
 /** Who may look at the item list: Staff and Inventory admins. */
 export const SEES_ITEMS = ["inventory_staff", "inventory_admin"] as const satisfies readonly InventoryRole[];
+/**
+ * Who sees every branch (with a branch filter on items, requests and the dashboard): Staff and Inventory admins. A user sees only their own
+ * branch's stock and requests from it.
+ */
+export const SEES_ALL_BRANCHES = SEES_ITEMS;
 
 /** The application rows that stand for this module: their URL is the module's own path (as /approvals is for the Approval System). */
 export const INVENTORY_URL_PATTERN = "^/inventory/?$";
@@ -45,6 +50,7 @@ export const inventoryNav: InventoryNavItem[] = [
   { label: "Requests", href: "/inventory/requests" },
   { label: "Issues & returns", href: "/inventory/issues", roles: ADMIN },
   { label: "Stock movements", href: "/inventory/movements", roles: ADMIN },
+  { label: "Transfers", href: "/inventory/transfers", roles: ADMIN },
   { label: "Purchases", href: "/inventory/purchases", roles: ADMIN },
   { label: "Purchase orders", href: "/inventory/purchase-orders", roles: ADMIN },
   { label: "Vendors", href: "/inventory/vendors", roles: ADMIN },

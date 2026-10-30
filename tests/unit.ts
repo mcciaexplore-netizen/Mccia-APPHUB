@@ -30,7 +30,7 @@ import {
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import { INVENTORY_URL_PATTERN, inventoryRoleFor, navFor } from "../src/lib/inventory/inventory.manifest";
-import { issueInput, poInput, receiveInput, ticketInput, ticketUpdate, requestDecision, requestInput, returnInput, rupeesToPaise, vendorInput } from "../src/lib/inventory/validation";
+import { issueInput, poInput, receiveInput, ticketInput, ticketUpdate, requestDecision, requestInput, returnInput, rupeesToPaise, transferInput, vendorInput } from "../src/lib/inventory/validation";
 import { financialYear, nextPoNo, poPrefix } from "../src/lib/inventory/po-number";
 import { MAX_PHOTO_BYTES, checkPhoto, sniffPhoto } from "../src/lib/inventory/photos";
 import {
@@ -462,11 +462,18 @@ eq("inventory menu: no Settings any more; Categories, purchase orders and the st
   navLabels(["requester"]).includes("Stock movements"), navLabels(["requester", "inventory_admin"]).includes("Categories"), navLabels(["requester"]).includes("Items"), navLabels(["requester"]).includes("Requests"),
   navLabels(["requester", "inventory_staff"]).includes("Items"), navLabels(["requester", "inventory_admin"]).includes("Items"),
 ], [false, false, false, false, true, false, true, true, true]);
-eq("inventory menu: a user sees exactly the dashboard, their requests and maintenance; Staff also the items; an admin sees all ten",
-  [navLabels(["requester"]), navLabels(["requester", "inventory_staff"]), navLabels(["requester", "inventory_admin"]).length],
-  [["Dashboard", "Requests", "Maintenance"], ["Dashboard", "Items", "Requests", "Maintenance"], 10]);
+eq("inventory menu: a user sees exactly the dashboard, their requests and maintenance; Staff also the items; an admin sees all eleven, Transfers among them",
+  [navLabels(["requester"]), navLabels(["requester", "inventory_staff"]), navLabels(["requester", "inventory_admin"]).length, navLabels(["requester", "inventory_staff"]).includes("Transfers"), navLabels(["requester", "inventory_admin"]).includes("Transfers")],
+  [["Dashboard", "Requests", "Maintenance"], ["Dashboard", "Items", "Requests", "Maintenance"], 11, false, true]);
 eq("inventory rupees: amounts become paise; bad input is refused", [rupeesToPaise("1,250.50"), rupeesToPaise("₹ 35"), rupeesToPaise(""), rupeesToPaise("1.234"), rupeesToPaise("-5"), rupeesToPaise("abc")], [125050, 3500, null, "invalid", "invalid", "invalid"]);
 const okParse = (schema: { safeParse: (v: unknown) => { success: boolean } }, v: unknown) => schema.safeParse(v).success;
+{
+  const b1 = "11111111-1111-4111-8111-111111111111", b2 = "22222222-2222-4222-8222-222222222222", it = "33333333-3333-4333-8333-333333333333";
+  eq("inventory transfers: two different branches and a whole quantity of at least 1", [
+    okParse(transferInput, { itemId: it, fromBranchId: b1, toBranchId: b2, quantity: "4" }), okParse(transferInput, { itemId: it, fromBranchId: b1, toBranchId: b1, quantity: 4 }),
+    okParse(transferInput, { itemId: it, fromBranchId: b1, toBranchId: b2, quantity: 0 }), okParse(transferInput, { itemId: it, fromBranchId: "", toBranchId: b2, quantity: 1 }),
+  ], [true, false, false, false]);
+}
 eq("inventory requests: an item and a whole quantity of at least 1; a reject needs a reason", [
   okParse(requestInput, { itemId: "11111111-1111-4111-8111-111111111111", quantity: "3" }), okParse(requestInput, { itemId: "11111111-1111-4111-8111-111111111111", quantity: 0 }), okParse(requestInput, { itemId: "11111111-1111-4111-8111-111111111111", quantity: 1.5 }),
   okParse(requestDecision, { action: "approve" }), okParse(requestDecision, { action: "reject", reason: "  " }), okParse(requestDecision, { action: "reject", reason: "Out of budget" }),

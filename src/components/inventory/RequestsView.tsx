@@ -10,11 +10,12 @@ import { formatIST } from "@/lib/format";
 import { inventoryApi } from "./api";
 
 export type RequestView = {
-  id: string; item: string; unit: string; inStock: number; quantity: number; note: string | null; status: string; requestedByName: string;
+  id: string; item: string; unit: string; branchName: string; /** At the request's branch. */ inStock: number; quantity: number; note: string | null; status: string; requestedByName: string;
   requestedAt: string; resolvedByName: string | null; resolvedAt: string | null; rejectReason: string | null;
 };
 type ItemOption = { id: string; name: string; unit: string; quantity: number };
 type Status = "pending" | "approved" | "fulfilled" | "rejected";
+type Branch = { id: string; name: string; active: boolean };
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   pending: { label: "Pending", cls: "badge badge-purple" },
@@ -44,8 +45,14 @@ function NewRequest({ items, pending, onSubmit }: { items: ItemOption[]; pending
   );
 }
 
-/** Requests: everyone raises them and follows their own; Inventory admins see all of them and approve, reject or fulfil. */
-export function RequestsView({ rows, items, canManage, status, counts }: { rows: RequestView[]; items: ItemOption[]; canManage: boolean; status: Status | ""; counts?: Record<Status, number> }) {
+/**
+ * Requests: everyone raises them, at their own branch, and follows their own. Inventory admins and Staff see everyone's, every branch or
+ * one; Inventory admins approve, reject or fulfil (from the request's branch). With no branch, a person is told why they cannot request.
+ */
+export function RequestsView({ rows, items, canManage, seesAll, status, counts, branches, branchId, ownBranch, noBranch }: {
+  rows: RequestView[]; items: ItemOption[]; canManage: boolean; seesAll: boolean; status: Status | ""; counts?: Record<Status, number>;
+  branches: Branch[]; branchId: string; ownBranch: string | null; noBranch: string | null;
+}) {
   const router = useRouter();
   const toast = useToast();
   const confirm = useConfirm();
@@ -61,22 +68,40 @@ export function RequestsView({ rows, items, canManage, status, counts }: { rows:
   // Asked before the transition starts: a dialog opened inside one never shows.
   const fulfil = async (r: RequestView) => {
     if (!(await confirm({ title: "Fulfil this request?", confirmLabel: "Fulfil",
-      message: `${r.quantity} ${r.unit} of “${r.item}” will be taken out of stock (${r.inStock} available) and recorded as issued to ${r.requestedByName}.` }))) return;
+      message: `${r.quantity} ${r.unit} of “${r.item}” will be taken out of ${r.branchName}'s stock (${r.inStock} available there) and recorded as issued to ${r.requestedByName}.` }))) return;
     decide(r, { action: "fulfil" }, "Request fulfilled; stock updated");
   };
-  const tab = (s: Status | "") => router.replace(`/inventory/requests${s ? `?status=${s}` : ""}`);
+  // The status tab and the branch filter live in the address together.
+  const go = (s: Status | "", b: string) => {
+    const p = new URLSearchParams();
+    if (s) p.set("status", s);
+    if (b) p.set("branch", b);
+    router.replace(`/inventory/requests${p.size ? `?${p}` : ""}`);
+  };
+  const tab = (s: Status | "") => go(s, branchId);
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl">{canManage ? "Requests" : "My requests"}</h1>
-          <p className="text-sm text-muted">{canManage ? "Everyone's requests to the store. Approve, reject with a reason, then fulfil to hand the items over." : "Ask the store for an item and follow what happens to it."}</p>
+          <h1 className="text-2xl">{seesAll ? "Requests" : "My requests"}</h1>
+          <p className="text-sm text-muted">{canManage ? "Everyone's requests to the store, at every branch. Approve, reject with a reason, then fulfil to hand the items over from the request's branch."
+            : seesAll ? "Everyone's requests to the store, at every branch." : `Ask the store${ownBranch ? ` at ${ownBranch}` : ""} for an item and follow what happens to it.`}</p>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={() => setCreating(true)}><Plus size={14} /> New request</button>
+        {!noBranch && <button className="btn btn-primary btn-sm" onClick={() => setCreating(true)}><Plus size={14} /> New request</button>}
       </div>
 
-      {canManage && counts && (
+      {noBranch && <p role="status" className="rounded-md border border-[#fcd34d] bg-[#fff8e1] px-4 py-3 text-sm font-semibold text-[#b45309]">{noBranch}</p>}
+
+      {seesAll && (
+        <label className="flex items-center gap-2 text-sm text-muted">Branch
+          <select className="input !w-auto" value={branchId} onChange={(e) => go(status, e.target.value)} aria-label="Branch">
+            <option value="">All branches</option>
+            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}{b.active ? "" : " (inactive)"}</option>)}
+          </select></label>
+      )}
+
+      {seesAll && counts && (
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Show requests">
           {(["", "pending", "approved", "fulfilled", "rejected"] as const).map((s) => (
             <button key={s || "all"} role="tab" aria-selected={status === s} onClick={() => tab(s)}
@@ -88,13 +113,14 @@ export function RequestsView({ rows, items, canManage, status, counts }: { rows:
       )}
 
       <div className="table-wrap"><table>
-        <thead><tr><th>Item</th><th className="text-right">Quantity</th>{canManage && <th>Requested by</th>}<th>Requested</th><th>Status</th>{canManage && <th className="text-right">Actions</th>}</tr></thead>
+        <thead><tr><th>Item</th><th className="text-right">Quantity</th>{seesAll && <th>Branch</th>}{seesAll && <th>Requested by</th>}<th>Requested</th><th>Status</th>{canManage && <th className="text-right">Actions</th>}</tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}>
               <td><b>{r.item}</b>{r.note && <span className="block max-w-sm text-xs text-muted">{r.note}</span>}</td>
-              <td className="text-right">{r.quantity} {r.unit}{canManage && r.status === "approved" && r.inStock < r.quantity && <span className="block text-xs font-semibold text-brand-red">only {r.inStock} in stock</span>}</td>
-              {canManage && <td>{r.requestedByName}</td>}
+              <td className="text-right">{r.quantity} {r.unit}{canManage && r.status === "approved" && r.inStock < r.quantity && <span className="block text-xs font-semibold text-brand-red">only {r.inStock} in stock there</span>}</td>
+              {seesAll && <td>{r.branchName}</td>}
+              {seesAll && <td>{r.requestedByName}</td>}
               <td className="text-xs text-muted">{formatIST(r.requestedAt)}</td>
               <td><span className={STATUS_BADGE[r.status]?.cls ?? "badge"}>{STATUS_BADGE[r.status]?.label ?? r.status}</span>
                 {r.status === "rejected" && r.rejectReason && <span className="mt-1 block max-w-xs text-xs text-muted">Reason: {r.rejectReason}</span>}
@@ -110,13 +136,13 @@ export function RequestsView({ rows, items, canManage, status, counts }: { rows:
               )}
             </tr>
           ))}
-          {rows.length === 0 && <tr><td colSpan={canManage ? 6 : 4} className="text-subtle">{status ? "No requests with this status." : canManage ? "No requests yet." : "You haven't asked for anything yet."}</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={4 + (seesAll ? 2 : 0) + (canManage ? 1 : 0)} className="text-subtle">{status || branchId ? "No requests match." : seesAll ? "No requests yet." : "You haven't asked for anything yet."}</td></tr>}
         </tbody>
       </table></div>
 
       {creating && (
         <Modal title="New request" onClose={() => setCreating(false)}>
-          {items.length === 0 ? <p className="text-sm text-muted">The store has no items to request yet.</p> : (
+          {items.length === 0 ? <p className="text-sm text-muted">{ownBranch ? `${ownBranch} has no items to request yet.` : "The store has no items to request yet."}</p> : (
             <NewRequest items={items} pending={pending} onSubmit={(v) => run(() => inventoryApi("/api/inventory/requests", "POST", v), "Request sent", () => setCreating(false))} />
           )}
         </Modal>

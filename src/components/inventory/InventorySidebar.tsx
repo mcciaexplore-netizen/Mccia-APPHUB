@@ -10,8 +10,11 @@ const row = (active: boolean) =>
     active ? "border-[#2a6b7c] bg-[#f0f7f9] text-primary" : "border-transparent text-ink hover:bg-alt"
   }`;
 
-/** The Inventory module's own sidebar: what this person's roles let them open, with the pages not built yet greyed out. */
-export function InventorySidebar({ roles }: { roles: InventoryRole[] }) {
+/**
+ * The Inventory module's own sidebar: what this person's roles let them open, with the pages not built yet greyed out. Under its heading,
+ * the person's branch (whose stock they see), or "No branch assigned" in amber.
+ */
+export function InventorySidebar({ roles, branchName }: { roles: InventoryRole[]; branchName: string | null }) {
   const pathname = usePathname();
   const { navRef, indicator } = useSlidingIndicator();
   // A section stays highlighted on its own pages (a purchase order under Purchase orders); the dashboard only on itself.
@@ -19,7 +22,8 @@ export function InventorySidebar({ roles }: { roles: InventoryRole[] }) {
   return (
     <nav ref={navRef} aria-label="Inventory" className="relative rounded-[14px] border border-gray-200 bg-white py-3">
       {indicator}
-      <p className="px-4 pb-2 text-[0.66rem] font-bold uppercase tracking-widest text-subtle">Inventory</p>
+      <p className="px-4 text-[0.66rem] font-bold uppercase tracking-widest text-subtle">Inventory</p>
+      <p className={`px-4 pb-2 text-xs ${branchName ? "text-muted" : "font-semibold text-[#b45309]"}`}>{branchName ? `Branch: ${branchName}` : "No branch assigned"}</p>
       <ul>
         {navFor(roles).map((i) => (
           <li key={i.href}>

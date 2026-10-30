@@ -1,5 +1,6 @@
-import { bigint, boolean, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { branches } from "./schema";
 
 /**
  * Inventory module tables. Every table and type is prefixed inventory_ and nothing here touches a hub table.
@@ -9,13 +10,18 @@ import { sql } from "drizzle-orm";
  * Issues, returns, inward goods, adjustments and recounts are all rows in one ledger (inventory_stock_movements), so an item's quantity
  * can always be explained. inventory_items.quantity is kept in step with it by single atomic statements (the production driver has no
  * transactions): change the quantity only with a conditional UPDATE that cannot go below zero, and write the movement in the same statement.
+ *
+ * Stock is kept per branch (the hub's branches): the catalogue (inventory_items) is shared, and inventory_branch_stock holds how many of each
+ * item each branch has, and its own low-stock level. inventory_items.quantity is the total across branches, kept in step in the same
+ * statements (it is what the code before branches read, so an Instant Rollback still shows the right totals). Every movement and request
+ * names its branch; a transfer moves stock from one branch to another (inventory_transfers, with a movement at each end).
  */
 
 const id = () => uuid("id").primaryKey().default(sql`gen_random_uuid()`);
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const paise = (name: string) => bigint(name, { mode: "number" });
 
-export const inventoryMovementKind = pgEnum("inventory_movement_kind", ["inward", "issue", "return", "adjust", "recount"]);
+export const inventoryMovementKind = pgEnum("inventory_movement_kind", ["inward", "issue", "return", "adjust", "recount", "transfer"]);
 export const inventoryRequestStatus = pgEnum("inventory_request_status", ["pending", "approved", "fulfilled", "rejected", "cancelled"]);
 export const inventoryPoStatus = pgEnum("inventory_po_status", ["draft", "sent", "received", "cancelled"]);
 export const inventoryTicketStatus = pgEnum("inventory_ticket_status", ["open", "in_progress", "resolved"]);
@@ -73,11 +79,29 @@ export const inventoryItems = pgTable(
     defaultVendorId: uuid("default_vendor_id").references(() => inventoryVendors.id, { onDelete: "set null" }),
     notes: text("notes"),
     active: boolean("active").notNull().default(true),
+    /** The branch it was first added at. Its stock at each branch is in inventory_branch_stock. */
+    branchId: uuid("branch_id").references(() => branches.id, { onDelete: "restrict" }),
     createdAt: createdAt(),
   },
   (t) => [
     uniqueIndex("inventory_items_name_uq").on(sql`lower(${t.name})`),
     index("inventory_items_category_idx").on(t.categoryId),
+  ],
+);
+
+/** How many of an item one branch has, and the level below which it counts as low there. A row appears when the branch first gets the item. */
+export const inventoryBranchStock = pgTable(
+  "inventory_branch_stock",
+  {
+    itemId: uuid("item_id").notNull().references(() => inventoryItems.id, { onDelete: "restrict" }),
+    branchId: uuid("branch_id").notNull().references(() => branches.id, { onDelete: "restrict" }),
+    quantity: integer("quantity").notNull().default(0),
+    minQuantity: integer("min_quantity").notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.itemId, t.branchId] }),
+    index("inventory_branch_stock_branch_idx").on(t.branchId),
+    check("inventory_branch_stock_quantity_check", sql`${t.quantity} >= 0`),
   ],
 );
 
@@ -108,12 +132,15 @@ export const inventoryStockMovements = pgTable(
     ratePaise: paise("rate_paise"),
     // where it came from
     requestId: uuid("request_id"),
+    /** Where it happened. A transfer has a movement at each branch. */
+    branchId: uuid("branch_id").notNull().references(() => branches.id, { onDelete: "restrict" }),
     actorUserId: uuid("actor_user_id").notNull(),
     actorName: text("actor_name").notNull(),
     createdAt: createdAt(),
   },
   (t) => [
     index("inventory_movements_item_idx").on(t.itemId, t.createdAt),
+    index("inventory_movements_branch_idx").on(t.branchId, t.createdAt),
     index("inventory_movements_kind_idx").on(t.kind, t.createdAt),
     index("inventory_movements_issue_idx").on(t.issueId),
     // The Vendors page asks, for each vendor, whether any movement names it (and deleting a vendor clears them): without this, a full scan each.
@@ -138,10 +165,34 @@ export const inventoryRequests = pgTable(
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
     rejectReason: text("reject_reason"),
     fulfilledMovementId: uuid("fulfilled_movement_id"),
+    /** The requester's branch when they asked: the stock it is fulfilled from. */
+    branchId: uuid("branch_id").notNull().references(() => branches.id, { onDelete: "restrict" }),
   },
   (t) => [
     index("inventory_requests_status_idx").on(t.status, t.requestedAt),
     index("inventory_requests_requester_idx").on(t.requestedByUserId, t.requestedAt),
+    index("inventory_requests_branch_idx").on(t.branchId, t.status),
+  ],
+);
+
+/** Stock moved from one branch to another by an Inventory admin. The two movements it made are "transfer" rows at each branch. */
+export const inventoryTransfers = pgTable(
+  "inventory_transfers",
+  {
+    id: id(),
+    itemId: uuid("item_id").notNull().references(() => inventoryItems.id, { onDelete: "restrict" }),
+    fromBranchId: uuid("from_branch_id").notNull().references(() => branches.id, { onDelete: "restrict" }),
+    toBranchId: uuid("to_branch_id").notNull().references(() => branches.id, { onDelete: "restrict" }),
+    quantity: integer("quantity").notNull(),
+    reason: text("reason"),
+    actorId: uuid("actor_id").notNull(),
+    actorName: text("actor_name").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("inventory_transfers_created_idx").on(t.createdAt),
+    index("inventory_transfers_item_idx").on(t.itemId),
+    check("inventory_transfers_quantity_check", sql`${t.quantity} > 0`),
   ],
 );
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { POForm } from "@/components/inventory/POForm";
-import { listItems } from "@/lib/inventory/catalog";
+import { listCatalogue } from "@/lib/inventory/catalog";
 import { requirePage } from "@/lib/inventory/guard";
 import { listVendors } from "@/lib/inventory/vendors";
 
@@ -8,7 +8,7 @@ export const metadata = { title: "New purchase order · Inventory · MCCIA App H
 
 export default async function NewPurchaseOrderPage() {
   await requirePage("inventory_admin");
-  const [vendors, items] = await Promise.all([listVendors({}), listItems({})]);
+  const [vendors, items] = await Promise.all([listVendors({}), listCatalogue()]);
   return (
     <div className="page-enter space-y-5">
       <div>

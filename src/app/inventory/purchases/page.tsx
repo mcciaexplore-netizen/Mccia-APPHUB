@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { formatRupees } from "@/lib/inventory/format";
 import { requirePage } from "@/lib/inventory/guard";
+import { listBranches } from "@/lib/inventory/host-adapter";
 import { listInward } from "@/lib/inventory/history";
 import { listVendors } from "@/lib/inventory/vendors";
 import { formatIST } from "@/lib/format";
@@ -13,8 +14,10 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) 
 export default async function PurchasesPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requirePage("inventory_admin");
   const sp = await searchParams;
-  const f = { vendor: one(sp.vendor), from: one(sp.from), to: one(sp.to) };
-  const [{ rows, totalPaise, capped }, vendors] = await Promise.all([listInward({ vendorId: f.vendor, from: f.from, to: f.to }), listVendors({ includeInactive: true })]);
+  const f = { vendor: one(sp.vendor), branch: one(sp.branch), from: one(sp.from), to: one(sp.to) };
+  const [{ rows, totalPaise, capped }, vendors, branches] = await Promise.all([
+    listInward({ vendorId: f.vendor, branchId: f.branch, from: f.from, to: f.to }), listVendors({ includeInactive: true }), listBranches(),
+  ]);
   return (
     <div className="page-enter space-y-5">
       <div>
@@ -24,18 +27,21 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
       <form className="flex flex-wrap items-end gap-3" method="get" action="/inventory/purchases">
         <label className="block"><span className="label-xs mb-1.5 block">Vendor</span>
           <select name="vendor" className="input !w-auto" defaultValue={f.vendor}><option value="">All vendors</option>{vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
+        <label className="block"><span className="label-xs mb-1.5 block">Branch</span>
+          <select name="branch" className="input !w-auto" defaultValue={f.branch}><option value="">All branches</option>{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
         <label className="block"><span className="label-xs mb-1.5 block">From</span><input type="date" name="from" className="input !w-auto" defaultValue={f.from} /></label>
         <label className="block"><span className="label-xs mb-1.5 block">To</span><input type="date" name="to" className="input !w-auto" defaultValue={f.to} /></label>
         <button className="btn btn-primary btn-sm">Show</button>
-        {(f.vendor || f.from || f.to) && <Link href="/inventory/purchases" className="btn btn-ghost btn-sm">Clear</Link>}
+        {(f.vendor || f.branch || f.from || f.to) && <Link href="/inventory/purchases" className="btn btn-ghost btn-sm">Clear</Link>}
       </form>
       <div className="table-wrap"><table>
-        <thead><tr><th>Received</th><th>Item</th><th className="text-right">Quantity</th><th className="text-right">Rate</th><th className="text-right">Value</th><th>Vendor</th><th>PO</th><th>Challan</th></tr></thead>
+        <thead><tr><th>Received</th><th>Item</th><th>Branch</th><th className="text-right">Quantity</th><th className="text-right">Rate</th><th className="text-right">Value</th><th>Vendor</th><th>PO</th><th>Challan</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}>
               <td className="whitespace-nowrap text-xs text-muted">{formatIST(r.createdAt)}<span className="block">by {r.actorName}</span></td>
               <td><b>{r.item}</b></td>
+              <td>{r.branchName}</td>
               <td className="text-right">{r.quantity} {r.unit}</td>
               <td className="text-right">{formatRupees(r.ratePaise)}</td>
               <td className="text-right">{r.ratePaise == null ? "—" : formatRupees(r.quantity * r.ratePaise)}</td>
@@ -44,7 +50,7 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
               <td>{r.challanNo ?? <span className="text-subtle">—</span>}</td>
             </tr>
           ))}
-          {rows.length === 0 && <tr><td colSpan={8} className="text-subtle">Nothing received{f.vendor || f.from || f.to ? " matches" : " yet"}.</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={9} className="text-subtle">Nothing received{f.vendor || f.branch || f.from || f.to ? " matches" : " yet"}.</td></tr>}
         </tbody>
       </table></div>
     </div>

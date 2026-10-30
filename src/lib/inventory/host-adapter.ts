@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { departments, users } from "@/db/schema";
+import { branches, departments, users } from "@/db/schema";
 import { getCurrentUser as hostCurrentUser } from "@/lib/permissions";
 import { hasArea } from "@/lib/rbac";
 import { INVENTORY_URL_PATTERN, inventoryRoleFor, type InventoryRole } from "./inventory.manifest";
@@ -13,8 +13,11 @@ import { INVENTORY_URL_PATTERN, inventoryRoleFor, type InventoryRole } from "./i
  */
 
 export type { InventoryRole };
-/** `hubRole` is the person's role in the hub. Their Inventory role: see inventoryRoleFor. */
-export type InventoryUser = { id: string; name: string; email: string; roles: InventoryRole[]; hubRole: string };
+/**
+ * `hubRole` is the person's role in the hub. Their Inventory role: see inventoryRoleFor. `branchId` and `branchName`: their branch in the hub
+ * (null when none is set): a user sees and requests only that branch's stock.
+ */
+export type InventoryUser = { id: string; name: string; email: string; roles: InventoryRole[]; hubRole: string; branchId: string | null; branchName: string | null };
 export type Access = { status: "anonymous" } | { status: "no_access" } | { status: "ok"; user: InventoryUser };
 
 /**
@@ -42,7 +45,8 @@ export const resolveAccess = cache(async (): Promise<Access> => {
   if (!standing.access) return { status: "no_access" };
   const role = inventoryRoleFor(host.role, standing.admin, standing.staff);
   const roles: InventoryRole[] = role === "requester" ? ["requester"] : ["requester", role];
-  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles, hubRole: host.role } };
+  const [branch] = host.branchId ? await db.select({ name: branches.name }).from(branches).where(eq(branches.id, host.branchId)) : [];
+  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles, hubRole: host.role, branchId: branch ? host.branchId : null, branchName: branch?.name ?? null } };
 });
 
 /**
@@ -78,4 +82,11 @@ export async function listDepartments(): Promise<{ id: string; name: string }[]>
     .from(departments)
     .where(and(eq(departments.kind, "organisation"), eq(departments.isActive, true)))
     .orderBy(asc(departments.sortOrder), asc(departments.name));
+}
+
+export type BranchOption = { id: string; name: string; active: boolean };
+
+/** The hub's branches (Administrator → Branches), active ones first. Stock is kept per branch. */
+export async function listBranches(): Promise<BranchOption[]> {
+  return db.select({ id: branches.id, name: branches.name, active: branches.isActive }).from(branches).orderBy(sql`${branches.isActive} desc`, asc(branches.name));
 }

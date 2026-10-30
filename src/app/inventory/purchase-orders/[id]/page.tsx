@@ -4,6 +4,7 @@ import { POActions } from "@/components/inventory/POActions";
 import { PO_BADGE } from "@/components/inventory/po-badge";
 import { formatRupees } from "@/lib/inventory/format";
 import { requirePage } from "@/lib/inventory/guard";
+import { listBranches } from "@/lib/inventory/host-adapter";
 import { getPurchaseOrder } from "@/lib/inventory/purchase-orders";
 import { idSchema } from "@/lib/inventory/validation";
 import { formatIST } from "@/lib/format";
@@ -12,10 +13,10 @@ export const metadata = { title: "Purchase order · Inventory · MCCIA App Hub" 
 
 /** One purchase order: vendor, lines (with what has arrived), notes, the receipts so far, and what can be done with it now. */
 export default async function PurchaseOrderPage({ params }: { params: Promise<{ id: string }> }) {
-  await requirePage("inventory_admin");
+  const user = await requirePage("inventory_admin");
   const { id } = await params;
   if (!idSchema.safeParse(id).success) notFound();
-  const po = await getPurchaseOrder(id);
+  const [po, branches] = await Promise.all([getPurchaseOrder(id), listBranches()]);
   if (!po) notFound();
   const poNo = po.poNo ?? "";
   const anyReceived = po.lines.some((l) => l.receivedQuantity > 0);
@@ -27,7 +28,7 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
           <h1 className="flex flex-wrap items-center gap-3 text-2xl"><span className="font-mono">{poNo}</span>
             <span className={PO_BADGE[po.status].cls}>{PO_BADGE[po.status].label}</span>
             {po.status === "sent" && anyReceived && <span className="badge badge-neutral">Partly received</span>}</h1>
-          <POActions id={id} poNo={poNo} vendorName={po.vendorName} status={po.status}
+          <POActions id={id} poNo={poNo} vendorName={po.vendorName} status={po.status} branches={branches.filter((b) => b.active)} ownBranchId={user.branchId}
             lines={po.lines.map((l) => ({ id: l.id, label: l.description, unit: l.unit, quantity: l.quantity, receivedQuantity: l.receivedQuantity, inCatalogue: !!l.itemId }))} />
         </div>
       </div>
@@ -59,9 +60,9 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
         <section className="space-y-2">
           <h2 className="text-lg">Received into stock</h2>
           <div className="table-wrap"><table>
-            <thead><tr><th>When</th><th>Item</th><th className="text-right">Quantity</th><th>Challan / invoice</th><th>By</th></tr></thead>
+            <thead><tr><th>When</th><th>Item</th><th>Branch</th><th className="text-right">Quantity</th><th>Challan / invoice</th><th>By</th></tr></thead>
             <tbody>{po.receipts.map((r) => (
-              <tr key={r.id}><td className="text-xs text-muted">{formatIST(r.createdAt)}</td><td>{r.item}</td><td className="text-right text-[var(--c-green-text)]">+{r.quantity}</td>
+              <tr key={r.id}><td className="text-xs text-muted">{formatIST(r.createdAt)}</td><td>{r.item}</td><td>{r.branchName}</td><td className="text-right text-[var(--c-green-text)]">+{r.quantity}</td>
                 <td>{r.challanNo ?? <span className="text-subtle">—</span>}</td><td>{r.actorName}</td></tr>
             ))}</tbody>
           </table></div>

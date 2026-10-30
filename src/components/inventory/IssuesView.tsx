@@ -9,24 +9,37 @@ import { formatIST } from "@/lib/format";
 import { inventoryApi } from "./api";
 
 export type IssueView = {
-  id: string; item: string; unit: string; quantity: number; returned: number; outstanding: number; issuedToName: string | null;
+  id: string; item: string; unit: string; branchName: string; quantity: number; returned: number; outstanding: number; issuedToName: string | null;
   departmentId: string | null; eventName: string | null; note: string | null; requestId: string | null; actorName: string; createdAt: string; lastReturnAt: string | null;
 };
-type ItemOption = { id: string; name: string; unit: string; quantity: number };
+/** An item at one branch, with how many that branch has. */
+type ItemOption = { id: string; name: string; unit: string; quantity: number; branchId: string };
 type Option = { id: string; name: string };
 type Filter = "out" | "returned" | "all";
 
-function IssueForm({ items, people, departments, pending, onSubmit }: { items: ItemOption[]; people: Option[]; departments: Option[]; pending: boolean; onSubmit: (v: Record<string, string>) => void }) {
-  const [v, setV] = useState({ itemId: "", quantity: "1", userId: "", name: "", departmentId: "", eventName: "", note: "" });
+/** Issuing: from which branch, which of its items, how many, and to whom. */
+function IssueForm({ items, branches, ownBranchId, people, departments, pending, onSubmit }: {
+  items: ItemOption[]; branches: Option[]; ownBranchId: string | null; people: Option[]; departments: Option[]; pending: boolean; onSubmit: (v: Record<string, string>) => void;
+}) {
+  const [v, setV] = useState({
+    branchId: branches.some((b) => b.id === ownBranchId) ? (ownBranchId ?? "") : (branches[0]?.id ?? ""),
+    itemId: "", quantity: "1", userId: "", name: "", departmentId: "", eventName: "", note: "",
+  });
   const set = (k: keyof typeof v, val: string) => setV((s) => ({ ...s, [k]: val }));
-  const chosen = items.find((i) => i.id === v.itemId);
+  const atBranch = items.filter((i) => i.branchId === v.branchId);
+  const chosen = atBranch.find((i) => i.id === v.itemId);
   const label = "label-xs mb-1.5 block";
   return (
     <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); onSubmit(v); }}>
+      <label className="block"><span className={label}>Branch</span>
+        <select className="input" value={v.branchId} onChange={(e) => setV((s) => ({ ...s, branchId: e.target.value, itemId: "" }))} required autoFocus>
+          <option value="">Choose a branch</option>
+          {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select></label>
       <label className="block"><span className={label}>Item</span>
-        <select className="input" value={v.itemId} onChange={(e) => set("itemId", e.target.value)} required autoFocus>
-          <option value="">Choose an item</option>
-          {items.map((i) => <option key={i.id} value={i.id} disabled={i.quantity === 0}>{i.name} ({i.quantity} {i.unit} in stock)</option>)}
+        <select className="input" value={v.itemId} onChange={(e) => set("itemId", e.target.value)} required>
+          <option value="">{v.branchId && atBranch.length === 0 ? "This branch keeps no items yet" : "Choose an item"}</option>
+          {atBranch.map((i) => <option key={i.id} value={i.id} disabled={i.quantity === 0}>{i.name} ({i.quantity} {i.unit} in stock)</option>)}
         </select></label>
       <label className="block"><span className={label}>Quantity{chosen ? ` (${chosen.quantity} ${chosen.unit} in stock)` : ""}</span>
         <input className="input" type="number" min={1} max={chosen?.quantity} step={1} value={v.quantity} onChange={(e) => set("quantity", e.target.value)} required /></label>
@@ -56,8 +69,8 @@ function IssueForm({ items, people, departments, pending, onSubmit }: { items: I
 }
 
 /** Issues and returns. Inventory admins issue items and take them back; everyone else sees what has been issued to them. */
-export function IssuesView({ rows, items, people, departments, canManage, filter }: {
-  rows: IssueView[]; items: ItemOption[]; people: Option[]; departments: Option[]; canManage: boolean; filter: Filter;
+export function IssuesView({ rows, items, branches, ownBranchId, people, departments, canManage, filter }: {
+  rows: IssueView[]; items: ItemOption[]; branches: Option[]; ownBranchId: string | null; people: Option[]; departments: Option[]; canManage: boolean; filter: Filter;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -91,11 +104,12 @@ export function IssuesView({ rows, items, people, departments, canManage, filter
       </div>
 
       <div className="table-wrap"><table>
-        <thead><tr><th>Item</th><th className="text-right">Issued</th><th>To</th><th>When</th><th>Returned</th>{canManage && <th className="text-right">Actions</th>}</tr></thead>
+        <thead><tr><th>Item</th><th>Branch</th><th className="text-right">Issued</th><th>To</th><th>When</th><th>Returned</th>{canManage && <th className="text-right">Actions</th>}</tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}>
               <td><b>{r.item}</b>{r.note && <span className="block max-w-xs text-xs text-muted">{r.note}</span>}{r.requestId && <span className="badge badge-neutral mt-1">From a request</span>}</td>
+              <td>{r.branchName}</td>
               <td className="text-right">{r.quantity} {r.unit}</td>
               <td>{r.issuedToName ?? "—"}<span className="block text-xs text-muted">{[deptName(r.departmentId), r.eventName].filter(Boolean).join(" · ")}</span></td>
               <td className="text-xs text-muted">{formatIST(r.createdAt)}<span className="block">by {r.actorName}</span></td>
@@ -111,20 +125,20 @@ export function IssuesView({ rows, items, people, departments, canManage, filter
               )}
             </tr>
           ))}
-          {rows.length === 0 && <tr><td colSpan={canManage ? 6 : 5} className="text-subtle">{filter === "out" ? "Nothing is out right now." : filter === "returned" ? "Nothing returned yet." : "Nothing issued yet."}</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={canManage ? 7 : 6} className="text-subtle">{filter === "out" ? "Nothing is out right now." : filter === "returned" ? "Nothing returned yet." : "Nothing issued yet."}</td></tr>}
         </tbody>
       </table></div>
 
       {issuing && (
         <Modal title="Issue an item" onClose={() => setIssuing(false)}>
-          <IssueForm items={items} people={people} departments={departments} pending={pending}
+          <IssueForm items={items} branches={branches} ownBranchId={ownBranchId} people={people} departments={departments} pending={pending}
             onSubmit={(v) => run(() => inventoryApi("/api/inventory/issues", "POST", v), "Item issued; stock updated", () => setIssuing(false))} />
         </Modal>
       )}
       {returning && (
         <Modal title={`Return ${returning.item}`} onClose={() => setReturning(null)}>
           <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); run(() => inventoryApi(`/api/inventory/issues/${returning.id}/return`, "POST", ret), "Return recorded; stock updated", () => setReturning(null)); }}>
-            <p className="text-sm text-muted">{returning.outstanding} of {returning.quantity} {returning.unit} still out with {returning.issuedToName ?? "them"}.</p>
+            <p className="text-sm text-muted">{returning.outstanding} of {returning.quantity} {returning.unit} still out with {returning.issuedToName ?? "them"}. It goes back into {returning.branchName}&apos;s stock.</p>
             <label className="block"><span className="label-xs mb-1.5 block">Quantity returned</span>
               <input className="input" type="number" min={1} max={returning.outstanding} step={1} value={ret.quantity} onChange={(e) => setRet({ ...ret, quantity: e.target.value })} required autoFocus /></label>
             <label className="block"><span className="label-xs mb-1.5 block">Note (optional)</span>

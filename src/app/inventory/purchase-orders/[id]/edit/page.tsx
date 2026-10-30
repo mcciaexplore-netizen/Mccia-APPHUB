@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { POForm } from "@/components/inventory/POForm";
-import { listItems } from "@/lib/inventory/catalog";
+import { listCatalogue } from "@/lib/inventory/catalog";
 import { idSchema } from "@/lib/inventory/validation";
 import { requirePage } from "@/lib/inventory/guard";
 import { getPurchaseOrder } from "@/lib/inventory/purchase-orders";
@@ -17,7 +17,7 @@ export default async function EditPurchaseOrderPage({ params }: { params: Promis
   const po = await getPurchaseOrder(id);
   if (!po) notFound();
   if (po.status !== "draft") redirect(`/inventory/purchase-orders/${id}`);
-  const [vendors, items] = await Promise.all([listVendors({}), listItems({})]);
+  const [vendors, items] = await Promise.all([listVendors({}), listCatalogue()]);
   return (
     <div className="page-enter space-y-5">
       <div>

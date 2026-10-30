@@ -5,8 +5,9 @@
  * INVENTORY_ENABLED=true:
  *   E2E_BASE_URL=http://localhost:3000 node tests/e2e/inventory.mjs
  *
- * It WRITES to the database the site uses, but only rows named "ZZI"/"zzi-": categories, items and their stock movements, requests,
- * vendors and purchase orders (to "ZZI" vendors), a few people, and a "ZZI Inventory" application (URL /inventory) given to them. Everything is removed when it finishes (and at the start, if an earlier run was interrupted), and it
+ * It WRITES to the database the site uses, but only rows named "ZZI"/"zzi-": categories, items and their stock (at a "ZZI Branch") and
+ * movements, requests, vendors and purchase orders (to "ZZI" vendors), a few people (at that branch), and a "ZZI Inventory" application (URL
+ * /inventory) given to them. Everything is removed when it finishes (and at the start, if an earlier run was interrupted), and it
  * checks that every other inventory row is exactly as before. It refuses a Neon database unless E2E_ALLOW_NEON=yes.
  */
 import { createRequire } from "node:module";
@@ -45,7 +46,10 @@ const startedAt = new Date();
 
 const removeTestData = async () => {
   const items = (await sql`select id from inventory_items where name like 'ZZI%'`).map((r) => r.id);
-  for (const id of items) { await sql`delete from inventory_stock_movements where item_id = ${id}`; await sql`delete from inventory_requests where item_id = ${id}`; }
+  for (const id of items) {
+    await sql`delete from inventory_stock_movements where item_id = ${id}`; await sql`delete from inventory_requests where item_id = ${id}`;
+    await sql`delete from inventory_transfers where item_id = ${id}`; await sql`delete from inventory_branch_stock where item_id = ${id}`;
+  }
   await sql`delete from inventory_items where name like 'ZZI%'`;
   // This run's purchase orders are recorded in the audit log under their PO number, so those entries go by the order's id.
   const pos = (await sql`select id from inventory_purchase_orders where vendor_name like 'ZZI%'`).map((x) => x.id);
@@ -65,6 +69,7 @@ const removeTestData = async () => {
   for (const a of await sql`select id from apps where name like 'ZZI%'`) await sql`delete from activity_log where app_id = ${a.id}`;
   await sql`delete from apps where name like 'ZZI%'`;
   await sql`delete from departments where name like 'ZZI%'`;
+  await sql`delete from branches where name like 'ZZI%'`;
 };
 // Every inventory row that is not this test's own, so the end can prove none of it changed.
 const snap = async () => JSON.stringify([
@@ -78,10 +83,12 @@ const snap = async () => JSON.stringify([
 
 await removeTestData();
 const before = await snap();
-const [member] = await sql`insert into users (name, email, password_hash, status) values ('ZZI Member', 'zzi-member@gmail.com', ${hash(PW)}, 'approved') returning id`;
+// Stock is kept per branch: the test's items are at "ZZI Branch", and its people belong to it (so they request from it).
+const [zzBranch] = await sql`insert into branches (name) values ('ZZI Branch') returning id`;
+const [member] = await sql`insert into users (name, email, password_hash, status, branch_id) values ('ZZI Member', 'zzi-member@gmail.com', ${hash(PW)}, 'approved', ${zzBranch.id}) returning id`;
 // "staff" is a hub Admin, so an Inventory admin; "other" is an ordinary user who is NOT given the Inventory application.
-const [staff] = await sql`insert into users (name, email, password_hash, status, role) values ('ZZI Staff', 'zzi-staff@gmail.com', ${hash(PW)}, 'approved', 'admin') returning id`;
-const [other] = await sql`insert into users (name, email, password_hash, status) values ('ZZI Other', 'zzi-other@gmail.com', ${hash(PW)}, 'approved') returning id`;
+const [staff] = await sql`insert into users (name, email, password_hash, status, role, branch_id) values ('ZZI Staff', 'zzi-staff@gmail.com', ${hash(PW)}, 'approved', 'admin', ${zzBranch.id}) returning id`;
+const [other] = await sql`insert into users (name, email, password_hash, status, branch_id) values ('ZZI Other', 'zzi-other@gmail.com', ${hash(PW)}, 'approved', ${zzBranch.id}) returning id`;
 // Access works like any other application: an application whose URL is /inventory, given to the people who may open Inventory.
 const [invDept] = await sql`insert into departments (kind, name, icon) values ('application', 'ZZI Dept', 'Package') returning id`;
 const [invApp] = await sql`insert into apps (department_id, name, url, icon) values (${invDept.id}, 'ZZI Inventory', '/inventory', 'Package') returning id`;
@@ -127,12 +134,15 @@ try {
 
   section("Inventory admin: items and the stock history");
   await go(A, "/inventory/items");
-  const openAdd = async () => { await A.getByRole("button", { name: "Add item" }).first().click(); return A.getByRole("dialog"); };
+  const openAdd = async () => {
+    await A.getByRole("button", { name: "Add item" }).first().click(); const dlg = A.getByRole("dialog");
+    await dlg.getByLabel("Branch").selectOption({ label: "ZZI Branch" }); return dlg;
+  };
   const fill = async (d, v) => {
     if (v.name !== undefined) await d.getByLabel("Name", { exact: true }).fill(v.name);
     if (v.category !== undefined) await d.getByLabel(/^Category/).selectOption({ label: v.category });
     if (v.unit !== undefined) await d.getByLabel("Unit", { exact: true }).fill(v.unit);
-    if (v.quantity !== undefined) await d.getByLabel(/Opening stock|Quantity in stock/).fill(String(v.quantity));
+    if (v.quantity !== undefined) await d.getByLabel(/Opening stock|Quantity at /).fill(String(v.quantity));
     if (v.min !== undefined) await d.getByLabel("Minimum stock").fill(String(v.min));
     if (v.rate !== undefined) await d.getByLabel(/Rate/).fill(v.rate);
   };
@@ -210,7 +220,8 @@ try {
     check("someone given it sees Inventory as an ordinary application card on the home page", (await M.getByText("ZZI Inventory").count()) === 1);
     await M.goto(BASE + `/go/${invApp.id}`); await M.waitForURL(/\/inventory$/, { timeout: 20000 }).catch(() => {});
     check("…which opens /inventory (through /go, like every application)", new URL(M.url()).pathname === "/inventory", M.url());
-    check("an ordinary user is a user in Inventory: no store dashboard", /· User/.test(await M.locator("main").first().innerText()) && (await M.getByText("Units in stock").count()) === 0);
+    check("an ordinary user is a user in Inventory: their branch's figures only, no store dashboard", /· User/.test(await M.locator("main").first().innerText()) && /Branch: ZZI Branch/.test(await M.locator("main").first().innerText())
+      && (await M.getByText("Items at ZZI Branch").count()) === 1 && (await M.getByText("Stock value").count()) === 0);
     await mctx.close();
 
     const { ctx: sctx, page: S } = await signedIn("zzi-staff@gmail.com", PW);
@@ -311,7 +322,7 @@ try {
     await go(S, "/inventory/requests?status=approved");
     const beforeFulfil = await stock();
     await row(5).getByRole("button", { name: "Fulfil" }).click();
-    check("fulfilling asks first, saying how much leaves the stock", (await S.getByRole("dialog").getByText(new RegExp(`5 Ream of .ZZI Paper. will be taken out of stock \\(${beforeFulfil} available\\)`)).count()) === 1);
+    check("fulfilling asks first, saying how much leaves the branch's stock", (await S.getByRole("dialog").getByText(new RegExp(`5 Ream of .ZZI Paper. will be taken out of ZZI Branch's stock \\(${beforeFulfil} available there\\)`)).count()) === 1);
     await S.getByRole("dialog").getByRole("button", { name: "Fulfil" }).click();
     check("fulfilling says so", await toast(S, "Request fulfilled"));
     await poll(async () => (await reqs()).find((r) => r.id === r5.id)?.status === "fulfilled");
@@ -320,7 +331,7 @@ try {
       && fm.quantity_after === beforeFulfil - 5 && fm.issued_to_user_id === member.id, JSON.stringify(fm));
 
     // Two people fulfil the same request at the same moment: exactly one of them does it.
-    const [race] = await sql`insert into inventory_requests (item_id, quantity, status, requested_by_user_id, requested_by_name) values (${(await item("ZZI Paper")).id}, 3, 'approved', ${member.id}, 'ZZI Member') returning id`;
+    const [race] = await sql`insert into inventory_requests (item_id, quantity, status, requested_by_user_id, requested_by_name, branch_id) values (${(await item("ZZI Paper")).id}, 3, 'approved', ${member.id}, 'ZZI Member', ${zzBranch.id}) returning id`;
     const beforeRace = await stock();
     const both = await Promise.all([api(S, `/api/inventory/requests/${race.id}`, "PATCH", { action: "fulfil" }), api(S, `/api/inventory/requests/${race.id}`, "PATCH", { action: "fulfil" })]);
     check("two fulfils of the same request at the same moment: one succeeds, one is refused, the stock goes down once",
@@ -510,6 +521,7 @@ try {
 
     const s0 = await stock();
     await A.getByRole("button", { name: "Receive goods" }).click(); let d = A.getByRole("dialog");
+    await d.getByLabel("Arrived at branch").selectOption({ label: "ZZI Branch" });
     await d.getByLabel("Arrived now: ZZI Paper").fill("5"); await d.getByLabel("Arrived now: ZZI Toner (not stocked)").fill("0");
     await d.getByLabel(/challan/i).fill("ZZI-CH-1"); await d.getByRole("button", { name: "Record receipt" }).click();
     check("receiving says so", await toast(A, "Goods received"));
@@ -520,15 +532,15 @@ try {
     check("…and the order stays sent, shown as partly received", (await po(poId)).status === "sent" && !!(await poll(async () => /Partly received/i.test(await A.locator("main").first().innerText()), 10000)));
 
     const lineId = (await lines(poId))[0].id, tonerId = (await lines(poId))[1].id;
-    const over = await api(A, `/api/inventory/purchase-orders/${poId}/receive`, "POST", { lines: [{ lineId, quantity: 8 }] });
+    const over = await api(A, `/api/inventory/purchase-orders/${poId}/receive`, "POST", { lines: [{ lineId, quantity: 8 }], branchId: zzBranch.id });
     check("receiving more than is still to come is refused and nothing changes", over.status === 409 && (await stock()) === s0 + 5 && (await lines(poId))[0].received_quantity === 5, JSON.stringify(over));
-    const race = await Promise.all([1, 2].map(() => api(A, `/api/inventory/purchase-orders/${poId}/receive`, "POST", { lines: [{ lineId, quantity: 7 }] })));
+    const race = await Promise.all([1, 2].map(() => api(A, `/api/inventory/purchase-orders/${poId}/receive`, "POST", { lines: [{ lineId, quantity: 7 }], branchId: zzBranch.id })));
     check("the same 7 recorded twice at the same moment: one is added, the other is refused, stock goes up once",
       race.map((x) => x.status).sort().join() === "200,409" && (await stock()) === s0 + 12 && (await lines(poId))[0].received_quantity === 12, race.map((x) => `${x.status} ${x.body?.error ?? ""}`).join(" | "));
     check("…and with the toner line still to come, the order is not closed yet", (await po(poId)).status === "sent");
-    const closeIt = await api(A, `/api/inventory/purchase-orders/${poId}/receive`, "POST", { lines: [{ lineId: tonerId, quantity: 0 }], close: true });
+    const closeIt = await api(A, `/api/inventory/purchase-orders/${poId}/receive`, "POST", { lines: [{ lineId: tonerId, quantity: 0 }], close: true, branchId: zzBranch.id });
     check("closing with nothing more coming marks it received, without touching stock for the non-catalogue line", closeIt.status === 200 && (await po(poId)).status === "received" && !!(await po(poId)).received_at && (await stock()) === s0 + 12, JSON.stringify(closeIt));
-    const afterClose = await api(A, `/api/inventory/purchase-orders/${poId}/receive`, "POST", { lines: [{ lineId: tonerId, quantity: 1 }] });
+    const afterClose = await api(A, `/api/inventory/purchase-orders/${poId}/receive`, "POST", { lines: [{ lineId: tonerId, quantity: 1 }], branchId: zzBranch.id });
     const cancelReceived = await api(A, `/api/inventory/purchase-orders/${poId}/cancel`, "POST");
     check("a received order can no longer be received on or cancelled (409)", afterClose.status === 409 && cancelReceived.status === 409, `${afterClose.status},${cancelReceived.status}`);
 
@@ -537,7 +549,7 @@ try {
     check("the next order gets the next number", p2.status === 201 && p2.body?.purchaseOrder?.poNo === `${prefix}${String(Number(expected.slice(prefix.length)) + 1).padStart(4, "0")}`, JSON.stringify(p2.body));
     const p2id = p2.body.purchaseOrder.id;
     await api(A, `/api/inventory/purchase-orders/${p2id}/send`, "POST");
-    const full = await api(A, `/api/inventory/purchase-orders/${p2id}/receive`, "POST", { lines: [{ lineId: (await lines(p2id))[0].id, quantity: 3 }] });
+    const full = await api(A, `/api/inventory/purchase-orders/${p2id}/receive`, "POST", { lines: [{ lineId: (await lines(p2id))[0].id, quantity: 3 }], branchId: zzBranch.id });
     check("receiving everything closes the order by itself", full.status === 200 && full.body?.closed === true && (await po(p2id)).status === "received", JSON.stringify(full.body));
     const twin = await Promise.all([1, 2].map(() => api(A, "/api/inventory/purchase-orders", "POST", { vendorName: "ZZI Twin", lines: [{ description: "ZZI Twin", quantity: 1, rate: "1" }] })));
     const twinNos = twin.map((t) => t.body?.purchaseOrder?.poNo).sort();
@@ -669,7 +681,8 @@ try {
   for (const [who, email] of [["a plain user", "zzi-member@gmail.com"]]) {
     const { ctx, page } = await signedIn(email, PW);
     const r = await go(page, "/inventory/items");
-    check(`${who} can open the item list and sees the items`, r.status() === 200 && (await page.locator("tr", { hasText: "ZZI Paper" }).count()) === 1, r.status());
+    // The item list is for Staff and Inventory admins (since the Staff role): a user picks an item only when making a request.
+    check(`${who} cannot open the item list (not found)`, r.status() === 404, r.status());
     check(`${who} has no Add, Edit or Delete buttons`, (await page.getByRole("button", { name: /Add item|^Edit |^Delete / }).count()) === 0);
     check(`${who} cannot open Categories (not found)`, (await go(page, "/inventory/categories")).status() === 404);
     await go(page, "/inventory/items");

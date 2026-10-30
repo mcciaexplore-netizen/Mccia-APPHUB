@@ -7,6 +7,8 @@ import { checkPhoto } from "./photos";
  */
 
 export const idSchema = z.string().uuid();
+/** A branch chosen on a form; left out, the server uses the person's own branch. */
+const optionalBranch = z.union([idSchema, z.literal("")]).optional().transform((v) => (v ? v : null));
 
 /** "1,250.50" or "₹ 1250" → 125050 paise. Empty → null. More than two decimals, negatives and words are refused. */
 export function rupeesToPaise(input: string): number | null | "invalid" {
@@ -41,6 +43,8 @@ export const itemInput = z.object({
   location: optionalText(120),
   notes: optionalText(500),
   active: z.boolean().optional().default(true),
+  /** Adding: the branch whose stock it starts in. Saving: the branch whose quantity and minimum are being changed. */
+  branchId: optionalBranch,
 });
 export type ItemInput = z.output<typeof itemInput>;
 
@@ -67,9 +71,19 @@ export const issueInput = z
     departmentId: z.union([idSchema, z.literal("")]).optional().transform((v) => (v ? v : null)),
     eventName: optionalText(120),
     note: optionalText(500),
+    branchId: optionalBranch,
   })
   .refine((v) => v.userId || v.name, { message: "Choose who it is issued to, or type their name", path: ["name"] });
 export type IssueInput = z.output<typeof issueInput>;
+
+/** Inventory admins: start keeping an existing item at another branch, with its opening stock there and its low-stock level. */
+export const itemBranchInput = z.object({ branchId: idSchema, quantity: wholeNumber("Opening stock"), minQuantity: wholeNumber("Minimum stock") });
+
+/** Inventory admins: move stock of one item from one branch to another. */
+export const transferInput = z
+  .object({ itemId: idSchema, fromBranchId: idSchema, toBranchId: idSchema, quantity: positive("Quantity"), reason: optionalText(500) })
+  .refine((v) => v.fromBranchId !== v.toBranchId, { message: "Choose two different branches", path: ["toBranchId"] });
+export type TransferInput = z.output<typeof transferInput>;
 
 /** Inventory admins: how many of an issue came back (at most what is still out). */
 export const returnInput = z.object({ quantity: positive("Quantity returned"), note: optionalText(500) });
@@ -138,6 +152,8 @@ export const receiveInput = z
     lines: z.array(z.object({ lineId: idSchema, quantity: z.coerce.number().int("Quantities must be whole numbers").min(0, "Quantities cannot be negative").max(1_000_000) })).max(100),
     challanNo: optionalText(60),
     close: z.boolean().optional().default(false),
+    /** The branch the goods arrived at. */
+    branchId: optionalBranch,
   })
   .transform((v) => ({ ...v, lines: v.lines.filter((l) => l.quantity > 0) }))
   .refine((v) => v.lines.length > 0 || v.close, { message: "Enter what arrived, or tick that nothing more is coming", path: ["lines"] });
