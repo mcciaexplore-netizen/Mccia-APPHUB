@@ -2,67 +2,74 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { LocateFixed, MapPin } from "lucide-react";
+import { GEOAPIFY_KEY, geoapifySuggest, gpsErrorMessage, nominatimSearch, reverseGeocode, type Found } from "./geo";
 
 export type Place = { text: string; lat: number | null; lng: number | null };
 
-const KEY = process.env.NEXT_PUBLIC_GEOAPIFY_API_KEY ?? "";
-/** Suggestions in India, nearest Pune first. */
-const SEARCH = "https://api.geoapify.com/v1/geocode/autocomplete";
-const REVERSE = "https://api.geoapify.com/v1/geocode/reverse";
-type Feature = { properties: { formatted: string; lat: number; lon: number } };
-
 /**
- * An address box with Geoapify suggestions (after 3 letters, 300 ms after typing stops). Choosing one keeps its coordinates; typing again
- * drops them, so text and coordinates never disagree. `locate` adds "Use my location" (the browser's position, turned into an address).
- * Without NEXT_PUBLIC_GEOAPIFY_API_KEY it is a plain text box. `bare`: no label or border, for a row inside the booking form's location card
- * (the label is then only read out to screen readers).
+ * An address box with suggestions. With Geoapify (NEXT_PUBLIC_GEOAPIFY_API_KEY), they come as the person types (after 3 letters, 300 ms after
+ * typing stops). Without the key, or once Geoapify fails, it searches OpenStreetMap's Nominatim when the person presses Enter (its rules
+ * forbid searching on every keystroke). Choosing a suggestion keeps its coordinates; typing again drops them, so text and coordinates never
+ * disagree. `locate` adds "Use my location" (high-accuracy GPS, turned into an address). `bare`: no label or border, for a row inside the
+ * booking form's location card (the label is then only read out to screen readers).
  */
 export function AddressInput({ name, label, value, onChange, placeholder, locate = false, autoFocus = false, bare = false }: {
   name: string; label: string; value: Place; onChange: (p: Place) => void; placeholder?: string; locate?: boolean; autoFocus?: boolean; bare?: boolean;
 }) {
   const listId = useId();
-  const [items, setItems] = useState<Feature[]>([]);
+  const [items, setItems] = useState<Found[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  // Geoapify could not be used (no key, or it failed): search Nominatim on Enter instead.
+  const [fallback, setFallback] = useState(!GEOAPIFY_KEY);
+  const [searching, setSearching] = useState(false);
   const typed = useRef(false);
 
   useEffect(() => {
     const q = value.text.trim();
-    if (!KEY || !typed.current || q.length < 3 || value.lat != null) return;
+    if (fallback || !typed.current || q.length < 3 || value.lat != null) return;
     const ctl = new AbortController();
     const t = setTimeout(async () => {
       try {
-        const p = new URLSearchParams({ text: q, apiKey: KEY, filter: "countrycode:in", bias: "proximity:73.8567,18.5204", limit: "6", format: "geojson" });
-        const res = await fetch(`${SEARCH}?${p}`, { signal: ctl.signal });
-        const data = (await res.json()) as { features?: Feature[] };
-        setItems(data.features ?? []); setOpen(true); setActive(-1);
-      } catch { /* aborted, or offline: no suggestions */ }
+        const found = await geoapifySuggest(q, ctl.signal);
+        setItems(found); setOpen(true); setActive(-1);
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") setFallback(true); // Geoapify is down or refused the key: Nominatim from now on
+      }
     }, 300);
     return () => { clearTimeout(t); ctl.abort(); };
-  }, [value.text, value.lat]);
+  }, [value.text, value.lat, fallback]);
 
-  const choose = (f: Feature) => { typed.current = false; onChange({ text: f.properties.formatted, lat: f.properties.lat, lng: f.properties.lon }); setOpen(false); };
+  const search = async () => {
+    const q = value.text.trim();
+    if (q.length < 3) { setNote("Type at least 3 letters, then press Enter to search."); return; }
+    setSearching(true); setNote("");
+    try {
+      const found = await nominatimSearch(q);
+      setItems(found); setOpen(true); setActive(-1);
+      if (!found.length) setNote("No address found near Pune. Check the spelling, or keep what you typed.");
+    } catch { setNote("Address search is not available right now. You can keep what you typed."); }
+    finally { setSearching(false); }
+  };
+
+  const choose = (f: Found) => { typed.current = false; onChange({ text: f.text.slice(0, 200), lat: f.lat, lng: f.lng }); setOpen(false); setNote(""); };
 
   const useMine = () => {
     if (!navigator.geolocation) { setNote("This browser cannot share its location."); return; }
     setBusy(true); setNote("");
     navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       const lat = Number(coords.latitude.toFixed(7)), lng = Number(coords.longitude.toFixed(7));
-      let text = `${lat}, ${lng}`;
-      if (KEY) {
-        try {
-          const res = await fetch(`${REVERSE}?${new URLSearchParams({ lat: String(lat), lon: String(lng), apiKey: KEY, format: "geojson" })}`);
-          text = ((await res.json()) as { features?: Feature[] }).features?.[0]?.properties.formatted ?? text;
-        } catch { /* keep the coordinates as the text */ }
-      }
+      const text = (await reverseGeocode(lat, lng)) ?? `${lat}, ${lng}`;
       typed.current = false; onChange({ text: text.slice(0, 200), lat, lng }); setBusy(false);
-    }, (e) => { setBusy(false); setNote(e.code === e.PERMISSION_DENIED ? "Location is blocked for this site. Allow it in the browser, or type the address." : "Your location could not be found. Type the address."); },
-    { enableHighAccuracy: true, timeout: 15000 });
+    }, (e) => { setBusy(false); setNote(gpsErrorMessage(e.code)); },
+    { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 });
   };
 
   const key = (e: React.KeyboardEvent) => {
+    // Without Geoapify, Enter searches (and never sends the booking form by accident).
+    if (fallback && e.key === "Enter" && !(open && active >= 0)) { e.preventDefault(); void search(); return; }
     if (!open || !items.length) return;
     if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => (a + 1) % items.length); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => (a <= 0 ? items.length - 1 : a - 1)); }
@@ -83,9 +90,9 @@ export function AddressInput({ name, label, value, onChange, placeholder, locate
       {open && items.length > 0 && (
         <ul id={listId} role="listbox" className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border border-line bg-white shadow-card">
           {items.map((f, i) => (
-            <li key={`${f.properties.lat},${f.properties.lon}`} id={`${listId}-${i}`} role="option" aria-selected={i === active}>
+            <li key={`${f.lat},${f.lng},${i}`} id={`${listId}-${i}`} role="option" aria-selected={i === active}>
               <button type="button" className={`flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm ${i === active ? "bg-blue-tint" : "hover:bg-alt"}`} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(f)}>
-                <MapPin size={14} className="mt-0.5 shrink-0 text-subtle" aria-hidden />{f.properties.formatted}
+                <MapPin size={14} className="mt-0.5 shrink-0 text-subtle" aria-hidden />{f.text}
               </button>
             </li>
           ))}
@@ -93,7 +100,8 @@ export function AddressInput({ name, label, value, onChange, placeholder, locate
       )}
       {value.lat != null && !bare && <p className="mt-1 text-xs text-brand-green-text" data-located={name}>Location set on the map.</p>}
       {value.lat != null && bare && <span className="sr-only" data-located={name}>Location set on the map.</span>}
-      {note && <p className="mt-1 text-xs text-[#b45309]">{note}</p>}
+      {fallback && value.lat == null && value.text.trim().length >= 3 && !open && !note && <p className="mt-1 text-xs text-muted">{searching ? "Searching…" : "Press Enter to search addresses."}</p>}
+      {note && <p className="mt-1 text-xs text-[#b45309]" role="status">{note}</p>}
     </div>
   );
 }

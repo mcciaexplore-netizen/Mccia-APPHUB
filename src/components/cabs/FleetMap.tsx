@@ -23,13 +23,13 @@ const toMarkers = (d: { drivers: FleetEntry[] }): MarkerSpec[] => d.drivers.map(
  * driver with their availability and when they were last seen.
  */
 export function FleetMap({ drivers }: { drivers: FleetDriver[] }) {
-  const { box, data, error } = usePollingMap("/api/cabs/fleet", 2_000, toMarkers);
+  const { box, data, error, tiles } = usePollingMap("/api/cabs/fleet", 2_000, toMarkers);
   const byDriver = new Map((data?.drivers ?? []).map((e) => [e.driver_id, e]));
   return (
     <section className="space-y-3" aria-label="Fleet map">
       <MapBox box={box} name="fleet" />
       {error && <p className="text-sm text-brand-red">{error}</p>}
-      {!GEOAPIFY_KEY && <p className="text-xs text-subtle">Map tiles: set NEXT_PUBLIC_GEOAPIFY_API_KEY for Geoapify; until then OpenStreetMap is used.</p>}
+      {(!GEOAPIFY_KEY || tiles !== "Geoapify") && <p className="text-xs text-subtle" data-tiles={tiles}>Map tiles: {tiles}{GEOAPIFY_KEY ? " (Geoapify is not answering)" : " (set NEXT_PUBLIC_GEOAPIFY_API_KEY for Geoapify)"}.</p>}
       <div className="table-wrap"><table>
         <thead><tr><th>Driver</th><th>Vehicle</th><th>Available</th><th>Ride</th><th>Last seen</th></tr></thead>
         <tbody>

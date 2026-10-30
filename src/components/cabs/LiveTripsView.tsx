@@ -6,6 +6,7 @@ import { MapBox, STALE_MS, ago, usePollingMap, type MarkerSpec } from "./Polling
 /** A ride in progress, as GET /api/cabs/live sends it. */
 type LiveTrip = {
   ride_id: string; driver_name: string | null; rider_name: string; pickup: string; dropoff: string; started_at: string | null; vehicle_plate: string | null;
+  pickup_lat: number | null; pickup_lng: number | null;
   latitude: number | null; longitude: number | null; heading: number | null; speed: number | null; recorded_at: string | null;
 };
 
@@ -16,12 +17,22 @@ export function underWay(startedAt: string | null, now = Date.now()): string {
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`;
 }
 
-const toMarkers = (d: { trips: LiveTrip[] }): MarkerSpec[] => d.trips.filter((t) => t.latitude != null && t.longitude != null).map((t) => ({
-  id: t.ride_id, lat: t.latitude!, lng: t.longitude!, heading: t.heading, stale: !t.recorded_at || Date.now() - Date.parse(t.recorded_at) > STALE_MS,
+/** Each trip on the map: its driver's car where the phone last was, or, while there is no position yet, a pin at the pickup. */
+const toMarkers = (d: { trips: LiveTrip[] }): MarkerSpec[] => d.trips.flatMap((t): MarkerSpec[] => {
+  if (t.latitude != null && t.longitude != null) return [carMarker(t)];
+  if (t.pickup_lat != null && t.pickup_lng != null) {
+    return [{ id: t.ride_id, kind: "pickup", lat: t.pickup_lat, lng: t.pickup_lng, heading: null, stale: true, label: `${t.driver_name ?? "Driver"} · pickup`,
+      lines: [{ text: t.driver_name ?? "Driver", bold: true }, { text: `Rider: ${t.rider_name}` }, { text: `${t.pickup} → ${t.dropoff}` }, { text: "No position yet: shown at the pickup" }] }];
+  }
+  return [];
+});
+
+const carMarker = (t: LiveTrip): MarkerSpec => ({
+  id: t.ride_id, kind: "car", lat: t.latitude!, lng: t.longitude!, heading: t.heading, stale: !t.recorded_at || Date.now() - Date.parse(t.recorded_at) > STALE_MS,
   label: `${t.driver_name ?? "Driver"} · ${underWay(t.started_at)}`,
   lines: [{ text: t.driver_name ?? "Driver", bold: true }, { text: `Rider: ${t.rider_name}` }, { text: `${t.pickup} → ${t.dropoff}` }, { text: `Going for ${underWay(t.started_at)}` },
     ...(t.vehicle_plate ? [{ text: t.vehicle_plate }] : []), { text: t.recorded_at ? `Last seen ${ago(t.recorded_at)}` : "No position yet" }],
-}));
+});
 
 /** Every ride in progress on the map (refreshed every 5 seconds while the tab is in view), and as a list below. */
 export function LiveTripsView() {

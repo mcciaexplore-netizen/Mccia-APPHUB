@@ -509,6 +509,51 @@ try {
     && (await D.page.locator("[data-completed]").innerText()).trim() === "3" && (await D.page.getByText("ZZC 01 AA 1111").count()) >= 1);
   check("activity pages are for Cabs admins only", (await go(S.page, "/cabs/admin/activity")) && new URL(S.page.url()).pathname === "/");
 
+  section("maps, address search and GPS fallbacks");
+  {
+    // A map with OpenStreetMap's tiles failing: CARTO takes over (this test site has no Geoapify key). Nothing is sent to the real tile servers.
+    const ctx = A.page.context();
+    const tileHits = { osm: 0, carto: 0 };
+    await ctx.route("https://tile.openstreetmap.org/**", (rt) => { tileHits.osm++; return rt.abort(); });
+    await ctx.route("https://*.basemaps.cartocdn.com/**", (rt) => { tileHits.carto++; return rt.fulfill({ status: 200, contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64") }); });
+    await go(A.page, "/cabs/admin/live");
+    const switched = await poll(async () => (await A.page.locator('[data-map="live"] img.leaflet-tile[src*="basemaps.cartocdn.com"]').count()) > 0, 15000);
+    check("map tiles: when OpenStreetMap's fail, CARTO's are used instead", switched && tileHits.osm >= 4 && tileHits.carto > 0, JSON.stringify(tileHits));
+    check("map: with nothing to show, Pune at zoom 13", (await A.page.locator('[data-map="live"] img.leaflet-tile').first().getAttribute("src"))?.includes("/13/"));
+    await ctx.unroute("https://tile.openstreetmap.org/**"); await ctx.unroute("https://*.basemaps.cartocdn.com/**");
+
+    // Address search without Geoapify: Nominatim, only on Enter, kept to the Pune area (answered here by a stand-in).
+    const sctx = S.page.context();
+    const asked = [];
+    await sctx.route("https://nominatim.openstreetmap.org/search**", (rt) => { asked.push(rt.request().url()); return rt.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ display_name: "ZZC Shaniwar Wada, Pune", lat: "18.5195", lon: "73.8553" }]) }); });
+    await go(S.page, "/cabs");
+    await S.page.fill("input[name=pickup]", "Shaniwar Wada");
+    await S.page.waitForTimeout(800);
+    check("address search: nothing is sent to Nominatim while typing", asked.length === 0);
+    await S.page.locator("input[name=pickup]").press("Enter");
+    await S.page.getByRole("option", { name: /ZZC Shaniwar Wada/ }).click();
+    const q = asked[0] ? new URL(asked[0]).searchParams : null;
+    check("…Enter searches Nominatim in India, bounded to the Pune area, and does not send the booking form", asked.length === 1 && q?.get("q") === "Shaniwar Wada" && q.get("countrycodes") === "in"
+      && q.get("viewbox") === "72.6,17.8,74.8,19.5" && q.get("bounded") === "1" && new URL(S.page.url()).pathname === "/cabs", asked.join(" "));
+    check("…and choosing the result keeps its coordinates", (await S.page.inputValue("input[name=pickup]")) === "ZZC Shaniwar Wada, Pune" && (await S.page.locator('[data-located="pickup"]').count()) === 1);
+    await sctx.unroute("https://nominatim.openstreetmap.org/search**");
+
+    // GPS failures, each with its own message.
+    const gps = async (code) => {
+      const c = await browser.newContext({ viewport: { width: 400, height: 900 } });
+      await c.addCookies(await sctx.cookies());
+      await c.addInitScript((k) => { Object.defineProperty(navigator, "geolocation", { value: { getCurrentPosition: (_ok, err) => setTimeout(() => err({ code: k, PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 }), 50), watchPosition: () => 1, clearWatch: () => {} } }); }, code);
+      const pg = await c.newPage();
+      await pg.goto(BASE + "/cabs"); await pg.getByRole("button", { name: "Use my location" }).click();
+      const msg = await pg.locator('[role="status"]').first().innerText({ timeout: 10000 }).catch(() => "");
+      await c.close();
+      return msg;
+    };
+    check("GPS refused: \"Please allow location access in your browser settings\"", (await gps(1)) === "Please allow location access in your browser settings");
+    check("GPS unavailable: \"Unable to get your location. Please try again.\"", (await gps(2)) === "Unable to get your location. Please try again.");
+    check("GPS timed out: \"Location request timed out. Please try again.\"", (await gps(3)) === "Location request timed out. Please try again.");
+  }
+
   section("cancelling");
   const r4 = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Office", dropoff: "ZZC Mall", scheduledFor: istSlot(4, 9) })).body;
   await go(S.page, "/cabs/rides");

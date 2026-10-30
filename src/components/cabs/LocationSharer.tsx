@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MapPinOff, Radio } from "lucide-react";
+import { MapPinOff, Radio, RotateCw } from "lucide-react";
+import { gpsErrorMessage } from "./geo";
 
 /** How often the latest position is sent while a ride is under way. */
 export const SEND_EVERY_MS = 10_000;
 
-type State = "asking" | "sharing" | "denied" | "unavailable";
+type State = "asking" | "sharing" | "denied" | "unavailable" | "timeout";
 
 /**
  * While the driver has a ride in progress, sends the phone's position to /api/cabs/location every 10 seconds, for the admins' fleet map.
@@ -19,13 +20,16 @@ export function LocationSharer({ rideId }: { rideId: string }) {
   const [state, setState] = useState<State>(() => (typeof navigator !== "undefined" && !navigator.geolocation ? "unavailable" : "asking"));
   const [sentAt, setSentAt] = useState<Date | null>(null);
   const latest = useRef<GeolocationPosition | null>(null);
+  // Bumped by "Try again": starts a fresh watch (and a fresh permission prompt where the browser allows one).
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!navigator.geolocation) return;
     const watch = navigator.geolocation.watchPosition(
       (p) => { latest.current = p; setState("sharing"); },
-      (e) => setState(e.code === e.PERMISSION_DENIED ? "denied" : "unavailable"),
-      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 30_000 },
+      // A timeout or a lost signal does not end the watch: the next position that arrives turns sharing back on.
+      (e) => setState(e.code === e.PERMISSION_DENIED ? "denied" : e.code === e.TIMEOUT ? "timeout" : "unavailable"),
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 5_000 },
     );
     const send = async () => {
       const p = latest.current;
@@ -47,14 +51,19 @@ export function LocationSharer({ rideId }: { rideId: string }) {
     const first = setTimeout(send, 1_500); // as soon as there is a first fix, then every 10 seconds
     const timer = setInterval(send, SEND_EVERY_MS);
     return () => { navigator.geolocation.clearWatch(watch); clearTimeout(first); clearInterval(timer); };
-  }, [rideId]);
+  }, [rideId, attempt]);
 
-  if (state === "denied" || state === "unavailable") {
+  if (state === "denied" || state === "unavailable" || state === "timeout") {
+    const code = state === "denied" ? 1 : state === "timeout" ? 3 : 2;
     return (
-      <div role="alert" className="flex items-start gap-3 rounded-xl border border-[#fcd34d] bg-[#fff8e1] p-4 text-[#b45309]">
+      <div role="alert" className="flex items-start gap-3 rounded-xl border border-[#fcd34d] bg-[#fff8e1] p-4 text-[#b45309]" data-gps-error={state}>
         <MapPinOff size={22} className="mt-0.5 shrink-0" aria-hidden />
-        <div><p className="text-base font-bold">Allow location so admin can track your ride</p>
-          <p className="mt-1 text-sm">{state === "denied" ? "Location is blocked for this site. Allow it in your browser's site settings, then reload this page." : "Your phone's location could not be found. Check that location is turned on."}</p></div>
+        <div className="flex-1">
+          <p className="text-base font-bold">{state === "denied" ? "Allow location so admin can track your ride" : "Location not shared"}</p>
+          <p className="mt-1 text-sm">{gpsErrorMessage(code)}</p>
+          <button type="button" onClick={() => { setState("asking"); setAttempt((n) => n + 1); }} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#1a2b4a] px-4 text-sm font-semibold text-white">
+            <RotateCw size={15} aria-hidden /> Try again</button>
+        </div>
       </div>
     );
   }
