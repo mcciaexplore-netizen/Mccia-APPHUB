@@ -30,8 +30,8 @@ import {
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import { INVENTORY_URL_PATTERN, inventoryRoleFor, navFor } from "../src/lib/inventory/inventory.manifest";
-import { CABS_ADMIN_URL_PATTERN, CABS_DRIVER_URL_PATTERN, CABS_USER_URL_PATTERN, CAB_NAV, cabRolesFor, navFor as cabNavFor } from "../src/lib/cabs/cabs.manifest";
-import { assignInput, driverInput, istLocalToDate, locationInput, otpInput, rideInput, scheduleProblem, vehicleInput } from "../src/lib/cabs/validation";
+import { CABS_ADMIN_URL_PATTERN, CABS_DRIVER_URL_PATTERN, CABS_USER_URL_PATTERN, CAB_NAV, cabRolesFor, flatNav, navFor as cabNavFor } from "../src/lib/cabs/cabs.manifest";
+import { assignInput, costInput, driverInput, invoiceInput, istLocalToDate, locationInput, maintenanceInput, otpInput, rideInput, rupeesToPaise as cabRupees, scheduleProblem, vehicleInput } from "../src/lib/cabs/validation";
 import { OTP_MAX_ATTEMPTS, mapsLink, otpExpiry } from "../src/lib/cabs/otp-rules";
 import { issueInput, poInput, receiveInput, ticketInput, ticketUpdate, requestDecision, requestInput, returnInput, rupeesToPaise, transferInput, vendorInput } from "../src/lib/inventory/validation";
 import { financialYear, nextPoNo, poPrefix } from "../src/lib/inventory/po-number";
@@ -408,7 +408,7 @@ const cabUnwrapped = cabRoutes.flatMap((f) => {
   const imported = /from "@\/lib\/cabs\/guard"/.test(src);
   return handlers.filter(([, , rest]) => !imported || !/^\s*=\s*route(<[^>]*>)?\(\{ roles: \[/.test(rest)).map(([, method]) => `${f}:${method}`);
 });
-eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles`, [cabRoutes.length, cabUnwrapped], [16, []]);
+eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles`, [cabRoutes.length, cabUnwrapped], [27, []]);
 
 // The application check must never be steered at an internal network
 eq("net guard: private, loopback, metadata and reserved IPv4 are refused", ["127.0.0.1", "10.0.0.5", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255"].map(isPublicAddress), Array(10).fill(false));
@@ -547,10 +547,14 @@ eq("cabs roles: MCCIA Cabs access makes a user; a cab_drivers row a driver; an A
 eq("cabs access: each section is the application whose URL is exactly its path", ["/cabs", "/cabs/", "/cabs/driver", "/cabs/admin", "/cabs/book", "/cabs-old", "https://cabs.example.com/cabs"].map((u) => [
   new RegExp(CABS_USER_URL_PATTERN).test(u), new RegExp(CABS_DRIVER_URL_PATTERN).test(u), new RegExp(CABS_ADMIN_URL_PATTERN).test(u)]),
   [[true, false, false], [true, false, false], [false, true, false], [false, false, true], [false, false, false], [false, false, false], [false, false, false]]);
-eq("cabs menus: 3 staff pages, 2 driver pages, 5 admin pages, each shown only to its roles (Cabs admins see the driver pages too)", [
+eq("cabs menus: 3 staff pages, 2 driver pages, 9 admin lines (11 with Driver Activity and Invoices nested), each shown only to its roles (Cabs admins see the driver pages too)", [
   cabNavFor("staff", ["cab_user"]).map((i) => i.label), cabNavFor("driver", ["cab_driver"]).map((i) => i.label), cabNavFor("admin", ["cab_admin"]).map((i) => i.label),
   cabNavFor("admin", ["cab_user", "cab_driver"]).length, cabNavFor("driver", ["cab_user", "cab_admin"]).length, cabNavFor("driver", ["cab_user"]).length, [CAB_NAV.staff.title, CAB_NAV.driver.title, CAB_NAV.admin.title],
-], [["Dashboard", "Book a Ride", "My Rides"], ["Dashboard", "My Rides"], ["Dashboard", "All Rides", "Drivers", "Vehicles", "Audit Log"], 0, 2, 0, ["MCCIA Cabs", "Cabs Driver", "Cabs Admin"]]);
+], [["Dashboard", "Book a Ride", "My Rides"], ["Dashboard", "My Rides"], ["Dashboard", "Live Trips", "All Rides", "Drivers", "Vehicles", "Maintenance", "User Activity", "Payments & Invoices", "Audit Log"], 0, 2, 0, ["MCCIA Cabs", "Cabs Driver", "Cabs Admin"]]);
+eq("cabs admin menu: Driver Activity sits under Drivers and Invoices under Payments; Live Trips carries the live dot", [
+  flatNav(CAB_NAV.admin.items).length, CAB_NAV.admin.items.find((i) => i.label === "Drivers")?.children?.map((c) => c.href),
+  CAB_NAV.admin.items.find((i) => i.label === "Payments & Invoices")?.children?.map((c) => c.href), CAB_NAV.admin.items.filter((i) => i.live).map((i) => i.label),
+], [11, ["/cabs/admin/drivers/activity"], ["/cabs/admin/payments/invoices"], ["Live Trips"]]);
 {
   const now = Date.parse("2026-11-02T04:00:00Z"); // 09:30 in India
   eq("cabs times: a datetime-local value is India time; a full ISO time keeps its own offset; junk is refused", [
@@ -602,6 +606,24 @@ eq("cabs menus: 3 staff pages, 2 driver pages, 5 admin pages, each shown only to
     mapsLink({ text: "MCCIA, Tilak Road", lat: null, lng: null }, { text: "Pune Airport", lat: 18.5821, lng: 73.9197 }),
   ], ["https://www.google.com/maps/dir/?api=1&origin=18.5204%2C73.8567&destination=18.5821%2C73.9197&travelmode=driving",
     "https://www.google.com/maps/dir/?api=1&origin=MCCIA%2C+Tilak+Road&destination=18.5821%2C73.9197&travelmode=driving"]);
+}
+
+{
+  const v = "11111111-1111-4111-8111-111111111111";
+  const m = (extra: Record<string, unknown>) => maintenanceInput.safeParse({ vehicleId: v, type: "service", description: "Oil change", doneAt: "2026-10-30", doneBy: "Garage", ...extra });
+  eq("cabs rupees: amounts become paise; empty is none; anything else is refused", [cabRupees("1,250.50"), cabRupees("₹ 35"), cabRupees(""), cabRupees(null), cabRupees("1.234"), cabRupees("-5"), cabRupees("abc"), cabRupees("20000000")],
+    [125050, 3500, null, null, "invalid", "invalid", "invalid", "invalid"]);
+  eq("cabs maintenance: a vehicle, a type from the list, a description, the date done (a real day) and who did it; cost and next due optional; next due not before it was done", [
+    m({}).success, m({ cost: "2,500" }).success && maintenanceInput.parse({ vehicleId: v, type: "repair", description: "Brakes", doneAt: "2026-10-30", doneBy: "Garage", cost: "2,500" }).cost,
+    m({ type: "wash" }).success, m({ doneAt: "2026-02-30" }).success, m({ description: " " }).success, m({ nextDueAt: "2026-10-01" }).success, m({ nextDueAt: "2027-04-30" }).success, m({ cost: "abc" }).success,
+  ], [true, 250000, false, false, false, false, true, false]);
+  eq("cabs costs: an amount is required; distance (up to 2 decimals) and notes optional", [
+    costInput.parse({ fare: "850" }), costInput.safeParse({ fare: "" }).success, costInput.parse({ fare: "1,200.50", distanceKm: "18.5" }).distanceKm, costInput.safeParse({ fare: "100", distanceKm: "-3" }).success,
+  ], [{ fare: 85000, distanceKm: null, notes: null }, false, 18.5, false]);
+  eq("cabs invoices: a branch and a period that ends on or after it starts", [
+    invoiceInput.safeParse({ branch: "Pune HQ", periodStart: "2026-10-01", periodEnd: "2026-10-31" }).success, invoiceInput.safeParse({ branch: "Pune HQ", periodStart: "2026-10-31", periodEnd: "2026-10-01" }).success,
+    invoiceInput.safeParse({ branch: "", periodStart: "2026-10-01", periodEnd: "2026-10-31" }).success, invoiceInput.safeParse({ branch: "Pune HQ", periodStart: "2026-13-01", periodEnd: "2026-10-31" }).success,
+  ], [true, false, false, false]);
 }
 
 const ssoTests = (async () => {

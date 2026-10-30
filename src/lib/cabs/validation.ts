@@ -97,3 +97,65 @@ export const driverInput = z.object({
 });
 export const driverUpdate = z.object({ vehicleId: optionalId });
 export const availabilityInput = z.object({ available: z.boolean() });
+
+/* ------------------------------------------------------------ phase 3: maintenance, costs, invoices */
+
+/**
+ * Rupees as people type them ("1,250.50", "₹ 35") as whole paise; null when empty; "invalid" for anything else (negative, more than two
+ * decimals, over ₹1 crore). The Cab Booking module's own: no other module's code is used.
+ */
+export function rupeesToPaise(raw: unknown): number | null | "invalid" {
+  const t = String(raw ?? "").replace(/[₹,\s]/g, "");
+  if (!t) return null;
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return "invalid";
+  const paise = Math.round(Number(t) * 100);
+  return paise > 1_00_00_000_00 ? "invalid" : paise;
+}
+const rupees = (required: boolean) => z.union([z.string(), z.number(), z.null()]).optional().transform((v, ctx) => {
+  const p = rupeesToPaise(v);
+  if (p === "invalid") { ctx.addIssue({ code: "custom", message: "Enter an amount in rupees, like 1250 or 1,250.50." }); return z.NEVER; }
+  if (p === null && required) { ctx.addIssue({ code: "custom", message: "Enter the amount." }); return z.NEVER; }
+  return p;
+});
+
+/** A calendar day ("YYYY-MM-DD") that really exists. */
+const isDay = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
+const day = (label: string) => z.string().trim().refine(isDay, `Choose the ${label}.`);
+const optionalDay = (label: string) => z.union([z.string().trim(), z.null()]).optional().transform((v) => v || null).refine((v) => v === null || isDay(v), `Choose the ${label}.`);
+/** A day as the start of that day in India. */
+export const istDayStart = (d: string) => new Date(`${d}T00:00:00+05:30`);
+/** Today in India, "YYYY-MM-DD". */
+export const istToday = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
+
+export const maintenanceInput = z.object({
+  vehicleId: idSchema,
+  type: z.enum(["service", "repair", "inspection", "cleaning", "other"], { message: "Choose the type." }),
+  description: text("description", 500),
+  cost: rupees(false),
+  doneAt: day("date it was done"),
+  doneBy: text("mechanic or service centre", 120),
+  nextDueAt: optionalDay("next due date"),
+  notes: optionalText(1000),
+}).superRefine((v, ctx) => {
+  if (v.nextDueAt && v.nextDueAt < v.doneAt) ctx.addIssue({ code: "custom", message: "The next due date can't be before the date it was done.", path: ["nextDueAt"] });
+});
+export type MaintenanceInput = z.infer<typeof maintenanceInput>;
+
+export const costInput = z.object({
+  fare: rupees(true),
+  distanceKm: z.union([z.string(), z.number(), z.null()]).optional().transform((v, ctx) => {
+    const t = String(v ?? "").trim();
+    if (!t) return null;
+    const n = Number(t);
+    if (!Number.isFinite(n) || n < 0 || n > 100_000 || !/^\d+(\.\d{1,2})?$/.test(t)) { ctx.addIssue({ code: "custom", message: "Enter the distance in km, like 18.5." }); return z.NEVER; }
+    return n;
+  }),
+  notes: optionalText(500),
+});
+
+export const invoiceInput = z.object({
+  branch: text("branch", 100),
+  periodStart: day("start of the period"),
+  periodEnd: day("end of the period"),
+  notes: optionalText(1000),
+}).refine((v) => v.periodEnd >= v.periodStart, { message: "The period must end on or after its start.", path: ["periodEnd"] });

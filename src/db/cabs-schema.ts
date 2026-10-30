@@ -1,4 +1,4 @@
-import { boolean, char, decimal, index, integer, jsonb, pgEnum, pgTable, real, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, char, date, decimal, index, integer, jsonb, pgEnum, pgTable, real, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -121,6 +121,79 @@ export const cabDriverLocations = pgTable(
     index("cab_driver_locations_ride_idx").on(t.rideId),
     index("cab_driver_locations_recorded_idx").on(t.recordedAt.desc()),
   ],
+);
+
+/**
+ * Maintenance done on a vehicle: a service, a repair, an inspection, a cleaning. The plate is copied in, so a record still reads after the
+ * vehicle is edited. Money is integer paise.
+ */
+export const cabMaintenance = pgTable(
+  "cab_maintenance",
+  {
+    id: id(),
+    vehicleId: uuid("vehicle_id").notNull().references(() => cabVehicles.id, { onDelete: "cascade" }),
+    vehiclePlate: text("vehicle_plate").notNull(),
+    /** service, repair, inspection, cleaning or other. */
+    type: text("type").notNull(),
+    description: text("description").notNull(),
+    costPaise: integer("cost_paise"),
+    doneAt: timestamp("done_at", { withTimezone: true }).notNull(),
+    /** The mechanic or service centre. */
+    doneBy: text("done_by").notNull(),
+    nextDueAt: timestamp("next_due_at", { withTimezone: true }),
+    notes: text("notes"),
+    recordedById: uuid("recorded_by_id").notNull(),
+    recordedByName: text("recorded_by_name").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("cab_maintenance_vehicle_idx").on(t.vehicleId, t.doneAt.desc()), index("cab_maintenance_done_idx").on(t.doneAt.desc())],
+);
+
+/**
+ * Invoices, one per branch and period: the costed, completed rides of that branch in the period, each claimed by exactly one invoice
+ * (cab_ride_costs.invoice_id). draft → sent → paid.
+ */
+export const cabInvoices = pgTable(
+  "cab_invoices",
+  {
+    id: id(),
+    /** CAB-<financial year>-NNNN. */
+    invoiceNumber: text("invoice_number").notNull().unique(),
+    /** The riders' branch (as copied onto each ride). */
+    branch: text("branch").notNull(),
+    periodStart: date("period_start").notNull(),
+    periodEnd: date("period_end").notNull(),
+    totalRides: integer("total_rides").notNull().default(0),
+    totalAmountPaise: integer("total_amount_paise").notNull().default(0),
+    /** draft, sent or paid. */
+    status: text("status").notNull().default("draft"),
+    notes: text("notes"),
+    createdById: uuid("created_by_id").notNull(),
+    createdByName: text("created_by_name").notNull(),
+    createdAt: createdAt(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+  },
+  (t) => [index("cab_invoices_status_idx").on(t.status, t.periodStart)],
+);
+
+/**
+ * What a completed ride cost (one row per ride). `invoice_id`: the invoice that billed it; a ride is billed once. Its cost can be changed
+ * until that invoice is sent.
+ */
+export const cabRideCosts = pgTable(
+  "cab_ride_costs",
+  {
+    id: id(),
+    rideId: uuid("ride_id").notNull().unique().references(() => cabRides.id, { onDelete: "cascade" }),
+    baseFarePaise: integer("base_fare_paise").notNull().default(0),
+    distanceKm: decimal("distance_km", { precision: 8, scale: 2 }),
+    notes: text("notes"),
+    recordedById: uuid("recorded_by_id").notNull(),
+    recordedByName: text("recorded_by_name").notNull(),
+    createdAt: createdAt(),
+    invoiceId: uuid("invoice_id").references(() => cabInvoices.id, { onDelete: "set null" }),
+  },
+  (t) => [index("cab_ride_costs_invoice_idx").on(t.invoiceId)],
 );
 
 /** The module's own audit log (Cabs Admin → Audit Log). Names are snapshots, so an entry still reads correctly after the person is gone. */

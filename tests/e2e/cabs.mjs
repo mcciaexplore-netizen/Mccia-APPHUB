@@ -3,7 +3,8 @@
  * Admin), vehicles and drivers, booking a ride, assigning it (and two admins assigning at once), the driver starting and completing it,
  * cancelling (by the person and by an admin, with a reason), the notifications each step sends, the audit log and its CSV; and phase 2:
  * the ride OTP (made on assign, shown only to the rider, three tries, an admin's New OTP), starting a ride with it and the Google Maps
- * link, the driver's phone sharing its position (a simulated GPS), and the admins' fleet map. Run against a
+ * link, the driver's phone sharing its position (a simulated GPS), and the admins' fleet map; and phase 3: Live Trips, vehicle
+ * maintenance, ride costs, invoices, and user and driver activity. Run against a
  * site with CABS_ENABLED=true:
  *   E2E_BASE_URL=http://localhost:3000 node tests/e2e/cabs.mjs
  * With the module switched off (CABS_ENABLED unset), E2E_CABS_OFF=yes checks instead that every /cabs page and /api/cabs route is a 404.
@@ -54,6 +55,7 @@ const removeTestData = async () => {
   const rides = (await sql`select id from cab_rides where requested_by_email like 'zzc-%'`).map((r) => r.id);
   for (const id of people) { await sql`delete from cab_audit_log where actor_id = ${id}`; await sql`delete from hub_notifications where user_id = ${id}`; await sql`delete from activity_log where user_id = ${id}`; }
   for (const id of rides) await sql`delete from cab_audit_log where ride_id = ${id}`;
+  await sql`delete from cab_invoices where branch like 'ZZC%'`;
   await sql`delete from cab_rides where requested_by_email like 'zzc-%'`;
   await sql`delete from cab_drivers where email like 'zzc-%'`;
   await sql`delete from cab_vehicles where number_plate like 'ZZC%'`;
@@ -72,6 +74,9 @@ const snap = async () => JSON.stringify([
   await sql`select count(*)::int n from cab_audit_log`,
   await sql`select count(*)::int n from cab_driver_locations l join cab_drivers d on d.id = l.driver_id where d.email not like 'zzc-%'`,
   await sql`select count(*)::int n from cab_ride_otps o join cab_rides r on r.id = o.ride_id where r.requested_by_email not like 'zzc-%'`,
+  await sql`select id, total_amount_paise, status from cab_invoices where branch not like 'ZZC%' order by id`,
+  await sql`select id, base_fare_paise, invoice_id from cab_ride_costs c where not exists (select 1 from cab_rides r where r.id = c.ride_id and r.requested_by_email like 'zzc-%') order by id`,
+  await sql`select id, cost_paise from cab_maintenance where vehicle_plate not like 'ZZC%' order by id`,
 ]);
 
 await removeTestData();
@@ -159,7 +164,8 @@ try {
   const anon = await fetch(BASE + "/api/cabs/rides", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", redirect: "manual" });
   check("API: signed out is refused", anon.status === 401 || anon.status === 307, anon.status);
   await go(A.page, "/cabs/admin");
-  check("admin: Cabs Admin opens with its five pages", (await A.page.locator('nav[aria-label="Cabs Admin"] a').allInnerTexts()).map((t) => t.trim()).join("|") === "App Hub|Dashboard|All Rides|Drivers|Vehicles|Audit Log");
+  check("admin: Cabs Admin opens with its menu", (await A.page.locator('nav[aria-label="Cabs Admin"] a').allInnerTexts()).map((t) => t.trim()).join("|")
+    === "App Hub|Dashboard|Live Trips|All Rides|Drivers|Driver Activity|Vehicles|Maintenance|User Activity|Payments & Invoices|Invoices|Audit Log");
   await go(D.page, "/cabs/driver"); check("a driver not yet added on the Drivers page cannot open Cabs Driver", new URL(D.page.url()).pathname === "/");
 
   section("vehicles");
@@ -321,6 +327,22 @@ try {
   await A.page.waitForTimeout(5_000);
   check("the map polls the fleet every 2 seconds", polls.length >= 2 && polls.length <= 4, polls.length);
 
+  const live = await api(A.page, "/api/cabs/live", "GET");
+  const lt = live.body?.trips?.find((t) => t.ride_id === r1.id);
+  check("Live Trips: the ride in progress, with its driver, rider, route, start and the driver's position", live.status === 200 && lt?.driver_name === "ZZC Driver" && lt.rider_name === "ZZC Staffer"
+    && lt.pickup === "ZZC Office" && lt.dropoff === "ZZC Airport" && !!lt.started_at && lt.latitude === 18.5204, JSON.stringify(live.body).slice(0, 300));
+  check("Live Trips: Cabs admins only (403)", (await api(S.page, "/api/cabs/live", "GET")).status === 403 && (await api(D.page, "/api/cabs/live", "GET")).status === 403);
+  await go(A.page, "/cabs/admin/live");
+  check("Live Trips page: the green dot in the menu, the ride on the map and in the list",
+    (await A.page.locator('nav[aria-label="Cabs Admin"] [data-live-dot]').count()) === 1
+    && await A.page.locator('[data-map="live"] .leaflet-marker-icon').first().waitFor({ timeout: 15000 }).then(() => true).catch(() => false)
+    && await A.page.locator(`tr[data-live-ride="${r1.id}"]`).waitFor({ timeout: 15000 }).then(() => true).catch(() => false)
+    && (await A.page.locator(`tr[data-live-ride="${r1.id}"]`).innerText()).includes("ZZC Staffer"));
+  const livePolls = [];
+  A.page.on("request", (q) => { if (q.url().includes("/api/cabs/live")) livePolls.push(Date.now()); });
+  await A.page.waitForTimeout(11_000);
+  check("Live Trips refreshes every 5 seconds", livePolls.length >= 2 && livePolls.length <= 3, livePolls.length);
+
   await D.page.locator(`[data-ride="${r1.id}"]`).getByRole("button", { name: "Complete Ride" }).click();
   await D.page.locator("[role=dialog]").getByRole("button", { name: "Complete" }).click();
   check("the driver completes it: completed, with the times recorded", await toast(D.page, "Ride completed") && !!(await poll(async () => { const x = await ride(r1.id); return x.status === "completed" && x.started_at && x.completed_at; })));
@@ -348,6 +370,105 @@ try {
   await D.page.locator(`[data-ride="${r6.id}"]`).getByRole("button", { name: "Start Ride" }).click();
   check("…and starts with it", await toast(D.page, "Ride started") && (await poll(async () => (await ride(r6.id)).status === "in_progress")));
   await api(D.page, `/api/cabs/rides/${r6.id}/complete`, "POST");
+
+  section("phase 3: maintenance");
+  await go(A.page, "/cabs/admin");
+  check("with no ride in progress, no green dot", (await A.page.locator("[data-live-dot]").count()) === 0);
+  check("the admin menu: Driver Activity under Drivers, Invoices under Payments", (await A.page.locator('nav[aria-label="Cabs Admin"] a').allInnerTexts()).map((t) => t.trim()).join("|")
+    === "App Hub|Dashboard|Live Trips|All Rides|Drivers|Driver Activity|Vehicles|Maintenance|User Activity|Payments & Invoices|Invoices|Audit Log");
+  const ist = (days) => new Date(Date.now() + days * 86_400_000 + 5.5 * 3600_000).toISOString().slice(0, 10);
+  await go(A.page, "/cabs/admin/maintenance");
+  await A.page.locator("[data-add-maintenance]").click();
+  await A.page.locator("[role=dialog] select[name=vehicleId]").selectOption(v1.id);
+  await A.page.locator("[role=dialog] select[name=type]").selectOption("service");
+  await A.page.fill("[role=dialog] input[name=description]", "ZZC oil change");
+  await A.page.fill("[role=dialog] input[name=cost]", "2,500");
+  await A.page.fill("[role=dialog] input[name=doneBy]", "ZZC Garage");
+  await A.page.fill("[role=dialog] input[name=doneAt]", ist(-10));
+  await A.page.fill("[role=dialog] input[name=nextDueAt]", ist(-2));
+  await A.page.locator("[role=dialog]").getByRole("button", { name: "Add record" }).click();
+  const mrow = await poll(async () => (await sql`select * from cab_maintenance where description = 'ZZC oil change'`)[0]);
+  check("admin records maintenance on the page: the plate copied in, the cost in paise, the days as India dates", await toast(A.page, "Maintenance recorded") && mrow?.vehicle_plate === "ZZC 01 AA 1111"
+    && mrow.cost_paise === 250000 && mrow.recorded_by_name === "ZZC Admin" && new Date(mrow.done_at).toISOString() === new Date(`${ist(-10)}T00:00:00+05:30`).toISOString(), JSON.stringify(mrow));
+  check("a next due date that has passed is shown in red as overdue", (await A.page.locator(`tr[data-maintenance="${mrow.id}"] [data-overdue]`).innerText()).includes("overdue"));
+  await go(A.page, "/cabs/admin/vehicles");
+  check("Vehicles: last maintenance and next due shown, red when overdue or within 7 days", !!(await A.page.locator(`tr[data-vehicle="${v1.id}"] [data-due-soon]`).count())
+    && (await A.page.locator(`tr[data-vehicle="${v2.id}"] [data-due-soon]`).count()) === 0);
+  const edit = await api(A.page, `/api/cabs/maintenance/${mrow.id}`, "PATCH", { vehicleId: v1.id, type: "repair", description: "ZZC oil change and filter", cost: "3000", doneAt: ist(-10), doneBy: "ZZC Garage", nextDueAt: ist(30) });
+  check("editing a record", edit.status === 200 && (await sql`select type, cost_paise, description from cab_maintenance where id = ${mrow.id}`)[0].cost_paise === 300000);
+  check("maintenance on an inactive vehicle is refused (409); a bad date (400)", (await api(A.page, "/api/cabs/maintenance", "POST", { vehicleId: v3.id, type: "service", description: "ZZC x", doneAt: ist(-1), doneBy: "ZZC" })).status === 409
+    && (await api(A.page, "/api/cabs/maintenance", "POST", { vehicleId: v1.id, type: "service", description: "ZZC x", doneAt: "2026-02-30", doneBy: "ZZC" })).status === 400);
+  const extra = (await api(A.page, "/api/cabs/maintenance", "POST", { vehicleId: v2.id, type: "cleaning", description: "ZZC wash", doneAt: ist(-1), doneBy: "ZZC Wash Co" })).body;
+  await go(A.page, "/cabs/admin/maintenance?type=cleaning");
+  check("the type filter", (await A.page.locator("tbody tr[data-maintenance]").count()) >= 1 && (await A.page.locator(`tr[data-maintenance="${mrow.id}"]`).count()) === 0);
+  await A.page.getByRole("button", { name: "Delete ZZC wash" }).click();
+  await A.page.locator("[role=dialog]").getByRole("button", { name: "Delete" }).click();
+  check("deleting a record on the page", await toast(A.page, "Record deleted") && (await poll(async () => (await sql`select count(*)::int n from cab_maintenance where id = ${extra.id}`)[0].n === 0)));
+  const mcsv = await A.page.evaluate(async () => (await fetch("/api/cabs/maintenance/export")).text());
+  check("maintenance CSV", mcsv.replace(/^\uFEFF/, "").startsWith("Vehicle,Type,Description,Cost (Rs)") && mcsv.includes("ZZC oil change and filter") && mcsv.includes("3000"));
+  check("maintenance is for Cabs admins only (403)", (await api(S.page, "/api/cabs/maintenance", "POST", { vehicleId: v1.id, type: "service", description: "x", doneAt: ist(-1), doneBy: "x" })).status === 403);
+
+  section("phase 3: ride costs");
+  check("only a completed ride gets a cost (409 for an assigned one)", (await api(A.page, `/api/cabs/rides/${r3.id}/cost`, "POST", { fare: "100" })).status === 409);
+  await go(A.page, "/cabs/admin/payments?missing=1");
+  await A.page.locator(`tr[data-cost-ride="${r1.id}"]`).getByRole("button", { name: "Add Cost" }).click();
+  await A.page.fill("[role=dialog] input[name=fare]", "850");
+  await A.page.fill("[role=dialog] input[name=distanceKm]", "18.5");
+  await A.page.locator("[role=dialog]").getByRole("button", { name: "Save" }).click();
+  check("admin adds a ride's cost on the page", await toast(A.page, "Cost recorded") && !!(await poll(async () => (await sql`select 1 from cab_ride_costs where ride_id = ${r1.id} and base_fare_paise = 85000 and distance_km = 18.5`)[0])));
+  check("costs for two more rides", (await api(A.page, `/api/cabs/rides/${r5.id}/cost`, "POST", { fare: "1,200.50" })).body?.result === "recorded"
+    && (await api(A.page, `/api/cabs/rides/${r6.id}/cost`, "POST", { fare: "500" })).body?.result === "recorded");
+  check("changing a cost", (await api(A.page, `/api/cabs/rides/${r6.id}/cost`, "POST", { fare: "600", notes: "ZZC toll" })).body?.result === "changed"
+    && (await sql`select base_fare_paise from cab_ride_costs where ride_id = ${r6.id}`)[0].base_fare_paise === 60000);
+  check("a cost needs an amount (400); staff cannot record one (403)", (await api(A.page, `/api/cabs/rides/${r6.id}/cost`, "POST", { fare: "" })).status === 400
+    && (await api(S.page, `/api/cabs/rides/${r6.id}/cost`, "POST", { fare: "1" })).status === 403);
+  await go(A.page, "/cabs/admin/payments");
+  check("payments: this month's figures count the costed rides", Number((await A.page.locator('[data-stat="Rides costed this month"]').innerText()).replace(/\D/g, "")) >= 3);
+  const pcsv = await A.page.evaluate(async () => (await fetch("/api/cabs/payments/export?branch=ZZC%20Branch")).text());
+  check("payments CSV, filtered by branch", pcsv.includes("ZZC Office") && pcsv.includes("1200.5") && !pcsv.includes("Pune HQ"));
+
+  section("phase 3: invoices");
+  const fy = (() => { const d = new Date(Date.now() + 5.5 * 3600_000); return d.getUTCMonth() >= 3 ? d.getUTCFullYear() : d.getUTCFullYear() - 1; })();
+  await go(A.page, "/cabs/admin/payments/invoices");
+  await A.page.getByRole("button", { name: "Create invoice" }).click();
+  await A.page.locator("[role=dialog] select[name=branch]").selectOption("ZZC Branch");
+  await A.page.fill("[role=dialog] input[name=periodStart]", ist(-1));
+  await A.page.fill("[role=dialog] input[name=periodEnd]", ist(1));
+  await A.page.locator("[role=dialog]").getByRole("button", { name: "Create" }).click();
+  const inv = await poll(async () => (await sql`select * from cab_invoices where branch = 'ZZC Branch'`)[0]);
+  check("admin creates an invoice: CAB-<FY>-NNNN, the branch's 3 costed rides and their total, a draft", await toast(A.page, "Invoice created")
+    && new RegExp(`^CAB-${fy}-\\d{4}$`).test(inv?.invoice_number) && inv.total_rides === 3 && inv.total_amount_paise === 85000 + 120050 + 60000 && inv.status === "draft", JSON.stringify(inv));
+  check("…and claims those rides, so a ride is billed once", (await sql`select count(*)::int n from cab_ride_costs where invoice_id = ${inv.id}`)[0].n === 3);
+  const again = await api(A.page, "/api/cabs/invoices", "POST", { branch: "ZZC Branch", periodStart: ist(-5), periodEnd: ist(5) });
+  check("a second, overlapping invoice finds nothing left to bill (409)", again.status === 409 && /No costed rides/.test(again.body?.error), JSON.stringify(again));
+  check("while the invoice is a draft, changing a cost moves its total", (await api(A.page, `/api/cabs/rides/${r6.id}/cost`, "POST", { fare: "700" })).body?.result === "changed"
+    && (await sql`select total_amount_paise from cab_invoices where id = ${inv.id}`)[0].total_amount_paise === 85000 + 120050 + 70000);
+  await go(A.page, "/cabs/admin/payments/invoices");
+  check("the invoice list shows it as a draft (grey)", (await A.page.locator(`tr[data-invoice="${inv.id}"] [data-invoice-status]`).getAttribute("data-invoice-status")) === "draft");
+  await A.page.locator(`tr[data-invoice="${inv.id}"]`).getByRole("button", { name: "Mark sent" }).click();
+  check("mark sent", await toast(A.page, "Marked sent") && (await poll(async () => (await sql`select status from cab_invoices where id = ${inv.id}`)[0].status === "sent")));
+  const locked = await api(A.page, `/api/cabs/rides/${r6.id}/cost`, "POST", { fare: "900" });
+  check("once sent, its rides' costs can't change (409)", locked.status === 409 && /has been sent/.test(locked.body?.error), JSON.stringify(locked));
+  check("a sent invoice cannot be deleted (409), nor sent again (409)", (await api(A.page, `/api/cabs/invoices/${inv.id}`, "DELETE")).status === 409 && (await api(A.page, `/api/cabs/invoices/${inv.id}/sent`, "POST")).status === 409);
+  check("mark paid: paid, with the date", (await api(A.page, `/api/cabs/invoices/${inv.id}/paid`, "POST")).status === 200 && !!(await sql`select paid_at from cab_invoices where id = ${inv.id} and status = 'paid'`)[0]?.paid_at);
+  check("invoices are for Cabs admins only (403)", (await api(S.page, "/api/cabs/invoices", "POST", { branch: "ZZC Branch", periodStart: ist(-1), periodEnd: ist(1) })).status === 403);
+
+  section("phase 3: activity");
+  const [{ n: booked }] = await sql`select count(*)::int n from cab_rides where requested_by_id = ${staffer.id}`;
+  await go(A.page, "/cabs/admin/activity");
+  const urow = await A.page.locator(`tr[data-user-activity="${staffer.id}"]`).innerText();
+  check("user activity: the staffer's rides, branch and most common pickup", urow.includes("ZZC Staffer") && urow.includes("ZZC Branch") && urow.includes(String(booked)) && urow.includes("ZZC Office"), urow);
+  await A.page.locator(`tr[data-user-activity="${staffer.id}"] a`).click();
+  await A.page.waitForURL((u) => u.pathname === "/cabs/admin/rides" && u.searchParams.get("user") === staffer.id);
+  check("a user row opens All Rides with only their rides", (await A.page.locator("tbody tr[data-ride]").count()) === booked);
+  const ucsv = await A.page.evaluate(async () => (await fetch("/api/cabs/activity/export?branch=ZZC%20Branch")).text());
+  check("user activity CSV", ucsv.replace(/^\uFEFF/, "").startsWith("User,Branch,Total rides") && ucsv.includes("ZZC Staffer"));
+  await go(A.page, "/cabs/admin/drivers/activity");
+  const drow = await A.page.locator(`tr[data-driver-activity="${dr1.id}"]`).innerText();
+  check("driver activity: completed rides, phone, vehicle, average ride time", drow.includes("ZZC Driver") && drow.includes("9876543210") && drow.includes("ZZC 01 AA 1111") && /\t3\t/.test(drow), drow);
+  await go(A.page, "/cabs/admin/drivers/activity?available=no");
+  check("driver activity: the availability filter", (await A.page.locator(`tr[data-driver-activity="${dr1.id}"]`).count()) === 0);
+  check("activity pages are for Cabs admins only", (await go(S.page, "/cabs/admin/activity")) && new URL(S.page.url()).pathname === "/");
 
   section("cancelling");
   const r4 = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Office", dropoff: "ZZC Mall", scheduledFor: istSlot(4, 9) })).body;

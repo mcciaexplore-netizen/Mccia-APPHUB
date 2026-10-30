@@ -211,6 +211,13 @@
       "when": 1793384813278,
       "tag": "0029_cabs_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793386499746,
+      "tag": "0030_cabs_maintenance_payments",
+      "breakpoints": true
     }
   ]
 }

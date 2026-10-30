@@ -65,3 +65,30 @@ export async function fleet(): Promise<FleetEntry[]> {
 export async function deleteOldLocations(): Promise<number> {
   return rows<{ n: number }>(await db.execute(sql`with d as (delete from cab_driver_locations where recorded_at < now() - make_interval(hours => ${KEEP_HOURS}) returning 1) select count(*)::int as n from d`))[0].n;
 }
+
+export type LiveTrip = {
+  ride_id: string; driver_id: string | null; driver_name: string | null; rider_name: string; pickup: string; dropoff: string; started_at: string | null;
+  vehicle_plate: string | null; latitude: number | null; longitude: number | null; heading: number | null; speed: number | null; recorded_at: string | null;
+};
+
+/** Every ride in progress, with its driver's latest position from the last 24 hours (none when the phone has sent nothing): Live Trips. */
+export async function liveTrips(): Promise<LiveTrip[]> {
+  const r = rows<Record<string, unknown>>(await db.execute(sql`
+    select r.id as ride_id, r.driver_id, r.driver_name, r.requested_by_name as rider_name, r.pickup, r.dropoff, r.started_at, r.vehicle_plate,
+      l.latitude, l.longitude, l.heading, l.speed, l.recorded_at
+    from cab_rides r
+    left join lateral (select latitude, longitude, heading, speed, recorded_at from cab_driver_locations
+      where driver_id = r.driver_id and recorded_at > now() - make_interval(hours => ${KEEP_HOURS}) order by recorded_at desc limit 1) l on true
+    where r.status = 'in_progress' order by r.started_at`));
+  const iso = (v: unknown) => (v ? new Date(v as string).toISOString() : null);
+  return r.map((x) => ({
+    ride_id: String(x.ride_id), driver_id: (x.driver_id as string) ?? null, driver_name: (x.driver_name as string) ?? null, rider_name: String(x.rider_name),
+    pickup: String(x.pickup), dropoff: String(x.dropoff), started_at: iso(x.started_at), vehicle_plate: (x.vehicle_plate as string) ?? null,
+    latitude: num(x.latitude), longitude: num(x.longitude), heading: num(x.heading), speed: num(x.speed), recorded_at: iso(x.recorded_at),
+  }));
+}
+
+/** How many rides are in progress: the green dot on Live Trips in the admin menu. */
+export async function liveCount(): Promise<number> {
+  return rows<{ n: number }>(await db.execute(sql`select count(*)::int as n from cab_rides where status = 'in_progress'`))[0].n;
+}

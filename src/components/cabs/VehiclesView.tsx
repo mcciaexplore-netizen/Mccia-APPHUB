@@ -8,11 +8,22 @@ import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import { cabsApi } from "./api";
 
-export type VehicleView = { id: string; numberPlate: string; model: string; capacity: number; isActive: boolean; drivers: string | null; activeRides: number };
+export type VehicleView = {
+  id: string; numberPlate: string; model: string; capacity: number; isActive: boolean; drivers: string | null; activeRides: number;
+  /** From the vehicle's latest maintenance record. */
+  lastMaintenanceAt: string | null; nextDueAt: string | null;
+};
+/** The day in India ("YYYY-MM-DD") of an ISO time. */
+const istDay = (iso: string) => new Date(Date.parse(iso) + 5.5 * 3600_000).toISOString().slice(0, 10);
+const shortDay = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
 type Form = { numberPlate: string; model: string; capacity: string };
 
-/** The fleet: add a vehicle, edit one, deactivate it (or make it active again). Vehicles are never deleted. */
-export function VehiclesView({ vehicles }: { vehicles: VehicleView[] }) {
+/**
+ * The fleet: add a vehicle, edit one, deactivate it (or make it active again). Vehicles are never deleted. Its last maintenance and next
+ * due date show beside it; the due date in red when it has passed or is within 7 days.
+ */
+export function VehiclesView({ vehicles, today }: { vehicles: VehicleView[]; today: string }) {
+  const soon = new Date(Date.parse(`${today}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
   const router = useRouter();
   const toast = useToast();
   const confirm = useConfirm();
@@ -31,7 +42,7 @@ export function VehiclesView({ vehicles }: { vehicles: VehicleView[] }) {
     <div className="space-y-4">
       <div className="flex justify-end"><button className="btn btn-primary btn-sm" onClick={() => open("new")}><Plus size={14} /> Add vehicle</button></div>
       <div className="table-wrap"><table>
-        <thead><tr><th>Number plate</th><th>Model</th><th className="text-right">Seats</th><th>Drivers</th><th>Status</th><th className="text-right">Actions</th></tr></thead>
+        <thead><tr><th>Number plate</th><th>Model</th><th className="text-right">Seats</th><th>Drivers</th><th>Last maintenance</th><th>Next due</th><th>Status</th><th className="text-right">Actions</th></tr></thead>
         <tbody>
           {vehicles.map((v) => (
             <tr key={v.id} data-vehicle={v.id}>
@@ -39,6 +50,9 @@ export function VehiclesView({ vehicles }: { vehicles: VehicleView[] }) {
               <td>{v.model}</td>
               <td className="text-right">{v.capacity}</td>
               <td>{v.drivers ?? <span className="text-subtle">—</span>}</td>
+              <td className="whitespace-nowrap text-xs text-muted">{v.lastMaintenanceAt ? shortDay(v.lastMaintenanceAt) : "—"}</td>
+              <td className={`whitespace-nowrap text-xs ${v.nextDueAt && istDay(v.nextDueAt) <= soon ? "font-bold text-brand-red" : "text-muted"}`} data-due-soon={(v.nextDueAt && istDay(v.nextDueAt) <= soon) || undefined}>
+                {v.nextDueAt ? `${shortDay(v.nextDueAt)}${istDay(v.nextDueAt) < today ? " · overdue" : ""}` : "—"}</td>
               <td>{v.isActive ? <span className="badge badge-green">Active</span> : <span className="badge badge-neutral">Inactive</span>}{v.activeRides > 0 && <span className="block text-xs text-muted">{v.activeRides} ride{v.activeRides === 1 ? "" : "s"} on</span>}</td>
               <td><div className="flex justify-end gap-1.5">
                 <button className="btn btn-ghost btn-sm" disabled={pending} onClick={() => open(v)}><Pencil size={14} /> Edit</button>
@@ -47,7 +61,7 @@ export function VehiclesView({ vehicles }: { vehicles: VehicleView[] }) {
               </div></td>
             </tr>
           ))}
-          {vehicles.length === 0 && <tr><td colSpan={6} className="text-subtle">No vehicles yet.</td></tr>}
+          {vehicles.length === 0 && <tr><td colSpan={8} className="text-subtle">No vehicles yet.</td></tr>}
         </tbody>
       </table></div>
       {editing && (
