@@ -1,4 +1,4 @@
-import { bigint, boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { branches } from "./schema";
 
@@ -90,21 +90,23 @@ export const inventoryItems = pgTable(
 );
 
 /**
- * How many of an item one branch has. A row appears when the branch first gets the item. min_quantity is created by migration 0025 but is
- * never used: production's table has no such column (it existed before the migration), so the low-stock level is the item's own.
+ * How many of an item one branch has. A row appears when the branch first gets the item. This is the table as it is in production (it
+ * existed before migration 0025, whose CREATE TABLE IF NOT EXISTS left it as it was; migration 0026 brings other databases to the same
+ * shape). low_stock_level is not used yet: an item's low-stock level is its own min_quantity, the same at every branch.
  */
 export const inventoryBranchStock = pgTable(
   "inventory_branch_stock",
   {
+    id: id(),
     itemId: uuid("item_id").notNull().references(() => inventoryItems.id, { onDelete: "restrict" }),
     branchId: uuid("branch_id").notNull().references(() => branches.id, { onDelete: "restrict" }),
     quantity: integer("quantity").notNull().default(0),
-    minQuantity: integer("min_quantity").notNull().default(0),
+    lowStockLevel: integer("low_stock_level").notNull().default(0),
+    createdAt: createdAt(),
   },
   (t) => [
-    primaryKey({ columns: [t.itemId, t.branchId] }),
+    unique("inventory_branch_stock_item_id_branch_id_unique").on(t.itemId, t.branchId),
     index("inventory_branch_stock_branch_idx").on(t.branchId),
-    check("inventory_branch_stock_quantity_check", sql`${t.quantity} >= 0`),
   ],
 );
 

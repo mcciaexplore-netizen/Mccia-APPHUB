@@ -183,6 +183,13 @@
       "when": 1793359705009,
       "tag": "0025_inventory_branches",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793363334351,
+      "tag": "0026_branch_stock_production_shape",
+      "breakpoints": true
     }
   ]
 }
