@@ -2,6 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     { "path": "/api/cron/cleanup-uploads", "schedule": "30 21 * * *" },
-    { "path": "/api/ping", "schedule": "*/5 * * * *" }
+    { "path": "/api/ping", "schedule": "0 2 * * *" }
   ]
 }
