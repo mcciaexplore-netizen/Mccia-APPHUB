@@ -52,12 +52,13 @@ export async function verifyOtp(rideId: string, given: string, driver: Pick<CabU
     r as (
       update cab_rides set status = 'in_progress', started_at = now(), otp_verified_at = now(), updated_at = now()
       where id = ${rideId} and status = 'assigned' and driver_id = ${driver.driverId} and exists (select 1 from o where verified_at is not null)
-      returning pickup, dropoff, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+      returning pickup, dropoff, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, stops)
     select (select attempts from o) as attempts, (select verified_at from o) as verified_at, r.* from (select 1) one left join r on true`));
   if (row?.pickup) {
     const ride = { pickup: String(row.pickup), dropoff: String(row.dropoff) };
     await writeCabAudit(driver, "ride_started", { rideId, subject: `${ride.pickup} → ${ride.dropoff}`, details: { by: "OTP" } });
-    return { mapsUrl: mapsLink({ text: ride.pickup, lat: num(row.pickup_lat), lng: num(row.pickup_lng) }, { text: ride.dropoff, lat: num(row.dropoff_lat), lng: num(row.dropoff_lng) }) };
+    const stops = (Array.isArray(row.stops) ? row.stops : typeof row.stops === "string" ? JSON.parse(row.stops) : []) as { text: string; lat: number | null; lng: number | null }[];
+    return { mapsUrl: mapsLink({ text: ride.pickup, lat: num(row.pickup_lat), lng: num(row.pickup_lng) }, { text: ride.dropoff, lat: num(row.dropoff_lat), lng: num(row.dropoff_lng) }, stops) };
   }
   if (row?.attempts != null) {
     const left = OTP_MAX_ATTEMPTS - Number(row.attempts);

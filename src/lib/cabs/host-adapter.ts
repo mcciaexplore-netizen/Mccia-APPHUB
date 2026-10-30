@@ -13,31 +13,33 @@ import { CABS_ADMIN_URL_PATTERN, CABS_USER_URL_PATTERN, cabRolesFor, type CabRol
 
 export type { CabRole };
 /** `driverId`: their row in cab_drivers when they are a driver. `branchName`: their branch in the hub, copied onto the rides they book. */
-export type CabUser = { id: string; name: string; email: string; roles: CabRole[]; hubRole: string; branchName: string | null; driverId: string | null };
+export type CabUser = { id: string; name: string; email: string; roles: CabRole[]; hubRole: string; branchName: string | null; driverId: string | null; driverAvailable: boolean | null };
 export type Access = { status: "anonymous" } | { status: "ok"; user: CabUser };
 
-type Standing = { userAccess: boolean; adminAppAdmin: boolean; driverId: string | null };
+type Standing = { userAccess: boolean; adminAppAdmin: boolean; driverId: string | null; driverAvailable: boolean | null };
 
 /**
  * One query: whether the person has been given the MCCIA Cabs application (URL /cabs), whether they are an App Admin of the Cabs Admin
  * application (URL /cabs/admin) and have been given it (being an App Admin does not give access, as everywhere in the hub), and the
- * available driver row with their email, compared without regard to case (drivers are not tied to hub accounts otherwise). Only active
+ * driver row with their email, compared without regard to case (drivers are not tied to hub accounts otherwise), and whether that driver
+ * is online. Being offline only stops new rides being assigned: an offline driver still opens their page (to go online again). Only active
  * applications in active categories count.
  */
 async function cabsStanding(userId: string, email: string): Promise<Standing> {
   const res = (await db.execute(sql`
     select coalesce(bool_or(a.url ~ ${CABS_USER_URL_PATTERN} and ua.user_id is not null), false) as user_access,
       coalesce(bool_or(a.url ~ ${CABS_ADMIN_URL_PATTERN} and ua.user_id is not null and ad.user_id is not null), false) as admin_app_admin,
-      (select id from cab_drivers where lower(email) = ${email.trim().toLowerCase()} and is_available limit 1) as driver_id
+      (select id from cab_drivers where lower(email) = ${email.trim().toLowerCase()} limit 1) as driver_id,
+      (select is_available from cab_drivers where lower(email) = ${email.trim().toLowerCase()} limit 1) as driver_available
     from apps a
     join departments d on d.id = a.department_id
     left join user_app_access ua on ua.app_id = a.id and ua.user_id = ${userId}
     left join app_admins ad on ad.app_id = a.id and ad.user_id = ${userId}
     where a.is_active and d.is_active and (a.url ~ ${CABS_USER_URL_PATTERN} or a.url ~ ${CABS_ADMIN_URL_PATTERN})`)) as unknown as {
-    rows: { user_access: boolean; admin_app_admin: boolean; driver_id: string | null }[];
+    rows: { user_access: boolean; admin_app_admin: boolean; driver_id: string | null; driver_available: boolean | null }[];
   };
   const r = res.rows[0];
-  return { userAccess: !!r?.user_access, adminAppAdmin: !!r?.admin_app_admin, driverId: r?.driver_id ?? null };
+  return { userAccess: !!r?.user_access, adminAppAdmin: !!r?.admin_app_admin, driverId: r?.driver_id ?? null, driverAvailable: r?.driver_available ?? null };
 }
 
 /** Who is asking and their roles here (see cabs.manifest.ts). Someone signed in with no role at all is still "ok", with no roles. */
@@ -49,7 +51,7 @@ export const resolveAccess = cache(async (): Promise<Access> => {
     host.branchId ? db.select({ name: branches.name }).from(branches).where(eq(branches.id, host.branchId)) : Promise.resolve([]),
   ]);
   const roles = cabRolesFor({ hubRole: host.role, userAccess: standing.userAccess, adminAppAdmin: standing.adminAppAdmin, isDriver: !!standing.driverId });
-  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles, hubRole: host.role, branchName: branch?.name ?? null, driverId: standing.driverId } };
+  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles, hubRole: host.role, branchName: branch?.name ?? null, driverId: standing.driverId, driverAvailable: standing.driverAvailable } };
 });
 
 /** Whether the person is still on the temporary password they were emailed: they must choose their own before using the module. */

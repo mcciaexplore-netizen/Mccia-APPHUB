@@ -11,7 +11,8 @@ type State = "asking" | "sharing" | "denied" | "unavailable";
 /**
  * While the driver has a ride in progress, sends the phone's position to /api/cabs/location every 10 seconds, for the admins' fleet map.
  * It stops when the ride ends (this component goes away) or the page is closed. A web page cannot read the position while it is in the
- * background, so the driver is asked to keep it open.
+ * background, so the driver is asked to keep it open. It sits in the driver app's frame, so it keeps sharing while the driver moves between
+ * tabs.
  */
 export function LocationSharer({ rideId }: { rideId: string }) {
   // A browser with no location at all is known at once; everything else is learned from the phone.
@@ -50,7 +51,7 @@ export function LocationSharer({ rideId }: { rideId: string }) {
 
   if (state === "denied" || state === "unavailable") {
     return (
-      <div role="alert" className="flex items-start gap-3 rounded-lg border border-[#fcd34d] bg-[#fff8e1] p-4 text-[#b45309]">
+      <div role="alert" className="flex items-start gap-3 rounded-xl border border-[#fcd34d] bg-[#fff8e1] p-4 text-[#b45309]">
         <MapPinOff size={22} className="mt-0.5 shrink-0" aria-hidden />
         <div><p className="text-base font-bold">Allow location so admin can track your ride</p>
           <p className="mt-1 text-sm">{state === "denied" ? "Location is blocked for this site. Allow it in your browser's site settings, then reload this page." : "Your phone's location could not be found. Check that location is turned on."}</p></div>
@@ -58,7 +59,7 @@ export function LocationSharer({ rideId }: { rideId: string }) {
     );
   }
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-blue-tint-line bg-blue-tint p-4" data-sharing={state}>
+    <div className="flex items-start gap-3 rounded-xl bg-white p-4 shadow-sm" data-sharing={state}>
       <Radio size={22} className={`mt-0.5 shrink-0 text-primary ${state === "sharing" ? "animate-pulse" : ""}`} aria-hidden />
       <div>
         <p className="text-base font-bold text-ink">{state === "sharing" ? "Sharing location" : "Allow location so admin can track your ride"}</p>

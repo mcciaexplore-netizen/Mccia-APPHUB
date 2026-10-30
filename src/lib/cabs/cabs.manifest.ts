@@ -9,7 +9,7 @@
  *
  * Roles:
  *   cab_admin   the Support Admin, and the App Admins of the Cabs Admin application
- *   cab_driver  anyone signed in whose email is an available driver's in cab_drivers (added on Cabs Admin → Drivers)
+ *   cab_driver  anyone signed in whose email is a driver's in cab_drivers (added on Cabs Admin → Drivers), online or offline
  *   cab_user    anyone who has been given the MCCIA Cabs application
  */
 
@@ -38,13 +38,15 @@ export type CabNavItem = { label: string; href: string; live?: boolean };
 
 export const CAB_NAV: Record<CabSection, { title: string; items: CabNavItem[] }> = {
   staff: { title: "MCCIA Cabs", items: [
-    { label: "Dashboard", href: "/cabs" },
-    { label: "Book a Ride", href: "/cabs/book" },
-    { label: "My Rides", href: "/cabs/rides" },
+    { label: "Book", href: "/cabs" },
+    { label: "My rides", href: "/cabs/rides" },
+    { label: "Account", href: "/cabs/account" },
   ] },
   driver: { title: "Cabs Driver", items: [
-    { label: "Dashboard", href: "/cabs/driver" },
-    { label: "My Rides", href: "/cabs/driver/rides" },
+    { label: "Assigned", href: "/cabs/driver" },
+    { label: "Trip", href: "/cabs/driver/trip" },
+    { label: "History", href: "/cabs/driver/rides" },
+    { label: "Profile", href: "/cabs/driver/profile" },
   ] },
   admin: { title: "Cabs Admin", items: [
     { label: "Dashboard", href: "/cabs/admin" },

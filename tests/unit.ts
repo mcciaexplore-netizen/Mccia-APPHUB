@@ -408,7 +408,7 @@ const cabUnwrapped = cabRoutes.flatMap((f) => {
   const imported = /from "@\/lib\/cabs\/guard"/.test(src);
   return handlers.filter(([, , rest]) => !imported || !/^\s*=\s*route(<[^>]*>)?\(\{ roles: \[/.test(rest)).map(([, method]) => `${f}:${method}`);
 });
-eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles`, [cabRoutes.length, cabUnwrapped], [27, []]);
+eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles`, [cabRoutes.length, cabUnwrapped], [28, []]);
 
 // The application check must never be steered at an internal network
 eq("net guard: private, loopback, metadata and reserved IPv4 are refused", ["127.0.0.1", "10.0.0.5", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255"].map(isPublicAddress), Array(10).fill(false));
@@ -547,10 +547,10 @@ eq("cabs roles: MCCIA Cabs access makes a user; a cab_drivers row a driver; an A
 eq("cabs access: each section is the application whose URL is exactly its path", ["/cabs", "/cabs/", "/cabs/driver", "/cabs/admin", "/cabs/book", "/cabs-old", "https://cabs.example.com/cabs"].map((u) => [
   new RegExp(CABS_USER_URL_PATTERN).test(u), new RegExp(CABS_DRIVER_URL_PATTERN).test(u), new RegExp(CABS_ADMIN_URL_PATTERN).test(u)]),
   [[true, false, false], [true, false, false], [false, true, false], [false, false, true], [false, false, false], [false, false, false], [false, false, false]]);
-eq("cabs menus: 3 staff pages, 2 driver pages, 11 admin pages in one flat list, each shown only to its roles (Cabs admins see the driver pages too)", [
+eq("cabs menus: the rider's 3 tabs, the driver's 4 tabs, 11 admin pages in one flat list, each shown only to its roles (Cabs admins see the driver pages too)", [
   cabNavFor("staff", ["cab_user"]).map((i) => i.label), cabNavFor("driver", ["cab_driver"]).map((i) => i.label), cabNavFor("admin", ["cab_admin"]).map((i) => i.label),
   cabNavFor("admin", ["cab_user", "cab_driver"]).length, cabNavFor("driver", ["cab_user", "cab_admin"]).length, cabNavFor("driver", ["cab_user"]).length, [CAB_NAV.staff.title, CAB_NAV.driver.title, CAB_NAV.admin.title],
-], [["Dashboard", "Book a Ride", "My Rides"], ["Dashboard", "My Rides"], ["Dashboard", "Live Trips", "All Rides", "Drivers", "Driver Activity", "Vehicles", "Maintenance", "User Activity", "Payments", "Invoices", "Audit Log"], 0, 2, 0, ["MCCIA Cabs", "Cabs Driver", "Cabs Admin"]]);
+], [["Book", "My rides", "Account"], ["Assigned", "Trip", "History", "Profile"], ["Dashboard", "Live Trips", "All Rides", "Drivers", "Driver Activity", "Vehicles", "Maintenance", "User Activity", "Payments", "Invoices", "Audit Log"], 0, 4, 0, ["MCCIA Cabs", "Cabs Driver", "Cabs Admin"]]);
 eq("cabs admin menu: no nested lines; Live Trips carries the live dot", [
   CAB_NAV.admin.items.every((i) => !("children" in i)), CAB_NAV.admin.items.filter((i) => i.live).map((i) => i.label),
 ], [true, ["Live Trips"]]);
@@ -623,6 +623,30 @@ eq("cabs admin menu: no nested lines; Live Trips carries the live dot", [
     invoiceInput.safeParse({ branch: "Pune HQ", periodStart: "2026-10-01", periodEnd: "2026-10-31" }).success, invoiceInput.safeParse({ branch: "Pune HQ", periodStart: "2026-10-31", periodEnd: "2026-10-01" }).success,
     invoiceInput.safeParse({ branch: "", periodStart: "2026-10-01", periodEnd: "2026-10-31" }).success, invoiceInput.safeParse({ branch: "Pune HQ", periodStart: "2026-13-01", periodEnd: "2026-10-31" }).success,
   ], [true, false, false, false]);
+}
+
+{
+  const day = (d: number) => new Date(Date.now() + d * 86_400_000 + 5.5 * 3600_000).toISOString().slice(0, 10);
+  const base = { pickup: "Office", dropoff: "Airport" };
+  const now = rideInput.parse({ ...base, tripType: "now" });
+  const multi = rideInput.parse({ ...base, tripType: "multiday", scheduledFor: `${day(2)}T09:00`, endsOn: day(4) });
+  eq("cabs when: Now needs no time (it is the moment of booking); Schedule needs one; without a type it is Schedule, as before", [
+    now.tripType, Math.abs(now.scheduledFor.getTime() - Date.now()) < 5_000, now.endsAt, rideInput.safeParse({ ...base, tripType: "scheduled" }).success,
+    rideInput.parse({ ...base, scheduledFor: `${day(1)}T10:00` }).tripType,
+  ], ["now", true, null, false, "scheduled"]);
+  eq("cabs when: Multi-day runs to the end of its last day (India time), must end after it starts, and lasts at most 31 days", [
+    multi.endsAt?.toISOString(), rideInput.safeParse({ ...base, tripType: "multiday", scheduledFor: `${day(2)}T09:00` }).success,
+    rideInput.safeParse({ ...base, tripType: "multiday", scheduledFor: `${day(5)}T09:00`, endsOn: day(3) }).success,
+    rideInput.safeParse({ ...base, tripType: "multiday", scheduledFor: `${day(2)}T09:00`, endsOn: day(40) }).success,
+  ], [new Date(new Date(`${day(4)}T00:00:00+05:30`).getTime() + 86_399_999).toISOString(), false, false, false]);
+  eq("cabs stops and passengers: up to 3 stops (each a full point or none); 1 to 20 passengers, 1 by default", [
+    rideInput.parse({ ...base, tripType: "now", stops: [{ text: "Bank", lat: 18.5, lng: 73.8 }, { text: "Hotel" }] }).stops,
+    rideInput.safeParse({ ...base, tripType: "now", stops: [{ text: "a" }, { text: "b" }, { text: "c" }, { text: "d" }] }).success,
+    rideInput.safeParse({ ...base, tripType: "now", stops: [{ text: "a", lat: 18.5 }] }).success, now.passengers,
+    rideInput.parse({ ...base, tripType: "now", passengers: "6" }).passengers, rideInput.safeParse({ ...base, tripType: "now", passengers: 0 }).success, rideInput.safeParse({ ...base, tripType: "now", passengers: 21 }).success,
+  ], [[{ text: "Bank", lat: 18.5, lng: 73.8 }, { text: "Hotel", lat: null, lng: null }], false, false, 1, 6, false, false]);
+  eq("cabs navigation: the route goes through the stops in order", mapsLink({ text: "A", lat: 18.5, lng: 73.8 }, { text: "D", lat: 18.6, lng: 73.9 }, [{ text: "B", lat: 18.55, lng: 73.85 }, { text: "C Road", lat: null, lng: null }]),
+    "https://www.google.com/maps/dir/?api=1&origin=18.5%2C73.8&destination=18.6%2C73.9&travelmode=driving&waypoints=18.55%2C73.85%7CC+Road");
 }
 
 const ssoTests = (async () => {

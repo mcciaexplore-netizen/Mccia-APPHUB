@@ -1,14 +1,6 @@
-import { BookingForm } from "@/components/cabs/BookingForm";
-import { requireCabsPage } from "@/lib/cabs/guard";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Book a Ride · MCCIA Cabs · MCCIA App Hub" };
-
-export default async function BookPage() {
-  const user = await requireCabsPage();
-  return (
-    <div className="page-enter space-y-5">
-      <div><h1 className="text-2xl">Book a Ride</h1><p className="text-sm text-muted">Say where from, where to and when. You’ll be told once a driver and car are assigned.</p></div>
-      <BookingForm branchName={user.branchName} />
-    </div>
-  );
+/** Booking is the MCCIA Cabs home page now; this address (in older links and notifications) goes there. */
+export default function BookRedirect() {
+  redirect("/cabs");
 }

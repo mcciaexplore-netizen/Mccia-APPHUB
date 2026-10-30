@@ -72,6 +72,24 @@ export async function setAvailability(id: string, available: boolean, actor: Act
   await writeCabAudit(actor, "driver_availability", { subject: row.name, details: { available } });
 }
 
+/** A driver goes online or offline themselves (the Online/Offline switch on their page). Offline: no new rides are assigned to them. */
+export async function setOwnAvailability(driver: Pick<CabUser, "id" | "name" | "driverId">, available: boolean): Promise<void> {
+  if (!driver.driverId) throw new CabsError("Only drivers go online or offline.", 403);
+  await setAvailability(driver.driverId, available, driver);
+}
+
+export type DriverProfile = { name: string; email: string; phone: string; isAvailable: boolean; vehiclePlate: string | null; vehicleModel: string | null; completed: number };
+
+/** A driver's own details for their Profile tab: who they are, their vehicle, and how many rides they have completed. */
+export async function driverProfile(driverId: string): Promise<DriverProfile | null> {
+  const [x] = rows<Record<string, unknown>>(await db.execute(sql`
+    select d.name, d.email, d.phone, d.is_available, v.number_plate, v.model,
+      (select count(*) from cab_rides r where r.driver_id = d.id and r.status = 'completed')::int as completed
+    from cab_drivers d left join cab_vehicles v on v.id = d.vehicle_id where d.id = ${driverId}`));
+  return x ? { name: String(x.name), email: String(x.email), phone: String(x.phone), isAvailable: !!x.is_available, vehiclePlate: (x.number_plate as string) ?? null,
+    vehicleModel: (x.model as string) ?? null, completed: Number(x.completed) } : null;
+}
+
 /** Removes a driver, unless they have an assigned or running ride (one statement, so a ride cannot be assigned in between). */
 export async function removeDriver(id: string, actor: Actor): Promise<void> {
   const [row] = rows<{ name: string; email: string }>(await db.execute(sql`

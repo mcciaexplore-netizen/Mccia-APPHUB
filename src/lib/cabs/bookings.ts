@@ -25,6 +25,7 @@ export type RideRow = {
   driverId: string | null; driverName: string | null; vehicleId: string | null; vehiclePlate: string | null; vehicleModel: string | null;
   pickup: string; dropoff: string; scheduledFor: Date; status: RideStatus; notes: string | null;
   pickupLat: number | null; pickupLng: number | null; dropoffLat: number | null; dropoffLng: number | null; otpVerifiedAt: Date | null;
+  passengers: number; tripType: "now" | "scheduled" | "multiday"; endsAt: Date | null; stops: { text: string; lat: number | null; lng: number | null }[];
   /** Whether the ride has an OTP (rides assigned before OTPs existed have none and start with Start Ride). */
   hasOtp: boolean;
   /** The code itself, and whether it can still be used: only on the rider's own lists (withOtp), never anyone else's. */
@@ -39,6 +40,8 @@ const toRide = (x: Record<string, unknown>): RideRow => ({
   vehicleId: (x.vehicle_id as string) ?? null, vehiclePlate: (x.vehicle_plate as string) ?? null, vehicleModel: (x.vehicle_model as string) ?? null,
   pickup: String(x.pickup), dropoff: String(x.dropoff), scheduledFor: new Date(x.scheduled_for as string), status: x.status as RideStatus, notes: (x.notes as string) ?? null,
   pickupLat: num(x.pickup_lat), pickupLng: num(x.pickup_lng), dropoffLat: num(x.dropoff_lat), dropoffLng: num(x.dropoff_lng), otpVerifiedAt: date(x.otp_verified_at), hasOtp: !!x.has_otp,
+  passengers: Number(x.passengers ?? 1), tripType: ((x.trip_type as string) ?? "scheduled") as RideRow["tripType"], endsAt: date(x.ends_at),
+  stops: Array.isArray(x.stops) ? (x.stops as RideRow["stops"]) : typeof x.stops === "string" ? (JSON.parse(x.stops) as RideRow["stops"]) : [],
   ...(x.otp_code !== undefined ? { otp: x.otp_code ? { code: String(x.otp_code), usable: !!x.otp_usable } : null } : {}),
   assignedAt: date(x.assigned_at), startedAt: date(x.started_at), completedAt: date(x.completed_at), cancelledAt: date(x.cancelled_at),
   cancelledByName: (x.cancelled_by_name as string) ?? null, cancelReason: (x.cancel_reason as string) ?? null, createdAt: new Date(x.created_at as string),
@@ -87,11 +90,12 @@ const subject = (r: { pickup: string; dropoff: string }) => `${r.pickup} → ${r
 
 export async function createRide(input: RideInput, user: Pick<CabUser, "id" | "name" | "email" | "branchName">): Promise<{ id: string }> {
   const [row] = rows<{ id: string }>(await db.execute(sql`
-    insert into cab_rides (requested_by_id, requested_by_name, requested_by_email, requested_by_branch, pickup, dropoff, scheduled_for, notes, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+    insert into cab_rides (requested_by_id, requested_by_name, requested_by_email, requested_by_branch, pickup, dropoff, scheduled_for, notes, pickup_lat, pickup_lng,
+      dropoff_lat, dropoff_lng, trip_type, ends_at, stops, passengers)
     values (${user.id}, ${user.name}, ${user.email}, ${user.branchName}, ${input.pickup}, ${input.dropoff}, ${input.scheduledFor}, ${input.notes},
-      ${input.pickupLat}, ${input.pickupLng}, ${input.dropoffLat}, ${input.dropoffLng})
+      ${input.pickupLat}, ${input.pickupLng}, ${input.dropoffLat}, ${input.dropoffLng}, ${input.tripType}, ${input.endsAt}, ${JSON.stringify(input.stops)}::jsonb, ${input.passengers})
     returning id`));
-  await writeCabAudit(user, "ride_created", { rideId: row.id, subject: subject(input), details: { scheduledFor: input.scheduledFor.toISOString() } });
+  await writeCabAudit(user, "ride_created", { rideId: row.id, subject: subject(input), details: { when: input.tripType, scheduledFor: input.scheduledFor.toISOString(), endsAt: input.endsAt?.toISOString() ?? null, stops: input.stops.length, passengers: input.passengers } });
   await rideReceived({ id: row.id, ...input }, { userId: user.id, email: user.email });
   return row;
 }
@@ -106,13 +110,13 @@ async function whyNot(id: string, wanted: string, mine?: { driverId: string | nu
 
 /**
  * Gives a pending ride a driver and a vehicle, in ONE statement that also requires the driver to be available and the vehicle active at
- * that moment, and makes the ride's OTP (expiring 2 hours after the scheduled time, never sooner than 2 hours from now). Two admins
+ * that moment, the vehicle to have a seat for every passenger, and makes the ride's OTP (expiring 2 hours after the scheduled time, never sooner than 2 hours from now). Two admins
  * assigning the same ride at once: one succeeds, the other is told it was already assigned.
  */
 export async function assignRide(id: string, input: { driverId: string; vehicleId: string }, actor: Actor): Promise<void> {
   const [row] = rows<Record<string, unknown>>(await db.execute(sql`
     with d as (select id, name, email from cab_drivers where id = ${input.driverId} and is_available),
-    v as (select id, number_plate, model from cab_vehicles where id = ${input.vehicleId} and is_active),
+    v as (select id, number_plate, model from cab_vehicles where id = ${input.vehicleId} and is_active and capacity >= (select passengers from cab_rides where id = ${id})),
     r as (
       update cab_rides set status = 'assigned', driver_id = (select id from d), vehicle_id = (select id from v),
         driver_name = (select name from d), vehicle_plate = (select number_plate from v), assigned_at = now(), updated_at = now()
@@ -124,8 +128,9 @@ export async function assignRide(id: string, input: { driverId: string; vehicleI
       on conflict (ride_id) do update set otp = excluded.otp, attempts = 0, verified_at = null, expires_at = excluded.expires_at, created_at = now())
     select r.*, d.name as driver_name, d.email as driver_email, v.number_plate, v.model from r, d, v`));
   if (!row) {
-    const [state] = rows<{ status: string | null; driver: boolean | null; available: boolean | null; vehicle: boolean | null; active: boolean | null }>(await db.execute(sql`
-      select (select status::text from cab_rides where id = ${id}) as status,
+    const [state] = rows<{ status: string | null; driver: boolean | null; available: boolean | null; vehicle: boolean | null; active: boolean | null; seats: number | null; passengers: number | null }>(await db.execute(sql`
+      select (select status::text from cab_rides where id = ${id}) as status, (select passengers from cab_rides where id = ${id}) as passengers,
+        (select capacity from cab_vehicles where id = ${input.vehicleId}) as seats,
         exists (select 1 from cab_drivers where id = ${input.driverId}) as driver, (select is_available from cab_drivers where id = ${input.driverId}) as available,
         exists (select 1 from cab_vehicles where id = ${input.vehicleId}) as vehicle, (select is_active from cab_vehicles where id = ${input.vehicleId}) as active`));
     if (!state.status) throw new CabsError("That ride no longer exists. Reload and try again.", 404);
@@ -133,7 +138,8 @@ export async function assignRide(id: string, input: { driverId: string; vehicleI
     if (!state.driver) throw new CabsError("That driver no longer exists. Reload and try again.", 404);
     if (!state.available) throw new CabsError("Driver not available. Choose another driver.", 409);
     if (!state.vehicle) throw new CabsError("That vehicle no longer exists. Reload and try again.", 404);
-    throw new CabsError("Vehicle inactive. Choose an active vehicle.", 409);
+    if (!state.active) throw new CabsError("Vehicle inactive. Choose an active vehicle.", 409);
+    throw new CabsError(`That vehicle has ${state.seats} seats and this ride is for ${state.passengers} people. Choose a bigger one.`, 409);
   }
   const ride = { id, pickup: String(row.pickup), dropoff: String(row.dropoff), scheduledFor: new Date(row.scheduled_for as string) };
   await writeCabAudit(actor, "ride_assigned", { rideId: id, subject: subject(ride), details: { driver: row.driver_name, vehicle: row.number_plate } });
@@ -207,6 +213,22 @@ export async function adminStats(): Promise<{ pending: number; today: number; in
       (select count(*) from cab_drivers)::int as drivers,
       (select count(*) from cab_drivers where is_available)::int as available`));
   return { pending: x.pending, today: x.today, inProgress: x.in_progress, vehicles: x.vehicles, drivers: x.drivers, available: x.available };
+}
+
+/** How many rides this person has booked this month (India time), for their Account page. */
+export async function ridesThisMonth(userId: string): Promise<number> {
+  return rows<{ n: number }>(await db.execute(sql`
+    select count(*)::int as n from cab_rides where requested_by_id = ${userId}
+      and date_trunc('month', created_at at time zone 'Asia/Kolkata') = date_trunc('month', now() at time zone 'Asia/Kolkata')`))[0].n;
+}
+
+/** Ids and statuses of this person's rides from the last 30 days, for the alerts a rider's open page shows when one changes. */
+export async function myRideStatuses(userId: string): Promise<{ id: string; status: RideStatus; pickup: string; dropoff: string; driverName: string | null; vehiclePlate: string | null }[]> {
+  return rows<Record<string, unknown>>(await db.execute(sql`
+    select id, status::text as status, pickup, dropoff, driver_name, vehicle_plate from cab_rides
+    where requested_by_id = ${userId} and created_at > now() - interval '30 days' order by created_at desc limit 50`)).map((x) => ({
+    id: String(x.id), status: x.status as RideStatus, pickup: String(x.pickup), dropoff: String(x.dropoff), driverName: (x.driver_name as string) ?? null, vehiclePlate: (x.vehicle_plate as string) ?? null,
+  }));
 }
 
 /** Available drivers, for assigning a ride (with their usual vehicle, offered first). */

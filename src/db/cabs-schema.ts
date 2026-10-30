@@ -65,6 +65,14 @@ export const cabRides = pgTable(
     dropoffLat: coord("dropoff_lat"),
     dropoffLng: coord("dropoff_lng"),
     scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+    /** now (leave as soon as it is approved), scheduled (one date and time), or multiday (from scheduled_for until ends_at). */
+    tripType: text("trip_type").notNull().default("scheduled"),
+    /** The end of a multi-day trip. */
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    /** Stops between pickup and drop-off, in order: [{ text, lat, lng }] (lat and lng null for typed addresses). */
+    stops: jsonb("stops").$type<{ text: string; lat: number | null; lng: number | null }[]>().notNull().default([]),
+    /** How many people, the person booking included. */
+    passengers: integer("passengers").notNull().default(1),
     status: cabRideStatus("status").notNull().default("pending"),
     notes: text("notes"),
     assignedAt: timestamp("assigned_at", { withTimezone: true }),

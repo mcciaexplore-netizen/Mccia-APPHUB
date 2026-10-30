@@ -12,9 +12,9 @@ export const otpExpiry = (scheduledFor: Date, now = Date.now()) => new Date(Math
 type Place = { text: string; lat: number | null; lng: number | null };
 const point = (p: Place) => (p.lat != null && p.lng != null ? `${p.lat},${p.lng}` : p.text);
 
-/** Google Maps directions from pickup to drop-off: coordinates when the ride has them, otherwise the addresses as typed. */
-export function mapsLink(pickup: Place, dropoff: Place): string {
-  const q = new URLSearchParams({ api: "1", origin: point(pickup), destination: point(dropoff), travelmode: "driving" });
+/** Google Maps directions from pickup to drop-off through any stops: coordinates when there are some, otherwise the addresses as typed. */
+export function mapsLink(pickup: Place, dropoff: Place, stops: Place[] = []): string {
+  const q = new URLSearchParams({ api: "1", origin: point(pickup), destination: point(dropoff), travelmode: "driving", ...(stops.length ? { waypoints: stops.map(point).join("|") } : {}) });
   return `https://www.google.com/maps/dir/?${q}`;
 }
 

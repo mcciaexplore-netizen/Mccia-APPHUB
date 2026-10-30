@@ -41,19 +41,54 @@ const pairs = (v: Record<string, unknown>, ctx: z.RefinementCtx, keys: [string, 
   for (const [a, b] of keys) if ((v[a] == null) !== (v[b] == null)) ctx.addIssue({ code: "custom", message: "A location needs both its latitude and its longitude.", path: [a] });
 };
 
+export const TRIP_TYPES = ["now", "scheduled", "multiday"] as const;
+export type TripType = (typeof TRIP_TYPES)[number];
+export const MAX_STOPS = 3;
+export const MAX_PASSENGERS = 20;
+/** How long a multi-day trip may last. */
+export const MAX_TRIP_DAYS = 31;
+
+const stopInput = z.object({ text: text("stop", 200), lat: optional(lat), lng: optional(lng) })
+  .superRefine((v, ctx) => pairs(v, ctx, [["lat", "lng"]]));
+
+/**
+ * A ride request. When: "now" (leave as soon as it is approved: the time is the moment it is booked), "scheduled" (scheduledFor, India
+ * time) or "multiday" (from scheduledFor until the end of endsOn, a day, at most 31 days later). Without tripType it is "scheduled", as
+ * before. Up to 3 stops between pickup and drop-off; 1 to 20 passengers, the person booking included.
+ */
 export const rideInput = z.preprocess(camel, z.object({
   pickup: text("pickup point", 200),
   dropoff: text("drop-off point", 200),
   pickupLat: optional(lat), pickupLng: optional(lng), dropoffLat: optional(lat), dropoffLng: optional(lng),
-  scheduledFor: z.string().transform((v, ctx) => {
-    const d = istLocalToDate(v);
-    if (!d) { ctx.addIssue({ code: "custom", message: "Choose the date and time of the ride." }); return z.NEVER; }
-    const problem = scheduleProblem(d);
-    if (problem) { ctx.addIssue({ code: "custom", message: problem }); return z.NEVER; }
-    return d;
-  }),
+  tripType: z.enum(TRIP_TYPES, { message: "Choose when: now, schedule or multi-day." }).optional().default("scheduled"),
+  scheduledFor: z.string().optional(),
+  endsOn: z.string().optional(),
+  stops: z.array(stopInput).max(MAX_STOPS, `At most ${MAX_STOPS} stops.`).optional().default([]),
+  passengers: z.coerce.number().int("Passengers must be a whole number.").min(1, "At least 1 passenger.").max(MAX_PASSENGERS, `At most ${MAX_PASSENGERS} passengers.`).optional().default(1),
   notes: optionalText(500),
-}).superRefine((v, ctx) => pairs(v, ctx, [["pickupLat", "pickupLng"], ["dropoffLat", "dropoffLng"]])));
+}).superRefine((v, ctx) => pairs(v, ctx, [["pickupLat", "pickupLng"], ["dropoffLat", "dropoffLng"]])).transform((v, ctx) => {
+  let scheduledFor = new Date();
+  let endsAt: Date | null = null;
+  if (v.tripType !== "now") {
+    const d = istLocalToDate(v.scheduledFor ?? "");
+    if (!d) { ctx.addIssue({ code: "custom", message: "Choose the date and time of the ride.", path: ["scheduledFor"] }); return z.NEVER; }
+    const problem = scheduleProblem(d);
+    if (problem) { ctx.addIssue({ code: "custom", message: problem, path: ["scheduledFor"] }); return z.NEVER; }
+    scheduledFor = d;
+  }
+  if (v.tripType === "multiday") {
+    const day = (v.endsOn ?? "").trim();
+    const end = /^\d{4}-\d{2}-\d{2}$/.test(day) ? new Date(new Date(`${day}T00:00:00+05:30`).getTime() + 86_400_000 - 1) : null;
+    if (!end || Number.isNaN(end.getTime())) { ctx.addIssue({ code: "custom", message: "Choose the last day of the trip.", path: ["endsOn"] }); return z.NEVER; }
+    if (end <= scheduledFor) { ctx.addIssue({ code: "custom", message: "The trip must end after it starts.", path: ["endsOn"] }); return z.NEVER; }
+    if (end.getTime() - scheduledFor.getTime() > MAX_TRIP_DAYS * 86_400_000) { ctx.addIssue({ code: "custom", message: `A trip can last at most ${MAX_TRIP_DAYS} days.`, path: ["endsOn"] }); return z.NEVER; }
+    endsAt = end;
+  }
+  return {
+    pickup: v.pickup, dropoff: v.dropoff, pickupLat: v.pickupLat, pickupLng: v.pickupLng, dropoffLat: v.dropoffLat, dropoffLng: v.dropoffLng,
+    tripType: v.tripType, scheduledFor, endsAt, stops: v.stops, passengers: v.passengers, notes: v.notes,
+  };
+}));
 export type RideInput = z.infer<typeof rideInput>;
 
 /** The 4 digits the rider shows the driver. */

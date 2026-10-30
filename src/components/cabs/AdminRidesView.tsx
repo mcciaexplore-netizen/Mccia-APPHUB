@@ -8,7 +8,7 @@ import { useToast } from "@/components/Toast";
 import { formatIST } from "@/lib/format";
 import { cabsApi } from "./api";
 import { AssignDialog, type DriverOption, type VehicleOption } from "./AssignDialog";
-import { StatusBadge, type RideView } from "./RideCard";
+import { StatusBadge, whenText, type RideView } from "./RideCard";
 
 /**
  * Every ride, as a table: assign a pending one, cancel a pending or assigned one with a reason, and make a new OTP for an assigned one
@@ -31,8 +31,11 @@ export function AdminRidesView({ rides, drivers, vehicles, empty }: { rides: Rid
         <tbody>
           {rides.map((r) => (
             <tr key={r.id} data-ride={r.id}>
-              <td className="whitespace-nowrap text-xs text-muted">{formatIST(r.scheduledFor)}</td>
-              <td><b>{r.pickup}</b> → <b>{r.dropoff}</b>{r.notes && <span className="block max-w-sm text-xs text-muted">{r.notes}</span>}</td>
+              <td className="max-w-[12rem] text-xs text-muted">{whenText(r)}</td>
+              <td><b>{r.pickup}</b> → <b>{r.dropoff}</b>
+                {r.stops.length > 0 && <span className="block max-w-sm text-xs text-muted">Via {r.stops.map((s) => s.text).join(", ")}</span>}
+                <span className="block text-xs text-muted">{r.passengers} {r.passengers === 1 ? "passenger" : "passengers"}</span>
+                {r.notes && <span className="block max-w-sm text-xs text-muted">{r.notes}</span>}</td>
               <td>{r.requestedByName}{r.requestedByBranch && <span className="block text-xs text-subtle">{r.requestedByBranch}</span>}</td>
               <td>{r.driverName ? <>{r.driverName}<span className="block text-xs text-subtle">{r.vehiclePlate}</span></> : <span className="text-subtle">—</span>}</td>
               <td><StatusBadge status={r.status} />{r.status === "cancelled" && r.cancelReason && <span className="mt-1 block max-w-xs text-xs text-muted">{r.cancelReason}</span>}</td>

@@ -14,10 +14,11 @@ type Feature = { properties: { formatted: string; lat: number; lon: number } };
 /**
  * An address box with Geoapify suggestions (after 3 letters, 300 ms after typing stops). Choosing one keeps its coordinates; typing again
  * drops them, so text and coordinates never disagree. `locate` adds "Use my location" (the browser's position, turned into an address).
- * Without NEXT_PUBLIC_GEOAPIFY_API_KEY it is a plain text box.
+ * Without NEXT_PUBLIC_GEOAPIFY_API_KEY it is a plain text box. `bare`: no label or border, for a row inside the booking form's location card
+ * (the label is then only read out to screen readers).
  */
-export function AddressInput({ name, label, value, onChange, placeholder, locate = false, autoFocus = false }: {
-  name: string; label: string; value: Place; onChange: (p: Place) => void; placeholder?: string; locate?: boolean; autoFocus?: boolean;
+export function AddressInput({ name, label, value, onChange, placeholder, locate = false, autoFocus = false, bare = false }: {
+  name: string; label: string; value: Place; onChange: (p: Place) => void; placeholder?: string; locate?: boolean; autoFocus?: boolean; bare?: boolean;
 }) {
   const listId = useId();
   const [items, setItems] = useState<Feature[]>([]);
@@ -71,9 +72,11 @@ export function AddressInput({ name, label, value, onChange, placeholder, locate
 
   return (
     <div className="relative">
-      <span className="label-xs mb-1.5 flex items-center justify-between"><span>{label}</span>
-        {locate && <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold normal-case tracking-normal text-primary" onClick={useMine} disabled={busy}><LocateFixed size={13} /> {busy ? "Finding you…" : "Use my location"}</button>}</span>
-      <input className="input" name={name} value={value.text} placeholder={placeholder} maxLength={200} required autoFocus={autoFocus} autoComplete="off"
+      {!bare && <span className="label-xs mb-1.5 flex items-center justify-between"><span>{label}</span>
+        {locate && <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold normal-case tracking-normal text-primary" onClick={useMine} disabled={busy}><LocateFixed size={13} /> {busy ? "Finding you…" : "Use my location"}</button>}</span>}
+      {bare && locate && <button type="button" className="absolute right-0 top-1/2 z-10 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-[#2a6b7c] hover:bg-[#e8f3f5]"
+        onClick={useMine} disabled={busy} aria-label="Use my location" title="Use my location"><LocateFixed size={18} className={busy ? "animate-pulse" : ""} /></button>}
+      <input className={bare ? `w-full bg-transparent py-3 text-base text-ink outline-none placeholder:text-subtle ${locate ? "pr-12" : ""}` : "input"} name={name} value={value.text} placeholder={placeholder} maxLength={200} required autoFocus={autoFocus} autoComplete="off"
         role="combobox" aria-expanded={open && items.length > 0} aria-controls={listId} aria-autocomplete="list" aria-label={label}
         aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
         onChange={(e) => { typed.current = true; onChange({ text: e.target.value, lat: null, lng: null }); }} onKeyDown={key} onBlur={() => setTimeout(() => setOpen(false), 150)} />
@@ -88,7 +91,8 @@ export function AddressInput({ name, label, value, onChange, placeholder, locate
           ))}
         </ul>
       )}
-      {value.lat != null && <p className="mt-1 text-xs text-brand-green-text" data-located={name}>Location set on the map.</p>}
+      {value.lat != null && !bare && <p className="mt-1 text-xs text-brand-green-text" data-located={name}>Location set on the map.</p>}
+      {value.lat != null && bare && <span className="sr-only" data-located={name}>Location set on the map.</span>}
       {note && <p className="mt-1 text-xs text-[#b45309]">{note}</p>}
     </div>
   );
