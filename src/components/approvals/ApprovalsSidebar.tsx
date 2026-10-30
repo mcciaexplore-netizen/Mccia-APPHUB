@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { HubBackLink } from "@/components/BackLink";
 import { usePathname } from "next/navigation";
 import { useSlidingIndicator } from "@/components/SlidingIndicator";
 
@@ -40,6 +41,7 @@ export function ApprovalsSidebar({ links }: { links: SideLink[] }) {
   return (
     <nav ref={navRef} aria-label="Approval System" className="relative rounded-[14px] border border-gray-200 bg-white py-3">
       {indicator}
+      <HubBackLink />
       <p className="px-4 pb-2 text-[0.66rem] font-bold uppercase tracking-widest text-subtle">Approval System</p>
       <ul>{links.map((l) => <Line key={l.href} link={l} depth={0} pathname={pathname} />)}</ul>
     </nav>

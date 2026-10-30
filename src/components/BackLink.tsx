@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronLeft } from "lucide-react";
 import { PAGES_SEEN } from "@/components/HubShell";
 
 /**
@@ -34,4 +34,13 @@ export function AdminBackLink() {
   const pathname = usePathname();
   if (HAS_OWN_BACK.test(pathname)) return null;
   return <div className="mb-3"><BackLink href="/" label="Home" /></div>;
+}
+
+/** "‹ App Hub" at the top of a module's sidebar (Inventory, Approval System, Administrator), above its name: back to the hub's home page. */
+export function HubBackLink() {
+  return (
+    <Link href="/" className="mb-2 inline-flex items-center gap-1 px-4 text-xs text-muted transition-colors hover:text-primary">
+      <ChevronLeft size={14} aria-hidden /> App Hub
+    </Link>
+  );
 }

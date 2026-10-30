@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { HubBackLink } from "@/components/BackLink";
 import { useSlidingIndicator } from "@/components/SlidingIndicator";
 import { navFor, type InventoryRole } from "@/lib/inventory/inventory.manifest";
 
@@ -22,6 +23,7 @@ export function InventorySidebar({ roles, branchName }: { roles: InventoryRole[]
   return (
     <nav ref={navRef} aria-label="Inventory" className="relative rounded-[14px] border border-gray-200 bg-white py-3">
       {indicator}
+      <HubBackLink />
       <p className="px-4 text-[0.66rem] font-bold uppercase tracking-widest text-subtle">Inventory</p>
       <p className={`px-4 pb-2 text-xs ${branchName ? "text-muted" : "font-semibold text-[#b45309]"}`}>{branchName ? `Branch: ${branchName}` : "No branch assigned"}</p>
       <ul>

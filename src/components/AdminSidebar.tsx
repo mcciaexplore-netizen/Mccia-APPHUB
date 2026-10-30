@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSlidingIndicator } from "@/components/SlidingIndicator";
+import { HubBackLink } from "@/components/BackLink";
 import { Activity, AppWindow, Bell, ClipboardCheck, LayoutDashboard, Settings2, UserCheck, Users, Wallet } from "lucide-react";
 import type { AdminTab } from "@/lib/admin-tabs";
 
@@ -49,6 +50,8 @@ export function AdminSidebar({ tabs }: { tabs: AdminTab[] }) {
   return (
     <nav ref={navRef} aria-label="Administrator" className="relative rounded-[14px] border border-gray-200 bg-white py-3">
       {indicator}
+      <HubBackLink />
+      <p className="px-4 pb-2 text-[0.66rem] font-bold uppercase tracking-widest text-subtle">Administrator</p>
       <ul>{tabs.filter((t) => t.group === "main").map((t) => line(t))}</ul>
       <p className={heading}>Settings &amp; Administration</p>
       <ul>{tabs.filter((t) => t.group === "settings").map((t) => line(t))}</ul>
