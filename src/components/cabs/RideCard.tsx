@@ -6,14 +6,18 @@ import { RIDE_STATUS_LABEL, type RideStatus } from "@/lib/cabs/cabs.manifest";
 export type RideView = {
   id: string; requestedByName: string; requestedByBranch: string | null; driverName: string | null; vehiclePlate: string | null; vehicleModel: string | null;
   pickup: string; dropoff: string; scheduledFor: string; status: RideStatus; notes: string | null; cancelReason: string | null; cancelledByName: string | null;
-  createdAt: string;
+  createdAt: string; pickupLat: number | null; pickupLng: number | null; dropoffLat: number | null; dropoffLng: number | null;
+  /** Whether the ride has an OTP; the code itself only on the rider's own rides. */
+  hasOtp: boolean; otp?: { code: string; usable: boolean } | null;
 };
 
 /** Turns a ride from the database into what the browser gets. */
-export const rideView = (r: {
-  id: string; requestedByName: string; requestedByBranch: string | null; driverName: string | null; vehiclePlate: string | null; vehicleModel: string | null;
-  pickup: string; dropoff: string; scheduledFor: Date; status: RideStatus; notes: string | null; cancelReason: string | null; cancelledByName: string | null; createdAt: Date;
-}): RideView => ({ ...r, scheduledFor: r.scheduledFor.toISOString(), createdAt: r.createdAt.toISOString() });
+export const rideView = (r: Omit<RideView, "scheduledFor" | "createdAt"> & { scheduledFor: Date; createdAt: Date }): RideView => ({
+  id: r.id, requestedByName: r.requestedByName, requestedByBranch: r.requestedByBranch, driverName: r.driverName, vehiclePlate: r.vehiclePlate, vehicleModel: r.vehicleModel,
+  pickup: r.pickup, dropoff: r.dropoff, scheduledFor: r.scheduledFor.toISOString(), status: r.status, notes: r.notes, cancelReason: r.cancelReason, cancelledByName: r.cancelledByName,
+  createdAt: r.createdAt.toISOString(), pickupLat: r.pickupLat, pickupLng: r.pickupLng, dropoffLat: r.dropoffLat, dropoffLng: r.dropoffLng, hasOtp: r.hasOtp,
+  ...(r.otp !== undefined ? { otp: r.otp } : {}),
+});
 
 /** pending amber, assigned blue, in progress teal, completed green, cancelled red. */
 const TONE: Record<RideStatus, string> = {
@@ -28,6 +32,17 @@ export function StatusBadge({ status }: { status: RideStatus }) {
   return <span className={`inline-block whitespace-nowrap rounded-pill px-2.5 py-0.5 text-xs font-semibold ${TONE[status]}`} data-status={status}>{RIDE_STATUS_LABEL[status]}</span>;
 }
 
+/** The rider's OTP for an assigned ride, big enough to read off a phone held up to the driver. */
+function OtpPanel({ otp }: { otp: { code: string; usable: boolean } }) {
+  if (!otp.usable) return <p className="rounded-md border border-[#fcd34d] bg-[#fff8e1] px-3 py-2 text-sm font-semibold text-[#b45309]">Your OTP can no longer be used. Ask a Cabs admin for a new one.</p>;
+  return (
+    <div className="rounded-lg border border-blue-tint-line bg-blue-tint px-4 py-3 text-center" data-otp>
+      <p className="text-sm font-semibold text-muted">Show this to your driver:</p>
+      <p className="mt-1 font-mono text-5xl font-extrabold tracking-[0.3em] text-primary" aria-label={`OTP ${otp.code.split("").join(" ")}`}>{otp.code}</p>
+    </div>
+  );
+}
+
 /** One ride: where from and to, when, its status, and who is driving. `actions` sits at the bottom (cancel, start, complete…). */
 export function RideCard({ ride, showRequester = false, actions }: { ride: RideView; showRequester?: boolean; actions?: React.ReactNode }) {
   return (
@@ -40,6 +55,7 @@ export function RideCard({ ride, showRequester = false, actions }: { ride: RideV
       {showRequester && <p className="flex items-center gap-1.5 text-sm text-muted"><UserRound size={14} aria-hidden /> {ride.requestedByName}{ride.requestedByBranch ? ` · ${ride.requestedByBranch}` : ""}</p>}
       {ride.driverName && <p className="flex items-center gap-1.5 text-sm text-muted"><Car size={14} aria-hidden /> {ride.driverName}{ride.vehiclePlate ? ` · ${ride.vehiclePlate}${ride.vehicleModel ? ` (${ride.vehicleModel})` : ""}` : ""}</p>}
       {ride.notes && <p className="text-sm text-subtle">{ride.notes}</p>}
+      {ride.status === "assigned" && ride.otp && <OtpPanel otp={ride.otp} />}
       {ride.status === "cancelled" && ride.cancelReason && <p className="text-sm text-brand-red">Cancelled{ride.cancelledByName ? ` by ${ride.cancelledByName}` : ""}: {ride.cancelReason}</p>}
       {actions && <div className="flex flex-wrap justify-end gap-2">{actions}</div>}
     </article>

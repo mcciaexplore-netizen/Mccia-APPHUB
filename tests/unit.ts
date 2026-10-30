@@ -31,7 +31,8 @@ import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "..
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import { INVENTORY_URL_PATTERN, inventoryRoleFor, navFor } from "../src/lib/inventory/inventory.manifest";
 import { CABS_ADMIN_URL_PATTERN, CABS_DRIVER_URL_PATTERN, CABS_USER_URL_PATTERN, CAB_NAV, cabRolesFor, navFor as cabNavFor } from "../src/lib/cabs/cabs.manifest";
-import { assignInput, driverInput, istLocalToDate, rideInput, scheduleProblem, vehicleInput } from "../src/lib/cabs/validation";
+import { assignInput, driverInput, istLocalToDate, locationInput, otpInput, rideInput, scheduleProblem, vehicleInput } from "../src/lib/cabs/validation";
+import { OTP_MAX_ATTEMPTS, mapsLink, otpExpiry } from "../src/lib/cabs/otp-rules";
 import { issueInput, poInput, receiveInput, ticketInput, ticketUpdate, requestDecision, requestInput, returnInput, rupeesToPaise, transferInput, vendorInput } from "../src/lib/inventory/validation";
 import { financialYear, nextPoNo, poPrefix } from "../src/lib/inventory/po-number";
 import { MAX_PHOTO_BYTES, checkPhoto, sniffPhoto } from "../src/lib/inventory/photos";
@@ -407,7 +408,7 @@ const cabUnwrapped = cabRoutes.flatMap((f) => {
   const imported = /from "@\/lib\/cabs\/guard"/.test(src);
   return handlers.filter(([, , rest]) => !imported || !/^\s*=\s*route(<[^>]*>)?\(\{ roles: \[/.test(rest)).map(([, method]) => `${f}:${method}`);
 });
-eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles`, [cabRoutes.length, cabUnwrapped], [12, []]);
+eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles`, [cabRoutes.length, cabUnwrapped], [16, []]);
 
 // The application check must never be steered at an internal network
 eq("net guard: private, loopback, metadata and reserved IPv4 are refused", ["127.0.0.1", "10.0.0.5", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255"].map(isPublicAddress), Array(10).fill(false));
@@ -576,6 +577,31 @@ eq("cabs menus: 3 staff pages, 2 driver pages, 5 admin pages, each shown only to
     okParse(driverInput, { name: "Ravi", email: "ravi@x.org", phone: "12345" }), okParse(driverInput, { name: "Ravi", email: "not-an-email", phone: "9876543210" }),
     okParse(driverInput, { name: "", email: "ravi@x.org", phone: "9876543210" }), okParse(driverInput, { userId: v, vehicleId: v }),
   ], [{ name: "Ravi Patil", email: "ravi.patil@mccia.org", phone: "+919876543210", vehicleId: null }, false, false, false, false]);
+}
+
+{
+  const later = new Date(Date.now() + 2 * 86_400_000 + 5.5 * 3600_000).toISOString().slice(0, 16);
+  const ride = (extra: Record<string, unknown>) => rideInput.safeParse({ pickup: "Office", dropoff: "Airport", scheduledFor: later, ...extra });
+  const parsed = rideInput.parse({ pickup: "Office", dropoff: "Airport", scheduledFor: later, pickup_lat: "18.5204", pickup_lng: 73.8567, dropoffLat: 18.58, dropoffLng: "73.92" });
+  eq("cabs coordinates: optional; taken as pickup_lat or pickupLat; both halves of a point or neither; real latitudes and longitudes only", [
+    ride({}).success, [parsed.pickupLat, parsed.pickupLng, parsed.dropoffLat, parsed.dropoffLng], ride({ pickupLat: 18.5 }).success, ride({ pickupLat: 91, pickupLng: 73 }).success,
+    ride({ dropoffLat: "", dropoffLng: "" }).success,
+    Object.values(rideInput.parse({ pickup: "Office", dropoff: "Airport", scheduledFor: later, pickupLat: null, pickupLng: null, dropoffLat: "", dropoffLng: "" })).slice(2, 6),
+  ], [true, [18.5204, 73.8567, 18.58, 73.92], false, false, true, [null, null, null, null]]);
+  const loc = locationInput.parse({ driver_id: "11111111-1111-4111-8111-111111111111", latitude: 18.52, longitude: 73.85, speed: 42.5, ride_id: "" });
+  eq("cabs location: a position with optional accuracy, heading (0 to 360) and speed; any driver_id sent is dropped", [
+    loc, locationInput.parse({ latitude: 18.52, longitude: 73.85, accuracy: null, heading: null, speed: null }).heading, okParse(locationInput, { latitude: 18.52 }), okParse(locationInput, { latitude: 18.52, longitude: 73.85, heading: 400 }),
+  ], [{ latitude: 18.52, longitude: 73.85, accuracy: null, heading: null, speed: 42.5, rideId: null }, null, false, false]);
+  eq("cabs OTP: exactly 4 digits", ["4829", " 0042 ", "482", "48290", "48a9"].map((v) => okParse(otpInput, { otp: v })), [true, true, false, false, false]);
+  const now = Date.parse("2026-11-02T04:00:00Z");
+  eq("cabs OTP: expires 2 hours after the scheduled time, never sooner than 2 hours from now; 3 tries", [
+    otpExpiry(new Date(now + 26 * 3600_000), now).toISOString(), otpExpiry(new Date(now + 30 * 60_000), now).toISOString(), otpExpiry(new Date(now - 3600_000), now).toISOString(), OTP_MAX_ATTEMPTS,
+  ], ["2026-11-03T08:00:00.000Z", "2026-11-02T06:30:00.000Z", "2026-11-02T06:00:00.000Z", 3]);
+  eq("cabs navigation: Google Maps directions by coordinates, or by the addresses when a ride has none", [
+    mapsLink({ text: "Office", lat: 18.5204, lng: 73.8567 }, { text: "Airport", lat: 18.5821, lng: 73.9197 }),
+    mapsLink({ text: "MCCIA, Tilak Road", lat: null, lng: null }, { text: "Pune Airport", lat: 18.5821, lng: 73.9197 }),
+  ], ["https://www.google.com/maps/dir/?api=1&origin=18.5204%2C73.8567&destination=18.5821%2C73.9197&travelmode=driving",
+    "https://www.google.com/maps/dir/?api=1&origin=MCCIA%2C+Tilak+Road&destination=18.5821%2C73.9197&travelmode=driving"]);
 }
 
 const ssoTests = (async () => {

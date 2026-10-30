@@ -18,6 +18,8 @@ export const AUDIT_ACTIONS = {
   ride_started: "Ride started",
   ride_completed: "Ride completed",
   ride_cancelled: "Ride cancelled",
+  otp_failed: "Wrong OTP entered",
+  otp_reset: "New OTP made",
   driver_added: "Driver added",
   driver_updated: "Driver's vehicle changed",
   driver_availability: "Driver availability changed",

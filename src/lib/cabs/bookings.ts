@@ -6,12 +6,15 @@ import type { RideStatus } from "./cabs.manifest";
 import { CabsError } from "./errors";
 import type { CabUser } from "./host-adapter";
 import { driverPerson, rideAssigned, rideCancelledByAdmin, rideCompleted, rideReceived } from "./notify";
+import { newOtp } from "./otp";
+import { OTP_MAX_ATTEMPTS, num } from "./otp-rules";
 import type { RideInput } from "./validation";
 
 /**
  * Rides. Every change of status is ONE conditional statement (the production driver has no transactions), so two people acting at once
  * cannot both succeed: assign only from pending, start only from assigned, complete only from in_progress, cancel only from pending
  * (the person who booked it) or pending/assigned (an admin). When nothing changed, a second read says why.
+ * Assigning also makes the ride's OTP in the same statement; a ride with an OTP starts only when its driver enters it (otp.ts).
  */
 
 type Actor = Pick<CabUser, "id" | "name">;
@@ -21,6 +24,11 @@ export type RideRow = {
   id: string; requestedById: string; requestedByName: string; requestedByEmail: string; requestedByBranch: string | null;
   driverId: string | null; driverName: string | null; vehicleId: string | null; vehiclePlate: string | null; vehicleModel: string | null;
   pickup: string; dropoff: string; scheduledFor: Date; status: RideStatus; notes: string | null;
+  pickupLat: number | null; pickupLng: number | null; dropoffLat: number | null; dropoffLng: number | null; otpVerifiedAt: Date | null;
+  /** Whether the ride has an OTP (rides assigned before OTPs existed have none and start with Start Ride). */
+  hasOtp: boolean;
+  /** The code itself, and whether it can still be used: only on the rider's own lists (withOtp), never anyone else's. */
+  otp?: { code: string; usable: boolean } | null;
   assignedAt: Date | null; startedAt: Date | null; completedAt: Date | null; cancelledAt: Date | null; cancelledByName: string | null; cancelReason: string | null; createdAt: Date;
 };
 
@@ -30,11 +38,17 @@ const toRide = (x: Record<string, unknown>): RideRow => ({
   requestedByBranch: (x.requested_by_branch as string) ?? null, driverId: (x.driver_id as string) ?? null, driverName: (x.driver_name as string) ?? null,
   vehicleId: (x.vehicle_id as string) ?? null, vehiclePlate: (x.vehicle_plate as string) ?? null, vehicleModel: (x.vehicle_model as string) ?? null,
   pickup: String(x.pickup), dropoff: String(x.dropoff), scheduledFor: new Date(x.scheduled_for as string), status: x.status as RideStatus, notes: (x.notes as string) ?? null,
+  pickupLat: num(x.pickup_lat), pickupLng: num(x.pickup_lng), dropoffLat: num(x.dropoff_lat), dropoffLng: num(x.dropoff_lng), otpVerifiedAt: date(x.otp_verified_at), hasOtp: !!x.has_otp,
+  ...(x.otp_code !== undefined ? { otp: x.otp_code ? { code: String(x.otp_code), usable: !!x.otp_usable } : null } : {}),
   assignedAt: date(x.assigned_at), startedAt: date(x.started_at), completedAt: date(x.completed_at), cancelledAt: date(x.cancelled_at),
   cancelledByName: (x.cancelled_by_name as string) ?? null, cancelReason: (x.cancel_reason as string) ?? null, createdAt: new Date(x.created_at as string),
 });
 
-const SELECT = sql`select r.*, v.model as vehicle_model from cab_rides r left join cab_vehicles v on v.id = r.vehicle_id`;
+const SELECT = sql`select r.*, v.model as vehicle_model, o.ride_id is not null as has_otp from cab_rides r left join cab_vehicles v on v.id = r.vehicle_id left join cab_ride_otps o on o.ride_id = r.id`;
+/** The same, with the OTP code: only ever for the rider's own rides. */
+const SELECT_WITH_OTP = sql`select r.*, v.model as vehicle_model, o.ride_id is not null as has_otp, o.otp as otp_code,
+  (o.verified_at is null and o.attempts < ${OTP_MAX_ATTEMPTS} and o.expires_at > now()) as otp_usable
+  from cab_rides r left join cab_vehicles v on v.id = r.vehicle_id left join cab_ride_otps o on o.ride_id = r.id`;
 /** Rides still to happen: not finished or cancelled. */
 const OPEN = sql`r.status in ('pending', 'assigned', 'in_progress')`;
 
@@ -44,6 +58,8 @@ export type RideFilter = {
   scope?: "open" | "past";
   /** Whole days in India time ("YYYY-MM-DD"), both included, on the scheduled time. */
   from?: string; to?: string;
+  /** Include each ride's OTP code. Only with requestedById, so it can only ever be the rider's own. */
+  withOtp?: boolean;
 };
 const isDay = (d: string | undefined): d is string => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00+05:30`));
 
@@ -58,7 +74,8 @@ export async function listRides(f: RideFilter = {}, limit = 200): Promise<RideRo
   if (isDay(f.from)) c.push(sql`r.scheduled_for >= ${new Date(`${f.from}T00:00:00+05:30`)}`);
   if (isDay(f.to)) c.push(sql`r.scheduled_for < ${new Date(new Date(`${f.to}T00:00:00+05:30`).getTime() + 86_400_000)}`);
   const order = f.scope === "open" ? sql`r.scheduled_for asc` : sql`r.scheduled_for desc`;
-  return rows<Record<string, unknown>>(await db.execute(sql`${SELECT} where ${sql.join(c, sql` and `)} order by ${order}, r.created_at desc limit ${limit}`)).map(toRide);
+  const select = f.withOtp && f.requestedById ? SELECT_WITH_OTP : SELECT;
+  return rows<Record<string, unknown>>(await db.execute(sql`${select} where ${sql.join(c, sql` and `)} order by ${order}, r.created_at desc limit ${limit}`)).map(toRide);
 }
 
 export async function getRide(id: string): Promise<RideRow | null> {
@@ -70,8 +87,9 @@ const subject = (r: { pickup: string; dropoff: string }) => `${r.pickup} → ${r
 
 export async function createRide(input: RideInput, user: Pick<CabUser, "id" | "name" | "email" | "branchName">): Promise<{ id: string }> {
   const [row] = rows<{ id: string }>(await db.execute(sql`
-    insert into cab_rides (requested_by_id, requested_by_name, requested_by_email, requested_by_branch, pickup, dropoff, scheduled_for, notes)
-    values (${user.id}, ${user.name}, ${user.email}, ${user.branchName}, ${input.pickup}, ${input.dropoff}, ${input.scheduledFor}, ${input.notes})
+    insert into cab_rides (requested_by_id, requested_by_name, requested_by_email, requested_by_branch, pickup, dropoff, scheduled_for, notes, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+    values (${user.id}, ${user.name}, ${user.email}, ${user.branchName}, ${input.pickup}, ${input.dropoff}, ${input.scheduledFor}, ${input.notes},
+      ${input.pickupLat}, ${input.pickupLng}, ${input.dropoffLat}, ${input.dropoffLng})
     returning id`));
   await writeCabAudit(user, "ride_created", { rideId: row.id, subject: subject(input), details: { scheduledFor: input.scheduledFor.toISOString() } });
   await rideReceived({ id: row.id, ...input }, { userId: user.id, email: user.email });
@@ -88,7 +106,8 @@ async function whyNot(id: string, wanted: string, mine?: { driverId: string | nu
 
 /**
  * Gives a pending ride a driver and a vehicle, in ONE statement that also requires the driver to be available and the vehicle active at
- * that moment. Two admins assigning the same ride at once: one succeeds, the other is told it was already assigned.
+ * that moment, and makes the ride's OTP (expiring 2 hours after the scheduled time, never sooner than 2 hours from now). Two admins
+ * assigning the same ride at once: one succeeds, the other is told it was already assigned.
  */
 export async function assignRide(id: string, input: { driverId: string; vehicleId: string }, actor: Actor): Promise<void> {
   const [row] = rows<Record<string, unknown>>(await db.execute(sql`
@@ -98,7 +117,11 @@ export async function assignRide(id: string, input: { driverId: string; vehicleI
       update cab_rides set status = 'assigned', driver_id = (select id from d), vehicle_id = (select id from v),
         driver_name = (select name from d), vehicle_plate = (select number_plate from v), assigned_at = now(), updated_at = now()
       where id = ${id} and status = 'pending' and exists (select 1 from d) and exists (select 1 from v)
-      returning id, requested_by_id, requested_by_email, pickup, dropoff, scheduled_for)
+      returning id, requested_by_id, requested_by_email, pickup, dropoff, scheduled_for),
+    otp as (
+      insert into cab_ride_otps (ride_id, otp, expires_at)
+      select id, ${newOtp()}, greatest(scheduled_for + interval '2 hours', now() + interval '2 hours') from r
+      on conflict (ride_id) do update set otp = excluded.otp, attempts = 0, verified_at = null, expires_at = excluded.expires_at, created_at = now())
     select r.*, d.name as driver_name, d.email as driver_email, v.number_plate, v.model from r, d, v`));
   if (!row) {
     const [state] = rows<{ status: string | null; driver: boolean | null; available: boolean | null; vehicle: boolean | null; active: boolean | null }>(await db.execute(sql`
@@ -118,13 +141,18 @@ export async function assignRide(id: string, input: { driverId: string; vehicleI
     { ...(await driverPerson(String(row.driver_email))), name: String(row.driver_name) }, { plate: String(row.number_plate), model: String(row.model) });
 }
 
-/** The assigned driver sets off. Only their own ride, only from assigned. */
+/** The assigned driver sets off, for a ride with no OTP (assigned before OTPs existed). Only their own ride, only from assigned. */
 export async function startRide(id: string, driver: Pick<CabUser, "id" | "name" | "driverId">): Promise<void> {
   if (!driver.driverId) throw new CabsError("Not allowed.", 403);
   const [row] = rows<{ pickup: string; dropoff: string }>(await db.execute(sql`
     update cab_rides set status = 'in_progress', started_at = now(), updated_at = now()
-    where id = ${id} and status = 'assigned' and driver_id = ${driver.driverId} returning pickup, dropoff`));
-  if (!row) return whyNot(id, "start", { driverId: driver.driverId });
+    where id = ${id} and status = 'assigned' and driver_id = ${driver.driverId} and not exists (select 1 from cab_ride_otps where ride_id = ${id})
+    returning pickup, dropoff`));
+  if (!row) {
+    const ride = await getRide(id);
+    if (ride && ride.driverId === driver.driverId && ride.status === "assigned" && ride.hasOtp) throw new CabsError("This ride starts with the rider's OTP.", 409);
+    return whyNot(id, "start", { driverId: driver.driverId });
+  }
   await writeCabAudit(driver, "ride_started", { rideId: id, subject: subject(row) });
 }
 

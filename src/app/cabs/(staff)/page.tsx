@@ -8,7 +8,7 @@ import { requireCabsPage } from "@/lib/cabs/guard";
 /** MCCIA Cabs: the person's rides still to come (which they can cancel while pending), their last few, and Book a Ride. */
 export default async function CabsDashboard() {
   const user = await requireCabsPage();
-  const [upcoming, past] = await Promise.all([listRides({ requestedById: user.id, scope: "open" }), listRides({ requestedById: user.id, scope: "past" }, 3)]);
+  const [upcoming, past] = await Promise.all([listRides({ requestedById: user.id, scope: "open", withOtp: true }), listRides({ requestedById: user.id, scope: "past" }, 3)]);
   return (
     <div className="page-enter space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">

@@ -16,7 +16,7 @@ export default async function DriverDashboard() {
   const later = open.filter((r) => !now.includes(r));
   return (
     <div className="page-enter space-y-6">
-      <div><h1 className="text-2xl">Cabs Driver</h1><p className="text-sm text-muted">Your rides. Start one when you set off and complete it at the drop-off.</p></div>
+      <div><h1 className="text-2xl">Cabs Driver</h1><p className="text-sm text-muted">Your rides. At the pickup, enter the rider’s OTP; navigation opens. Complete the ride at the drop-off.</p></div>
       <section className="space-y-3"><h2 className="text-lg">Today</h2><DriverView rides={now.map(rideView)} empty="No rides today." /></section>
       <section className="space-y-3"><h2 className="text-lg">Upcoming</h2><DriverView rides={later.map(rideView)} empty="Nothing assigned for later days." /></section>
     </div>

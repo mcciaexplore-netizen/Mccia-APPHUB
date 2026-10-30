@@ -1,7 +1,9 @@
 /**
  * End-to-end test of the Cab Booking module in a real browser: who may open each of its three sections (MCCIA Cabs, Cabs Driver, Cabs
  * Admin), vehicles and drivers, booking a ride, assigning it (and two admins assigning at once), the driver starting and completing it,
- * cancelling (by the person and by an admin, with a reason), the notifications each step sends, the audit log and its CSV. Run against a
+ * cancelling (by the person and by an admin, with a reason), the notifications each step sends, the audit log and its CSV; and phase 2:
+ * the ride OTP (made on assign, shown only to the rider, three tries, an admin's New OTP), starting a ride with it and the Google Maps
+ * link, the driver's phone sharing its position (a simulated GPS), and the admins' fleet map. Run against a
  * site with CABS_ENABLED=true:
  *   E2E_BASE_URL=http://localhost:3000 node tests/e2e/cabs.mjs
  * With the module switched off (CABS_ENABLED unset), E2E_CABS_OFF=yes checks instead that every /cabs page and /api/cabs route is a 404.
@@ -68,6 +70,8 @@ const snap = async () => JSON.stringify([
   await sql`select id, name, email, phone, vehicle_id, is_available from cab_drivers where email not like 'zzc-%' order by id`,
   await sql`select id, status, driver_id, vehicle_id, updated_at from cab_rides where requested_by_email not like 'zzc-%' order by id`,
   await sql`select count(*)::int n from cab_audit_log`,
+  await sql`select count(*)::int n from cab_driver_locations l join cab_drivers d on d.id = l.driver_id where d.email not like 'zzc-%'`,
+  await sql`select count(*)::int n from cab_ride_otps o join cab_rides r on r.id = o.ride_id where r.requested_by_email not like 'zzc-%'`,
 ]);
 
 await removeTestData();
@@ -92,8 +96,9 @@ await sql`insert into app_admins (app_id, user_id) values (${adminApp.id}, ${adm
 
 const browser = await launch();
 const pageErrors = [];
-const signedIn = async (email) => {
-  const ctx = await browser.newContext({ viewport: { width: 1300, height: 1000 } });
+/** `gps`: a simulated phone position this browser shares when asked (the driver's). */
+const signedIn = async (email, gps) => {
+  const ctx = await browser.newContext({ viewport: { width: 1300, height: 1000 }, ...(gps ? { geolocation: gps, permissions: ["geolocation"] } : {}) });
   ctx.setDefaultTimeout(45000);
   await ctx.addInitScript(() => { try { localStorage.setItem("mccia-install-popup-seen", "1"); localStorage.setItem("mccia-install-snoozed-until", String(Date.now() + 864e5)); } catch {} });
   const page = await ctx.newPage();
@@ -131,7 +136,7 @@ if (process.env.E2E_CABS_OFF === "yes") {
 try {
   const S = await signedIn("zzc-staffer@gmail.com");
   const A = await signedIn("zzc-admin@gmail.com");
-  const D = await signedIn("zzc-driver@gmail.com");
+  const D = await signedIn("zzc-driver@gmail.com", { latitude: 18.5204, longitude: 73.8567, accuracy: 12 });
   const D2 = await signedIn("zzc-driver2@gmail.com");
   const O = await signedIn("zzc-outsider@gmail.com");
 
@@ -220,6 +225,16 @@ try {
   check("admin assigns on the page: assigned, with the driver's name and the plate kept on the ride", r1a?.driver_id === dr1.id && r1a.vehicle_id === v1.id && r1a.driver_name === "ZZC Driver" && r1a.vehicle_plate === "ZZC 01 AA 1111" && !!r1a.assigned_at, JSON.stringify(r1a));
   check("the staffer is told: confirmed, with the driver and the plate", (await notices(staffer)).some((n) => n.title === "Your ride is confirmed" && n.body.includes("Driver: ZZC Driver, Vehicle: ZZC 01 AA 1111")));
   check("the driver is told a ride was assigned to them", (await notices(driver)).some((n) => n.title === "New ride assigned to you"));
+  const otp1 = (await sql`select * from cab_ride_otps where ride_id = ${r1.id}`)[0];
+  check("assigning made a 4-digit OTP, no tries used, expiring 2 hours after the scheduled time", /^\d{4}$/.test(otp1?.otp) && otp1.attempts === 0 && !otp1.verified_at
+    && new Date(otp1.expires_at).getTime() === new Date(r1.scheduled_for).getTime() + 2 * 3600_000, JSON.stringify(otp1));
+  await go(S.page, "/cabs/rides");
+  check("the rider sees the OTP on My Rides, big, to show the driver", (await S.page.locator(`[data-ride="${r1.id}"] [data-otp]`).innerText()).includes(otp1.otp)
+    && (await S.page.locator(`[data-ride="${r1.id}"] [data-otp]`).innerText()).includes("Show this to your driver"));
+  await go(A.page, "/cabs/admin/rides");
+  check("the admin's rides list never shows it", (await A.page.locator("[data-otp]").count()) === 0 && !(await A.page.locator(`tr[data-ride="${r1.id}"]`).innerText()).includes(otp1.otp));
+  const asDriver = await api(D.page, `/api/cabs/rides/${r1.id}`, "GET");
+  check("the driver can read the ride but not its OTP", asDriver.status === 200 && asDriver.body.ride.hasOtp === true && !JSON.stringify(asDriver.body).includes(`"${otp1.otp}"`), JSON.stringify(asDriver.body).slice(0, 200));
 
   const r2 = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Office", dropoff: "ZZC Station", scheduledFor: istSlot(2, 9) })).body;
   const both = await Promise.all([1, 2].map(() => api(A.page, `/api/cabs/rides/${r2.id}/assign`, "POST", { driverId: dr2.id, vehicleId: v2.id })));
@@ -238,19 +253,101 @@ try {
   check("an inactive vehicle cannot be given a ride (409)", inactive.status === 409 && /Vehicle inactive/.test(inactive.body?.error), JSON.stringify(inactive));
   check("…and the ride is still pending after both refusals", (await ride(r3.id)).status === "pending");
 
-  section("driving");
+  section("driving: the OTP");
+  const wrong = otp1.otp === "0000" ? "1111" : "0000";
   check("another driver cannot start someone else's ride (404)", (await api(D2.page, `/api/cabs/rides/${r1.id}/start`, "POST")).status === 404);
+  check("…nor enter its OTP, even the right one (404), and no try is used", (await api(D2.page, `/api/cabs/rides/${r1.id}/otp/verify`, "POST", { otp: otp1.otp })).status === 404
+    && (await sql`select attempts from cab_ride_otps where ride_id = ${r1.id}`)[0].attempts === 0);
   check("a ride cannot be completed before it starts (409)", (await api(D.page, `/api/cabs/rides/${r1.id}/complete`, "POST")).status === 409);
-  check("a staffer cannot start a ride (403)", (await api(S.page, `/api/cabs/rides/${r1.id}/start`, "POST")).status === 403);
+  check("a staffer cannot start a ride or enter an OTP (403)", (await api(S.page, `/api/cabs/rides/${r1.id}/start`, "POST")).status === 403 && (await api(S.page, `/api/cabs/rides/${r1.id}/otp/verify`, "POST", { otp: otp1.otp })).status === 403);
+  const plain = await api(D.page, `/api/cabs/rides/${r1.id}/start`, "POST");
+  check("a ride with an OTP cannot be started without it (409)", plain.status === 409 && /rider's OTP/.test(plain.body?.error), JSON.stringify(plain));
+  const tries = [];
+  for (let i = 0; i < 3; i++) tries.push(await api(D.page, `/api/cabs/rides/${r1.id}/otp/verify`, "POST", { otp: wrong }));
+  check("three wrong OTPs: 2 tries left, 1 try left, then locked", tries.map((t) => t.status).join() === "409,409,409" && /2 tries left/.test(tries[0].body?.error) && /1 try left/.test(tries[1].body?.error) && /locked/.test(tries[2].body?.error), JSON.stringify(tries.map((t) => t.body)));
+  const afterLock = await api(D.page, `/api/cabs/rides/${r1.id}/otp/verify`, "POST", { otp: otp1.otp });
+  check("once locked, even the right OTP is refused and the ride stays assigned", afterLock.status === 409 && /locked/.test(afterLock.body?.error) && (await ride(r1.id)).status === "assigned", JSON.stringify(afterLock));
+  await go(S.page, "/cabs/rides");
+  check("the rider is told their OTP can no longer be used", (await S.page.locator(`[data-ride="${r1.id}"]`).innerText()).includes("can no longer be used"));
+  check("a staffer cannot make a new OTP (403)", (await api(S.page, `/api/cabs/rides/${r1.id}/otp/reset`, "POST")).status === 403);
+  await go(A.page, "/cabs/admin/rides");
+  await A.page.locator(`tr[data-ride="${r1.id}"]`).getByRole("button", { name: "New OTP" }).click();
+  check("an admin makes a new OTP on All Rides", await toast(A.page, "New OTP made"));
+  const otp2 = await poll(async () => { const o = (await sql`select * from cab_ride_otps where ride_id = ${r1.id}`)[0]; return o.attempts === 0 ? o : null; });
+  check("…with no tries used; the rider sees it, and it is recorded", !!otp2 && (await sql`select 1 from cab_audit_log where ride_id = ${r1.id} and action = 'otp_reset'`).length === 1);
+  await go(S.page, "/cabs/rides");
+  check("…on My Rides", (await S.page.locator(`[data-ride="${r1.id}"] [data-otp]`).innerText()).includes(otp2.otp));
+
+  section("driving: navigation and live location");
   await go(D.page, "/cabs/driver");
-  await D.page.locator(`[data-ride="${r1.id}"]`).getByRole("button", { name: "Start Ride" }).click();
-  check("the driver starts the ride on their page: in progress", await toast(D.page, "Ride started") && (await poll(async () => (await ride(r1.id)).status === "in_progress")));
+  await D.page.locator(`[data-ride="${r1.id}"] input[name=otp]`).fill(otp2.otp);
+  check("the OTP box opens the number keyboard", (await D.page.locator(`[data-ride="${r1.id}"] input[name=otp]`).getAttribute("inputmode")) === "numeric");
+  await D.page.locator(`[data-ride="${r1.id}"]`).getByRole("button", { name: "Confirm pickup" }).click();
+  check("the driver enters the rider's OTP on their page: pickup confirmed, the ride is in progress", await toast(D.page, "Pickup confirmed")
+    && !!(await poll(async () => { const x = await ride(r1.id); return x.status === "in_progress" && x.otp_verified_at && x.started_at; })));
+  const nav = D.page.locator(`[data-ride="${r1.id}"] [data-navigation]`);
+  await nav.waitFor({ timeout: 15000 }).catch(() => {});
+  const href = await nav.getAttribute("href").catch(() => "");
+  check("Open Navigation: Google Maps directions from pickup to drop-off", href?.startsWith("https://www.google.com/maps/dir/?api=1&origin=ZZC+Office&destination=ZZC+Airport&travelmode=driving"), href);
+  check("\"Sharing location\", and the driver is asked to keep the page open", await D.page.getByText("Sharing location").first().waitFor({ timeout: 15000 }).then(() => true).catch(() => false)
+    && (await D.page.getByText("Keep this page open to share your location").count()) > 0);
+  const pos = await poll(async () => (await sql`select * from cab_driver_locations where driver_id = ${dr1.id} order by recorded_at desc limit 1`)[0]);
+  check("the driver's phone sent its position, tied to the ride", Number(pos?.latitude) === 18.5204 && Number(pos?.longitude) === 73.8567 && pos.ride_id === r1.id && Number(pos.accuracy) === 12, JSON.stringify(pos));
+  const before2 = (await sql`select count(*)::int n from cab_driver_locations where driver_id = ${dr1.id}`)[0].n;
+  await D.page.waitForTimeout(11_000);
+  check("…and again 10 seconds later", (await sql`select count(*)::int n from cab_driver_locations where driver_id = ${dr1.id}`)[0].n > before2);
+  const spoof = await api(D2.page, "/api/cabs/location", "POST", { driver_id: dr1.id, latitude: 18.6, longitude: 73.9, heading: 90, speed: 30, ride_id: r1.id });
+  const [d2pos] = await sql`select * from cab_driver_locations where driver_id = ${dr2.id}`;
+  check("a position is saved for the driver signed in, never the driver_id sent; a ride that is not theirs is dropped", spoof.status === 200 && spoof.body.saved === true && !!d2pos && d2pos.ride_id === null && Number(d2pos.heading) === 90
+    && (await sql`select count(*)::int n from cab_driver_locations where driver_id = ${dr1.id} and latitude = 18.6`)[0].n === 0, JSON.stringify(spoof));
+  const quick = await api(D2.page, "/api/cabs/location", "POST", { latitude: 18.61, longitude: 73.91 });
+  check("a second post within 5 seconds is dropped", quick.status === 200 && quick.body.saved === false && (await sql`select count(*)::int n from cab_driver_locations where driver_id = ${dr2.id}`)[0].n === 1);
+  check("a staffer cannot send a position (403); a bad one is refused (400)", (await api(S.page, "/api/cabs/location", "POST", { latitude: 18.5, longitude: 73.8 })).status === 403
+    && (await api(D2.page, "/api/cabs/location", "POST", { latitude: 95, longitude: 73.8 })).status === 400);
+  const fleet = await api(A.page, "/api/cabs/fleet", "GET");
+  const f1 = fleet.body?.drivers?.find((x) => x.driver_id === dr1.id), f2 = fleet.body?.drivers?.find((x) => x.driver_id === dr2.id);
+  check("fleet: each driver's latest position, their current ride and vehicle", fleet.status === 200 && f1?.latitude === 18.5204 && f1.current_ride_id === r1.id && f1.current_ride_status === "in_progress"
+    && f1.vehicle_plate === "ZZC 01 AA 1111" && f1.driver_name === "ZZC Driver" && f2?.latitude === 18.6 && !!f2.recorded_at, JSON.stringify(fleet.body).slice(0, 300));
+  check("fleet: Cabs admins only (403 for a driver or a staffer)", (await api(D.page, "/api/cabs/fleet", "GET")).status === 403 && (await api(S.page, "/api/cabs/fleet", "GET")).status === 403);
+  await go(A.page, "/cabs/admin");
+  check("admin dashboard: the fleet map draws a marker for each driver, labelled with when they were last seen",
+    await A.page.locator("[data-fleet-map] .leaflet-marker-icon").first().waitFor({ timeout: 15000 }).then(() => true).catch(() => false)
+    && (await A.page.locator("[data-fleet-map] .leaflet-marker-icon").count()) >= 2 && /ZZC Driver · (just now|\d+ min ago)/.test((await A.page.locator("[data-fleet-map] .leaflet-tooltip").allInnerTexts()).join("|")),
+    (await A.page.locator("[data-fleet-map] .leaflet-tooltip").allInnerTexts().catch(() => [])).join("|"));
+  const fleetRow = await A.page.locator(`tr[data-fleet-driver="${dr1.id}"]`).innerText().catch((e) => String(e));
+  check("…and lists the drivers below it, with availability and last seen", /available/i.test(fleetRow) && /just now|min ago/.test(fleetRow), fleetRow);
+  const polls = [];
+  A.page.on("request", (q) => { if (q.url().includes("/api/cabs/fleet")) polls.push(Date.now()); });
+  await A.page.waitForTimeout(5_000);
+  check("the map polls the fleet every 2 seconds", polls.length >= 2 && polls.length <= 4, polls.length);
+
   await D.page.locator(`[data-ride="${r1.id}"]`).getByRole("button", { name: "Complete Ride" }).click();
   await D.page.locator("[role=dialog]").getByRole("button", { name: "Complete" }).click();
-  check("…and completes it: completed, with the times recorded", await toast(D.page, "Ride completed") && !!(await poll(async () => { const x = await ride(r1.id); return x.status === "completed" && x.started_at && x.completed_at; })));
+  check("the driver completes it: completed, with the times recorded", await toast(D.page, "Ride completed") && !!(await poll(async () => { const x = await ride(r1.id); return x.status === "completed" && x.started_at && x.completed_at; })));
+  check("…and stops sharing their location", await poll(async () => (await D.page.getByText("Sharing location").count()) === 0, 10000));
   check("the staffer is told the ride is complete", (await notices(staffer)).some((n) => n.title === "Your ride is complete"));
   await go(D.page, "/cabs/driver/rides");
   check("the driver's history shows it", await D.page.locator(`[data-ride="${r1.id}"]`).isVisible());
+
+  section("coordinates, and rides from before OTPs");
+  const r5 = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Pin Office", dropoff: "ZZC Pin Airport", scheduledFor: istSlot(1, 15), pickup_lat: 18.5204, pickup_lng: 73.8567, dropoff_lat: 18.5821, dropoff_lng: 73.9197 })).body;
+  const r5row = await ride(r5.id);
+  check("a ride booked with coordinates keeps them", Number(r5row.pickup_lat) === 18.5204 && Number(r5row.dropoff_lng) === 73.9197);
+  check("a pickup with only half a point is refused (400)", (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC a", dropoff: "ZZC b", scheduledFor: istSlot(1, 16), pickupLat: 18.5 })).status === 400);
+  await api(A.page, `/api/cabs/rides/${r5.id}/assign`, "POST", { driverId: dr1.id, vehicleId: v1.id });
+  const code5 = (await sql`select otp from cab_ride_otps where ride_id = ${r5.id}`)[0].otp;
+  const ok5 = await api(D.page, `/api/cabs/rides/${r5.id}/otp/verify`, "POST", { otp: code5 });
+  check("with coordinates, the Maps link goes from point to point", ok5.status === 200 && ok5.body.mapsUrl === "https://www.google.com/maps/dir/?api=1&origin=18.5204%2C73.8567&destination=18.5821%2C73.9197&travelmode=driving", JSON.stringify(ok5.body));
+  check("a used OTP cannot be used again", (await api(D.page, `/api/cabs/rides/${r5.id}/otp/verify`, "POST", { otp: code5 })).status === 409);
+  await api(D.page, `/api/cabs/rides/${r5.id}/complete`, "POST");
+  const r6 = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Old Office", dropoff: "ZZC Old Station", scheduledFor: istSlot(1, 17) })).body;
+  await api(A.page, `/api/cabs/rides/${r6.id}/assign`, "POST", { driverId: dr1.id, vehicleId: v1.id });
+  await sql`delete from cab_ride_otps where ride_id = ${r6.id}`; // as a ride assigned before OTPs existed
+  await go(D.page, "/cabs/driver");
+  check("a ride without an OTP keeps Start Ride (no OTP box)", (await D.page.locator(`[data-ride="${r6.id}"] input[name=otp]`).count()) === 0);
+  await D.page.locator(`[data-ride="${r6.id}"]`).getByRole("button", { name: "Start Ride" }).click();
+  check("…and starts with it", await toast(D.page, "Ride started") && (await poll(async () => (await ride(r6.id)).status === "in_progress")));
+  await api(D.page, `/api/cabs/rides/${r6.id}/complete`, "POST");
 
   section("cancelling");
   const r4 = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Office", dropoff: "ZZC Mall", scheduledFor: istSlot(4, 9) })).body;
@@ -284,7 +381,7 @@ try {
   await go(A.page, "/cabs/admin");
   check("admin dashboard shows the figures", await A.page.locator('[data-stat="Waiting for a driver"]').isVisible() && await A.page.locator('[data-stat="Active vehicles"]').isVisible());
   await go(S.page, "/cabs");
-  check("staffer dashboard lists the upcoming (assigned) ride and the past ones", await S.page.locator(`[data-ride="${r3.id}"]`).first().isVisible() && await S.page.locator(`[data-ride="${r1.id}"]`).first().isVisible());
+  check("staffer dashboard lists the upcoming (assigned) ride and the latest past ones", await S.page.locator(`[data-ride="${r3.id}"]`).first().isVisible() && await S.page.locator(`[data-ride="${r4.id}"]`).first().isVisible());
   const actions = (await sql`select action from cab_audit_log where actor_id in (${staffer.id}, ${admin.id}, ${driver.id}) order by created_at`).map((r) => r.action);
   check("the audit log recorded every kind of action", ["vehicle_added", "vehicle_updated", "vehicle_deactivated", "driver_added", "driver_availability", "driver_removed", "ride_created", "ride_assigned", "ride_started", "ride_completed", "ride_cancelled"].every((a) => actions.includes(a)), actions.join(","));
   check("driver and vehicle changes also went to the hub's audit log", (await sql`select count(*)::int n from access_audit where action like 'cabs.%' and target_label like 'ZZC%'`)[0].n >= 5);

@@ -35,7 +35,7 @@ export const rideReceived = (ride: RideFacts, requester: Person) => send(ride, [
 export const driverPerson = async (email: string): Promise<Person> => ({ userId: await hubUserIdByEmail(email), email });
 
 export const rideAssigned = (ride: RideFacts, requester: Person, driver: Person & { name: string }, vehicle: { plate: string; model: string }) => send(ride, [
-  { to: requester, event: "assigned", title: "Your ride is confirmed", body: `Driver: ${driver.name}, Vehicle: ${vehicle.plate} (${vehicle.model}). ${route(ride)}, ${when(ride)}.`, link: "/cabs/rides" },
+  { to: requester, event: "assigned", title: "Your ride is confirmed", body: `Driver: ${driver.name}, Vehicle: ${vehicle.plate} (${vehicle.model}). ${route(ride)}, ${when(ride)}. Your OTP for the driver is on My Rides.`, link: "/cabs/rides" },
   { to: driver, event: "assigned-driver", title: "New ride assigned to you", body: `${route(ride)}, ${when(ride)}, in ${vehicle.plate}.`, link: "/cabs/driver" },
 ]);
 

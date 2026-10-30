@@ -2,7 +2,8 @@ import type { NextConfig } from "next";
 
 /**
  * Content-Security-Policy, sent in REPORT-ONLY mode for now: the browser logs anything that breaks it in the console but blocks nothing.
- * Everything the hub loads comes from itself (the font is bundled at build time). 'unsafe-inline' scripts are needed by Next.js's own
+ * Everything the hub loads comes from itself (the font is bundled at build time), except Geoapify for Cab Booking: its map tiles
+ * (maps.geoapify.com, or OpenStreetMap's until a Geoapify key is set) and its address search (api.geoapify.com). 'unsafe-inline' scripts are needed by Next.js's own
  * inline scripts (and the small install-offer script in the root layout); 'unsafe-eval' only in development, for hot reload.
  * Once no violations show, rename the header to Content-Security-Policy to enforce it.
  */
@@ -10,9 +11,9 @@ const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob: https://maps.geoapify.com https://tile.openstreetmap.org",
   "font-src 'self' data:",
-  "connect-src 'self'",
+  "connect-src 'self' https://api.geoapify.com",
   "worker-src 'self'",
   "manifest-src 'self'",
   "frame-src 'self'",
@@ -35,9 +36,10 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // The hub uses no camera, microphone, location or payments: switch them off for every page.
           { key: "Content-Security-Policy-Report-Only", value: csp },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
+          // The hub uses no camera, microphone or payments: switch them off for every page. Location only for the hub's own pages: Cab
+          // Booking's "Use my location" and the driver's live position.
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self), payment=(), usb=()" },
         ],
       },
       // The single sign-on hand-off page carries a signed token in its body: no Referer at all, not even the hub's address. (A header set here wins

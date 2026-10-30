@@ -1,12 +1,14 @@
 import Link from "next/link";
+import { FleetMap } from "@/components/cabs/FleetMap";
 import { RideCard, rideView } from "@/components/cabs/RideCard";
 import { adminStats, listRides } from "@/lib/cabs/bookings";
+import { listDrivers } from "@/lib/cabs/drivers";
 import { requireAdminPage } from "@/lib/cabs/guard";
 
-/** Cabs Admin: rides waiting for a driver, today's rides, what is running now, and the fleet; then the oldest rides still waiting. */
+/** Cabs Admin: the live fleet map and the drivers, the figures (waiting, today, running, the fleet), then the oldest rides still waiting. */
 export default async function CabsAdminDashboard() {
   await requireAdminPage();
-  const [s, waiting] = await Promise.all([adminStats(), listRides({ status: "pending", scope: "open" }, 6)]);
+  const [s, waiting, drivers] = await Promise.all([adminStats(), listRides({ status: "pending", scope: "open" }, 6), listDrivers()]);
   const tiles: [string, number, string, string?][] = [
     ["Waiting for a driver", s.pending, "/cabs/admin/rides?status=pending", s.pending ? "text-[#b45309]" : undefined],
     ["Today's rides", s.today, "/cabs/admin/rides"],
@@ -17,6 +19,7 @@ export default async function CabsAdminDashboard() {
   return (
     <div className="page-enter space-y-6">
       <div><h1 className="text-2xl">Cabs Admin</h1><p className="text-sm text-muted">Assign drivers and cars to rides, and keep the fleet in order. {s.drivers} {s.drivers === 1 ? "driver" : "drivers"} in all.</p></div>
+      <FleetMap drivers={drivers.map((d) => ({ id: d.id, name: d.name, isAvailable: d.isAvailable, vehiclePlate: d.vehiclePlate }))} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {tiles.map(([label, n, href, tone]) => (
           <Link key={label} href={href} className="glass glass-hover block p-4" data-stat={label}>

@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, char, decimal, index, integer, jsonb, pgEnum, pgTable, real, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -9,10 +9,14 @@ import { sql } from "drizzle-orm";
  *
  * A ride's status only ever moves forward, by single conditional statements (the production driver has no transactions):
  *   pending → assigned → in_progress → completed, and pending or assigned → cancelled.
+ * Assigning a ride makes a 4-digit OTP (cab_ride_otps) that the rider shows the driver; the driver entering it is what starts the ride.
+ * While a ride is under way the driver's phone sends its position (cab_driver_locations, kept 24 hours) for the admins' fleet map.
  */
 
 const id = () => uuid("id").primaryKey().default(sql`gen_random_uuid()`);
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
+/** A latitude or longitude: 7 decimal places is about a centimetre. Read back as text by the driver; the code turns it into a number. */
+const coord = (name: string) => decimal(name, { precision: 10, scale: 7 });
 
 export const cabRideStatus = pgEnum("cab_ride_status", ["pending", "assigned", "in_progress", "completed", "cancelled"]);
 
@@ -55,12 +59,19 @@ export const cabRides = pgTable(
     vehiclePlate: text("vehicle_plate"),
     pickup: text("pickup").notNull(),
     dropoff: text("dropoff").notNull(),
+    /** Where the pickup and drop-off are, when the person chose a suggested address (or their own location); null for typed text. */
+    pickupLat: coord("pickup_lat"),
+    pickupLng: coord("pickup_lng"),
+    dropoffLat: coord("dropoff_lat"),
+    dropoffLng: coord("dropoff_lng"),
     scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
     status: cabRideStatus("status").notNull().default("pending"),
     notes: text("notes"),
     assignedAt: timestamp("assigned_at", { withTimezone: true }),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    /** When the driver entered the rider's OTP (which also started the ride). */
+    otpVerifiedAt: timestamp("otp_verified_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     cancelledByName: text("cancelled_by_name"),
     cancelReason: text("cancel_reason"),
@@ -72,6 +83,43 @@ export const cabRides = pgTable(
     index("cab_rides_scheduled_idx").on(t.scheduledFor),
     index("cab_rides_driver_idx").on(t.driverId),
     index("cab_rides_requested_by_idx").on(t.requestedById),
+  ],
+);
+
+/**
+ * One OTP per ride, made when it is assigned (and again when an admin asks for a new one). The rider shows it to the driver; three wrong
+ * tries lock it. It expires 2 hours after the ride's scheduled time, and never sooner than 2 hours after it was made.
+ */
+export const cabRideOtps = pgTable("cab_ride_otps", {
+  id: id(),
+  rideId: uuid("ride_id").notNull().unique().references(() => cabRides.id, { onDelete: "cascade" }),
+  otp: char("otp", { length: 4 }).notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
+});
+
+/** Where drivers' phones were, sent every 10 seconds while a ride is under way. Deleted after 24 hours by the daily cron. */
+export const cabDriverLocations = pgTable(
+  "cab_driver_locations",
+  {
+    id: id(),
+    driverId: uuid("driver_id").notNull().references(() => cabDrivers.id, { onDelete: "cascade" }),
+    latitude: coord("latitude").notNull(),
+    longitude: coord("longitude").notNull(),
+    accuracy: real("accuracy"),
+    /** Direction of travel in degrees (0 = north). */
+    heading: real("heading"),
+    /** km/h. */
+    speed: real("speed"),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+    rideId: uuid("ride_id").references(() => cabRides.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    index("cab_driver_locations_driver_idx").on(t.driverId, t.recordedAt.desc()),
+    index("cab_driver_locations_ride_idx").on(t.rideId),
+    index("cab_driver_locations_recorded_idx").on(t.recordedAt.desc()),
   ],
 );
 

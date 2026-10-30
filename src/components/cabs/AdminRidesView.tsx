@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { UserCheck, X } from "lucide-react";
+import { KeyRound, UserCheck, X } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import { formatIST } from "@/lib/format";
@@ -10,7 +10,10 @@ import { cabsApi } from "./api";
 import { AssignDialog, type DriverOption, type VehicleOption } from "./AssignDialog";
 import { StatusBadge, type RideView } from "./RideCard";
 
-/** Every ride, as a table: assign a pending one, cancel a pending or assigned one with a reason. The filters are a plain form (the page reads them). */
+/**
+ * Every ride, as a table: assign a pending one, cancel a pending or assigned one with a reason, and make a new OTP for an assigned one
+ * (after three wrong tries, or once it expired; the rider sees it, never this screen). The filters are a plain form (the page reads them).
+ */
 export function AdminRidesView({ rides, drivers, vehicles, empty }: { rides: RideView[]; drivers: DriverOption[]; vehicles: VehicleOption[]; empty: string }) {
   const router = useRouter();
   const toast = useToast();
@@ -35,6 +38,8 @@ export function AdminRidesView({ rides, drivers, vehicles, empty }: { rides: Rid
               <td><StatusBadge status={r.status} />{r.status === "cancelled" && r.cancelReason && <span className="mt-1 block max-w-xs text-xs text-muted">{r.cancelReason}</span>}</td>
               <td><div className="flex justify-end gap-1.5">
                 {r.status === "pending" && <button className="btn btn-primary btn-sm" disabled={pending} onClick={() => setAssigning(r)}><UserCheck size={14} /> Assign</button>}
+                {r.status === "assigned" && r.hasOtp && <button className="btn btn-ghost btn-sm" disabled={pending} title="Make a new OTP: the rider sees it on My Rides"
+                  onClick={() => run(() => cabsApi(`/api/cabs/rides/${r.id}/otp/reset`, "POST"), "New OTP made. The rider sees it on My Rides.", () => {})}><KeyRound size={14} /> New OTP</button>}
                 {(r.status === "pending" || r.status === "assigned") && <button className="btn btn-ghost btn-sm text-brand-red" disabled={pending} onClick={() => { setReason(""); setCancelling(r); }}><X size={14} /> Cancel</button>}
               </div></td>
             </tr>

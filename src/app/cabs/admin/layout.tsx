@@ -1,3 +1,4 @@
+import "leaflet/dist/leaflet.css"; // the fleet map on the dashboard
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { HubShell } from "@/components/HubShell";
 import { MobileMenu } from "@/components/MobileMenu";
