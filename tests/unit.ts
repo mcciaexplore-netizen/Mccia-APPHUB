@@ -628,7 +628,7 @@ const ssoTests = (async () => {
   eq("sso page: a POST form to the callback with one hidden token field, an auto-submit script with the nonce, and a noscript button", [
     /<form id="sso" method="post" action="https:\/\/search\.mcciapune\.com\/api\/sso\/callback\?a=1&amp;b=&quot;2&quot;">/.test(html),
     (html.match(/<input /g) ?? []).length, html.includes('<input type="hidden" name="token" value="aaa.bbb.ccc">'),
-    html.includes(`<script nonce="${nonce}">setTimeout(function(){document.getElementById("sso").submit();},1200);</script>`), /<noscript>[\s\S]*<button type="submit">/.test(html),
+    html.includes(`<script nonce="${nonce}">setTimeout(function(){document.getElementById("sso").submit();},100);</script>`), /<noscript>[\s\S]*<button type="submit">/.test(html),
   ], [true, 1, true, true, true]);
   eq("sso page: the signing-in screen shows the MCCIA logo, the app's name and a spinner, with its one style under the nonce", [
     html.includes('<img class="logo" src="/mccia-logo.png" alt="MCCIA">'), html.includes("Signing you in to Search &lt;b&gt;&quot;x&quot;&lt;/b&gt;…"), html.includes('class="spin"'), html.includes(`<style nonce="${nonce}">`),
