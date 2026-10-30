@@ -5,6 +5,11 @@ import { z } from "zod";
 export const idSchema = z.string().uuid();
 
 /** How far in the past a ride may still be booked (a form left open for a few minutes), and how far ahead. */
+/**
+ * A ride must start at least 15 minutes from now (the booking form holds to that). The server allows 5 minutes less, for a form that sat
+ * open for a few minutes before it was sent.
+ */
+export const MIN_LEAD_MS = 15 * 60_000;
 export const PAST_GRACE_MS = 5 * 60_000;
 export const MAX_AHEAD_DAYS = 365;
 
@@ -21,7 +26,7 @@ export function istLocalToDate(raw: string): Date | null {
 
 /** Why a ride cannot be booked for this time, or null when it can. */
 export function scheduleProblem(when: Date, now = Date.now()): string | null {
-  if (when.getTime() < now - PAST_GRACE_MS) return "Choose a time that has not passed yet.";
+  if (when.getTime() < now + MIN_LEAD_MS - PAST_GRACE_MS) return "Please select a future time";
   if (when.getTime() > now + MAX_AHEAD_DAYS * 86_400_000) return "Rides can be booked up to a year ahead.";
   return null;
 }
@@ -80,7 +85,9 @@ export const rideInput = z.preprocess(camel, z.object({
     const day = (v.endsOn ?? "").trim();
     const end = /^\d{4}-\d{2}-\d{2}$/.test(day) ? new Date(new Date(`${day}T00:00:00+05:30`).getTime() + 86_400_000 - 1) : null;
     if (!end || Number.isNaN(end.getTime())) { ctx.addIssue({ code: "custom", message: "Choose the last day of the trip.", path: ["endsOn"] }); return z.NEVER; }
-    if (end <= scheduledFor) { ctx.addIssue({ code: "custom", message: "The trip must end after it starts.", path: ["endsOn"] }); return z.NEVER; }
+    // The last day is a later day than the first (a trip within one day is a scheduled ride), in India time.
+    const startDay = new Date(scheduledFor.getTime() + 5.5 * 3600_000).toISOString().slice(0, 10);
+    if (day <= startDay) { ctx.addIssue({ code: "custom", message: "The last day must be after the first day.", path: ["endsOn"] }); return z.NEVER; }
     if (end.getTime() - scheduledFor.getTime() > MAX_TRIP_DAYS * 86_400_000) { ctx.addIssue({ code: "custom", message: `A trip can last at most ${MAX_TRIP_DAYS} days.`, path: ["endsOn"] }); return z.NEVER; }
     endsAt = end;
   }

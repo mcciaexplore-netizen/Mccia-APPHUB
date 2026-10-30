@@ -215,7 +215,22 @@ try {
   check("the old Book a Ride address goes to Book (/cabs)", new URL(S.page.url()).pathname === "/cabs");
   await S.page.fill("input[name=pickup]", "ZZC Office"); await S.page.fill("input[name=dropoff]", "ZZC Airport");
   await S.page.getByRole("tab", { name: "Schedule" }).click();
-  await S.page.fill("input[name=scheduledFor]", istSlot(1, 10));
+  check("Schedule starts at tomorrow, 9:00 AM (India time)", (await S.page.inputValue("input[name=scheduledDate]")) === istSlot(1, 9).slice(0, 10) && (await S.page.inputValue("select[name=scheduledTime]")) === "09:00");
+  check("the time list runs in half hours, as AM/PM", (await S.page.locator("select[name=scheduledTime] option").count()) === 48 && (await S.page.locator('select[name=scheduledTime] option[value="13:30"]').innerText()) === "1:30 PM");
+  // Today at midnight has passed: the form says so and sends nothing (set as a person might leave it, the way React sees a change).
+  await S.page.fill("input[name=scheduledDate]", istSlot(0, 0).slice(0, 10));
+  await S.page.$eval("select[name=scheduledTime]", (el) => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(el, "00:00"); el.dispatchEvent(new Event("change", { bubbles: true })); });
+  const sentBefore = (await sql`select count(*)::int n from cab_rides where requested_by_id = ${staffer.id}`)[0].n;
+  await S.page.getByRole("button", { name: "Send request" }).click();
+  check("a time that has passed: \"Please select a future time\", and nothing is sent", (await S.page.locator("[data-time-error]").innerText()).trim() === "Please select a future time"
+    && (await sql`select count(*)::int n from cab_rides where requested_by_id = ${staffer.id}`)[0].n === sentBefore);
+  check("…and today's past half hours cannot be chosen", await S.page.$eval('select[name=scheduledTime] option[value="00:00"]', (o) => o.disabled));
+  await S.page.getByRole("tab", { name: "Multi-day" }).click();
+  await S.page.fill("input[name=scheduledDate]", istSlot(1, 9).slice(0, 10));
+  check("Multi-day: a first day, a start time and a last day, from tomorrow to the day after", (await S.page.inputValue("input[name=endsOn]")) === istSlot(2, 9).slice(0, 10));
+  await S.page.getByRole("tab", { name: "Schedule" }).click();
+  await S.page.fill("input[name=scheduledDate]", istSlot(1, 10).slice(0, 10));
+  await S.page.selectOption("select[name=scheduledTime]", "10:00");
   await S.page.getByRole("button", { name: "Add a note" }).click(); await S.page.fill("textarea[name=notes]", "Two people, one bag");
   await S.page.getByRole("button", { name: "More passengers" }).click();
   check("the passengers counter: 1 by default, + adds one", (await S.page.locator("[data-passengers]").innerText()).trim() === "2");
@@ -230,6 +245,9 @@ try {
   check("the Cabs admins get a bell notice to assign it", (await notices(admin)).some((n) => n.title === "New ride request from ZZC Staffer" && n.body.includes("ZZC Office → ZZC Airport")));
   check("…and only they (not the driver, nor someone without Cabs Admin)", !(await notices(driver)).some((n) => n.title.startsWith("New ride request")) && !(await notices(outsider)).some((n) => n.title.startsWith("New ride request")));
   check("a time in the past is refused", (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC a", dropoff: "b", scheduledFor: "2020-01-01T10:00" })).status === 400);
+  const soon = new Date(Date.now() + 5 * 60_000 + 5.5 * 3600_000).toISOString().slice(0, 16);
+  const soonRes = await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC a", dropoff: "b", scheduledFor: soon });
+  check("…and so is one only 5 minutes away: \"Please select a future time\"", soonRes.status === 400 && soonRes.body?.error === "Please select a future time", JSON.stringify(soonRes));
   const rNow = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Now Office", dropoff: "ZZC Now Station", tripType: "now" })).body;
   const rNowRow = await ride(rNow.id);
   check("Now: booked for the moment it was sent", rNowRow.trip_type === "now" && Math.abs(new Date(rNowRow.scheduled_for).getTime() - Date.now()) < 60_000);

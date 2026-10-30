@@ -560,9 +560,10 @@ eq("cabs admin menu: no nested lines; Live Trips carries the live dot", [
   eq("cabs times: a datetime-local value is India time; a full ISO time keeps its own offset; junk is refused", [
     istLocalToDate("2026-11-02T09:30")?.toISOString(), istLocalToDate("2026-11-02T09:30:00Z")?.toISOString(), istLocalToDate("2026-13-02T09:30"), istLocalToDate("tomorrow"), istLocalToDate(""),
   ], ["2026-11-02T04:00:00.000Z", "2026-11-02T09:30:00.000Z", null, null, null]);
-  eq("cabs times: a ride can't be booked in the past (5 minutes' grace) or more than a year ahead", [
-    scheduleProblem(new Date(now - 4 * 60_000), now), !!scheduleProblem(new Date(now - 6 * 60_000), now), scheduleProblem(new Date(now + 86_400_000), now), !!scheduleProblem(new Date(now + 366 * 86_400_000), now),
-  ], [null, true, null, true]);
+  eq("cabs times: a ride starts at least 15 minutes from now (the server allows 5 of them for a form left open), and at most a year ahead", [
+    scheduleProblem(new Date(now + 15 * 60_000), now), scheduleProblem(new Date(now + 11 * 60_000), now), scheduleProblem(new Date(now + 9 * 60_000), now), scheduleProblem(new Date(now - 60_000), now),
+    scheduleProblem(new Date(now + 86_400_000), now), !!scheduleProblem(new Date(now + 366 * 86_400_000), now),
+  ], [null, null, "Please select a future time", "Please select a future time", null, true]);
 }
 {
   const later = new Date(Date.now() + 2 * 86_400_000 + 5.5 * 3600_000).toISOString().slice(0, 16);
@@ -635,11 +636,12 @@ eq("cabs admin menu: no nested lines; Live Trips carries the live dot", [
     now.tripType, Math.abs(now.scheduledFor.getTime() - Date.now()) < 5_000, now.endsAt, rideInput.safeParse({ ...base, tripType: "scheduled" }).success,
     rideInput.parse({ ...base, scheduledFor: `${day(1)}T10:00` }).tripType,
   ], ["now", true, null, false, "scheduled"]);
-  eq("cabs when: Multi-day runs to the end of its last day (India time), must end after it starts, and lasts at most 31 days", [
+  eq("cabs when: Multi-day runs to the end of its last day (India time), which is a later day than the first, and lasts at most 31 days", [
     multi.endsAt?.toISOString(), rideInput.safeParse({ ...base, tripType: "multiday", scheduledFor: `${day(2)}T09:00` }).success,
     rideInput.safeParse({ ...base, tripType: "multiday", scheduledFor: `${day(5)}T09:00`, endsOn: day(3) }).success,
     rideInput.safeParse({ ...base, tripType: "multiday", scheduledFor: `${day(2)}T09:00`, endsOn: day(40) }).success,
-  ], [new Date(new Date(`${day(4)}T00:00:00+05:30`).getTime() + 86_399_999).toISOString(), false, false, false]);
+    rideInput.safeParse({ ...base, tripType: "multiday", scheduledFor: `${day(2)}T09:00`, endsOn: day(2) }).success,
+  ], [new Date(new Date(`${day(4)}T00:00:00+05:30`).getTime() + 86_399_999).toISOString(), false, false, false, false]);
   eq("cabs stops and passengers: up to 3 stops (each a full point or none); 1 to 20 passengers, 1 by default", [
     rideInput.parse({ ...base, tripType: "now", stops: [{ text: "Bank", lat: 18.5, lng: 73.8 }, { text: "Hotel" }] }).stops,
     rideInput.safeParse({ ...base, tripType: "now", stops: [{ text: "a" }, { text: "b" }, { text: "c" }, { text: "d" }] }).success,

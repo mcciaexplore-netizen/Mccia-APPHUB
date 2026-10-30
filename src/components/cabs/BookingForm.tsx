@@ -7,8 +7,18 @@ import { useToast } from "@/components/Toast";
 import { AddressInput, type Place } from "./AddressInput";
 import { cabsApi } from "./api";
 
-/** Now in India time, as a datetime-local input wants it ("2026-11-02T09:30"): the earliest time that can be picked. */
-const istNow = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 16);
+/** A day in India time, "YYYY-MM-DD", `days` from today. */
+const istDay = (days = 0) => new Date(Date.now() + days * 86_400_000 + 5.5 * 3600_000).toISOString().slice(0, 10);
+/** The day after a day ("YYYY-MM-DD"). */
+const nextDay = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+/** Every half hour of the day, "00:00" to "23:30", shown as "9:00 AM". */
+const SLOTS = Array.from({ length: 48 }, (_, i) => `${String(Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`);
+const slotLabel = (t: string) => { const [h, m] = t.split(":").map(Number); return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
+/** A ride starts at least this long from now. */
+const MIN_LEAD_MS = 15 * 60_000;
+/** The moment a day and a time (India time) stand for. */
+const istMoment = (day: string, time: string) => new Date(`${day}T${time}:00+05:30`).getTime();
+const tooSoon = (day: string, time: string) => !day || !time || Number.isNaN(istMoment(day, time)) || istMoment(day, time) < Date.now() + MIN_LEAD_MS;
 const EMPTY: Place = { text: "", lat: null, lng: null };
 const MAX_STOPS = 3;
 const MAX_PASSENGERS = 20;
@@ -29,8 +39,11 @@ export function BookingForm() {
   const [dropoff, setDropoff] = useState<Place>(EMPTY);
   const [stops, setStops] = useState<Place[]>([]);
   const [when, setWhen] = useState<When>("now");
-  const [at, setAt] = useState("");
-  const [until, setUntil] = useState("");
+  // Schedule and Multi-day start tomorrow at 9:00 AM; Multi-day runs until the day after.
+  const [day, setDay] = useState(() => istDay(1));
+  const [time, setTime] = useState("09:00");
+  const [until, setUntil] = useState(() => istDay(2));
+  const [timeError, setTimeError] = useState("");
   const [passengers, setPassengers] = useState(1);
   const [noteOpen, setNoteOpen] = useState(false);
   const [notes, setNotes] = useState("");
@@ -39,11 +52,14 @@ export function BookingForm() {
   const setStop = (i: number, p: Place) => setStops(stops.map((s, j) => (j === i ? p : s)));
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (when !== "now" && tooSoon(day, time)) { setTimeError("Please select a future time"); return; }
+    if (when === "multiday" && !(until > day)) { setTimeError("The last day must be after the first day."); return; }
+    setTimeError("");
     start(async () => {
       try {
         await cabsApi("/api/cabs/rides", "POST", {
           pickup: pickup.text, dropoff: dropoff.text, pickupLat: pickup.lat, pickupLng: pickup.lng, dropoffLat: dropoff.lat, dropoffLng: dropoff.lng,
-          tripType: when, scheduledFor: when === "now" ? undefined : at, endsOn: when === "multiday" ? until : undefined,
+          tripType: when, scheduledFor: when === "now" ? undefined : `${day}T${time}`, endsOn: when === "multiday" ? until : undefined,
           stops: stops.filter((s) => s.text.trim()), passengers, notes: noteOpen ? notes : "",
         });
         toast.success("Request sent. You'll be told once it is approved.");
@@ -87,23 +103,28 @@ export function BookingForm() {
         <h2 id="when-heading" className="text-base font-bold text-ink">When</h2>
         <div className="grid grid-cols-3 gap-1 rounded-lg bg-[#f5f5f5] p-1" role="tablist" aria-label="When">
           {WHEN_TABS.map((t) => (
-            <button key={t.id} type="button" role="tab" aria-selected={when === t.id} onClick={() => setWhen(t.id)}
-              className={`min-h-10 rounded-md text-sm font-semibold transition-colors ${when === t.id ? "bg-white text-[#1a2b4a] shadow-sm" : "text-muted hover:text-ink"}`}>{t.label}</button>
+            <button key={t.id} type="button" role="tab" aria-selected={when === t.id} onClick={() => { setWhen(t.id); setTimeError(""); }}
+              className={`min-h-11 rounded-md text-sm font-semibold transition-colors ${when === t.id ? "bg-white text-[#1a2b4a] shadow-sm" : "text-muted hover:text-ink"}`}>{t.label}</button>
           ))}
         </div>
         {when === "now" && <p className="text-sm text-muted">Leave as soon as your request is approved.</p>}
-        {when === "scheduled" && (
-          <label className="block"><span className="label-xs mb-1.5 block">Date and time (India time)</span>
-            <input className="input" type="datetime-local" name="scheduledFor" value={at} min={istNow()} onChange={(e) => setAt(e.target.value)} required /></label>
-        )}
-        {when === "multiday" && (
+        {when !== "now" && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block"><span className="label-xs mb-1.5 block">From (India time)</span>
-              <input className="input" type="datetime-local" name="scheduledFor" value={at} min={istNow()} onChange={(e) => setAt(e.target.value)} required /></label>
-            <label className="block"><span className="label-xs mb-1.5 block">Until</span>
-              <input className="input" type="date" name="endsOn" value={until} min={at.slice(0, 10) || istNow().slice(0, 10)} onChange={(e) => setUntil(e.target.value)} required /></label>
+            <label className="block"><span className="label-xs mb-1.5 block">{when === "multiday" ? "First day" : "Date"}</span>
+              <input className="input min-h-12 text-base" type="date" name="scheduledDate" value={day} min={istDay(0)} required
+                onChange={(e) => { const d = e.target.value; setDay(d); setTimeError(""); if (d && until <= d) setUntil(nextDay(d)); }} /></label>
+            <label className="block"><span className="label-xs mb-1.5 block">{when === "multiday" ? "Start time (IST)" : "Time (IST)"}</span>
+              <select className="input min-h-12 text-base" name="scheduledTime" value={time} onChange={(e) => { setTime(e.target.value); setTimeError(""); }} required>
+                {SLOTS.map((t) => <option key={t} value={t} disabled={day === istDay(0) && tooSoon(day, t)}>{slotLabel(t)}</option>)}
+              </select></label>
+            {when === "multiday" && (
+              <label className="block sm:col-span-2"><span className="label-xs mb-1.5 block">Last day</span>
+                <input className="input min-h-12 text-base" type="date" name="endsOn" value={until} min={day ? nextDay(day) : istDay(1)} required
+                  onChange={(e) => { setUntil(e.target.value); setTimeError(""); }} /></label>
+            )}
           </div>
         )}
+        {timeError && <p className="text-sm font-semibold text-brand-red" role="alert" data-time-error>{timeError}</p>}
       </section>
 
       <section className={`${card} flex items-center gap-3`} aria-label="Passengers">
