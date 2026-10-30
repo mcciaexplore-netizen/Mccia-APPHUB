@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db";
 
 /** How long an upload may wait to be attached to a request before it is deleted. A form left open over lunch still works. */
-export const ORPHAN_AFTER_HOURS = 24;
+const ORPHAN_AFTER_HOURS = 24;
 
 /**
  * Deletes uploads that were never attached to a request (the person closed the form, or the upload was abandoned), older than

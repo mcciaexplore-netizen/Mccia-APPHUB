@@ -39,8 +39,3 @@ export const roleGrant = z.object({
   role: z.enum(["viewer", "approvals_admin"]),
   granted: z.boolean(),
 });
-
-export const ruleUpdate = z
-  .object({ approverUserId: idSchema.nullable(), active: z.boolean() })
-  .partial()
-  .refine((v) => Object.keys(v).length > 0, "Nothing to change");

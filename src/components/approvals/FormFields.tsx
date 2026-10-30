@@ -64,16 +64,6 @@ export function MoneyInput({ value, onChange, id, invalid }: { value: string; on
   );
 }
 
-/** A figure the form works out itself: grey, not editable, with the rupee sign. Negative values are red. */
-export function ReadOnlyMoney({ paise, empty = "", id, placeholder = "##,##,###.##" }: { paise: number | null; empty?: string; id?: string; placeholder?: string }) {
-  return (
-    <div className="zf-control">
-      <input id={id} readOnly tabIndex={-1} className={inputClass(false, `zf-ro ${paise != null && paise < 0 ? "zf-neg" : ""}`)} value={paise == null ? empty : formatINR(paise)} placeholder={placeholder} aria-readonly="true" />
-      <span className="zf-addon" aria-hidden>₹</span>
-    </div>
-  );
-}
-
 /** A date shown as dd-MMM-yyyy, typed or picked from the calendar button. The value is "YYYY-MM-DD", or empty. */
 export function DateInput({ value, onChange, id, invalid, max }: { value: string; onChange: (iso: string) => void; id?: string; invalid?: boolean; max?: string }) {
   const [text, setText] = useState(isoToDisplay(value));

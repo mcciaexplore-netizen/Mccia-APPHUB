@@ -7,7 +7,7 @@ import {
 } from "@/db/approvals-schema";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
-import { commentRequired, decisionMode, escalationApprover, formatRequestNo, planProblemMessage, planSteps, TYPE_LABEL, wrongFormMessage, type ExpenditureForm } from "./calc";
+import { commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, TYPE_LABEL, wrongFormMessage, type ExpenditureForm } from "./calc";
 import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { resolveCustomAnswers } from "./form-config";
 import type { CustomAnswers } from "./form-fields";

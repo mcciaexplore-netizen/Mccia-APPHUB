@@ -20,11 +20,6 @@ export async function appAdminsByApp(): Promise<Map<string, string[]>> {
   return out;
 }
 
-export async function isAppAdmin(userId: string, appId: string): Promise<boolean> {
-  const [row] = await db.select({ userId: appAdmins.userId }).from(appAdmins).where(and(eq(appAdmins.appId, appId), eq(appAdmins.userId, userId))).limit(1);
-  return !!row;
-}
-
 /**
  * Makes `userIds` exactly the App Admins of one application, in ONE statement (the ones left out are removed, the new ones added).
  * Support Admin only; every person must be an active hub user. Recorded in the audit log as app.admins, with who was added and removed.

@@ -10,7 +10,7 @@ import { inventoryItems as items, inventoryPurchaseOrders as pos, inventoryReque
  */
 
 export const MOVEMENT_KINDS = ["inward", "issue", "return", "adjust", "recount", "transfer"] as const;
-export type MovementKind = (typeof MOVEMENT_KINDS)[number];
+type MovementKind = (typeof MOVEMENT_KINDS)[number];
 export const PAGE_SIZE = 100;
 
 const isId = (v: string | undefined): v is string => !!v && /^[0-9a-f-]{36}$/i.test(v);

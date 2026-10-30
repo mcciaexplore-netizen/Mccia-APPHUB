@@ -10,7 +10,7 @@ import { isApprovalsUrl } from "@/lib/approvals/approvals.manifest";
 import { isSuper } from "@/lib/rbac";
 import { appInput, uuid, uuidList } from "@/lib/validation";
 import { setAppAdmins as applyAppAdmins } from "@/lib/app-admins";
-import { addAppStaffMember as addStaff, getAppStaff as listStaff, removeAppStaffMember as removeStaff } from "@/lib/app-staff";
+import { addAppStaffMember as addStaff, removeAppStaffMember as removeStaff } from "@/lib/app-staff";
 
 async function nextOrder(departmentId: string) {
   const rows = await db.select({ s: apps.sortOrder }).from(apps).where(eq(apps.departmentId, departmentId));
@@ -108,11 +108,6 @@ export async function addAppStaffMember(appId: string, userId: string) {
 
 export async function removeAppStaffMember(appId: string, userId: string) {
   return adminAction(async (admin) => removeStaff(admin, uuid.parse(appId), uuid.parse(userId)));
-}
-
-/** Who is App Staff of one application: anyone who may see the Applications page. */
-export async function getAppStaff(appId: string) {
-  return adminAction("apps", async () => listStaff(uuid.parse(appId)));
 }
 
 /** Apps are never hard-deleted so the activity log keeps its history. */

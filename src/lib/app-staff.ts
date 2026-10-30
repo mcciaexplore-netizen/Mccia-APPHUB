@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { appStaff, apps, users, type User } from "@/db/schema";
 import { writeAudit } from "@/lib/audit";
@@ -18,16 +18,6 @@ export async function appStaffByApp(): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
   for (const r of rows) out.set(r.appId, [...(out.get(r.appId) ?? []), r.userId]);
   return out;
-}
-
-/** One application's App Staff, by name. */
-export async function getAppStaff(appId: string): Promise<{ id: string; name: string; email: string }[]> {
-  return db
-    .select({ id: users.id, name: users.name, email: users.email })
-    .from(appStaff)
-    .innerJoin(users, eq(users.id, appStaff.userId))
-    .where(eq(appStaff.appId, appId))
-    .orderBy(asc(users.name));
 }
 
 const assertSupport = (actor: Pick<User, "role">) => {

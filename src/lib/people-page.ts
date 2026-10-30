@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { accessTemplateApps, accessTemplates, apps, branches, departments, teams, userAppAccess, users, type User } from "@/db/schema";
+import { accessTemplateApps, accessTemplates, apps, branches, teams, userAppAccess, users, type User } from "@/db/schema";
 import type { DirectoryProps } from "@/components/people/PeopleDirectory";
 import { domainsLabel } from "@/lib/domains";
 import { getCatalog } from "@/lib/catalog";

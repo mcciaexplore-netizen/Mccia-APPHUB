@@ -14,7 +14,6 @@
  */
 
 export type InventoryRole = "requester" | "inventory_staff" | "inventory_admin";
-export const ALL_ROLES: readonly InventoryRole[] = ["requester", "inventory_staff", "inventory_admin"];
 export const ROLE_LABEL: Record<InventoryRole, string> = { requester: "User", inventory_staff: "Staff", inventory_admin: "Inventory admin" };
 
 /** Inventory admin: the Support Admin always, anyone else only as an App Admin of the Inventory application. Staff: its App Staff. */

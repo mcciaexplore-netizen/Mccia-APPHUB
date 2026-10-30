@@ -3,7 +3,7 @@ import { cache } from "react";
 import { and, asc, desc, eq, gte, ilike, inArray, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  aprApprovalEvents, aprApproverRules, aprAttachments, aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprPublicationTypes,
+  aprApprovalEvents, aprAttachments, aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprPublicationTypes,
   aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType,
 } from "@/db/approvals-schema";
 import { decisionMode, type DecisionMode } from "./calc";

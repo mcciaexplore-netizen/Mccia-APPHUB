@@ -27,7 +27,7 @@ export function launchHeaders(callbackOrigin: string, nonce: string): Record<str
 const HEAD = `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="noindex">`;
 
 /** How long the "Signing you in" screen shows before the form posts itself. Well inside the token's 60 s life. */
-export const HANDOFF_DELAY_MS = 100;
+const HANDOFF_DELAY_MS = 100;
 
 /** The hand-off screen's look: the hub's colours, a centred card with the logo and a spinner (still for people who ask for less motion). */
 const HANDOFF_CSS = `*{box-sizing:border-box}

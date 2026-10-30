@@ -48,7 +48,7 @@ const HANDLERS = ["approver", "dg"] as const; // people who are asked to decide 
 const OVERSIGHT = ["viewer", "approvals_admin"] as const; // see every request, read only (an admin can also edit masters)
 const ADMIN = ["approvals_admin"] as const;
 /** The heading of the Support Admin's group of set-up screens (the Approval System page shows them as cards). */
-export const SETUP_GROUP_LABEL = "Setup & Configuration";
+const SETUP_GROUP_LABEL = "Setup & Configuration";
 
 /**
  * Everyone sees the forms (marked `form`). Everything else, lists such as "Pending HR Request" included, is for people with full access

@@ -5,7 +5,6 @@ import { InstallPrompt } from "@/components/InstallPrompt";
 import { NavigationProgress } from "@/components/NavigationProgress";
 import { Toaster } from "@/components/Toast";
 import "./globals.css";
-import { cn } from "@/lib/utils";
 
 // Served from the hub itself (no request to Google), preloaded, and shown in a fallback font sized to match until it arrives, so the text
 // is readable at once and does not jump when it swaps.
@@ -23,7 +22,7 @@ export const viewport: Viewport = { themeColor: "#2a6b7c" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={cn("font-sans", geist.variable)}>
+    <html lang="en" className={`font-sans ${geist.variable}`}>
       <head>
         {/* The browser's install offer can come before the page has loaded its scripts: keep it so the Download buttons can use it. */}
         <script dangerouslySetInnerHTML={{ __html: `window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.__mcciaInstall=e;window.dispatchEvent(new Event("mccia-install-ready"));});` }} />
