@@ -207,6 +207,32 @@ export async function countRequests(user: ApprovalsUser, filters: ListFilter[]):
   return filters.map((_, i) => Number(row?.[`n${i}`] ?? 0));
 }
 
+export type DecisionRow = { id: string; requestNo: string | null; type: AprRequestType; name: string; action: "approved" | "rejected"; actedAt: Date | null };
+
+/**
+ * The requests this person approved or rejected (the sidebar's "My Approvals"), newest decision first, one row per request with their own
+ * latest decision on it. Filtered as `decidedByMe`, so the sidebar's count of that filter always matches.
+ */
+export async function listMyDecisions(user: ApprovalsUser, page: number, pageSize: number): Promise<{ rows: DecisionRow[]; total: number }> {
+  const where = conditions(user, { decidedByMe: true });
+  const latest = sql`from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id} and s.status in ('approved', 'rejected') order by s.step_no desc limit 1`;
+  const actedAt = sql<Date | null>`(select s.decided_at ${latest})`.mapWith(aprRequestSteps.decidedAt);
+  const [rows, [{ n: total }]] = await Promise.all([
+    db
+      .select({
+        id: aprRequests.id, requestNo: aprRequests.requestNo, type: aprRequests.type, name: aprRequests.requesterName,
+        action: sql<"approved" | "rejected">`(select s.status ${latest})`, actedAt,
+      })
+      .from(aprRequests)
+      .where(where)
+      .orderBy(sql`${actedAt} desc nulls last`, desc(aprRequests.id))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    db.select({ n: sql<number>`count(*)::int` }).from(aprRequests).where(where),
+  ]);
+  return { rows, total };
+}
+
 /**
  * The places an approver works under Approval System, with how many requests wait for them in each: HR for the HR Admin, Expenditure for the
  * Expense Admin (from their role in the hub); people who oversee everything (viewers, the Approvals admin) get both. A person who approves

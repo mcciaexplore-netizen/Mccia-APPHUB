@@ -18,6 +18,11 @@ export const ALL_ROLES: readonly ApprovalsRole[] = ["requester", "approver", "dg
 export const FULL_ACCESS_ROLES: readonly ApprovalsRole[] = ["approver", "dg", "viewer", "approvals_admin"];
 export const hasFullAccess = (roles: readonly ApprovalsRole[]) => roles.some((r) => FULL_ACCESS_ROLES.includes(r));
 /**
+ * Who has "My Pending Approvals" and "My Approvals" in the sidebar: the people who decide or administer (HR Admin and Expense Admin as
+ * approver, Super Admin as dg, Support Admin as approvals_admin). A plain requester does not, and the two pages are a 404 for them.
+ */
+export const MY_APPROVALS_ROLES: readonly ApprovalsRole[] = ["approver", "dg", "approvals_admin"];
+/**
  * The Director General and nothing else: they see the forms and their Recommended Queue (and what they decided or rejected), not the
  * all-requests lists, timelines or reports. Anyone who also reviews first (approver), oversees (viewer) or administers is not "only" the DG.
  */
