@@ -252,12 +252,12 @@ export const reviewItemsFor = cache(async (user: ApprovalsUser): Promise<ReviewI
   return REVIEW_KEYS.filter((k) => oversees || named.has(k) || count(k) > 0).map((key) => ({ key, waiting: count(key) }));
 });
 
-/** How many requests are waiting for this person; for the badge on the inbox link. */
-export async function waitingCount(user: ApprovalsUser): Promise<number> {
+/** How many requests are waiting for this person (all places together); for the count on the Approval System's card on the home page. */
+export async function waitingCount(userId: string): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(aprRequests)
-    .where(and(eq(aprRequests.status, "pending"), eq(aprRequests.currentApproverUserId, user.id)));
+    .where(and(eq(aprRequests.status, "pending"), eq(aprRequests.currentApproverUserId, userId)));
   return row?.n ?? 0;
 }
 

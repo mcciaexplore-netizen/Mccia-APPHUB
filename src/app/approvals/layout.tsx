@@ -24,26 +24,26 @@ export const metadata = { title: "Approval System · MCCIA App Hub" };
  * the same people get My Pending Approvals (a red badge while anything waits) and My Approvals.
  */
 async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
-  const items = await reviewItemsFor(user);
   const dg = hasRole(user, "dg");
   const decides = hasAnyRole(user, ["approver", "dg"]);
-  const keys: ReviewKey[] = dg || hasRole(user, "approvals_admin") ? [...REVIEW_KEYS] : REVIEW_KEYS.filter((k) => items.some((i) => i.key === k));
   const approvedHref = decides ? "/approvals/decided/approved" : "/approvals/my/approved";
   // How many requests each line opens: counted with the same filter as the list itself, so the number always matches the page. Every
-  // line's count comes from one query; a line with no list counts 0.
+  // line's count comes from one query; a line with no list counts 0. Both places (HR and Expenditure) are counted while the places this
+  // person has are worked out, so the two do not wait for each other; the counts of a place they do not have are simply not shown.
   const filterOf = (s: ListScreen): ListFilter =>
     ({ types: s.types, statuses: s.statuses, mine: s.mine, waitingForMe: s.waitingForMe, approvedByMe: s.approvedByMe, rejectedByMe: s.rejectedByMe });
-  const screens = [...keys.flatMap((k) => REVIEW_TABS.map((t) => reviewScreen(k, t, decides))), screenFor(approvedHref.replace("/approvals/", "").split("/"))];
+  const screens = [...REVIEW_KEYS.flatMap((k) => REVIEW_TABS.map((t) => reviewScreen(k, t, decides))), screenFor(approvedHref.replace("/approvals/", "").split("/"))];
   // My Pending Approvals for everyone (their own requests still pending or needing correction), and for people who decide the second
   // My Pending Approvals (waiting for their decision) and My Approvals: counted in
   // the same query, with the filters their pages list by.
   const mineToo = hasAnyRole(user, MY_APPROVALS_ROLES);
   const mineFilters: ListFilter[] = [{ mine: true, statuses: ["pending", "returned"] },...(mineToo ? [{ statuses: ["pending"], waitingForMe: true }, { decidedByMe: true }] satisfies ListFilter[] : [])];
-  const got = await countRequests(user, [...screens.flatMap((s) => (s ? [filterOf(s)] : [])), ...mineFilters]);
+  const [items, got] = await Promise.all([reviewItemsFor(user), countRequests(user, [...screens.flatMap((s) => (s ? [filterOf(s)] : [])), ...mineFilters])]);
+  const keys: ReviewKey[] = dg || hasRole(user, "approvals_admin") ? [...REVIEW_KEYS] : REVIEW_KEYS.filter((k) => items.some((i) => i.key === k));
   let next = 0;
   const counts = screens.map((s) => (s ? got[next++] : 0));
   const [ownOpen = 0, myPending = 0, myDecided = 0] = got.slice(next);
-  const placeCounts = keys.map((_, i) => counts.slice(i * REVIEW_TABS.length, (i + 1) * REVIEW_TABS.length));
+  const placeCounts = keys.map((k) => { const i = REVIEW_KEYS.indexOf(k); return counts.slice(i * REVIEW_TABS.length, (i + 1) * REVIEW_TABS.length); });
   const approvedCount = counts[counts.length - 1];
   const places: SideLink[] = keys.map((k, i) => {
     const counts = placeCounts[i];

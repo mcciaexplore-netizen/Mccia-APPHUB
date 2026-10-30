@@ -41,11 +41,14 @@ async function inventoryStanding(userId: string): Promise<{ access: boolean; adm
 export const resolveAccess = cache(async (): Promise<Access> => {
   const host = await hostCurrentUser();
   if (!host) return { status: "anonymous" };
-  const standing = host.role === "head_admin" ? { access: true, admin: true, staff: false } : await inventoryStanding(host.id);
+  // Their standing and their branch's name together: neither needs the other, and every Inventory page waits for both.
+  const [standing, [branch]] = await Promise.all([
+    host.role === "head_admin" ? Promise.resolve({ access: true, admin: true, staff: false }) : inventoryStanding(host.id),
+    host.branchId ? db.select({ name: branches.name }).from(branches).where(eq(branches.id, host.branchId)) : Promise.resolve([]),
+  ]);
   if (!standing.access) return { status: "no_access" };
   const role = inventoryRoleFor(host.role, standing.admin, standing.staff);
   const roles: InventoryRole[] = role === "requester" ? ["requester"] : ["requester", role];
-  const [branch] = host.branchId ? await db.select({ name: branches.name }).from(branches).where(eq(branches.id, host.branchId)) : [];
   return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles, hubRole: host.role, branchId: branch ? host.branchId : null, branchName: branch?.name ?? null } };
 });
 

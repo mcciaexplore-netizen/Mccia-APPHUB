@@ -2,8 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireUser } from "@/lib/permissions";
 import { cardFacts, getAccessibleApps } from "@/lib/access";
-import { resolveAccess } from "@/lib/approvals/host-adapter";
-import { reviewItemsFor } from "@/lib/approvals/request-queries";
+import { waitingCount } from "@/lib/approvals/request-queries";
 import { approvalsEnabled } from "@/lib/approvals/flags";
 import { canAdminister, isSuper } from "@/lib/rbac";
 import { HomeClient, type HomeApp, type HubCard } from "./HomeClient";
@@ -24,11 +23,12 @@ function ago(d: Date, now = Date.now()): string {
  */
 export default async function HomePage() {
   const user = await requireUser();
-  const apps = await getAccessibleApps(user);
-  const [facts, waiting] = await Promise.all([
-    cardFacts(user.id, apps.map((a) => a.id), canAdminister(user)),
+  // All at once: none of these needs another's answer, so the page waits for the database once, not three times in a row.
+  const [apps, facts, waiting] = await Promise.all([
+    getAccessibleApps(user),
+    cardFacts(user.id, canAdminister(user)),
     // What waits for this person in the Approval System, for the red count on its card.
-    approvalsEnabled() ? resolveAccess().then(async (a) => (a.status === "ok" ? (await reviewItemsFor(a.user)).reduce((n, r) => n + r.waiting, 0) : 0)) : Promise.resolve(0),
+    approvalsEnabled() ? waitingCount(user.id) : Promise.resolve(0),
   ]);
   const cards: HubCard[] = [
     ...(approvalsEnabled() ? [{ id: "hub-approvals", name: "Approval System", description: "Raise HR and expense requests, and review the ones waiting for you.", icon: "ClipboardList", href: "/approvals", waiting }] : []),

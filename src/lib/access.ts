@@ -1,6 +1,6 @@
 import "server-only";
 import { cache } from "react";
-import { and, asc, count, eq, inArray, max } from "drizzle-orm";
+import { and, asc, count, eq, max } from "drizzle-orm";
 import { db } from "@/db";
 import { activityLog, appAdmins, appStaff, apps, departments, userAppAccess, type User } from "@/db/schema";
 import { hideApprovalsCard } from "@/lib/approvals/flags";
@@ -77,16 +77,17 @@ export async function getSsoTarget(user: Pick<User, "id" | "role">, slug: string
 
 /**
  * What the home page's cards say about each application, from real records: its category's name, when this person last opened it, and,
- * for those who manage access, how many people have been given it.
+ * for those who manage access, how many people have been given it. For every application, not only the ones this person may open, so it
+ * can run at the same time as getAccessibleApps instead of after it (each wait for the database costs a round trip); the page only looks
+ * up the applications it shows.
  */
-export async function cardFacts(userId: string, appIds: string[], withPeople: boolean) {
-  if (appIds.length === 0) return { category: new Map<string, string>(), lastOpened: new Map<string, Date>(), people: new Map<string, number>() };
+export async function cardFacts(userId: string, withPeople: boolean) {
   const [cats, opens, people] = await Promise.all([
-    db.select({ id: apps.id, name: departments.name }).from(apps).innerJoin(departments, eq(departments.id, apps.departmentId)).where(inArray(apps.id, appIds)),
+    db.select({ id: apps.id, name: departments.name }).from(apps).innerJoin(departments, eq(departments.id, apps.departmentId)).where(eq(apps.isActive, true)),
     db.select({ appId: activityLog.appId, at: max(activityLog.openedAt) }).from(activityLog)
-      .where(and(eq(activityLog.userId, userId), eq(activityLog.action, "launch"), inArray(activityLog.appId, appIds))).groupBy(activityLog.appId),
+      .where(and(eq(activityLog.userId, userId), eq(activityLog.action, "launch"))).groupBy(activityLog.appId),
     withPeople
-      ? db.select({ appId: userAppAccess.appId, n: count() }).from(userAppAccess).where(inArray(userAppAccess.appId, appIds)).groupBy(userAppAccess.appId)
+      ? db.select({ appId: userAppAccess.appId, n: count() }).from(userAppAccess).groupBy(userAppAccess.appId)
       : Promise.resolve([] as { appId: string; n: number }[]),
   ]);
   return {

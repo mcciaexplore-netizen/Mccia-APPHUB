@@ -5,7 +5,10 @@ import { NO_BRANCH_MESSAGE } from "@/lib/inventory/branches";
 import { dashboardStats, lowStockItems, recentMovements } from "@/lib/inventory/catalog";
 import { formatCount, formatRupees } from "@/lib/inventory/format";
 import { requirePage } from "@/lib/inventory/guard";
+import { Suspense } from "react";
+import { StatSkeleton, TableSkeleton } from "@/components/approvals/Skeletons";
 import { canManagePeople, hasAnyRole, hasRole, listBranches } from "@/lib/inventory/host-adapter";
+import { idSchema } from "@/lib/inventory/validation";
 import { formatIST } from "@/lib/format";
 
 /**
@@ -97,17 +100,29 @@ export default async function InventoryDashboard({ searchParams }: { searchParam
     );
   }
 
-  // Inventory admins and Staff: every branch together, or the one chosen.
-  const branchList = await listBranches();
+  // Inventory admins and Staff: every branch together, or the one chosen. The heading and the cards show at once; the figures stream in.
   const raw = (await searchParams).branch;
-  const branch = branchList.find((b) => b.id === (Array.isArray(raw) ? raw[0] : raw));
-  const withBranch = (href: string) => (branch ? `${href}${href.includes("?") ? "&" : "?"}branch=${branch.id}` : href);
-  const [s, low, moves] = await Promise.all([dashboardStats(branch?.id), lowStockItems(8, branch?.id), recentMovements(8, branch?.id)]);
+  const wanted = idSchema.safeParse(Array.isArray(raw) ? raw[0] : raw);
   return (
     <div className="page-enter space-y-6">
       {heading}
       {actions}
+      <Suspense fallback={<div role="status" aria-label="Loading figures" className="space-y-6"><StatSkeleton /><TableSkeleton rows={4} /></div>}>
+        <BranchFigures branchId={wanted.success ? wanted.data : undefined} />
+      </Suspense>
+    </div>
+  );
+}
 
+/** The figures, the items running low and the latest movements, for every branch or one. The branch list loads alongside them. */
+async function BranchFigures({ branchId }: { branchId?: string }) {
+  const [branchList, s, low, moves] = await Promise.all([listBranches(), dashboardStats(branchId), lowStockItems(8, branchId), recentMovements(8, branchId)]);
+  const branch = branchList.find((b) => b.id === branchId);
+  // An address naming a branch that does not exist shows every branch, as before.
+  if (branchId && !branch) return <BranchFigures />;
+  const withBranch = (href: string) => (branch ? `${href}${href.includes("?") ? "&" : "?"}branch=${branch.id}` : href);
+  return (
+    <>
       <form method="get" action="/inventory" className="flex flex-wrap items-end gap-3">
         <label className="block"><span className="label-xs mb-1.5 block">Branch</span>
           <select name="branch" className="input !w-auto" defaultValue={branch?.id ?? ""}>
@@ -161,6 +176,6 @@ export default async function InventoryDashboard({ searchParams }: { searchParam
           )}
         </section>
       </div>
-    </div>
+    </>
   );
 }
