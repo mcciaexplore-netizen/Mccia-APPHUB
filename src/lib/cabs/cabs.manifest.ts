@@ -33,8 +33,8 @@ export function cabRolesFor(input: { hubRole: string; userAccess: boolean; admin
   return roles;
 }
 
-/** A line of a section's menu. `children` sit under it (Driver Activity under Drivers). `live`: shows a green dot while any ride is in progress. */
-export type CabNavItem = { label: string; href: string; children?: CabNavItem[]; live?: boolean };
+/** A line of a section's menu (every line at the same level). `live`: shows a green dot while any ride is in progress. */
+export type CabNavItem = { label: string; href: string; live?: boolean };
 
 export const CAB_NAV: Record<CabSection, { title: string; items: CabNavItem[] }> = {
   staff: { title: "MCCIA Cabs", items: [
@@ -50,20 +50,19 @@ export const CAB_NAV: Record<CabSection, { title: string; items: CabNavItem[] }>
     { label: "Dashboard", href: "/cabs/admin" },
     { label: "Live Trips", href: "/cabs/admin/live", live: true },
     { label: "All Rides", href: "/cabs/admin/rides" },
-    { label: "Drivers", href: "/cabs/admin/drivers", children: [{ label: "Driver Activity", href: "/cabs/admin/drivers/activity" }] },
+    { label: "Drivers", href: "/cabs/admin/drivers" },
+    { label: "Driver Activity", href: "/cabs/admin/drivers/activity" },
     { label: "Vehicles", href: "/cabs/admin/vehicles" },
     { label: "Maintenance", href: "/cabs/admin/maintenance" },
     { label: "User Activity", href: "/cabs/admin/activity" },
-    { label: "Payments & Invoices", href: "/cabs/admin/payments", children: [{ label: "Invoices", href: "/cabs/admin/payments/invoices" }] },
+    { label: "Payments", href: "/cabs/admin/payments" },
+    { label: "Invoices", href: "/cabs/admin/payments/invoices" },
     { label: "Audit Log", href: "/cabs/admin/audit" },
   ] },
 };
 
 /** A section's menu, for someone holding one of its roles; nothing for anyone else. */
 export const navFor = (section: CabSection, roles: readonly CabRole[]): CabNavItem[] => (SECTION_ROLES[section].some((r) => roles.includes(r)) ? CAB_NAV[section].items : []);
-
-/** Every line of a menu, nested ones included, in order. */
-export const flatNav = (items: CabNavItem[]): CabNavItem[] => items.flatMap((i) => [i, ...(i.children ? flatNav(i.children) : [])]);
 
 export const MAINTENANCE_TYPES = ["service", "repair", "inspection", "cleaning", "other"] as const;
 export type MaintenanceType = (typeof MAINTENANCE_TYPES)[number];

@@ -30,7 +30,7 @@ import {
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import { INVENTORY_URL_PATTERN, inventoryRoleFor, navFor } from "../src/lib/inventory/inventory.manifest";
-import { CABS_ADMIN_URL_PATTERN, CABS_DRIVER_URL_PATTERN, CABS_USER_URL_PATTERN, CAB_NAV, cabRolesFor, flatNav, navFor as cabNavFor } from "../src/lib/cabs/cabs.manifest";
+import { CABS_ADMIN_URL_PATTERN, CABS_DRIVER_URL_PATTERN, CABS_USER_URL_PATTERN, CAB_NAV, cabRolesFor, navFor as cabNavFor } from "../src/lib/cabs/cabs.manifest";
 import { assignInput, costInput, driverInput, invoiceInput, istLocalToDate, locationInput, maintenanceInput, otpInput, rideInput, rupeesToPaise as cabRupees, scheduleProblem, vehicleInput } from "../src/lib/cabs/validation";
 import { OTP_MAX_ATTEMPTS, mapsLink, otpExpiry } from "../src/lib/cabs/otp-rules";
 import { issueInput, poInput, receiveInput, ticketInput, ticketUpdate, requestDecision, requestInput, returnInput, rupeesToPaise, transferInput, vendorInput } from "../src/lib/inventory/validation";
@@ -547,14 +547,13 @@ eq("cabs roles: MCCIA Cabs access makes a user; a cab_drivers row a driver; an A
 eq("cabs access: each section is the application whose URL is exactly its path", ["/cabs", "/cabs/", "/cabs/driver", "/cabs/admin", "/cabs/book", "/cabs-old", "https://cabs.example.com/cabs"].map((u) => [
   new RegExp(CABS_USER_URL_PATTERN).test(u), new RegExp(CABS_DRIVER_URL_PATTERN).test(u), new RegExp(CABS_ADMIN_URL_PATTERN).test(u)]),
   [[true, false, false], [true, false, false], [false, true, false], [false, false, true], [false, false, false], [false, false, false], [false, false, false]]);
-eq("cabs menus: 3 staff pages, 2 driver pages, 9 admin lines (11 with Driver Activity and Invoices nested), each shown only to its roles (Cabs admins see the driver pages too)", [
+eq("cabs menus: 3 staff pages, 2 driver pages, 11 admin pages in one flat list, each shown only to its roles (Cabs admins see the driver pages too)", [
   cabNavFor("staff", ["cab_user"]).map((i) => i.label), cabNavFor("driver", ["cab_driver"]).map((i) => i.label), cabNavFor("admin", ["cab_admin"]).map((i) => i.label),
   cabNavFor("admin", ["cab_user", "cab_driver"]).length, cabNavFor("driver", ["cab_user", "cab_admin"]).length, cabNavFor("driver", ["cab_user"]).length, [CAB_NAV.staff.title, CAB_NAV.driver.title, CAB_NAV.admin.title],
-], [["Dashboard", "Book a Ride", "My Rides"], ["Dashboard", "My Rides"], ["Dashboard", "Live Trips", "All Rides", "Drivers", "Vehicles", "Maintenance", "User Activity", "Payments & Invoices", "Audit Log"], 0, 2, 0, ["MCCIA Cabs", "Cabs Driver", "Cabs Admin"]]);
-eq("cabs admin menu: Driver Activity sits under Drivers and Invoices under Payments; Live Trips carries the live dot", [
-  flatNav(CAB_NAV.admin.items).length, CAB_NAV.admin.items.find((i) => i.label === "Drivers")?.children?.map((c) => c.href),
-  CAB_NAV.admin.items.find((i) => i.label === "Payments & Invoices")?.children?.map((c) => c.href), CAB_NAV.admin.items.filter((i) => i.live).map((i) => i.label),
-], [11, ["/cabs/admin/drivers/activity"], ["/cabs/admin/payments/invoices"], ["Live Trips"]]);
+], [["Dashboard", "Book a Ride", "My Rides"], ["Dashboard", "My Rides"], ["Dashboard", "Live Trips", "All Rides", "Drivers", "Driver Activity", "Vehicles", "Maintenance", "User Activity", "Payments", "Invoices", "Audit Log"], 0, 2, 0, ["MCCIA Cabs", "Cabs Driver", "Cabs Admin"]]);
+eq("cabs admin menu: no nested lines; Live Trips carries the live dot", [
+  CAB_NAV.admin.items.every((i) => !("children" in i)), CAB_NAV.admin.items.filter((i) => i.live).map((i) => i.label),
+], [true, ["Live Trips"]]);
 {
   const now = Date.parse("2026-11-02T04:00:00Z"); // 09:30 in India
   eq("cabs times: a datetime-local value is India time; a full ISO time keeps its own offset; junk is refused", [

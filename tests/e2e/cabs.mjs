@@ -165,7 +165,7 @@ try {
   check("API: signed out is refused", anon.status === 401 || anon.status === 307, anon.status);
   await go(A.page, "/cabs/admin");
   check("admin: Cabs Admin opens with its menu", (await A.page.locator('nav[aria-label="Cabs Admin"] a').allInnerTexts()).map((t) => t.trim()).join("|")
-    === "App Hub|Dashboard|Live Trips|All Rides|Drivers|Driver Activity|Vehicles|Maintenance|User Activity|Payments & Invoices|Invoices|Audit Log");
+    === "App Hub|Dashboard|Live Trips|All Rides|Drivers|Driver Activity|Vehicles|Maintenance|User Activity|Payments|Invoices|Audit Log");
   await go(D.page, "/cabs/driver"); check("a driver not yet added on the Drivers page cannot open Cabs Driver", new URL(D.page.url()).pathname === "/");
 
   section("vehicles");
@@ -374,8 +374,8 @@ try {
   section("phase 3: maintenance");
   await go(A.page, "/cabs/admin");
   check("with no ride in progress, no green dot", (await A.page.locator("[data-live-dot]").count()) === 0);
-  check("the admin menu: Driver Activity under Drivers, Invoices under Payments", (await A.page.locator('nav[aria-label="Cabs Admin"] a').allInnerTexts()).map((t) => t.trim()).join("|")
-    === "App Hub|Dashboard|Live Trips|All Rides|Drivers|Driver Activity|Vehicles|Maintenance|User Activity|Payments & Invoices|Invoices|Audit Log");
+  check("the admin menu: one flat list", (await A.page.locator('nav[aria-label="Cabs Admin"] a').allInnerTexts()).map((t) => t.trim()).join("|")
+    === "App Hub|Dashboard|Live Trips|All Rides|Drivers|Driver Activity|Vehicles|Maintenance|User Activity|Payments|Invoices|Audit Log");
   const ist = (days) => new Date(Date.now() + days * 86_400_000 + 5.5 * 3600_000).toISOString().slice(0, 10);
   await go(A.page, "/cabs/admin/maintenance");
   await A.page.locator("[data-add-maintenance]").click();
