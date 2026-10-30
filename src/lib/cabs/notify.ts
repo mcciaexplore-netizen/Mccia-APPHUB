@@ -44,8 +44,14 @@ export const rideReceived = async (ride: RideFacts & { passengers?: number }, re
   ]);
 };
 
-/** A driver, as cab_drivers knows them: their bell goes to the hub account with their email, if any. */
-export const driverPerson = async (email: string): Promise<Person> => ({ userId: await hubUserIdByEmail(email), email });
+/**
+ * A driver, as cab_drivers knows them: their bell goes to the hub account with their email, if any, and the email to that address. A driver
+ * with no email gets neither (said in the server log).
+ */
+export const driverPerson = async (email: string | null): Promise<Person> => {
+  if (!email) { console.info("[cabs] Driver has no email, skipping email notification"); return { userId: null, email: "" }; }
+  return { userId: await hubUserIdByEmail(email), email };
+};
 
 export const rideAssigned = (ride: RideFacts, requester: Person, driver: Person & { name: string }, vehicle: { plate: string; model: string }) => send(ride, [
   { to: requester, event: "assigned", title: "Your ride is confirmed", body: `Driver: ${driver.name}, Vehicle: ${vehicle.plate} (${vehicle.model}). ${route(ride)}, ${when(ride)}. Your OTP for the driver is on My Rides.`, link: "/cabs/rides" },

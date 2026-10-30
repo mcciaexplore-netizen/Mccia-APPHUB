@@ -31,14 +31,15 @@ export const cabVehicles = pgTable("cab_vehicles", {
 });
 
 /**
- * Drivers, added on Cabs Admin → Drivers: a name, an email (kept lower case, one driver per email) and a phone number. A driver need not
- * have a hub account. Someone signed in to the hub whose email is a driver's opens Cabs Driver; that is the only link between the two.
+ * Drivers, added on Cabs Admin → Drivers: a name and a phone number (one driver per phone), and optionally an email (kept lower case, one
+ * driver per email). A driver need not have a hub account. Someone signed in to the hub whose email is a driver's opens Cabs Driver; that
+ * is the only link between the two, so a driver without an email cannot use the driver app (an admin starts and completes their rides).
  */
 export const cabDrivers = pgTable("cab_drivers", {
   id: id(),
   name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  phone: text("phone").notNull(),
+  email: text("email").unique(),
+  phone: text("phone").notNull().unique(),
   vehicleId: uuid("vehicle_id").references(() => cabVehicles.id, { onDelete: "set null" }),
   isAvailable: boolean("is_available").notNull().default(true),
   createdAt: createdAt(),

@@ -577,11 +577,12 @@ eq("cabs admin menu: no nested lines; Live Trips carries the live dot", [
     vehicleInput.parse({ numberPlate: "  mh 12   ab 1234 ", model: "Innova", capacity: "7" }), okParse(vehicleInput, { numberPlate: "MH12AB1234", model: "Innova", capacity: 0 }),
     okParse(assignInput, { driverId: v, vehicleId: v }), okParse(assignInput, { driverId: v }),
   ], [{ numberPlate: "MH 12 AB 1234", model: "Innova", capacity: 7 }, false, true, false]);
-  eq("cabs forms: a driver is a name, an email (kept lower case) and a phone of 10 to 15 digits (kept as digits); the vehicle is optional", [
+  eq("cabs forms: a driver is a name and a phone of 10 to 15 digits (kept as digits); an email is optional (kept lower case); the vehicle is optional", [
     driverInput.parse({ name: " Ravi Patil ", email: " Ravi.Patil@MCCIA.org ", phone: "+91 98765-43210", vehicleId: "" }),
     okParse(driverInput, { name: "Ravi", email: "ravi@x.org", phone: "12345" }), okParse(driverInput, { name: "Ravi", email: "not-an-email", phone: "9876543210" }),
     okParse(driverInput, { name: "", email: "ravi@x.org", phone: "9876543210" }), okParse(driverInput, { userId: v, vehicleId: v }),
-  ], [{ name: "Ravi Patil", email: "ravi.patil@mccia.org", phone: "+919876543210", vehicleId: null }, false, false, false, false]);
+    driverInput.parse({ name: "Suresh", phone: "98220 00001" }).email, driverInput.parse({ name: "Suresh", phone: "9822000001", email: "" }).email, okParse(driverInput, { name: "Suresh", email: "s@x.org" }),
+  ], [{ name: "Ravi Patil", email: "ravi.patil@mccia.org", phone: "+919876543210", vehicleId: null }, false, false, false, false, null, null, false]);
 }
 
 {

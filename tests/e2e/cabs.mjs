@@ -57,7 +57,7 @@ const removeTestData = async () => {
   for (const id of rides) await sql`delete from cab_audit_log where ride_id = ${id}`;
   await sql`delete from cab_invoices where branch like 'ZZC%'`;
   await sql`delete from cab_rides where requested_by_email like 'zzc-%'`;
-  await sql`delete from cab_drivers where email like 'zzc-%'`;
+  await sql`delete from cab_drivers where email like 'zzc-%' or name like 'ZZC%'`;
   await sql`delete from cab_vehicles where number_plate like 'ZZC%'`;
   await sql`delete from access_audit where action like 'cabs.%' and target_label like 'ZZC%'`;
   await sql`delete from users where email like 'zzc-%'`;
@@ -69,7 +69,7 @@ const removeTestData = async () => {
 // Every cab_ row that is not this test's own, so the end can prove none of it changed.
 const snap = async () => JSON.stringify([
   await sql`select id, number_plate, model, capacity, is_active from cab_vehicles where number_plate not like 'ZZC%' order by id`,
-  await sql`select id, name, email, phone, vehicle_id, is_available from cab_drivers where email not like 'zzc-%' order by id`,
+  await sql`select id, name, email, phone, vehicle_id, is_available from cab_drivers where coalesce(email, '') not like 'zzc-%' and name not like 'ZZC%' order by id`,
   await sql`select id, status, driver_id, vehicle_id, updated_at from cab_rides where requested_by_email not like 'zzc-%' order by id`,
   await sql`select count(*)::int n from cab_audit_log`,
   await sql`select count(*)::int n from cab_driver_locations l join cab_drivers d on d.id = l.driver_id where d.email not like 'zzc-%'`,
@@ -206,7 +206,7 @@ try {
   const nohub = (await api(A.page, "/api/cabs/drivers", "POST", { name: "ZZC Outside Driver", email: "zzc-nohub@gmail.com", phone: "+91 98220 00002" })).body;
   await go(A.page, "/cabs/admin/drivers");
   check("a driver with no hub account can be added, and is marked as one who cannot open Cabs Driver", !!nohub?.id
-    && (await A.page.locator(`tr[data-driver="${nohub.id}"]`).innerText()).includes("No hub account") && !(await A.page.locator(`tr[data-driver="${dr1.id}"]`).innerText()).includes("No hub account"));
+    && (await A.page.locator(`tr[data-driver="${nohub.id}"] [data-no-app]`).count()) === 1 && (await A.page.locator(`tr[data-driver="${dr1.id}"] [data-no-app]`).count()) === 0);
   await go(D.page, "/cabs/driver");
   check("once added, the driver opens Cabs Driver", new URL(D.page.url()).pathname === "/cabs/driver" && await D.page.locator('nav[aria-label="Cabs Driver"]').isVisible());
 
@@ -599,6 +599,39 @@ try {
     check("GPS refused: \"Please allow location access in your browser settings\"", (await gps(1)) === "Please allow location access in your browser settings");
     check("GPS unavailable: \"Unable to get your location. Please try again.\"", (await gps(2)) === "Unable to get your location. Please try again.");
     check("GPS timed out: \"Location request timed out. Please try again.\"", (await gps(3)) === "Location request timed out. Please try again.");
+  }
+
+  section("a driver without an email (no driver app)");
+  {
+    await go(A.page, "/cabs/admin/drivers");
+    await A.page.getByRole("button", { name: "Add driver" }).click();
+    await A.page.fill("[role=dialog] input[name=name]", "ZZC Phone Driver");
+    await A.page.fill("[role=dialog] input[name=phone]", "98220 07777");
+    await A.page.locator("[role=dialog]").getByRole("button", { name: "Add driver" }).click();
+    const dr3 = await poll(async () => (await sql`select * from cab_drivers where name = 'ZZC Phone Driver'`)[0]);
+    check("a driver with only a name and a phone: added, with no email", await toast(A.page, "added as a driver") && dr3?.email === null && dr3.phone === "9822007777", JSON.stringify(dr3));
+    await go(A.page, "/cabs/admin/drivers");
+    check("the Drivers list shows name and phone, and marks a driver without the app", (await A.page.locator(`tr[data-driver="${dr3.id}"]`).innerText()).includes("9822007777")
+      && (await A.page.locator(`tr[data-driver="${dr3.id}"] [data-no-app]`).count()) === 1);
+    const samePhone = await api(A.page, "/api/cabs/drivers", "POST", { name: "ZZC Twin", phone: "+9822007777".replace("+", "") });
+    check("the same phone number twice is refused (409), naming who has it", samePhone.status === 409 && /ZZC Phone Driver already has the phone number/.test(samePhone.body?.error), JSON.stringify(samePhone));
+    const r8 = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Phone Pickup", dropoff: "ZZC Phone Drop", scheduledFor: istSlot(5, 11) })).body;
+    check("a ride can be assigned to them", (await api(A.page, `/api/cabs/rides/${r8.id}/assign`, "POST", { driverId: dr3.id, vehicleId: v1.id })).status === 200);
+    check("a staffer cannot start a ride for a driver, even as ?as=admin (403)", (await api(S.page, `/api/cabs/rides/${r8.id}/start?as=admin`, "POST")).status === 403);
+    await go(A.page, "/cabs/admin/rides");
+    await A.page.locator(`tr[data-ride="${r8.id}"]`).getByRole("button", { name: "Start" }).click();
+    await A.page.locator("[role=dialog]").getByRole("button", { name: "Start ride" }).click();
+    check("the admin starts it for the driver on All Rides", await toast(A.page, "Ride started") && (await poll(async () => (await ride(r8.id)).status === "in_progress")));
+    const doneBefore = (await notices(staffer)).filter((n) => n.title === "Your ride is complete").length;
+    await A.page.locator(`tr[data-ride="${r8.id}"]`).getByRole("button", { name: "Complete" }).click();
+    await A.page.locator("[role=dialog]").getByRole("button", { name: "Complete ride" }).click();
+    check("…and completes it; the rider is told", await toast(A.page, "Ride completed") && (await poll(async () => (await ride(r8.id)).status === "completed"))
+      && (await poll(async () => (await notices(staffer)).filter((n) => n.title === "Your ride is complete").length === doneBefore + 1)));
+    check("both are in the audit log as done by the admin", (await sql`select count(*)::int n from cab_audit_log where ride_id = ${r8.id} and action in ('ride_started', 'ride_completed') and details->>'byAdmin' = 'true'`)[0].n === 2);
+    if (process.env.E2E_SMTP_LOG) {
+      const all = (await import("node:fs")).readFileSync(process.env.E2E_SMTP_LOG, "utf8");
+      check("no email is attempted for a driver without one", !all.split("\n").filter(Boolean).map((l) => JSON.parse(l)).some((m) => m.subject === "New ride assigned to you" && !m.to.some((t) => t.startsWith("zzc-"))));
+    }
   }
 
   section("cancelling");

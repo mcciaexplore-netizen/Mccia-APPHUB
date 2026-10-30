@@ -144,7 +144,29 @@ export async function assignRide(id: string, input: { driverId: string; vehicleI
   const ride = { id, pickup: String(row.pickup), dropoff: String(row.dropoff), scheduledFor: new Date(row.scheduled_for as string) };
   await writeCabAudit(actor, "ride_assigned", { rideId: id, subject: subject(ride), details: { driver: row.driver_name, vehicle: row.number_plate } });
   await rideAssigned(ride, { userId: String(row.requested_by_id), email: String(row.requested_by_email) },
-    { ...(await driverPerson(String(row.driver_email))), name: String(row.driver_name) }, { plate: String(row.number_plate), model: String(row.model) });
+    { ...(await driverPerson((row.driver_email as string | null) ?? null)), name: String(row.driver_name) }, { plate: String(row.number_plate), model: String(row.model) });
+}
+
+/**
+ * A Cabs admin starts a ride for its driver (one without the driver app, who cannot enter the rider's OTP): assigned → in progress. The
+ * admin is trusted to have checked the pickup, so no OTP is asked for.
+ */
+export async function adminStartRide(id: string, admin: Actor): Promise<void> {
+  const [row] = rows<{ pickup: string; dropoff: string }>(await db.execute(sql`
+    update cab_rides set status = 'in_progress', started_at = now(), updated_at = now() where id = ${id} and status = 'assigned' returning pickup, dropoff`));
+  if (!row) return whyNot(id, "start");
+  await writeCabAudit(admin, "ride_started", { rideId: id, subject: subject(row), details: { byAdmin: true } });
+}
+
+/** A Cabs admin completes a ride for its driver: in progress → completed, and the rider is told. */
+export async function adminCompleteRide(id: string, admin: Actor): Promise<void> {
+  const [row] = rows<Record<string, unknown>>(await db.execute(sql`
+    update cab_rides set status = 'completed', completed_at = now(), updated_at = now() where id = ${id} and status = 'in_progress'
+    returning pickup, dropoff, scheduled_for, requested_by_id, requested_by_email`));
+  if (!row) return whyNot(id, "complete");
+  const ride = { id, pickup: String(row.pickup), dropoff: String(row.dropoff), scheduledFor: new Date(row.scheduled_for as string) };
+  await writeCabAudit(admin, "ride_completed", { rideId: id, subject: subject(ride), details: { byAdmin: true } });
+  await rideCompleted(ride, { userId: String(row.requested_by_id), email: String(row.requested_by_email) });
 }
 
 /** The assigned driver sets off, for a ride with no OTP (assigned before OTPs existed). Only their own ride, only from assigned. */
@@ -187,7 +209,7 @@ export async function cancelRide(id: string, actor: Actor, opts: { asAdmin: bool
       update cab_rides set status = 'cancelled', cancelled_at = now(), cancelled_by_name = ${actor.name}, cancel_reason = ${opts.reason}, updated_at = now()
       where id = ${id} and ${who}
       returning pickup, dropoff, scheduled_for, requested_by_id, requested_by_email, driver_id)
-    select r.*, d.email as driver_email from r left join cab_drivers d on d.id = r.driver_id`));
+    select r.*, d.id as had_driver, d.email as driver_email from r left join cab_drivers d on d.id = r.driver_id`));
   if (!row) {
     const ride = await getRide(id);
     if (!ride || (!opts.asAdmin && ride.requestedById !== actor.id)) throw new CabsError("That ride no longer exists. Reload and try again.", 404);
@@ -197,7 +219,7 @@ export async function cancelRide(id: string, actor: Actor, opts: { asAdmin: bool
   const ride = { id, pickup: String(row.pickup), dropoff: String(row.dropoff), scheduledFor: new Date(row.scheduled_for as string) };
   await writeCabAudit(actor, "ride_cancelled", { rideId: id, subject: subject(ride), details: { reason: opts.reason, byAdmin: opts.asAdmin } });
   if (opts.asAdmin) {
-    const driver = row.driver_email ? await driverPerson(String(row.driver_email)) : null;
+    const driver = row.had_driver ? await driverPerson((row.driver_email as string | null) ?? null) : null;
     await rideCancelledByAdmin(ride, { userId: String(row.requested_by_id), email: String(row.requested_by_email) }, opts.reason!, driver);
   }
 }

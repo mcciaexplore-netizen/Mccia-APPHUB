@@ -131,9 +131,11 @@ const optionalId = z.union([idSchema, z.literal(""), z.null()]).optional().trans
 /** A phone number as people type it, kept as its digits (with a leading + when given). */
 export const normalisePhone = (v: string) => { const t = v.trim(); return (t.startsWith("+") ? "+" : "") + t.replace(/\D/g, ""); };
 
+/** A driver: a name and a phone; an email only if they will use the driver app (it must be the email they sign in to the hub with). */
 export const driverInput = z.object({
   name: text("name", 100),
-  email: z.string().trim().toLowerCase().email("Enter a valid email address.").max(254),
+  email: z.union([z.literal(""), z.null(), z.string().trim().toLowerCase().email("Enter a valid email address, or leave it empty.").max(254)]).optional()
+    .transform((v) => (v ? v : null)),
   phone: z.string().transform(normalisePhone).pipe(z.string().regex(/^\+?\d{10,15}$/, "Enter a phone number of 10 to 15 digits.")),
   vehicleId: optionalId,
 });

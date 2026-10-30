@@ -8,8 +8,9 @@ import type { driverInput } from "./validation";
 import type { z } from "zod";
 
 /**
- * Drivers, added on Cabs Admin → Drivers: a name, an email and a phone number, with no hub account needed. Someone signed in to the hub
- * with a driver's email opens Cabs Driver (see host-adapter.ts). Removing a driver ends that; their past rides keep the driver's name,
+ * Drivers, added on Cabs Admin → Drivers: a name and a phone number (one driver per phone), and optionally an email, with no hub account
+ * needed. Someone signed in to the hub with a driver's email opens Cabs Driver (see host-adapter.ts); a driver without one cannot, and a
+ * Cabs admin starts and completes their rides. Removing a driver ends that; their past rides keep the driver's name,
  * taken when each ride was assigned.
  */
 
@@ -17,7 +18,7 @@ type Actor = Pick<CabUser, "id" | "name">;
 const rows = <T,>(res: unknown) => (res as { rows: T[] }).rows;
 
 export type DriverRow = {
-  id: string; name: string; email: string; phone: string; isAvailable: boolean; vehicleId: string | null; vehiclePlate: string | null; vehicleModel: string | null;
+  id: string; name: string; email: string | null; phone: string; isAvailable: boolean; vehicleId: string | null; vehiclePlate: string | null; vehicleModel: string | null;
   vehicleActive: boolean | null; upcoming: number;
 };
 
@@ -28,7 +29,7 @@ export async function listDrivers(): Promise<DriverRow[]> {
     from cab_drivers d left join cab_vehicles v on v.id = d.vehicle_id
     order by d.name`));
   return r.map((x) => ({
-    id: String(x.id), name: String(x.name), email: String(x.email), phone: String(x.phone), isAvailable: !!x.is_available,
+    id: String(x.id), name: String(x.name), email: (x.email as string) ?? null, phone: String(x.phone), isAvailable: !!x.is_available,
     vehicleId: (x.vehicle_id as string) ?? null, vehiclePlate: (x.number_plate as string) ?? null, vehicleModel: (x.model as string) ?? null,
     vehicleActive: x.is_active == null ? null : !!x.is_active, upcoming: Number(x.upcoming),
   }));
@@ -41,14 +42,20 @@ async function vehicleProblem(vehicleId: string | null): Promise<string | null> 
   return !v ? "That vehicle no longer exists. Reload and try again." : !v.is_active ? "That vehicle is inactive. Choose an active one." : null;
 }
 
-/** Adds a driver, optionally with a vehicle (which must be active). One statement; an email that is already a driver's is refused. */
+/** Adds a driver, optionally with a vehicle (which must be active). One statement; a phone (or email) that is already a driver's is refused. */
 export async function createDriver(input: z.infer<typeof driverInput>, actor: Actor): Promise<{ id: string }> {
   const [row] = rows<{ id: string }>(await db.execute(sql`
     insert into cab_drivers (name, email, phone, vehicle_id)
     select ${input.name}, ${input.email}, ${input.phone}, ${input.vehicleId}::uuid
     where ${input.vehicleId}::uuid is null or exists (select 1 from cab_vehicles where id = ${input.vehicleId}::uuid and is_active)
-    on conflict (email) do nothing returning id`));
-  if (!row) throw new CabsError((await vehicleProblem(input.vehicleId)) ?? `${input.email} is already a driver.`, 409);
+    on conflict do nothing returning id`));
+  if (!row) {
+    const problem = await vehicleProblem(input.vehicleId);
+    if (problem) throw new CabsError(problem, 409);
+    const [taken] = rows<{ name: string; phone: string }>(await db.execute(sql`
+      select name, phone from cab_drivers where phone = ${input.phone} or (${input.email}::text is not null and email = ${input.email}) limit 1`));
+    throw new CabsError(taken?.phone === input.phone ? `${taken.name} already has the phone number ${input.phone}.` : `${input.email} is already a driver.`, 409);
+  }
   await writeCabAudit(actor, "driver_added", { subject: input.name, details: { email: input.email, phone: input.phone, vehicleId: input.vehicleId } });
   return row;
 }
@@ -78,7 +85,7 @@ export async function setOwnAvailability(driver: Pick<CabUser, "id" | "name" | "
   await setAvailability(driver.driverId, available, driver);
 }
 
-export type DriverProfile = { name: string; email: string; phone: string; isAvailable: boolean; vehiclePlate: string | null; vehicleModel: string | null; completed: number };
+export type DriverProfile = { name: string; email: string | null; phone: string; isAvailable: boolean; vehiclePlate: string | null; vehicleModel: string | null; completed: number };
 
 /** A driver's own details for their Profile tab: who they are, their vehicle, and how many rides they have completed. */
 export async function driverProfile(driverId: string): Promise<DriverProfile | null> {
@@ -86,13 +93,13 @@ export async function driverProfile(driverId: string): Promise<DriverProfile | n
     select d.name, d.email, d.phone, d.is_available, v.number_plate, v.model,
       (select count(*) from cab_rides r where r.driver_id = d.id and r.status = 'completed')::int as completed
     from cab_drivers d left join cab_vehicles v on v.id = d.vehicle_id where d.id = ${driverId}`));
-  return x ? { name: String(x.name), email: String(x.email), phone: String(x.phone), isAvailable: !!x.is_available, vehiclePlate: (x.number_plate as string) ?? null,
+  return x ? { name: String(x.name), email: (x.email as string) ?? null, phone: String(x.phone), isAvailable: !!x.is_available, vehiclePlate: (x.number_plate as string) ?? null,
     vehicleModel: (x.model as string) ?? null, completed: Number(x.completed) } : null;
 }
 
 /** Removes a driver, unless they have an assigned or running ride (one statement, so a ride cannot be assigned in between). */
 export async function removeDriver(id: string, actor: Actor): Promise<void> {
-  const [row] = rows<{ name: string; email: string }>(await db.execute(sql`
+  const [row] = rows<{ name: string; email: string | null }>(await db.execute(sql`
     delete from cab_drivers d where d.id = ${id} and not exists (select 1 from cab_rides r where r.driver_id = ${id} and r.status in ('assigned', 'in_progress'))
     returning d.name, d.email`));
   if (!row) {
