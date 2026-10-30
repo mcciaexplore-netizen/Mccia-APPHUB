@@ -1,5 +1,12 @@
 import type { NextConfig } from "next";
 
+// Cab Booking's map and address search read NEXT_PUBLIC_GEOAPIFY_API_KEY, which is fixed into the site when it is built. Say at build time
+// whether it was there: its length and last 4 characters, never the whole key.
+{
+  const key = (process.env.NEXT_PUBLIC_GEOAPIFY_API_KEY ?? "").trim();
+  console.log(key ? `[cabs] NEXT_PUBLIC_GEOAPIFY_API_KEY is set (${key.length} characters, ending …${key.slice(-4)})` : "[cabs] NEXT_PUBLIC_GEOAPIFY_API_KEY is NOT set: address suggestions will search OpenStreetMap on Enter, and maps use OpenStreetMap tiles");
+}
+
 /**
  * Content-Security-Policy, sent in REPORT-ONLY mode for now: the browser logs anything that breaks it in the console but blocks nothing.
  * Everything the hub loads comes from itself (the font is bundled at build time), except Geoapify for Cab Booking: its map tiles

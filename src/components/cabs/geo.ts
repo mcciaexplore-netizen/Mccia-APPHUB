@@ -17,10 +17,10 @@ export function gpsErrorMessage(code: number): string {
 
 /** Suggestions as the person types (Geoapify only): India, nearest Pune first. Throws when Geoapify cannot be used, so the caller falls back. */
 export async function geoapifySuggest(q: string, signal: AbortSignal): Promise<Found[]> {
-  if (!GEOAPIFY_KEY) throw new Error("no key");
+  if (!GEOAPIFY_KEY) throw new Error("NEXT_PUBLIC_GEOAPIFY_API_KEY was not set when this site was built");
   const p = new URLSearchParams({ text: q, apiKey: GEOAPIFY_KEY, filter: "countrycode:in", bias: "proximity:73.8567,18.5204", limit: "6", format: "geojson" });
   const res = await fetch(`https://api.geoapify.com/v1/geocode/autocomplete?${p}`, { signal });
-  if (!res.ok) throw new Error(`geoapify ${res.status}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}${res.status === 401 || res.status === 403 ? ": the key was refused (wrong key, or this site is not allowed for it in Geoapify)" : ""}`);
   const data = (await res.json()) as { features?: { properties: { formatted: string; lat: number; lon: number } }[] };
   return (data.features ?? []).map((f) => ({ text: f.properties.formatted, lat: f.properties.lat, lng: f.properties.lon }));
 }

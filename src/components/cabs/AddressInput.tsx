@@ -36,7 +36,11 @@ export function AddressInput({ name, label, value, onChange, placeholder, locate
         const found = await geoapifySuggest(q, ctl.signal);
         setItems(found); setOpen(true); setActive(-1);
       } catch (e) {
-        if ((e as Error).name !== "AbortError") setFallback(true); // Geoapify is down or refused the key: Nominatim from now on
+        if ((e as Error).name !== "AbortError") {
+          // Geoapify is down or refused the key: Nominatim (on Enter) from now on. Said in the console, with the reason but never the key.
+          console.warn(`[cabs] Geoapify address suggestions failed (${(e as Error).message}); searching OpenStreetMap on Enter instead.`);
+          setFallback(true);
+        }
       }
     }, 300);
     return () => { clearTimeout(t); ctl.abort(); };
