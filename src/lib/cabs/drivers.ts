@@ -1,0 +1,86 @@
+import "server-only";
+import { sql } from "drizzle-orm";
+import { db } from "@/db";
+import { writeCabAudit } from "./audit";
+import { CabsError } from "./errors";
+import type { CabUser } from "./host-adapter";
+import type { driverInput } from "./validation";
+import type { z } from "zod";
+
+/**
+ * Drivers, added on Cabs Admin → Drivers: a name, an email and a phone number, with no hub account needed. Someone signed in to the hub
+ * with a driver's email opens Cabs Driver (see host-adapter.ts). Removing a driver ends that; their past rides keep the driver's name,
+ * taken when each ride was assigned.
+ */
+
+type Actor = Pick<CabUser, "id" | "name">;
+const rows = <T,>(res: unknown) => (res as { rows: T[] }).rows;
+
+export type DriverRow = {
+  id: string; name: string; email: string; phone: string; isAvailable: boolean; vehicleId: string | null; vehiclePlate: string | null; vehicleModel: string | null;
+  vehicleActive: boolean | null; upcoming: number;
+};
+
+export async function listDrivers(): Promise<DriverRow[]> {
+  const r = rows<Record<string, unknown>>(await db.execute(sql`
+    select d.id, d.name, d.email, d.phone, d.is_available, d.vehicle_id, v.number_plate, v.model, v.is_active,
+      (select count(*) from cab_rides r where r.driver_id = d.id and r.status in ('assigned', 'in_progress'))::int as upcoming
+    from cab_drivers d left join cab_vehicles v on v.id = d.vehicle_id
+    order by d.name`));
+  return r.map((x) => ({
+    id: String(x.id), name: String(x.name), email: String(x.email), phone: String(x.phone), isAvailable: !!x.is_available,
+    vehicleId: (x.vehicle_id as string) ?? null, vehiclePlate: (x.number_plate as string) ?? null, vehicleModel: (x.model as string) ?? null,
+    vehicleActive: x.is_active == null ? null : !!x.is_active, upcoming: Number(x.upcoming),
+  }));
+}
+
+/** Why a vehicle cannot be given to a driver, after a statement that required it came back empty. */
+async function vehicleProblem(vehicleId: string | null): Promise<string | null> {
+  if (!vehicleId) return null;
+  const [v] = rows<{ is_active: boolean }>(await db.execute(sql`select is_active from cab_vehicles where id = ${vehicleId}`));
+  return !v ? "That vehicle no longer exists. Reload and try again." : !v.is_active ? "That vehicle is inactive. Choose an active one." : null;
+}
+
+/** Adds a driver, optionally with a vehicle (which must be active). One statement; an email that is already a driver's is refused. */
+export async function createDriver(input: z.infer<typeof driverInput>, actor: Actor): Promise<{ id: string }> {
+  const [row] = rows<{ id: string }>(await db.execute(sql`
+    insert into cab_drivers (name, email, phone, vehicle_id)
+    select ${input.name}, ${input.email}, ${input.phone}, ${input.vehicleId}::uuid
+    where ${input.vehicleId}::uuid is null or exists (select 1 from cab_vehicles where id = ${input.vehicleId}::uuid and is_active)
+    on conflict (email) do nothing returning id`));
+  if (!row) throw new CabsError((await vehicleProblem(input.vehicleId)) ?? `${input.email} is already a driver.`, 409);
+  await writeCabAudit(actor, "driver_added", { subject: input.name, details: { email: input.email, phone: input.phone, vehicleId: input.vehicleId } });
+  return row;
+}
+
+/** Gives a driver a vehicle (active only), or none. */
+export async function updateDriver(id: string, input: { vehicleId: string | null }, actor: Actor): Promise<void> {
+  const [row] = rows<{ name: string; number_plate: string | null }>(await db.execute(sql`
+    update cab_drivers d set vehicle_id = ${input.vehicleId}::uuid
+    where d.id = ${id} and (${input.vehicleId}::uuid is null or exists (select 1 from cab_vehicles where id = ${input.vehicleId}::uuid and is_active))
+    returning d.name, (select number_plate from cab_vehicles where id = ${input.vehicleId}::uuid) as number_plate`));
+  if (!row) {
+    const problem = await vehicleProblem(input.vehicleId);
+    throw new CabsError(problem ?? "That driver no longer exists. Reload and try again.", problem ? 409 : 404);
+  }
+  await writeCabAudit(actor, "driver_updated", { subject: row.name, details: { vehicle: row.number_plate ?? "none" } });
+}
+
+export async function setAvailability(id: string, available: boolean, actor: Actor): Promise<void> {
+  const [row] = rows<{ name: string }>(await db.execute(sql`update cab_drivers set is_available = ${available} where id = ${id} returning name`));
+  if (!row) throw new CabsError("That driver no longer exists. Reload and try again.", 404);
+  await writeCabAudit(actor, "driver_availability", { subject: row.name, details: { available } });
+}
+
+/** Removes a driver, unless they have an assigned or running ride (one statement, so a ride cannot be assigned in between). */
+export async function removeDriver(id: string, actor: Actor): Promise<void> {
+  const [row] = rows<{ name: string; email: string }>(await db.execute(sql`
+    delete from cab_drivers d where d.id = ${id} and not exists (select 1 from cab_rides r where r.driver_id = ${id} and r.status in ('assigned', 'in_progress'))
+    returning d.name, d.email`));
+  if (!row) {
+    const [d] = rows<{ id: string }>(await db.execute(sql`select id from cab_drivers where id = ${id}`));
+    if (!d) throw new CabsError("That driver no longer exists. Reload and try again.", 404);
+    throw new CabsError("This driver has assigned or running rides. Reassign or finish them first.", 409);
+  }
+  await writeCabAudit(actor, "driver_removed", { subject: row.name, details: { email: row.email } });
+}

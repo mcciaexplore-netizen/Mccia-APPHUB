@@ -1,0 +1,62 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { UserCheck, X } from "lucide-react";
+import { Modal } from "@/components/Modal";
+import { useToast } from "@/components/Toast";
+import { formatIST } from "@/lib/format";
+import { cabsApi } from "./api";
+import { AssignDialog, type DriverOption, type VehicleOption } from "./AssignDialog";
+import { StatusBadge, type RideView } from "./RideCard";
+
+/** Every ride, as a table: assign a pending one, cancel a pending or assigned one with a reason. The filters are a plain form (the page reads them). */
+export function AdminRidesView({ rides, drivers, vehicles, empty }: { rides: RideView[]; drivers: DriverOption[]; vehicles: VehicleOption[]; empty: string }) {
+  const router = useRouter();
+  const toast = useToast();
+  const [pending, start] = useTransition();
+  const [assigning, setAssigning] = useState<RideView | null>(null);
+  const [cancelling, setCancelling] = useState<RideView | null>(null);
+  const [reason, setReason] = useState("");
+  const run = (fn: () => Promise<unknown>, done: string, after: () => void) => start(async () => {
+    try { await fn(); toast.success(done); after(); router.refresh(); } catch (e) { toast.error((e as Error).message); }
+  });
+  return (
+    <>
+      <div className="table-wrap"><table>
+        <thead><tr><th>When</th><th>Route</th><th>Requested by</th><th>Driver / vehicle</th><th>Status</th><th className="text-right">Actions</th></tr></thead>
+        <tbody>
+          {rides.map((r) => (
+            <tr key={r.id} data-ride={r.id}>
+              <td className="whitespace-nowrap text-xs text-muted">{formatIST(r.scheduledFor)}</td>
+              <td><b>{r.pickup}</b> → <b>{r.dropoff}</b>{r.notes && <span className="block max-w-sm text-xs text-muted">{r.notes}</span>}</td>
+              <td>{r.requestedByName}{r.requestedByBranch && <span className="block text-xs text-subtle">{r.requestedByBranch}</span>}</td>
+              <td>{r.driverName ? <>{r.driverName}<span className="block text-xs text-subtle">{r.vehiclePlate}</span></> : <span className="text-subtle">—</span>}</td>
+              <td><StatusBadge status={r.status} />{r.status === "cancelled" && r.cancelReason && <span className="mt-1 block max-w-xs text-xs text-muted">{r.cancelReason}</span>}</td>
+              <td><div className="flex justify-end gap-1.5">
+                {r.status === "pending" && <button className="btn btn-primary btn-sm" disabled={pending} onClick={() => setAssigning(r)}><UserCheck size={14} /> Assign</button>}
+                {(r.status === "pending" || r.status === "assigned") && <button className="btn btn-ghost btn-sm text-brand-red" disabled={pending} onClick={() => { setReason(""); setCancelling(r); }}><X size={14} /> Cancel</button>}
+              </div></td>
+            </tr>
+          ))}
+          {rides.length === 0 && <tr><td colSpan={6} className="text-subtle">{empty}</td></tr>}
+        </tbody>
+      </table></div>
+      {assigning && <AssignDialog ride={assigning} drivers={drivers} vehicles={vehicles} pending={pending}
+        onAssign={(v) => run(() => cabsApi(`/api/cabs/rides/${assigning.id}/assign`, "POST", v), "Ride assigned", () => setAssigning(null))} onClose={() => setAssigning(null)} />}
+      {cancelling && (
+        <Modal title="Cancel ride" onClose={() => setCancelling(null)}>
+          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); run(() => cabsApi(`/api/cabs/rides/${cancelling.id}/cancel?as=admin`, "POST", { reason }), "Ride cancelled", () => setCancelling(null)); }}>
+            <p className="text-sm text-muted"><b className="text-ink">{cancelling.pickup} → {cancelling.dropoff}</b><br />{formatIST(cancelling.scheduledFor)} · {cancelling.requestedByName}</p>
+            <label className="block"><span className="label-xs mb-1.5 block">Reason (they will be told)</span>
+              <textarea className="input min-h-20" name="reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} required autoFocus /></label>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCancelling(null)}>Close</button>
+              <button className="btn btn-danger btn-sm" disabled={pending || !reason.trim()}>Cancel ride</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </>
+  );
+}

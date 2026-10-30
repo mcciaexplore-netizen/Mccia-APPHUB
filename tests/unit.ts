@@ -30,6 +30,8 @@ import {
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import { INVENTORY_URL_PATTERN, inventoryRoleFor, navFor } from "../src/lib/inventory/inventory.manifest";
+import { CABS_ADMIN_URL_PATTERN, CABS_DRIVER_URL_PATTERN, CABS_USER_URL_PATTERN, CAB_NAV, cabRolesFor, navFor as cabNavFor } from "../src/lib/cabs/cabs.manifest";
+import { assignInput, driverInput, istLocalToDate, rideInput, scheduleProblem, vehicleInput } from "../src/lib/cabs/validation";
 import { issueInput, poInput, receiveInput, ticketInput, ticketUpdate, requestDecision, requestInput, returnInput, rupeesToPaise, transferInput, vendorInput } from "../src/lib/inventory/validation";
 import { financialYear, nextPoNo, poPrefix } from "../src/lib/inventory/po-number";
 import { MAX_PHOTO_BYTES, checkPhoto, sniffPhoto } from "../src/lib/inventory/photos";
@@ -379,10 +381,10 @@ eq(`guards: every one of the ${actionCount} server actions goes through adminAct
 eq("guards: the reviewed list holds only actions that really exist", [...SELF_CHECKING].filter((n) => !readdirSync(actionsDir).some((f) => readFileSync(new URL(f, actionsDir), "utf8").includes(`export async function ${n}(`))), []);
 
 // The same for plain route handlers (downloads, the launch route): each must check the session or the administrator itself. The Approval System's
-// and the Inventory module's routes go through their own route() wrappers, which do it centrally (Inventory's are checked just below).
+// the Inventory module's and the Cab Booking module's routes go through their own route() wrappers, which do it centrally (checked just below).
 const appDir = new URL("../src/app/", import.meta.url);
 const allRouteFiles = (readdirSync(appDir, { recursive: true }) as string[]).filter((f) => /(^|\/)route\.ts$/.test(f));
-const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory)\//.test(f));
+const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory|api\/cabs|cabs)\//.test(f));
 // A Vercel Cron route has no sign-in: it must check CRON_SECRET instead. The only route open to anyone on purpose is the ping, which
 // touches nothing and answers only "ok" and the time (the proxy lets exactly /api/ping through).
 const PUBLIC_ROUTES = ["api/ping/route.ts"];
@@ -397,6 +399,15 @@ const unwrapped = inventoryRoutes.flatMap((f) => {
   return handlers.filter(([, , rest]) => !imported || !/^\s*=\s*route[<(]/.test(rest)).map(([, method]) => `${f}:${method}`);
 });
 eq(`guards: every handler in the ${inventoryRoutes.length} Inventory route files goes through the Inventory guard's route()`, [inventoryRoutes.length > 0, unwrapped], [true, []]);
+// The same for Cab Booking: every handler is wrapped in its guard's route(), which always names the roles that may call it.
+const cabRoutes = allRouteFiles.filter((f) => /^api\/cabs\//.test(f));
+const cabUnwrapped = cabRoutes.flatMap((f) => {
+  const src = readFileSync(new URL(f, appDir), "utf8");
+  const handlers = [...src.matchAll(/export (?:const|async function|function) (GET|POST|PUT|PATCH|DELETE)\b(.*)/g)];
+  const imported = /from "@\/lib\/cabs\/guard"/.test(src);
+  return handlers.filter(([, , rest]) => !imported || !/^\s*=\s*route(<[^>]*>)?\(\{ roles: \[/.test(rest)).map(([, method]) => `${f}:${method}`);
+});
+eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles`, [cabRoutes.length, cabUnwrapped], [12, []]);
 
 // The application check must never be steered at an internal network
 eq("net guard: private, loopback, metadata and reserved IPv4 are refused", ["127.0.0.1", "10.0.0.5", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255"].map(isPublicAddress), Array(10).fill(false));
@@ -523,6 +534,49 @@ eq("inventory tickets: a title is needed; the photo is optional and checked; a s
   okParse(ticketInput, { title: "Fan broken" }), okParse(ticketInput, { title: " " }), okParse(ticketInput, { title: "A", photo: dataUrl("image/png", GIF) }), okParse(ticketInput, { title: "A", photo: "" }),
   okParse(ticketUpdate, { status: "in_progress" }), okParse(ticketUpdate, { status: "closed" }),
 ], [true, false, false, true, true, false]);
+
+// Cab Booking: who gets which role, which application rows stand for each section, each section's menu, and the form rules.
+eq("cabs roles: MCCIA Cabs access makes a user; a cab_drivers row a driver; an App Admin of Cabs Admin (with access to it) or the Support Admin an admin", [
+  cabRolesFor({ hubRole: "member", userAccess: true, adminAppAdmin: false, isDriver: false }),
+  cabRolesFor({ hubRole: "member", userAccess: false, adminAppAdmin: false, isDriver: true }),
+  cabRolesFor({ hubRole: "admin", userAccess: true, adminAppAdmin: true, isDriver: false }),
+  cabRolesFor({ hubRole: "head_admin", userAccess: false, adminAppAdmin: false, isDriver: false }),
+  cabRolesFor({ hubRole: "super_admin", userAccess: false, adminAppAdmin: false, isDriver: false }),
+], [["cab_user"], ["cab_driver"], ["cab_user", "cab_admin"], ["cab_user", "cab_admin"], []]);
+eq("cabs access: each section is the application whose URL is exactly its path", ["/cabs", "/cabs/", "/cabs/driver", "/cabs/admin", "/cabs/book", "/cabs-old", "https://cabs.example.com/cabs"].map((u) => [
+  new RegExp(CABS_USER_URL_PATTERN).test(u), new RegExp(CABS_DRIVER_URL_PATTERN).test(u), new RegExp(CABS_ADMIN_URL_PATTERN).test(u)]),
+  [[true, false, false], [true, false, false], [false, true, false], [false, false, true], [false, false, false], [false, false, false], [false, false, false]]);
+eq("cabs menus: 3 staff pages, 2 driver pages, 5 admin pages, each shown only to its role", [
+  cabNavFor("staff", ["cab_user"]).map((i) => i.label), cabNavFor("driver", ["cab_driver"]).map((i) => i.label), cabNavFor("admin", ["cab_admin"]).map((i) => i.label),
+  cabNavFor("admin", ["cab_user", "cab_driver"]).length, cabNavFor("driver", ["cab_user", "cab_admin"]).length, [CAB_NAV.staff.title, CAB_NAV.driver.title, CAB_NAV.admin.title],
+], [["Dashboard", "Book a Ride", "My Rides"], ["Dashboard", "My Rides"], ["Dashboard", "All Rides", "Drivers", "Vehicles", "Audit Log"], 0, 0, ["MCCIA Cabs", "Cabs Driver", "Cabs Admin"]]);
+{
+  const now = Date.parse("2026-11-02T04:00:00Z"); // 09:30 in India
+  eq("cabs times: a datetime-local value is India time; a full ISO time keeps its own offset; junk is refused", [
+    istLocalToDate("2026-11-02T09:30")?.toISOString(), istLocalToDate("2026-11-02T09:30:00Z")?.toISOString(), istLocalToDate("2026-13-02T09:30"), istLocalToDate("tomorrow"), istLocalToDate(""),
+  ], ["2026-11-02T04:00:00.000Z", "2026-11-02T09:30:00.000Z", null, null, null]);
+  eq("cabs times: a ride can't be booked in the past (5 minutes' grace) or more than a year ahead", [
+    scheduleProblem(new Date(now - 4 * 60_000), now), !!scheduleProblem(new Date(now - 6 * 60_000), now), scheduleProblem(new Date(now + 86_400_000), now), !!scheduleProblem(new Date(now + 366 * 86_400_000), now),
+  ], [null, true, null, true]);
+}
+{
+  const later = new Date(Date.now() + 2 * 86_400_000 + 5.5 * 3600_000).toISOString().slice(0, 16);
+  const v = "11111111-1111-4111-8111-111111111111";
+  eq("cabs forms: a ride needs a pickup, a drop-off (200 characters at most) and a future time; notes are optional", [
+    okParse(rideInput, { pickup: "Office", dropoff: "Airport", scheduledFor: later }), okParse(rideInput, { pickup: " ", dropoff: "Airport", scheduledFor: later }),
+    okParse(rideInput, { pickup: "x".repeat(201), dropoff: "Airport", scheduledFor: later }), okParse(rideInput, { pickup: "Office", dropoff: "Airport", scheduledFor: "2020-01-01T10:00" }),
+    rideInput.parse({ pickup: " Office ", dropoff: "Airport", scheduledFor: later, notes: "" }).notes,
+  ], [true, false, false, false, null]);
+  eq("cabs forms: a number plate is kept in one form; seats are 1 to 50; assigning needs a driver and a vehicle", [
+    vehicleInput.parse({ numberPlate: "  mh 12   ab 1234 ", model: "Innova", capacity: "7" }), okParse(vehicleInput, { numberPlate: "MH12AB1234", model: "Innova", capacity: 0 }),
+    okParse(assignInput, { driverId: v, vehicleId: v }), okParse(assignInput, { driverId: v }),
+  ], [{ numberPlate: "MH 12 AB 1234", model: "Innova", capacity: 7 }, false, true, false]);
+  eq("cabs forms: a driver is a name, an email (kept lower case) and a phone of 10 to 15 digits (kept as digits); the vehicle is optional", [
+    driverInput.parse({ name: " Ravi Patil ", email: " Ravi.Patil@MCCIA.org ", phone: "+91 98765-43210", vehicleId: "" }),
+    okParse(driverInput, { name: "Ravi", email: "ravi@x.org", phone: "12345" }), okParse(driverInput, { name: "Ravi", email: "not-an-email", phone: "9876543210" }),
+    okParse(driverInput, { name: "", email: "ravi@x.org", phone: "9876543210" }), okParse(driverInput, { userId: v, vehicleId: v }),
+  ], [{ name: "Ravi Patil", email: "ravi.patil@mccia.org", phone: "+919876543210", vehicleId: null }, false, false, false, false]);
+}
 
 const ssoTests = (async () => {
   const pair = () => {
