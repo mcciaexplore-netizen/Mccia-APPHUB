@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Approval System · MCCIA App Hub" };
 
 /**
- * What the sidebar holds for this person. Everyone: Approval Forms (the forms), My Requests (an amber badge for theirs still pending or needing correction)
+ * What the sidebar holds for this person. Everyone: Approval Forms (the forms), My Pending Approvals (their own requests still pending or needing correction, amber badge)
  * and Approved Forms. Under Approval Forms, whoever decides
  * requests gets the places they decide in, each with its Pending, Approved and Rejected lists: the Director General and the Support Admin
  * both HR and Expenditure, an approver the place their role gives them (HR Admin: HR, Expense Admin: Expenditure). Below Approved Forms,
@@ -34,7 +34,8 @@ async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
   const filterOf = (s: ListScreen): ListFilter =>
     ({ types: s.types, statuses: s.statuses, mine: s.mine, waitingForMe: s.waitingForMe, approvedByMe: s.approvedByMe, rejectedByMe: s.rejectedByMe });
   const screens = [...keys.flatMap((k) => REVIEW_TABS.map((t) => reviewScreen(k, t, decides))), screenFor(approvedHref.replace("/approvals/", "").split("/"))];
-  // My Requests (everyone: their own requests still pending or needing correction), and My Pending Approvals and My Approvals for people who decide: counted in
+  // My Pending Approvals for everyone (their own requests still pending or needing correction), and for people who decide the second
+  // My Pending Approvals (waiting for their decision) and My Approvals: counted in
   // the same query, with the filters their pages list by.
   const mineToo = hasAnyRole(user, MY_APPROVALS_ROLES);
   const mineFilters: ListFilter[] = [{ mine: true, statuses: ["pending", "returned"] },...(mineToo ? [{ statuses: ["pending"], waitingForMe: true }, { decidedByMe: true }] satisfies ListFilter[] : [])];
@@ -53,7 +54,7 @@ async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
   });
   return [
     { label: "Approval Forms", href: "/approvals", children: places },
-    { label: "My Requests", href: "/approvals/my-requests", ...(ownOpen > 0 ? { open: ownOpen } : { count: 0 }) },
+    { label: "My Pending Approvals", href: "/approvals/my-requests", ...(ownOpen > 0 ? { open: ownOpen } : { count: 0 }) },
     { label: "Approved Forms", href: approvedHref, count: approvedCount },
     ...(mineToo
       ? [

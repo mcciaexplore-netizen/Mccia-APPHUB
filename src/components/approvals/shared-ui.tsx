@@ -20,7 +20,7 @@ const EMPTY = {
   waiting: { Icon: CheckCircle2, tone: "text-[var(--z-green)]", title: "You are all caught up!", body: "Nothing is waiting for your review right now." },
   queue: { Icon: CheckCircle2, tone: "text-[var(--z-green)]", title: "Nothing in the queue.", body: "No requests have been recommended to you yet." },
   mine: { Icon: FileText, tone: "text-subtle", title: "Nothing submitted yet.", body: "Use the buttons above to raise your first request." },
-  myRequests: { Icon: FileText, tone: "text-subtle", title: "You haven't submitted any requests yet", body: "Use New request above to raise your first one." },
+  myRequests: { Icon: FileText, tone: "text-subtle", title: "Nothing pending.", body: "None of your requests is waiting for a decision or a correction. Approved ones are under Approved Forms." },
   decided: { Icon: ClipboardList, tone: "text-subtle", title: "Nothing decided yet.", body: "Requests you approve or reject will show here." },
   none: { Icon: ClipboardList, tone: "text-subtle", title: "No requests found.", body: "Try adjusting your filters." },
 } as const;

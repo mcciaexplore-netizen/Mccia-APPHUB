@@ -63,7 +63,7 @@ export type EditInfo = {
   custom: Record<string, string>;
 };
 
-/** Shared by both forms: sends the request, then opens My Requests; a returned request, once corrected, opens itself again. */
+/** Shared by both forms: sends the request, then opens the person's open requests (/approvals/my-requests); a returned request, once corrected, opens itself again. */
 function useSubmitRequest(app: "hr" | "exp", edit?: EditInfo) {
   const router = useRouter();
   const toast = useToast();
@@ -84,7 +84,7 @@ function useSubmitRequest(app: "hr" | "exp", edit?: EditInfo) {
     if (!r.ok) { setSubmitting(false); setFormError(r.error); toast.error(r.error); return; }
     toast.success(`Request submitted: ${r.data.requestNo}`);
     router.push(`/approvals/my-requests?submitted=${r.data.id}`);
-    router.refresh(); // the sidebar's My Requests count
+    router.refresh(); // the sidebar's count of their open requests
   };
   return { submitting, formError, submit, setFormError };
 }

@@ -9,7 +9,7 @@ import type { ApprovalsUser } from "@/lib/approvals/host-adapter";
 import type { AprRequestType } from "@/db/approvals-schema";
 
 /**
- * The person's own lists in the sidebar: My Requests (everyone), and for people who decide, what waits for them and what they decided.
+ * The person's own lists in the sidebar: their open requests (everyone), and for people who decide, what waits for them and what they decided.
  * Each row opens its request.
  */
 
@@ -39,12 +39,11 @@ function Pager({ path, page, total }: { path: string; page: number; total: numbe
 }
 
 /**
- * Every request this person raised, newest first, with where it stands (pending amber, needs correction orange, approved green, rejected
- * red). Right after
- * submitting, `submitted` is the new request's id: a confirmation with its number stays on top of the list.
+ * The requests this person raised that are still open, newest first: pending (amber) or returned to them for correction (orange). Approved
+ * ones are under Approved Forms. Right after submitting, `submitted` is the new request's id: a confirmation with its number stays on top.
  */
 export async function MyRequestsList({ user, page, path, submitted }: { user: ApprovalsUser; page: number; path: string; submitted?: string }) {
-  const { rows, total } = await listRequests(user, { mine: true, sort: "requestedAt", dir: "desc", page, pageSize: PAGE_SIZE });
+  const { rows, total } = await listRequests(user, { mine: true, statuses: ["pending", "returned"], sort: "requestedAt", dir: "desc", page, pageSize: PAGE_SIZE });
   const justSent = submitted ? rows.find((r) => r.id === submitted) : undefined;
   return (
     <>
