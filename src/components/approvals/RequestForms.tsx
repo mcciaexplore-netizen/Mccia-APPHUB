@@ -63,7 +63,7 @@ export type EditInfo = {
   custom: Record<string, string>;
 };
 
-/** Shared by both forms: sends the request (or, for a returned one, the corrected request), then opens it. */
+/** Shared by both forms: sends the request, then opens My Requests; a returned request, once corrected, opens itself again. */
 function useSubmitRequest(app: "hr" | "exp", edit?: EditInfo) {
   const router = useRouter();
   const toast = useToast();
@@ -83,7 +83,8 @@ function useSubmitRequest(app: "hr" | "exp", edit?: EditInfo) {
     const r = await api<{ id: string; requestNo: string }>("POST", "/api/approvals/requests", body);
     if (!r.ok) { setSubmitting(false); setFormError(r.error); toast.error(r.error); return; }
     toast.success(`Request submitted: ${r.data.requestNo}`);
-    router.push(`/approvals/requests/${r.data.id}?app=${app}&submitted=1`);
+    router.push(`/approvals/my-requests?submitted=${r.data.id}`);
+    router.refresh(); // the sidebar's My Requests count
   };
   return { submitting, formError, submit, setFormError };
 }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ClickableRow } from "@/components/approvals/ClickableRow";
-import { EmptyState } from "@/components/approvals/shared-ui";
+import { EmptyState, StatusPill } from "@/components/approvals/shared-ui";
 import { appForType } from "@/lib/approvals/approvals.manifest";
 import { formatDate, formatDateTime, formatINR } from "@/lib/approvals/format";
 import { listMyDecisions, listRequests } from "@/lib/approvals/request-queries";
@@ -8,7 +8,10 @@ import { PAGE_SIZE } from "@/lib/approvals/screens";
 import type { ApprovalsUser } from "@/lib/approvals/host-adapter";
 import type { AprRequestType } from "@/db/approvals-schema";
 
-/** The two lists the sidebar opens for people who decide: what waits for them, and what they decided. Each row opens its request. */
+/**
+ * The person's own lists in the sidebar: My Requests (everyone), and for people who decide, what waits for them and what they decided.
+ * Each row opens its request.
+ */
 
 const typeLabel = (t: AprRequestType) => (t === "hr" ? "HR" : "Expenditure");
 const requestHref = (r: { id: string; type: AprRequestType }) => `/approvals/requests/${r.id}?app=${appForType(r.type)}`;
@@ -28,6 +31,56 @@ function Pager({ path, page, total }: { path: string; page: number; total: numbe
           {page < pages ? <a href={href(page + 1)} className="hover:text-[var(--z-accent)]">Next →</a> : <span className="invisible">Next →</span>}
         </nav>
       )}
+    </>
+  );
+}
+
+/**
+ * Every request this person raised, newest first, with where it stands (pending amber, approved green, rejected red). Right after
+ * submitting, `submitted` is the new request's id: a confirmation with its number stays on top of the list.
+ */
+export async function MyRequestsList({ user, page, path, submitted }: { user: ApprovalsUser; page: number; path: string; submitted?: string }) {
+  const { rows, total } = await listRequests(user, { mine: true, sort: "requestedAt", dir: "desc", page, pageSize: PAGE_SIZE });
+  const justSent = submitted ? rows.find((r) => r.id === submitted) : undefined;
+  return (
+    <>
+      {justSent && (
+        <div role="status" className="mb-6 rounded-md border border-line bg-green-tint px-4 py-3 text-sm text-ink">
+          <b>Request submitted: {justSent.requestNo}.</b> Keep this number. When it is approved or rejected you will get a notification on the bell above.
+        </div>
+      )}
+      {rows.length === 0 ? <EmptyState kind="mine" /> : (
+        <div className="table-wrap">
+          <table className="apr-table">
+            <thead>
+              <tr>
+                <th>Request No.</th>
+                <th className="hidden md:table-cell">Type</th>
+                <th className="hidden md:table-cell">Category</th>
+                <th className="text-right">Amount (₹)</th>
+                <th className="hidden md:table-cell">Date Submitted</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const href = requestHref(r);
+                return (
+                  <ClickableRow key={r.id} href={href}>
+                    <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{r.requestNo ?? "—"}</Link></td>
+                    <td className="hidden md:table-cell">{typeLabel(r.type)}</td>
+                    <td className="hidden md:table-cell">{r.categoryName ?? ""}</td>
+                    <td className="whitespace-nowrap text-right">{r.amountPaise == null ? "" : formatINR(r.amountPaise)}</td>
+                    <td className="hidden md:table-cell whitespace-nowrap">{formatDate(r.requestedAt)}</td>
+                    <td className="whitespace-nowrap"><StatusPill status={r.status} /></td>
+                  </ClickableRow>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <Pager path={path} page={page} total={total} />
     </>
   );
 }
