@@ -451,15 +451,20 @@ eq("inventory roles: the Support Admin and the Inventory application's App Admin
   inventoryRoleFor("head_admin", false), inventoryRoleFor("member", true), inventoryRoleFor("super_admin", false), inventoryRoleFor("admin", false),
   inventoryRoleFor("admin", true), inventoryRoleFor("member", false),
 ], ["inventory_admin", "inventory_admin", "requester", "requester", "inventory_admin", "requester"]);
+eq("inventory roles: the Inventory application's App Staff are Staff; an App Admin (or the Support Admin) who is also App Staff stays admin", [
+  inventoryRoleFor("member", false, true), inventoryRoleFor("admin", false, true), inventoryRoleFor("member", true, true), inventoryRoleFor("head_admin", false, true),
+], ["inventory_staff", "inventory_staff", "inventory_admin", "inventory_admin"]);
 eq("inventory access: only an application whose URL is /inventory stands for the module", ["/inventory", "/inventory/", "/inventory/items", "/inventory-old", "https://mccia-inventory-management.vercel.app/", "/approvals"]
   .map((u) => new RegExp(INVENTORY_URL_PATTERN).test(u)), [true, true, false, false, false, false]);
 const navLabels = (roles: Parameters<typeof navFor>[0]) => navFor(roles).map((i) => i.label);
-eq("inventory menu: no Settings any more; Categories, purchase orders and the stock history for Inventory admins; Items and requests for everyone", [
+eq("inventory menu: no Settings any more; Categories, purchase orders and the stock history for Inventory admins; Items for Staff and admins; requests for everyone", [
   navLabels(["requester", "inventory_admin"]).includes("Settings"), navLabels(["requester"]).includes("Categories"), navLabels(["requester"]).includes("Purchase orders"),
   navLabels(["requester"]).includes("Stock movements"), navLabels(["requester", "inventory_admin"]).includes("Categories"), navLabels(["requester"]).includes("Items"), navLabels(["requester"]).includes("Requests"),
-], [false, false, false, false, true, true, true]);
-eq("inventory menu: an ordinary user sees exactly the dashboard, items, their requests and maintenance; an admin sees all ten", [navLabels(["requester"]), navLabels(["requester", "inventory_admin"]).length],
-  [["Dashboard", "Items", "Requests", "Maintenance"], 10]);
+  navLabels(["requester", "inventory_staff"]).includes("Items"), navLabels(["requester", "inventory_admin"]).includes("Items"),
+], [false, false, false, false, true, false, true, true, true]);
+eq("inventory menu: a user sees exactly the dashboard, their requests and maintenance; Staff also the items; an admin sees all ten",
+  [navLabels(["requester"]), navLabels(["requester", "inventory_staff"]), navLabels(["requester", "inventory_admin"]).length],
+  [["Dashboard", "Requests", "Maintenance"], ["Dashboard", "Items", "Requests", "Maintenance"], 10]);
 eq("inventory rupees: amounts become paise; bad input is refused", [rupeesToPaise("1,250.50"), rupeesToPaise("₹ 35"), rupeesToPaise(""), rupeesToPaise("1.234"), rupeesToPaise("-5"), rupeesToPaise("abc")], [125050, 3500, null, "invalid", "invalid", "invalid"]);
 const okParse = (schema: { safeParse: (v: unknown) => { success: boolean } }, v: unknown) => schema.safeParse(v).success;
 eq("inventory requests: an item and a whole quantity of at least 1; a reject needs a reason", [

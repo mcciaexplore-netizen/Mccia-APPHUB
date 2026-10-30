@@ -1,15 +1,46 @@
 import Link from "next/link";
-import { AlertTriangle, ClipboardList, History, Package, Wrench } from "lucide-react";
-import { ROLE_LABEL } from "@/lib/inventory/inventory.manifest";
+import { AlertTriangle, ClipboardCheck, ClipboardList, History, Package, Truck, Users, Wrench, type LucideIcon } from "lucide-react";
+import { ROLE_LABEL, SEES_ITEMS, type InventoryRole } from "@/lib/inventory/inventory.manifest";
 import { dashboardStats, lowStockItems, recentMovements } from "@/lib/inventory/catalog";
 import { formatCount, formatRupees } from "@/lib/inventory/format";
 import { requirePage } from "@/lib/inventory/guard";
-import { hasRole } from "@/lib/inventory/host-adapter";
+import { canManagePeople, hasAnyRole, hasRole } from "@/lib/inventory/host-adapter";
 import { formatIST } from "@/lib/format";
 
-/** The Inventory dashboard: real figures from the active items, the items running low and the latest stock movements. */
+/**
+ * The Inventory dashboard: a card for each thing this person can do (by their role), and for Inventory admins the real figures from the
+ * active items, the items running low and the latest stock movements.
+ */
 
 const KIND_LABEL: Record<string, string> = { inward: "Inward", issue: "Issue", return: "Return", adjust: "Adjust", recount: "Recount" };
+
+type Card = { href: string; icon: LucideIcon; title: string; text: string; roles?: readonly InventoryRole[]; people?: boolean };
+const ADMIN = ["inventory_admin"] as const;
+
+/** Users: request and maintenance. Staff: those and the item list. Inventory admins: everything. */
+const CARDS: Card[] = [
+  { href: "/inventory/items", icon: Package, title: "Browse items", text: "See what the store keeps and how much is in stock.", roles: SEES_ITEMS },
+  { href: "/inventory/requests", icon: ClipboardList, title: "Request an item", text: "Ask the store for stationery, equipment or anything else it keeps, and follow your requests." },
+  { href: "/inventory/maintenance", icon: Wrench, title: "Report a maintenance problem", text: "Tell the admin team about something broken, with a photo, and see when it is fixed." },
+  { href: "/inventory/requests?status=pending", icon: ClipboardCheck, title: "Approve requests", text: "Approve or reject what people have asked the store for, and issue it.", roles: ADMIN },
+  { href: "/inventory/vendors", icon: Truck, title: "Manage vendors", text: "Keep the suppliers you buy from, with their contact, GST and PAN details.", roles: ADMIN },
+  // Who is Admin and Staff here is set on the Inventory application in Administrator → Applications: shown only to those who can open it.
+  { href: "/administrator/inventory", icon: Users, title: "Manage users", text: "Choose who is Inventory Staff or Admin, on the Inventory application in Administrator → Applications.", roles: ADMIN, people: true },
+];
+
+/** One thing to do: a white card with the icon at the top left, a bold title and a line about it. Lifts a little on hover. */
+function ActionCard({ href, icon: Icon, title, text }: Card) {
+  return (
+    <Link
+      href={href}
+      className="block rounded-xl border border-[var(--c-border)] bg-[var(--c-white)] p-6 shadow-[var(--shadow-card)] transition duration-200 hover:-translate-y-0.5 hover:border-[var(--c-primary)] hover:shadow-[var(--shadow-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-primary)] focus-visible:ring-offset-2 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+    >
+      <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-[var(--c-primary)]/10 text-primary"><Icon size={22} aria-hidden /></span>
+      <h2 className="mt-4 text-base font-bold">{title}</h2>
+      <p className="mt-1 text-sm text-muted">{text}</p>
+    </Link>
+  );
+}
 
 function Stat({ label, value, warn, href }: { label: string; value: string | number; warn?: boolean; href?: string }) {
   // An amount is longer than a count, so it gets a smaller size to stay inside its tile.
@@ -27,7 +58,9 @@ function Stat({ label, value, warn, href }: { label: string; value: string | num
 export default async function InventoryDashboard() {
   const user = await requirePage();
   const admin = hasRole(user, "inventory_admin");
-  const role = admin ? "inventory_admin" : "requester";
+  const role: InventoryRole = admin ? "inventory_admin" : hasRole(user, "inventory_staff") ? "inventory_staff" : "requester";
+  const people = admin && (await canManagePeople());
+  const cards = CARDS.filter((c) => (!c.roles || hasAnyRole(user, c.roles)) && (!c.people || people));
 
   const heading = (
     <div>
@@ -35,25 +68,17 @@ export default async function InventoryDashboard() {
       <p className="text-sm text-muted">Signed in as {user.name} · {ROLE_LABEL[role]}</p>
     </div>
   );
+  const actions = (
+    <nav aria-label="What you can do" className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {cards.map((c) => <ActionCard key={c.href} {...c} />)}
+    </nav>
+  );
 
   if (!admin) {
     return (
       <div className="page-enter space-y-6">
         {heading}
-        <div className="grid gap-6 lg:grid-cols-3">
-          <Link href="/inventory/items" className="glass glass-hover !rounded-md space-y-2 p-5 sm:p-6">
-            <h2 className="flex items-center gap-2 text-xl"><Package size={18} className="text-primary" /> Browse items</h2>
-            <p className="text-sm text-muted">See what the store keeps and how much is in stock.</p>
-          </Link>
-          <Link href="/inventory/requests" className="glass glass-hover !rounded-md space-y-2 p-5 sm:p-6">
-            <h2 className="flex items-center gap-2 text-xl"><ClipboardList size={18} className="text-primary" /> Request an item</h2>
-            <p className="text-sm text-muted">Ask the store for stationery, equipment or anything else it keeps, and follow your requests.</p>
-          </Link>
-          <Link href="/inventory/maintenance" className="glass glass-hover !rounded-md space-y-2 p-5 sm:p-6">
-            <h2 className="flex items-center gap-2 text-xl"><Wrench size={18} className="text-primary" /> Report a maintenance problem</h2>
-            <p className="text-sm text-muted">Tell the admin team about something broken, with a photo, and see when it is fixed.</p>
-          </Link>
-        </div>
+        {actions}
       </div>
     );
   }
@@ -62,6 +87,7 @@ export default async function InventoryDashboard() {
   return (
     <div className="page-enter space-y-6">
       {heading}
+      {actions}
 
       <section aria-label="Summary" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         <Stat label="Items" value={formatCount(s.items)} href="/inventory/items" />

@@ -2,15 +2,16 @@ import { ItemsView } from "@/components/inventory/ItemsView";
 import { listCategories, listItems } from "@/lib/inventory/catalog";
 import { requirePage } from "@/lib/inventory/guard";
 import { hasRole } from "@/lib/inventory/host-adapter";
+import { SEES_ITEMS } from "@/lib/inventory/inventory.manifest";
 import { idSchema } from "@/lib/inventory/validation";
 
 export const metadata = { title: "Items · Inventory · MCCIA App Hub" };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 
-/** The item catalogue. Everyone who may open Inventory sees it; only an Inventory admin may change it (and see inactive items). */
+/** The item catalogue. Staff and Inventory admins see it (a user picks an item only when making a request); only an Inventory admin may change it (and see inactive items). */
 export default async function ItemsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const user = await requirePage();
+  const user = await requirePage(...SEES_ITEMS);
   const canEdit = hasRole(user, "inventory_admin");
   const sp = await searchParams;
   const category = one(sp.category);
