@@ -9,7 +9,7 @@
  * Administrator → Applications:
  *   inventory_admin  the Support Admin, and the App Admins of the Inventory application: everything (items, categories, vendors, purchase
  *                    orders, requests, issues and returns, maintenance, the stock history)
- *   inventory_staff  its App Staff: what a user has, plus the item list (to look)
+ *   inventory_staff  its App Staff: what a user has, plus the item list, where they add, edit and delete items
  *   requester        everyone else who may open it: the dashboard, and their own requests and maintenance tickets
  */
 
@@ -23,6 +23,8 @@ export const inventoryRoleFor = (hubRole: string, isAppAdmin: boolean, isAppStaf
 
 /** Who may look at the item list: Staff and Inventory admins. */
 export const SEES_ITEMS = ["inventory_staff", "inventory_admin"] as const satisfies readonly InventoryRole[];
+/** Who may add, edit and delete items (and add one to another branch): Staff and Inventory admins. */
+export const MANAGES_ITEMS = SEES_ITEMS;
 /**
  * Who sees every branch (with a branch filter on items, requests and the dashboard): Staff and Inventory admins. A user sees only their own
  * branch's stock and requests from it.
@@ -55,6 +57,7 @@ export const inventoryNav: InventoryNavItem[] = [
   { label: "Purchase orders", href: "/inventory/purchase-orders", roles: ADMIN },
   { label: "Vendors", href: "/inventory/vendors", roles: ADMIN },
   { label: "Maintenance", href: "/inventory/maintenance" },
+  { label: "Audit Log", href: "/inventory/admin/audit", roles: ADMIN },
 ];
 
 export const navFor = (roles: readonly InventoryRole[]) => inventoryNav.filter((i) => !i.roles || i.roles.some((r) => roles.includes(r)));

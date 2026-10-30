@@ -92,11 +92,11 @@ function AddToBranchForm({ item, branches, pending, onSubmit }: { item: ItemView
 }
 
 /**
- * The items each branch keeps, one row per item and branch. Staff and Inventory admins see every branch, or filter to one; only an
- * Inventory admin may add, edit, add to another branch or delete.
+ * The items each branch keeps, one row per item and branch. Staff and Inventory admins see every branch, or filter to one, and may add,
+ * edit, add to another branch or delete; the link to Categories is for Inventory admins.
  */
-export function ItemsView({ items, categories, branches, ownBranchId, canEdit, filters }: {
-  items: ItemView[]; categories: Category[]; branches: Branch[]; ownBranchId: string | null; canEdit: boolean; filters: Filters;
+export function ItemsView({ items, categories, branches, ownBranchId, canEdit, canCategories, filters }: {
+  items: ItemView[]; categories: Category[]; branches: Branch[]; ownBranchId: string | null; canEdit: boolean; canCategories: boolean; filters: Filters;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -159,7 +159,7 @@ export function ItemsView({ items, categories, branches, ownBranchId, canEdit, f
         </div>
         {canEdit && (
           <div className="flex flex-wrap gap-2">
-            <Link href="/inventory/categories" className="btn btn-ghost btn-sm">Categories</Link>
+            {canCategories && <Link href="/inventory/categories" className="btn btn-ghost btn-sm">Categories</Link>}
             <button className="btn btn-primary btn-sm" onClick={() => setEditing("new")}><Plus size={14} /> Add item</button>
           </div>
         )}

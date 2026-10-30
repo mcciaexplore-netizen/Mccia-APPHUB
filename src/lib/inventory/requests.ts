@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { branches } from "@/db/schema";
 import { inventoryBranchStock, inventoryItems, inventoryRequests } from "@/db/inventory-schema";
 import { writeAudit } from "@/lib/audit";
+import { writeInventoryAudit } from "./audit";
 import { NO_BRANCH_MESSAGE } from "./branches";
 import { InventoryError } from "./errors";
 import type { InventoryUser } from "./host-adapter";
@@ -70,12 +71,13 @@ export async function createRequest(v: { itemId: string; quantity: number; note:
   const row = res.rows[0];
   if (!row) throw new InventoryError("That item is not available to request at your branch. Reload and try again.", 404);
   await audit(actor, "request_raised", row.id, row.item, { quantity: v.quantity });
+  await writeInventoryAudit(actor, "request_created", { targetType: "request", targetId: row.id, targetLabel: row.item, branchId: actor.branchId, details: { requester: actor.name, item: row.item, quantity: v.quantity } });
   return row;
 }
 
 /** What a request is now, to explain why a step did not apply. */
 async function currentStatus(id: string) {
-  const [r] = await db.select({ status: inventoryRequests.status, item: inventoryItems.name, quantity: inventoryRequests.quantity, inStock: sql<number>`coalesce(${inventoryBranchStock.quantity}, 0)`.mapWith(Number) })
+  const [r] = await db.select({ status: inventoryRequests.status, item: inventoryItems.name, quantity: inventoryRequests.quantity, branchId: inventoryRequests.branchId, requester: inventoryRequests.requestedByName, inStock: sql<number>`coalesce(${inventoryBranchStock.quantity}, 0)`.mapWith(Number) })
     .from(inventoryRequests).innerJoin(inventoryItems, eq(inventoryItems.id, inventoryRequests.itemId))
     .leftJoin(inventoryBranchStock, and(eq(inventoryBranchStock.itemId, inventoryRequests.itemId), eq(inventoryBranchStock.branchId, inventoryRequests.branchId)))
     .where(eq(inventoryRequests.id, id));
@@ -98,6 +100,7 @@ export async function rejectRequest(id: string, reason: string, actor: Actor) {
   const cur = await currentStatus(id);
   if (!row) throw notNow(cur.status, "rejected");
   await audit(actor, "request_rejected", id, cur.item, { quantity: cur.quantity, reason });
+  await writeInventoryAudit(actor, "request_rejected", { targetType: "request", targetId: id, targetLabel: cur.item, branchId: cur.branchId, details: { item: cur.item, requester: cur.requester, quantity: cur.quantity, reason } });
 }
 
 /**
@@ -125,12 +128,14 @@ export async function fulfilRequest(id: string, actor: Actor) {
       where id = ${id} and exists (select 1 from movement)
       returning id
     )
-    select (select item from total) as item, (select qty from stock) as qty, (select after from stock) as after, (select count(*) from done)::int as done`)) as unknown as {
-    rows: { item: string | null; qty: number | null; after: number | null; done: number }[];
+    select (select item from total) as item, (select qty from stock) as qty, (select branch_id from stock) as branch_id, (select to_name from stock) as to_name, (select after from stock) as after, (select count(*) from done)::int as done`)) as unknown as {
+    rows: { item: string | null; qty: number | null; after: number | null; done: number; branch_id: string | null; to_name: string | null }[];
   };
   const row = res.rows[0];
   if (row?.done === 1 && row.item) {
     await audit(actor, "request_fulfilled", id, row.item, { quantity: row.qty, stockAfter: row.after });
+    await writeInventoryAudit(actor, "request_fulfilled", { targetType: "request", targetId: id, targetLabel: row.item, branchId: row.branch_id,
+      details: { item: row.item, quantity: row.qty, requester: row.to_name, fulfilledBy: actor.name } });
     return;
   }
   const cur = await currentStatus(id);

@@ -190,6 +190,13 @@
       "when": 1793363334351,
       "tag": "0026_branch_stock_production_shape",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793363562258,
+      "tag": "0027_inventory_audit_log",
+      "breakpoints": true
     }
   ]
 }

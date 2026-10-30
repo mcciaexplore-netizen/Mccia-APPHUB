@@ -3,6 +3,7 @@ import { and, desc, eq, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { inventoryMaintenanceTickets as t } from "@/db/inventory-schema";
 import { writeAudit } from "@/lib/audit";
+import { writeInventoryAudit } from "./audit";
 import { InventoryError } from "./errors";
 import type { InventoryUser } from "./host-adapter";
 
@@ -51,6 +52,7 @@ export async function createTicket(v: { title: string; description: string | nul
   const [row] = await db.insert(t).values({ title: v.title, note: v.description, location: v.location, photoUrl: v.photo, raisedByUserId: actor.id, raisedByName: actor.name })
     .returning({ id: t.id });
   await audit(actor, "ticket_raised", row.id, v.title, { location: v.location, photo: !!v.photo });
+  await writeInventoryAudit(actor, "ticket_created", { targetType: "ticket", targetId: row.id, targetLabel: v.title, details: { title: v.title, reporter: actor.name, location: v.location } });
   return row;
 }
 
@@ -74,7 +76,10 @@ export async function updateTicket(id: string, v: { status: TicketStatus; resolu
   if (!row) throw new InventoryError("That ticket no longer exists. Reload and try again.", 404);
   const changes = { from: row.was, to: v.status, note: row.old_note !== v.resolutionNote, photo: !!v.resolutionPhoto };
   if (row.was !== v.status || changes.note || changes.photo) await audit(actor, "ticket_updated", id, row.title, changes);
-  if (v.status === "resolved" && row.was !== "resolved") await audit(actor, "ticket_resolved", id, row.title, { note: v.resolutionNote });
+  if (v.status === "resolved" && row.was !== "resolved") {
+    await audit(actor, "ticket_resolved", id, row.title, { note: v.resolutionNote });
+    await writeInventoryAudit(actor, "ticket_resolved", { targetType: "ticket", targetId: id, targetLabel: row.title, details: { title: row.title, resolvedBy: actor.name, note: v.resolutionNote } });
+  }
 }
 
 /** One photo of a ticket, with who raised it (to decide who may see it). Null when there is no such ticket or photo. */

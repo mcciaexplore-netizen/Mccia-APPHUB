@@ -4,7 +4,9 @@ import { db } from "@/db";
 import { branches } from "@/db/schema";
 import { inventoryBranchStock as stock, inventoryCategories, inventoryItems, inventoryStockMovements } from "@/db/inventory-schema";
 import { writeAudit } from "@/lib/audit";
+import { writeInventoryAudit } from "./audit";
 import { InventoryError } from "./errors";
+import { formatRupees } from "./format";
 import type { InventoryUser } from "./host-adapter";
 import type { ItemInput } from "./validation";
 
@@ -121,6 +123,7 @@ export async function createItem(v: ItemInput, branch: { id: string; name: strin
     select id, name from item`)) as unknown as { rows: { id: string; name: string }[] };
   const row = res.rows[0];
   await audit(actor, "item_create", row.id, row.name, { quantity: v.quantity, unit: v.unit, branch: branch.name });
+  await writeInventoryAudit(actor, "item_added", { targetType: "item", targetId: row.id, targetLabel: row.name, branchId: branch.id, details: { branch: branch.name, openingStock: v.quantity, unit: v.unit } });
   return row;
 }
 
@@ -139,19 +142,36 @@ export async function updateItem(id: string, v: ItemInput, branch: { id: string;
       where b.item_id = old.item_id and b.branch_id = old.branch_id
       returning old.quantity as before
     ), item as (
-      update inventory_items set name = ${v.name}, category_id = ${v.categoryId}, unit = ${v.unit}, quantity = quantity + (${v.quantity} - (select before from at_branch)),
+      update inventory_items i set name = ${v.name}, category_id = ${v.categoryId}, unit = ${v.unit}, quantity = i.quantity + (${v.quantity} - (select before from at_branch)),
         min_quantity = ${v.minQuantity}, rate_paise = ${v.rate}, location = ${v.location}, notes = ${v.notes}, active = ${v.active}
-      where id = ${id} and exists (select 1 from at_branch)
-      returning name
+      from (select id, name, category_id, rate_paise, min_quantity from inventory_items where id = ${id} for update) was
+      where i.id = was.id and exists (select 1 from at_branch)
+      returning i.name, was.name as old_name, was.category_id as old_category_id, was.rate_paise as old_rate, was.min_quantity as old_min
     ), recount as (
       insert into inventory_stock_movements (item_id, kind, delta, quantity_after, reason, branch_id, actor_user_id, actor_name)
       select ${id}, 'recount', ${v.quantity} - at_branch.before, ${v.quantity}, 'Changed on the item', ${branch.id}, ${actor.id}, ${actor.name}
       from at_branch where at_branch.before <> ${v.quantity}
     )
-    select (select name from item) as name, (select before from at_branch) as before`)) as unknown as { rows: { name: string | null; before: number | null }[] };
+    select item.name, item.old_name, item.old_category_id, item.old_rate, item.old_min, (select before from at_branch) as before,
+      (select name from inventory_categories where id = item.old_category_id) as old_category, (select name from inventory_categories where id = ${v.categoryId}) as new_category
+    from item`)) as unknown as {
+    rows: { name: string; old_name: string; old_category_id: string | null; old_rate: string | number | null; old_min: number; before: number | null; old_category: string | null; new_category: string | null }[];
+  };
   const row = res.rows[0];
   if (!row?.name || row.before == null) throw new InventoryError("That item is not kept at this branch any more. Reload and try again.", 404);
   await audit(actor, "item_update", id, row.name, row.before !== v.quantity ? { branch: branch.name, quantity: { from: row.before, to: v.quantity } } : { branch: branch.name });
+  // What changed, in words: "A4 paper → A4 Paper", "₹250.00 → ₹275.00".
+  const changes: Record<string, string> = {};
+  const oldRate = row.old_rate == null ? null : Number(row.old_rate);
+  if (row.old_name !== v.name) changes.name = `${row.old_name} → ${v.name}`;
+  if (row.old_category_id !== v.categoryId) changes.category = `${row.old_category ?? "none"} → ${row.new_category ?? "none"}`;
+  if (oldRate !== v.rate) changes.rate = `${formatRupees(oldRate)} → ${formatRupees(v.rate)}`;
+  if (row.old_min !== v.minQuantity) changes.minQuantity = `${row.old_min} → ${v.minQuantity}`;
+  if (Object.keys(changes).length) await writeInventoryAudit(actor, "item_edited", { targetType: "item", targetId: id, targetLabel: row.name, branchId: branch.id, details: changes });
+  if (row.before !== v.quantity) {
+    await writeInventoryAudit(actor, "stock_adjusted", { targetType: "item", targetId: id, targetLabel: row.name, branchId: branch.id,
+      details: { branch: branch.name, oldQuantity: row.before, newQuantity: v.quantity, reason: "Changed on the item" } });
+  }
 }
 
 /** Starts keeping an existing item at another branch, with its opening stock there ("Opening stock" in the ledger). */
@@ -173,6 +193,7 @@ export async function addItemToBranch(id: string, v: { quantity: number }, branc
   if (!row?.found) throw new InventoryError("That item no longer exists. Reload and try again.", 404);
   if (!row.name) throw new InventoryError(`${branch.name} already keeps this item. Edit it there instead.`, 409);
   await audit(actor, "item_branch_added", id, row.name, { branch: branch.name, quantity: v.quantity });
+  await writeInventoryAudit(actor, "item_added", { targetType: "item", targetId: id, targetLabel: row.name, branchId: branch.id, details: { branch: branch.name, openingStock: v.quantity, toExistingItem: true } });
 }
 
 /**
@@ -196,12 +217,14 @@ export async function deleteItem(id: string, actor: Actor) {
       delete from inventory_items where id = ${id} returning name
     )
     select (select name from gone) as name, (select count(*) from movements)::int as movements, (select count(*) from requests)::int as requests,
-      (select count(*) from po_lines)::int as po_lines, (select count(*) from transfers)::int as transfers, (select count(*) from at_branches)::int as branches`)) as unknown as {
-    rows: { name: string | null; movements: number; requests: number; po_lines: number; transfers: number; branches: number }[];
+      (select count(*) from po_lines)::int as po_lines, (select count(*) from transfers)::int as transfers, (select count(*) from at_branches)::int as branches,
+      (select string_agg(b.name, ', ' order by b.name) from at_branches a join branches b on b.id = a.branch_id) as branch_names`)) as unknown as {
+    rows: { name: string | null; movements: number; requests: number; po_lines: number; transfers: number; branches: number; branch_names: string | null }[];
   };
   const row = res.rows[0];
   if (!row?.name) throw new InventoryError("That item no longer exists. Reload and try again.", 404);
   await audit(actor, "item_delete", id, row.name, { stockMovements: row.movements, requests: row.requests, purchaseOrderLines: row.po_lines, transfers: row.transfers, branches: row.branches });
+  await writeInventoryAudit(actor, "item_deleted", { targetType: "item", targetId: id, targetLabel: row.name, details: { branches: row.branch_names ?? "none" } });
   return { movements: row.movements, requests: row.requests, purchaseOrderLines: row.po_lines };
 }
 

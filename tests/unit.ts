@@ -462,9 +462,10 @@ eq("inventory menu: no Settings any more; Categories, purchase orders and the st
   navLabels(["requester"]).includes("Stock movements"), navLabels(["requester", "inventory_admin"]).includes("Categories"), navLabels(["requester"]).includes("Items"), navLabels(["requester"]).includes("Requests"),
   navLabels(["requester", "inventory_staff"]).includes("Items"), navLabels(["requester", "inventory_admin"]).includes("Items"),
 ], [false, false, false, false, true, false, true, true, true]);
-eq("inventory menu: a user sees exactly the dashboard, their requests and maintenance; Staff also the items; an admin sees all eleven, Transfers among them",
-  [navLabels(["requester"]), navLabels(["requester", "inventory_staff"]), navLabels(["requester", "inventory_admin"]).length, navLabels(["requester", "inventory_staff"]).includes("Transfers"), navLabels(["requester", "inventory_admin"]).includes("Transfers")],
-  [["Dashboard", "Requests", "Maintenance"], ["Dashboard", "Items", "Requests", "Maintenance"], 11, false, true]);
+eq("inventory menu: a user sees exactly the dashboard, their requests and maintenance; Staff also the items; an admin sees all twelve, Transfers and the Audit Log among them",
+  [navLabels(["requester"]), navLabels(["requester", "inventory_staff"]), navLabels(["requester", "inventory_admin"]).length, navLabels(["requester", "inventory_staff"]).includes("Transfers"), navLabels(["requester", "inventory_admin"]).includes("Transfers"),
+    navLabels(["requester", "inventory_staff"]).includes("Audit Log"), navLabels(["requester", "inventory_admin"]).includes("Audit Log")],
+  [["Dashboard", "Requests", "Maintenance"], ["Dashboard", "Items", "Requests", "Maintenance"], 12, false, true, false, true]);
 eq("inventory rupees: amounts become paise; bad input is refused", [rupeesToPaise("1,250.50"), rupeesToPaise("₹ 35"), rupeesToPaise(""), rupeesToPaise("1.234"), rupeesToPaise("-5"), rupeesToPaise("abc")], [125050, 3500, null, "invalid", "invalid", "invalid"]);
 const okParse = (schema: { safeParse: (v: unknown) => { success: boolean } }, v: unknown) => schema.safeParse(v).success;
 {

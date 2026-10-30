@@ -2,6 +2,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { writeAudit } from "@/lib/audit";
+import { writeInventoryAudit } from "./audit";
 import { InventoryError } from "./errors";
 import type { InventoryUser } from "./host-adapter";
 import type { TransferInput } from "./validation";
@@ -68,6 +69,9 @@ export async function transferStock(v: TransferInput, actor: Actor) {
   if (row?.id && row.item) {
     await writeAudit(actor, [{ action: "inventory.stock_transferred", targetType: "system", targetId: row.id, targetLabel: row.item,
       details: { quantity: v.quantity, from: row.from_name, to: row.to_name, reason: v.reason } }]);
+    // Filed under the branch the stock left; the destination is in the details.
+    await writeInventoryAudit(actor, "stock_transferred", { targetType: "item", targetId: v.itemId, targetLabel: row.item, branchId: v.fromBranchId,
+      details: { from: row.from_name, to: row.to_name, quantity: v.quantity, reason: v.reason } });
     return { id: row.id };
   }
   if (!row?.from_name || !row.to_name) throw new InventoryError("One of those branches is not available. Reload and try again.", 404);

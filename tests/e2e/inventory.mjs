@@ -61,6 +61,7 @@ const removeTestData = async () => {
   for (const id of tickets) await sql`delete from access_audit where action like 'inventory.ticket_%' and target_id = ${id}`;
   await sql`delete from inventory_maintenance_tickets where title like 'ZZI%'`;
   await sql`delete from access_audit where action like 'inventory.%' and target_label like 'ZZI%' and at >= ${new Date(startedAt.getTime() - 60000)}`;
+  await sql`delete from inv_audit_log where target_label like 'ZZI%' and created_at >= ${new Date(startedAt.getTime() - 60000)}`; // the Inventory audit log
   await sql`delete from access_audit where action like 'app.%' and target_label like 'ZZI%' and at >= ${new Date(startedAt.getTime() - 60000)}`; // App Admins changes on the test application
   const people = (await sql`select id from users where email like 'zzi-%'`).map((r) => r.id);
   for (const id of people) await sql`delete from activity_log where user_id = ${id}`;

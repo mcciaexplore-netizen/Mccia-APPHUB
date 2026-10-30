@@ -1,4 +1,4 @@
-import { bigint, boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { branches } from "./schema";
 
@@ -255,6 +255,32 @@ export const inventoryMaintenanceTickets = pgTable(
     resolutionPhotoUrl: text("resolution_photo_url"),
   },
   (t) => [index("inventory_tickets_status_idx").on(t.status, t.raisedAt)],
+);
+
+/**
+ * The Inventory module's own audit log (Inventory → Audit Log, for Inventory admins): who did what to which item, request or ticket, and
+ * at which branch. Separate from the hub's audit log, which keeps its own inventory.* entries as before. Names are snapshots, so an entry
+ * still reads correctly after the person or item is gone.
+ */
+export const invAuditLog = pgTable(
+  "inv_audit_log",
+  {
+    id: id(),
+    action: text("action").notNull(),
+    actorId: uuid("actor_id").notNull(),
+    actorName: text("actor_name").notNull(),
+    targetType: text("target_type").notNull(),
+    targetId: uuid("target_id"),
+    targetLabel: text("target_label").notNull(),
+    details: jsonb("details").$type<Record<string, unknown>>(),
+    branchId: uuid("branch_id").references(() => branches.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("inv_audit_log_created_idx").on(t.createdAt.desc()),
+    index("inv_audit_log_actor_idx").on(t.actorId),
+    index("inv_audit_log_branch_idx").on(t.branchId),
+  ],
 );
 
 export type InventoryItem = typeof inventoryItems.$inferSelect;
