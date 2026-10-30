@@ -7,7 +7,7 @@ import type { SsoRole } from "@/lib/sso-rules";
  * The application checks it with the hub's public key. Nothing here touches the database; the route that calls it decides who may get one.
  *
  *   header  { alg: "EdDSA", typ: "JWT", kid: "hub-1" }
- *   claims  iss "mccia-app-hub" · aud <the application's SSO slug> · sub <hub user id> · email · name · role "admin" for the app's App Admins, "staff" for its App Staff, otherwise "user" · iat · exp (iat + 60 s) · jti
+ *   claims  iss "mccia-app-hub" · aud <the application's SSO slug> · sub <hub user id> · email · name · role "admin" for the app's App Admins, "staff" for its App Staff, otherwise "user" · hub_url (where the hub lives, for a "back to the hub" link) · iat · exp (iat + 60 s) · jti
  *
  * The private key lives only in the SSO_PRIVATE_KEY setting: the base64 of a PKCS8 PEM Ed25519 private key, on one line (scripts/sso-keygen.mjs makes one).
  */
@@ -23,7 +23,7 @@ export class SsoConfigError extends Error {
   }
 }
 
-export type SsoClaims = { iss: string; aud: string; sub: string; email: string; name: string; role: SsoRole; iat: number; exp: number; jti: string };
+export type SsoClaims = { iss: string; aud: string; sub: string; email: string; name: string; role: SsoRole; hub_url: string; iat: number; exp: number; jti: string };
 
 /** Everything the token says, for one person opening one application. `now` and `jti` are for tests; by default it is now and a fresh random id. */
 export function buildClaims(input: { slug: string; user: { id: string; email: string; name: string }; role: SsoRole; now?: Date | number; jti?: string }): SsoClaims {
@@ -31,6 +31,7 @@ export function buildClaims(input: { slug: string; user: { id: string; email: st
   const iat = Math.floor(ms / 1000);
   return {
     iss: SSO_ISSUER, aud: input.slug, sub: input.user.id, email: input.user.email, name: input.user.name, role: input.role,
+    hub_url: process.env.APP_BASE_URL || "https://mccia-apphub.vercel.app",
     iat, exp: iat + SSO_TOKEN_TTL_SECONDS, jti: input.jti ?? randomUUID(),
   };
 }

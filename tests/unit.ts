@@ -541,7 +541,8 @@ const ssoTests = (async () => {
   eq("sso claims: issuer, audience, subject, email, name, role and a fixed id", { iss: c.iss, aud: c.aud, sub: c.sub, email: c.email, name: c.name, role: c.role, jti: c.jti },
     { iss: "mccia-app-hub", aud: "mccia-search", sub: person.id, email: person.email, name: person.name, role: "user", jti: "fixed-id" });
   eq("sso claims: iat is the time in whole seconds and exp is exactly 60 seconds later", [c.iat, c.exp - c.iat], [T0 / 1000, 60]);
-  eq("sso claims: nothing else is in the token (no password, no hub role)", Object.keys(c).sort(), ["aud", "email", "exp", "iat", "iss", "jti", "name", "role", "sub"]);
+  eq("sso claims: nothing else is in the token (no password, no hub role)", Object.keys(c).sort(), ["aud", "email", "exp", "hub_url", "iat", "iss", "jti", "name", "role", "sub"]);
+  eq("sso claims: hub_url says where the hub lives", c.hub_url, process.env.APP_BASE_URL || "https://mccia-apphub.vercel.app");
   eq("sso claims: every token gets its own jti", new Set(Array.from({ length: 500 }, () => buildClaims({ slug: AUD, user: person, role: "user" }).jti)).size, 500);
 
   // Signing and verifying with the matching public key
