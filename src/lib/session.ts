@@ -41,9 +41,12 @@ export function verify(token: string | undefined, purpose: Purpose): Payload | n
   }
 }
 
-/** Only same-site paths are accepted as a place to go after signing in (no `//evil.com`, no full URLs). */
+/**
+ * Only same-site paths are accepted as a place to go after signing in (no `//evil.com`, no full URLs). No backslash, whitespace or control
+ * character either: browsers drop tabs and line breaks from an address, so `/\t/evil.com` would become `//evil.com`, another site.
+ */
 export function safeNext(n: unknown): string {
-  return typeof n === "string" && /^\/(?!\/)[^\\]*$/.test(n) ? n : "/";
+  return typeof n === "string" && /^\/(?![/\\])[^\\\s\x00-\x1f\x7f]*$/.test(n) ? n : "/";
 }
 
 export const cookieOptions = (maxAge: number | undefined, secure: boolean) => ({

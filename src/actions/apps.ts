@@ -7,8 +7,10 @@ import { adminAction, UserError } from "@/lib/action";
 import { checkUrl } from "@/lib/app-checks";
 import { writeAudit } from "@/lib/audit";
 import { isApprovalsUrl } from "@/lib/approvals/approvals.manifest";
+import { isSuper } from "@/lib/rbac";
 import { appInput, uuid, uuidList } from "@/lib/validation";
 import { setAppAdmins as applyAppAdmins } from "@/lib/app-admins";
+import { addAppStaffMember as addStaff, getAppStaff as listStaff, removeAppStaffMember as removeStaff } from "@/lib/app-staff";
 
 async function nextOrder(departmentId: string) {
   const rows = await db.select({ s: apps.sortOrder }).from(apps).where(eq(apps.departmentId, departmentId));
@@ -39,9 +41,27 @@ async function loadApp(id: string) {
   return a;
 }
 
+/**
+ * Single sign-on settings (on/off, slug, callback address) and the app token are the Support Admin's alone: whoever sets the callback
+ * receives every person's sign-in token for that application. An Admin with the "apps" area may still edit everything else.
+ */
+const SSO_ONLY_SUPPORT = "Only the Support Admin can change an application's single sign-on settings or app token.";
+
+/** The callback for the audit log: its address without any query, so nothing secret-looking is kept. */
+const callbackForLog = (u: string | null) => {
+  if (!u) return "none";
+  try {
+    const x = new URL(u);
+    return `${x.origin}${x.pathname}`;
+  } catch {
+    return "invalid";
+  }
+};
+
 export async function createApp(input: unknown) {
   return adminAction("apps", async (admin) => {
     const v = appInput.parse(input);
+    if (!isSuper(admin) && (v.ssoEnabled || v.ssoSlug || v.ssoCallbackUrl || v.appToken)) throw new UserError(SSO_ONLY_SUPPORT);
     await assertSlugFree(v.ssoSlug);
     const [a] = await withSlugCheck(async () => db.insert(apps).values({ ...v, sortOrder: await nextOrder(v.departmentId) }).returning({ id: apps.id }));
     await writeAudit(admin, [{ action: "app.create", targetType: "app", targetId: a.id, targetLabel: v.name, details: { status: v.status ?? "active", visible: v.isActive ?? true, singleSignOn: v.ssoEnabled ?? false } }]);
@@ -52,6 +72,12 @@ export async function updateApp(id: string, input: unknown) {
   return adminAction("apps", async (admin) => {
     const v = appInput.parse(input);
     const cur = await loadApp(id);
+    const ssoChanged =
+      (v.ssoEnabled !== undefined && v.ssoEnabled !== cur.ssoEnabled) ||
+      (v.ssoSlug !== undefined && v.ssoSlug !== cur.ssoSlug) ||
+      (v.ssoCallbackUrl !== undefined && v.ssoCallbackUrl !== cur.ssoCallbackUrl) ||
+      v.appToken !== cur.appToken;
+    if (!isSuper(admin) && ssoChanged) throw new UserError(SSO_ONLY_SUPPORT);
     await assertSlugFree(v.ssoSlug, cur.id);
     const sortOrder = cur.departmentId === v.departmentId ? cur.sortOrder : await nextOrder(v.departmentId);
     await withSlugCheck(() => db.update(apps).set({ ...v, sortOrder }).where(eq(apps.id, cur.id)));
@@ -63,7 +89,9 @@ export async function updateApp(id: string, input: unknown) {
     if (v.isActive !== undefined && cur.isActive !== v.isActive) changes.push(v.isActive ? "shown in hub" : "hidden from hub");
     if (v.ssoEnabled !== undefined && cur.ssoEnabled !== v.ssoEnabled) changes.push(`single sign-on ${v.ssoEnabled ? "on" : "off"}`);
     if (v.ssoSlug !== undefined && cur.ssoSlug !== v.ssoSlug) changes.push(`SSO slug ${cur.ssoSlug ?? "none"} → ${v.ssoSlug ?? "none"}`);
-    if (v.ssoCallbackUrl !== undefined && cur.ssoCallbackUrl !== v.ssoCallbackUrl) changes.push("SSO callback address"); // like the address, the callback itself is not recorded
+    // Where sign-in tokens go: old and new, so a change can be traced (without any query part).
+    if (v.ssoCallbackUrl !== undefined && cur.ssoCallbackUrl !== v.ssoCallbackUrl) changes.push(`SSO callback ${callbackForLog(cur.ssoCallbackUrl)} → ${callbackForLog(v.ssoCallbackUrl)}`);
+    if (v.appToken !== cur.appToken) changes.push("app token"); // the token itself is never recorded
     if (changes.length) await writeAudit(admin, [{ action: "app.update", targetType: "app", targetId: cur.id, targetLabel: v.name, details: { changed: changes } }]);
   });
 }
@@ -71,6 +99,20 @@ export async function updateApp(id: string, input: unknown) {
 /** The application's App Admins (its Edit form), as the full list. Support Admin only: no area, unlike the rest of this file. */
 export async function setAppAdmins(appId: string, userIds: unknown) {
   return adminAction(async (admin) => applyAppAdmins(admin, uuid.parse(appId), uuidList.parse(userIds)));
+}
+
+/** App Staff (below App Admins on the Edit form), one person at a time. Changing it is Support Admin only, like App Admins. */
+export async function addAppStaffMember(appId: string, userId: string) {
+  return adminAction(async (admin) => addStaff(admin, uuid.parse(appId), uuid.parse(userId)));
+}
+
+export async function removeAppStaffMember(appId: string, userId: string) {
+  return adminAction(async (admin) => removeStaff(admin, uuid.parse(appId), uuid.parse(userId)));
+}
+
+/** Who is App Staff of one application: anyone who may see the Applications page. */
+export async function getAppStaff(appId: string) {
+  return adminAction("apps", async () => listStaff(uuid.parse(appId)));
 }
 
 /** Apps are never hard-deleted so the activity log keeps its history. */

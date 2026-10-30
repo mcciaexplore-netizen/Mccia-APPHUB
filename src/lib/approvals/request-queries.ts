@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { and, asc, desc, eq, gte, ilike, inArray, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -187,11 +188,31 @@ export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Pro
 }
 
 /**
+ * How many requests each filter matches (for the sidebar), all in ONE query: one count per filter, with the same joins and conditions as
+ * listRequests, so each number always matches its list.
+ */
+export async function countRequests(user: ApprovalsUser, filters: ListFilter[]): Promise<number[]> {
+  if (!filters.length) return [];
+  const cols: Record<string, SQL<number>> = {};
+  filters.forEach((f, i) => { cols[`n${i}`] = sql<number>`(count(*) filter (where ${conditions(user, f) ?? sql`true`}))::int`; });
+  const [row] = await db
+    .select(cols)
+    .from(aprRequests)
+    .leftJoin(aprHrDetails, eq(aprHrDetails.requestId, aprRequests.id))
+    .leftJoin(aprHrCategories, eq(aprHrCategories.id, aprHrDetails.hrCategoryId))
+    .leftJoin(aprExpenditureDetails, eq(aprExpenditureDetails.requestId, aprRequests.id))
+    .leftJoin(aprCategories, eq(aprCategories.id, aprExpenditureDetails.categoryId))
+    .leftJoin(aprBranches, eq(aprBranches.id, aprExpenditureDetails.branchId))
+    .where(visibility(user));
+  return filters.map((_, i) => Number(row?.[`n${i}`] ?? 0));
+}
+
+/**
  * The places an approver works under Approval System, with how many requests wait for them in each: HR for the HR Admin, Expenditure for the
  * Expense Admin (from their role in the hub); people who oversee everything (viewers, the Approvals admin) get both. A person who approves
- * nothing and oversees nothing gets none.
+ * nothing and oversees nothing gets none. Asked once per request: the layout and the page share the answer.
  */
-export async function reviewItemsFor(user: ApprovalsUser): Promise<ReviewItem[]> {
+export const reviewItemsFor = cache(async (user: ApprovalsUser): Promise<ReviewItem[]> => {
   const oversees = hasAnyRole(user, ["viewer", "approvals_admin"]);
   const waiting = await db.select({ type: aprRequests.type, n: sql<number>`count(*)::int` }).from(aprRequests)
     .where(and(eq(aprRequests.status, "pending"), eq(aprRequests.currentApproverUserId, user.id))).groupBy(aprRequests.type);
@@ -203,7 +224,7 @@ export async function reviewItemsFor(user: ApprovalsUser): Promise<ReviewItem[]>
     return [{ key: "recommendation", waiting: counts.hr + counts.expenditure, counts }];
   }
   return REVIEW_KEYS.filter((k) => oversees || named.has(k) || count(k) > 0).map((key) => ({ key, waiting: count(key) }));
-}
+});
 
 /** How many requests are waiting for this person; for the badge on the inbox link. */
 export async function waitingCount(user: ApprovalsUser): Promise<number> {

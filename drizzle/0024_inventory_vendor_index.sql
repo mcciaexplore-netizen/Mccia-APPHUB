@@ -1,0 +1,1 @@
+CREATE INDEX "inventory_movements_vendor_idx" ON "inventory_stock_movements" USING btree ("vendor_id");

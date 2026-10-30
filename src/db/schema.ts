@@ -233,6 +233,25 @@ export const appAdmins = pgTable(
   (t) => [primaryKey({ columns: [t.appId, t.userId] }), index("app_admins_user_idx").on(t.userId)],
 );
 
+/**
+ * Who is staff of an application ("App Staff" on its Edit form, set by the Support Admin): role "staff" in the single sign-on token. Like
+ * App Admins it does not give access, and someone who is both an App Admin and App Staff gets "admin". Rows go with the app or the person.
+ */
+export const appStaff = pgTable(
+  "app_staff",
+  {
+    appId: uuid("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    addedById: uuid("added_by_id").references(() => users.id, { onDelete: "set null" }),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.appId, t.userId] }), index("app_staff_user_idx").on(t.userId)],
+);
+
 /** Which apps a user may open. Head admins implicitly see every app and need no rows. */
 export const userAppAccess = pgTable(
   "user_app_access",

@@ -7,7 +7,7 @@ import { Download, Pencil, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-r
 import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
-import { checkApp, checkAllApps, createApp, deleteApp, setAppAdmins, setAppStatus, updateApp } from "@/actions/apps";
+import { addAppStaffMember, checkApp, checkAllApps, createApp, deleteApp, removeAppStaffMember, setAppAdmins, setAppStatus, updateApp } from "@/actions/apps";
 import { AppForm } from "../departments/forms";
 import type { AdminPerson } from "../departments/AppAdmins";
 import { toCsv } from "@/lib/csv";
@@ -18,8 +18,8 @@ type Row = {
   id: string; name: string; description: string | null; url: string; department: string; status: "active" | "testing" | "unavailable"; visible: boolean; builtIn: boolean; people: number; check: Check | null;
   // What the Edit form starts from (the same fields the department page's Edit uses).
   departmentId: string; icon: string; appToken: string | null; isActive: boolean; ssoEnabled: boolean; ssoSlug: string | null; ssoCallbackUrl: string | null;
-  // Its App Admins, and who has been given it (to mark an App Admin who cannot open it yet).
-  adminIds: string[]; accessIds: string[];
+  // Its App Admins and App Staff, and who has been given it (to mark someone who cannot open it yet).
+  adminIds: string[]; staffIds: string[]; accessIds: string[];
 };
 
 const DAY = 86400000;
@@ -141,8 +141,9 @@ export function InventoryView({ rows, departments, people, canSetAdmins }: {
           {/* The department stays as it is, like the Edit on the department page. */}
           <AppForm departments={[{ id: edit.departmentId, name: edit.department }]} submitLabel="Save" pending={pending}
             admins={{ people, accessIds: edit.accessIds, selected: edit.adminIds, canEdit: canSetAdmins }}
+            staff={{ people, accessIds: edit.accessIds, selected: edit.staffIds, canEdit: canSetAdmins }}
             initial={{ departmentId: edit.departmentId, name: edit.name, description: edit.description ?? "", url: edit.url, icon: edit.icon, appToken: edit.appToken ?? "", isActive: edit.isActive, status: edit.status, ssoEnabled: edit.ssoEnabled, ssoSlug: edit.ssoSlug ?? "", ssoCallbackUrl: edit.ssoCallbackUrl ?? "" }}
-            onSubmit={(v, adminIds) => start(async () => {
+            onSubmit={(v, adminIds, staffIds) => start(async () => {
               const x = await updateApp(edit.id, { ...v, departmentId: edit.departmentId });
               if (!x.ok) return toast.error(x.error);
               // App Admins are saved after the application, and only when they changed (only the Support Admin can change them).
@@ -150,6 +151,15 @@ export function InventoryView({ rows, departments, people, canSetAdmins }: {
               if (canSetAdmins && changed) {
                 const y = await setAppAdmins(edit.id, adminIds);
                 if (!y.ok) { router.refresh(); return toast.error(`Application saved, but the App Admins were not: ${y.error}`); }
+              }
+              // Then App Staff, one person at a time: who was added, then who was taken off.
+              if (canSetAdmins && staffIds) {
+                const calls = [
+                  ...staffIds.filter((id) => !edit.staffIds.includes(id)).map((id) => addAppStaffMember(edit.id, id)),
+                  ...edit.staffIds.filter((id) => !staffIds.includes(id)).map((id) => removeAppStaffMember(edit.id, id)),
+                ];
+                const failed = (await Promise.all(calls)).find((r) => !r.ok);
+                if (failed && !failed.ok) { router.refresh(); return toast.error(`Application saved, but the App Staff were not all saved: ${failed.error}`); }
               }
               toast.success("Application saved"); setEdit(null); router.refresh();
             })} />

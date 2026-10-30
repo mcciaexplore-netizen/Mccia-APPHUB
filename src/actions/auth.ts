@@ -10,7 +10,7 @@ import { writeAudit } from "@/lib/audit";
 import { authenticate, checkPassword, isEnvAdmin, recordLogin, userFingerprint } from "@/lib/auth";
 import { clientIp } from "@/lib/ip";
 import { hashPassword, passwordSchema } from "@/lib/passwords";
-import { record, refuseOrSlow } from "@/lib/sign-in-limits";
+import { attemptSucceeded, startAttempt } from "@/lib/sign-in-limits";
 import { getCurrentUser } from "@/lib/permissions";
 import { isAdminPath } from "@/lib/admin-paths";
 import { canAdminister } from "@/lib/rbac";
@@ -28,9 +28,10 @@ export async function login(formData: FormData) {
   const next = safeNext(formData.get("next"));
   const email = String(formData.get("email") ?? "");
   const ip = clientIp(await headers());
-  if (await refuseOrSlow(email, ip, "login")) redirect(back("/login", next));
+  const attempt = await startAttempt(email, ip, "login");
+  if (attempt.refused) redirect(back("/login", next));
   const user = await authenticate(email, String(formData.get("password") ?? ""));
-  await record(email, ip, "login", !!user);
+  if (user) await attemptSucceeded(attempt.id);
   if (!user) redirect(back("/login", next));
   (await cookies()).set(SESSION_COOKIE, sign(user.id, userFingerprint(user), "session", SESSION_MAX_AGE), cookieOptions(SESSION_MAX_AGE, await isHttps()));
   await recordLogin(user, ip);
@@ -53,9 +54,10 @@ export async function unlockAdmin(formData: FormData) {
   if (!user) redirect("/login");
   if (!canAdminister(user)) redirect("/");
   const ip = clientIp(await headers());
-  if (await refuseOrSlow(user.email, ip, "unlock")) redirect(back("/unlock", next));
+  const attempt = await startAttempt(user.email, ip, "unlock");
+  if (attempt.refused) redirect(back("/unlock", next));
   const right = await checkPassword(user, String(formData.get("password") ?? ""));
-  await record(user.email, ip, "unlock", right);
+  if (right) await attemptSucceeded(attempt.id);
   if (!right) redirect(back("/unlock", next));
   (await cookies()).set(ADMIN_COOKIE, sign(user.id, "", "admin", ADMIN_IDLE), cookieOptions(undefined, await isHttps()));
   redirect(target);
@@ -77,9 +79,10 @@ export async function changePassword(input: unknown): Promise<Result> {
     const v = z.object({ current: z.string().min(1, "Enter your current password"), next: passwordSchema }).parse(input);
     // The same limits as signing in: a refusal gets the same answer as a wrong current password.
     const ip = clientIp(await headers());
-    if (await refuseOrSlow(me.email, ip, "password")) return { ok: false, error: "Current password is incorrect." };
+    const attempt = await startAttempt(me.email, ip, "password");
+    if (attempt.refused) return { ok: false, error: "Current password is incorrect." };
     const right = await checkPassword(me, v.current);
-    await record(me.email, ip, "password", right);
+    if (right) await attemptSucceeded(attempt.id);
     if (!right) return { ok: false, error: "Current password is incorrect." };
     if (v.current === v.next) return { ok: false, error: "Choose a password different from the current one." };
     const hash = await hashPassword(v.next);

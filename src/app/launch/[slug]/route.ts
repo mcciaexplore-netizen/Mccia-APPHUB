@@ -55,7 +55,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     let token: string;
     try {
       const key = await loadSigningKey();
-      token = await signSsoToken(key, buildClaims({ slug, user, role: ssoTokenRole(target.isAppAdmin) }));
+      token = await signSsoToken(key, buildClaims({ slug, user, role: ssoTokenRole(target.isAppAdmin, target.isAppStaff) }));
     } catch (e) {
       return notSetUp(e instanceof SsoConfigError ? e.code : "sign_failed");
     }

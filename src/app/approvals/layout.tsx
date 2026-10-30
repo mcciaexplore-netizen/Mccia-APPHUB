@@ -9,7 +9,7 @@ import { REVIEW_KEYS, REVIEW_LABEL, REVIEW_TABS, REVIEW_TAB_LABEL, type ReviewKe
 import { requirePage } from "@/lib/approvals/guard";
 import { hasAnyRole, hasRole, type ApprovalsUser } from "@/lib/approvals/host-adapter";
 import { unreadCount } from "@/lib/approvals/notify";
-import { listRequests, reviewItemsFor } from "@/lib/approvals/request-queries";
+import { countRequests, reviewItemsFor, type ListFilter } from "@/lib/approvals/request-queries";
 import { reviewScreen, screenFor, type ListScreen } from "@/lib/approvals/screens";
 import { requireUser } from "@/lib/permissions";
 
@@ -27,13 +27,16 @@ async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
   const decides = hasAnyRole(user, ["approver", "dg"]);
   const keys: ReviewKey[] = dg || hasRole(user, "approvals_admin") ? [...REVIEW_KEYS] : REVIEW_KEYS.filter((k) => items.some((i) => i.key === k));
   const approvedHref = decides ? "/approvals/decided/approved" : "/approvals/my/approved";
-  // How many requests each line opens: counted with the same filter as the list itself, so the number always matches the page.
-  const countOf = (s: ListScreen | undefined) =>
-    s ? listRequests(user, { types: s.types, statuses: s.statuses, mine: s.mine, waitingForMe: s.waitingForMe, approvedByMe: s.approvedByMe, rejectedByMe: s.rejectedByMe, pageSize: 1 }).then((r) => r.total) : Promise.resolve(0);
-  const [placeCounts, approvedCount] = await Promise.all([
-    Promise.all(keys.map((k) => Promise.all(REVIEW_TABS.map((t) => countOf(reviewScreen(k, t, decides)))))),
-    countOf(screenFor(approvedHref.replace("/approvals/", "").split("/"))),
-  ]);
+  // How many requests each line opens: counted with the same filter as the list itself, so the number always matches the page. Every
+  // line's count comes from one query; a line with no list counts 0.
+  const filterOf = (s: ListScreen): ListFilter =>
+    ({ types: s.types, statuses: s.statuses, mine: s.mine, waitingForMe: s.waitingForMe, approvedByMe: s.approvedByMe, rejectedByMe: s.rejectedByMe });
+  const screens = [...keys.flatMap((k) => REVIEW_TABS.map((t) => reviewScreen(k, t, decides))), screenFor(approvedHref.replace("/approvals/", "").split("/"))];
+  const got = await countRequests(user, screens.flatMap((s) => (s ? [filterOf(s)] : [])));
+  let next = 0;
+  const counts = screens.map((s) => (s ? got[next++] : 0));
+  const placeCounts = keys.map((_, i) => counts.slice(i * REVIEW_TABS.length, (i + 1) * REVIEW_TABS.length));
+  const approvedCount = counts[counts.length - 1];
   const places: SideLink[] = keys.map((k, i) => {
     const counts = placeCounts[i];
     return {

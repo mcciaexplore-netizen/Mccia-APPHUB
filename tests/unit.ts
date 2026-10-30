@@ -383,8 +383,10 @@ eq("guards: the reviewed list holds only actions that really exist", [...SELF_CH
 const appDir = new URL("../src/app/", import.meta.url);
 const allRouteFiles = (readdirSync(appDir, { recursive: true }) as string[]).filter((f) => /(^|\/)route\.ts$/.test(f));
 const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory)\//.test(f));
-// A Vercel Cron route has no sign-in: it must check CRON_SECRET instead.
-const openRoutes = routeFiles.filter((f) => !/\b(assertHeadAdmin|assertArea|getCurrentUser|requireUser|requireHeadAdmin|requireArea|requireAdministrator)\(|process\.env\.CRON_SECRET/.test(readFileSync(new URL(f, appDir), "utf8")));
+// A Vercel Cron route has no sign-in: it must check CRON_SECRET instead. The only route open to anyone on purpose is the ping, which
+// touches nothing and answers only "ok" and the time (the proxy lets exactly /api/ping through).
+const PUBLIC_ROUTES = ["api/ping/route.ts"];
+const openRoutes = routeFiles.filter((f) => !PUBLIC_ROUTES.includes(f) && !/\b(assertHeadAdmin|assertArea|getCurrentUser|requireUser|requireHeadAdmin|requireArea|requireAdministrator)\(|process\.env\.CRON_SECRET/.test(readFileSync(new URL(f, appDir), "utf8")));
 eq(`guards: all ${routeFiles.length} route handlers outside the Approval System and Inventory check who is asking`, openRoutes, []);
 // Every handler an Inventory route file exports is wrapped in the Inventory guard's route() (sign-in, roles, same-site writes, clean errors).
 const inventoryRoutes = allRouteFiles.filter((f) => /^api\/inventory\//.test(f));
@@ -563,7 +565,9 @@ const ssoTests = (async () => {
   eq("sso key: the public key is what the private key makes", createPublicKey(Buffer.from(hub.env, "base64").toString()).export({ type: "spki", format: "pem" }), hub.publicPem);
 
   // Role mapping
-  eq("sso role: App Admins get admin in the token, everyone else user; no other role exists", [ssoTokenRole(true), ssoTokenRole(false), [...SSO_ROLES]], ["admin", "user", ["user", "admin"]]);
+  eq("sso role: App Admins get admin in the token, App Staff staff, everyone else user; no other role exists",
+    [ssoTokenRole(true), ssoTokenRole(false), ssoTokenRole(false, true), ssoTokenRole(false, false), [...SSO_ROLES]], ["admin", "user", "staff", "user", ["user", "staff", "admin"]]);
+  eq("sso role: someone who is both an App Admin and App Staff gets admin", ssoTokenRole(true, true), "admin");
 
   // Slug rules
   eq("sso slug: valid ones", ["mccia-search", "ab", "a1", "x-y-z", "a".repeat(40), "app2"].map(slugProblem), [null, null, null, null, null, null]);
@@ -627,6 +631,10 @@ const ssoTests = (async () => {
 
   // Sign-in round trip: /launch/<slug> is a safe place to come back to after signing in
   eq("sso sign-in: /login?next=/launch/<slug> sends the person back to the launch address", [safeNext("/launch/mccia-search"), safeNext("//evil.com"), safeNext("https://evil.com")], ["/launch/mccia-search", "/", "/"]);
+  // Browsers drop tabs and line breaks from an address: /<tab>/evil.com would open evil.com. Every such character is refused.
+  eq("safe next: whitespace, control characters and backslashes never pass",
+    ["/\t/evil.com", "/\n/evil.com", "/\r/evil.com", "/ /evil.com", "/\x00x", "/\x7f", "/\\evil.com", "/a\\b", "/ /evil.com"].map(safeNext), Array(9).fill("/"));
+  eq("safe next: ordinary paths still pass", ["/", "/approvals/review/hr/pending?x=1", "/administrator/people", "/a%20b"].map(safeNext), ["/", "/approvals/review/hr/pending?x=1", "/administrator/people", "/a%20b"]);
 })();
 
 ssoTests.then(() => {

@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { and, asc, count, eq, inArray, max } from "drizzle-orm";
 import { db } from "@/db";
-import { activityLog, appAdmins, apps, departments, userAppAccess, type User } from "@/db/schema";
+import { activityLog, appAdmins, appStaff, apps, departments, userAppAccess, type User } from "@/db/schema";
 import { hideApprovalsCard } from "@/lib/approvals/flags";
 import { isSuper } from "@/lib/rbac";
 
@@ -62,16 +62,17 @@ export async function getSsoTarget(user: Pick<User, "id" | "role">, slug: string
   const [row] = await db
     .select({
       id: apps.id, name: apps.name, url: apps.url, departmentId: apps.departmentId, status: apps.status, callbackUrl: apps.ssoCallbackUrl,
-      grantId: userAppAccess.id, adminOf: appAdmins.appId,
+      grantId: userAppAccess.id, adminOf: appAdmins.appId, staffOf: appStaff.appId,
     })
     .from(apps)
     .innerJoin(departments, eq(departments.id, apps.departmentId))
     .leftJoin(userAppAccess, and(eq(userAppAccess.appId, apps.id), eq(userAppAccess.userId, user.id)))
     .leftJoin(appAdmins, and(eq(appAdmins.appId, apps.id), eq(appAdmins.userId, user.id)))
+    .leftJoin(appStaff, and(eq(appStaff.appId, apps.id), eq(appStaff.userId, user.id)))
     .where(and(eq(apps.ssoSlug, slug), eq(apps.ssoEnabled, true), eq(apps.isActive, true), eq(departments.isActive, true), hideApprovalsCard()));
   if (!row) return null;
-  const { grantId, adminOf, ...app } = row;
-  return { ...app, hasAccess: isSuper(user) || grantId !== null, isAppAdmin: adminOf !== null };
+  const { grantId, adminOf, staffOf, ...app } = row;
+  return { ...app, hasAccess: isSuper(user) || grantId !== null, isAppAdmin: adminOf !== null, isAppStaff: staffOf !== null };
 }
 
 /**

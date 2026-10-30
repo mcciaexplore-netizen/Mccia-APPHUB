@@ -116,6 +116,8 @@ export const inventoryStockMovements = pgTable(
     index("inventory_movements_item_idx").on(t.itemId, t.createdAt),
     index("inventory_movements_kind_idx").on(t.kind, t.createdAt),
     index("inventory_movements_issue_idx").on(t.issueId),
+    // The Vendors page asks, for each vendor, whether any movement names it (and deleting a vendor clears them): without this, a full scan each.
+    index("inventory_movements_vendor_idx").on(t.vendorId),
   ],
 );
 
