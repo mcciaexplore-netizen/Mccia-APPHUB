@@ -532,6 +532,25 @@ try {
     check("map: with nothing to show, Pune at zoom 13", (await A.page.locator('[data-map="live"] img.leaflet-tile').first().getAttribute("src"))?.includes("/13/"));
     await ctx.unroute("https://tile.openstreetmap.org/**"); await ctx.unroute("https://*.basemaps.cartocdn.com/**");
 
+    // MCCIA's offices as quick picks.
+    await go(S.page, "/cabs");
+    check("the pickup box invites picking an office", (await S.page.getAttribute("input[name=pickup]", "placeholder")) === "Pickup location or select an office →");
+    await S.page.locator("input[name=pickup]").click();
+    check("tapping the empty pickup box: the six MCCIA offices, under \"MCCIA Offices\"", (await S.page.locator("[data-office]").count()) === 6 && (await S.page.getByText("MCCIA Offices").count()) === 1);
+    await S.page.locator("input[name=dropoff]").focus();
+    check("moving to the drop-off box: only its own list is open", (await S.page.locator('[role=listbox]').evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))).join() === "Drop-off: suggestions");
+    await S.page.locator("input[name=pickup]").focus();
+    await S.page.locator("input[name=pickup]").pressSequentially("mccia bhos");
+    check("typing \"mccia bhos\" narrows them to Bhosari", JSON.stringify(await S.page.locator("[data-office]").evaluateAll((els) => els.map((e) => e.getAttribute("data-office")))) === '["MCCIA Bhosari Office"]');
+    await S.page.locator('[data-office="MCCIA Bhosari Office"] button').click();
+    check("choosing an office fills its name and address, with its position, and closes the list",
+      (await S.page.inputValue("input[name=pickup]")).startsWith("MCCIA Bhosari Office, J-462, Telco Rd") && (await S.page.locator('[data-located="pickup"]').count()) === 1 && (await S.page.locator("[data-office]").count()) === 0);
+    await S.page.locator("input[name=dropoff]").fill("Pune airport");
+    check("typing something else shows no offices", (await S.page.locator("[data-office]").count()) === 0);
+    await S.page.locator("input[name=dropoff]").fill("");
+    await S.page.locator("input[name=dropoff]").press("ArrowDown"); await S.page.locator("input[name=dropoff]").press("ArrowDown"); await S.page.locator("input[name=dropoff]").press("Enter");
+    check("the arrow keys and Enter pick an office too (the second: Hadapsar)", (await S.page.inputValue("input[name=dropoff]")).startsWith("MCCIA Hadapsar Office") && new URL(S.page.url()).pathname === "/cabs");
+
     // Address search without Geoapify: Nominatim, only on Enter, kept to the Pune area (answered here by a stand-in).
     const sctx = S.page.context();
     const asked = [];

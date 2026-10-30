@@ -33,6 +33,7 @@ import { INVENTORY_URL_PATTERN, inventoryRoleFor, navFor } from "../src/lib/inve
 import { CABS_ADMIN_URL_PATTERN, CABS_DRIVER_URL_PATTERN, CABS_USER_URL_PATTERN, CAB_NAV, cabRolesFor, navFor as cabNavFor } from "../src/lib/cabs/cabs.manifest";
 import { assignInput, costInput, driverInput, invoiceInput, istLocalToDate, locationInput, maintenanceInput, otpInput, rideInput, rupeesToPaise as cabRupees, scheduleProblem, vehicleInput } from "../src/lib/cabs/validation";
 import { OTP_MAX_ATTEMPTS, mapsLink, otpExpiry } from "../src/lib/cabs/otp-rules";
+import { MCCIA_OFFICES, officeText, officesFor } from "../src/components/cabs/offices";
 import { issueInput, poInput, receiveInput, ticketInput, ticketUpdate, requestDecision, requestInput, returnInput, rupeesToPaise, transferInput, vendorInput } from "../src/lib/inventory/validation";
 import { financialYear, nextPoNo, poPrefix } from "../src/lib/inventory/po-number";
 import { MAX_PHOTO_BYTES, checkPhoto, sniffPhoto } from "../src/lib/inventory/photos";
@@ -647,6 +648,16 @@ eq("cabs admin menu: no nested lines; Live Trips carries the live dot", [
   ], [[{ text: "Bank", lat: 18.5, lng: 73.8 }, { text: "Hotel", lat: null, lng: null }], false, false, 1, 6, false, false]);
   eq("cabs navigation: the route goes through the stops in order", mapsLink({ text: "A", lat: 18.5, lng: 73.8 }, { text: "D", lat: 18.6, lng: 73.9 }, [{ text: "B", lat: 18.55, lng: 73.85 }, { text: "C Road", lat: null, lng: null }]),
     "https://www.google.com/maps/dir/?api=1&origin=18.5%2C73.8&destination=18.6%2C73.9&travelmode=driving&waypoints=18.55%2C73.85%7CC+Road");
+}
+
+{
+  const names = (t: string) => officesFor(t).map((o) => o.name);
+  eq("cabs offices: all six when the box is (almost) empty; those matching the rest of the words after MCCIA / office / cluster; none for anything else", [
+    names("").length, names("M").length, names("MCCIA").length, names("office").length, names("mccia hadapsar"), names("Bhosari office"), names("cluster"), names("Pune airport"), names("mccia xyz"),
+  ], [6, 6, 6, 6, ["MCCIA Hadapsar Office"], ["MCCIA Bhosari Office"], ["Auto Cluster"], [], []]);
+  eq("cabs offices: each has its address and a position; choosing one fills its name and address", [
+    MCCIA_OFFICES.every((o) => o.address && Number.isFinite(o.lat) && Number.isFinite(o.lng)), officeText(MCCIA_OFFICES[3]),
+  ], [true, "MCCIA Tilak Road Office, Central Chamber, 1023, Tilak Rd, Dadawadi, Shukrawar Peth, Pune, Maharashtra 411002"]);
 }
 
 const ssoTests = (async () => {

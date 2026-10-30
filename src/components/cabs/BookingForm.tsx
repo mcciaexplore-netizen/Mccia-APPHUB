@@ -59,7 +59,7 @@ export function BookingForm() {
         <div className="flex items-center gap-3">
           <MapPin size={20} className="shrink-0 text-[#2a6b7c]" aria-hidden />
           {/* Room on the right for the swap button below, so "Use my location" sits beside it, not on it. */}
-          <div className="min-w-0 flex-1 pr-12"><AddressInput bare name="pickup" label="Pickup location" placeholder="Pickup location" value={pickup} onChange={setPickup} locate autoFocus /></div>
+          <div className="min-w-0 flex-1 pr-12"><AddressInput bare name="pickup" label="Pickup location" placeholder="Pickup location or select an office →" value={pickup} onChange={setPickup} locate autoFocus /></div>
         </div>
         {stops.map((s, i) => (
           <div key={i} className="flex items-center gap-3 border-t border-black/5">
