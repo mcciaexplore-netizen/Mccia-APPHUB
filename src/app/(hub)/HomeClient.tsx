@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Inbox, Search, X } from "lucide-react";
 import { AppCard, type CardApp } from "@/components/AppCard";
+import { Reveal } from "@/components/Reveal";
 
 /** A card for a part of the hub itself (Approval System, Administrator, ...), opened in the same tab. */
 export type HubCard = { id: string; name: string; description: string; icon: string; href: string; /** Requests waiting for this person (Approval System). */ waiting?: number };
@@ -51,10 +52,10 @@ export function HomeClient({ name, cards, apps, isAdmin }: { name: string; cards
       ) : none ? (
         <div className="alert"><Inbox size={18} className="mt-0.5 shrink-0" /><span>No applications match.</span></div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <Reveal className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {shownCards.map((c, i) => <AppCard key={c.id} app={c} index={i} href={c.href} kind="Hub feature" waiting={c.waiting} />)}
           {shownApps.map((a, i) => <AppCard key={a.id} app={a} index={shownCards.length + i} canOpenUnavailable={isAdmin} deptName={a.category} lastOpened={a.lastOpened} people={a.people} />)}
-        </div>
+        </Reveal>
       )}
     </div>
   );

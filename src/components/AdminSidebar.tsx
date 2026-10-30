@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { useSlidingIndicator } from "@/components/SlidingIndicator";
 import { Activity, AppWindow, Bell, ClipboardCheck, LayoutDashboard, Settings2, UserCheck, Users, Wallet } from "lucide-react";
 import type { AdminTab } from "@/lib/admin-tabs";
 
@@ -16,6 +17,7 @@ const row = (active: boolean) =>
 export function AdminSidebar({ tabs }: { tabs: AdminTab[] }) {
   const pathname = usePathname();
   const tab = useSearchParams().get("tab");
+  const { navRef, indicator } = useSlidingIndicator();
   const isActive = (t: { href: string; exact?: boolean }) => {
     const [path, query] = t.href.split("?");
     if (t.exact) return pathname === path;
@@ -45,7 +47,8 @@ export function AdminSidebar({ tabs }: { tabs: AdminTab[] }) {
   };
   const heading = "mt-3 border-t border-line px-4 pb-2 pt-4 text-[0.66rem] font-bold uppercase tracking-widest text-subtle";
   return (
-    <nav aria-label="Administrator" className="rounded-[14px] border border-gray-200 bg-white py-3">
+    <nav ref={navRef} aria-label="Administrator" className="relative rounded-[14px] border border-gray-200 bg-white py-3">
+      {indicator}
       <ul>{tabs.filter((t) => t.group === "main").map((t) => line(t))}</ul>
       <p className={heading}>Settings &amp; Administration</p>
       <ul>{tabs.filter((t) => t.group === "settings").map((t) => line(t))}</ul>

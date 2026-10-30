@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSlidingIndicator } from "@/components/SlidingIndicator";
 import { navFor, type InventoryRole } from "@/lib/inventory/inventory.manifest";
 
 const row = (active: boolean) =>
@@ -12,10 +13,12 @@ const row = (active: boolean) =>
 /** The Inventory module's own sidebar: what this person's roles let them open, with the pages not built yet greyed out. */
 export function InventorySidebar({ roles }: { roles: InventoryRole[] }) {
   const pathname = usePathname();
+  const { navRef, indicator } = useSlidingIndicator();
   // A section stays highlighted on its own pages (a purchase order under Purchase orders); the dashboard only on itself.
   const active = (href: string) => pathname === href || (href !== "/inventory" && pathname.startsWith(`${href}/`));
   return (
-    <nav aria-label="Inventory" className="rounded-[14px] border border-gray-200 bg-white py-3">
+    <nav ref={navRef} aria-label="Inventory" className="relative rounded-[14px] border border-gray-200 bg-white py-3">
+      {indicator}
       <p className="px-4 pb-2 text-[0.66rem] font-bold uppercase tracking-widest text-subtle">Inventory</p>
       <ul>
         {navFor(roles).map((i) => (

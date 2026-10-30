@@ -1,13 +1,15 @@
+import { Suspense } from "react";
 import type { Metadata, Viewport } from "next";
-import { Inter, Geist } from "next/font/google";
+import { Geist } from "next/font/google";
 import { InstallPrompt } from "@/components/InstallPrompt";
+import { NavigationProgress } from "@/components/NavigationProgress";
 import { Toaster } from "@/components/Toast";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+// Served from the hub itself (no request to Google), preloaded, and shown in a fallback font sized to match until it arrives, so the text
+// is readable at once and does not jump when it swaps.
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans", display: "swap", preload: true });
 
 export const metadata: Metadata = {
   title: "MCCIA App Hub",
@@ -27,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: `window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.__mcciaInstall=e;window.dispatchEvent(new Event("mccia-install-ready"));});` }} />
       </head>
       <body className="min-h-screen font-sans">
+        <Suspense fallback={null}><NavigationProgress /></Suspense>
         <Toaster>{children}</Toaster>
         <InstallPrompt />
       </body>

@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import { TableSkeleton } from "@/components/approvals/Skeletons";
 import { ItemsView } from "@/components/inventory/ItemsView";
 import { listCategories, listItems } from "@/lib/inventory/catalog";
 import { requirePage } from "@/lib/inventory/guard";
@@ -16,9 +18,20 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const category = one(sp.category);
   const filters = { q: one(sp.q).slice(0, 100), categoryId: idSchema.safeParse(category).success ? category : "", low: one(sp.low) === "1", inactive: canEdit && one(sp.inactive) === "1" };
+  // Who may see it is settled above, before anything is sent; the list itself streams in behind a placeholder.
+  return (
+    <div className="page-enter">
+      <Suspense fallback={<div role="status" aria-label="Loading items"><TableSkeleton rows={8} /></div>}>
+        <ItemsList canEdit={canEdit} filters={filters} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function ItemsList({ canEdit, filters }: { canEdit: boolean; filters: { q: string; categoryId: string; low: boolean; inactive: boolean } }) {
   const [items, categories] = await Promise.all([
     listItems({ q: filters.q, categoryId: filters.categoryId || undefined, low: filters.low, includeInactive: filters.inactive }),
     listCategories(),
   ]);
-  return <div className="page-enter"><ItemsView items={items} categories={categories.map(({ id, name }) => ({ id, name }))} canEdit={canEdit} filters={filters} /></div>;
+  return <ItemsView items={items} categories={categories.map(({ id, name }) => ({ id, name }))} canEdit={canEdit} filters={filters} />;
 }

@@ -52,7 +52,7 @@ export function HubShell({ user, unread, children }: { user: ShellUser | null; /
           </div>
         ) : null}
       </header>
-      <main className="px-5 py-6 sm:px-8 sm:py-8 lg:px-12">{children}</main>
+      <main className="page-slot px-5 py-6 sm:px-8 sm:py-8 lg:px-12">{children}</main>
     </div>
   );
 }

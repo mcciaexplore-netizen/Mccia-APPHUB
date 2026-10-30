@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ArrowRight, ArrowUpRight, Clock, Users } from "lucide-react";
 import { Icon } from "@/components/Icon";
 
@@ -34,7 +35,9 @@ export function AppCard({ app, deptName, index = 0, canOpenUnavailable = false, 
   const status = app.status;
   const blocked = status === "unavailable" && !canOpenUnavailable;
   const external = !href;
-  const cls = `tile-${palette(app.id)} group flex min-h-52 animate-rise flex-col overflow-hidden rounded-[14px] border border-gray-200 border-t-[3px] border-t-[color:var(--tile-ink)] bg-white p-5 transition-all duration-200 ${blocked ? "opacity-55" : "hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(15,23,42,0.10)]"}`;
+  // Comes in staggered (60ms each; the first dozen only, so a long list does not keep the page waiting; cards further down come in as they
+  // are scrolled to, see Reveal). On hover it lifts 3px with a deeper shadow and a teal edge (its coloured top stays); pressed, it gives a little.
+  const cls = `tile-${palette(app.id)} group flex min-h-52 card-in flex-col overflow-hidden rounded-[14px] border border-gray-200 border-t-[3px] border-t-[color:var(--tile-ink)] bg-white p-5 transition-[translate,scale,box-shadow,border-color] duration-150 ease-out ${blocked ? "opacity-55" : "hover:-translate-y-[3px] hover:border-[color:var(--c-primary)] hover:border-t-[color:var(--tile-ink)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.10)] active:scale-[0.98] active:duration-100"}`;
   const inner = (
     <>
       <span className="flex items-start justify-between gap-2">
@@ -60,8 +63,10 @@ export function AppCard({ app, deptName, index = 0, canOpenUnavailable = false, 
       </span>
     </>
   );
-  const style = { animationDelay: `${index * 50}ms` };
+  const style = { animationDelay: `${Math.min(index, 11) * 60}ms` };
   if (blocked) return <div className={cls} style={style} title={app.description ?? app.name} aria-disabled="true">{inner}</div>;
-  if (href) return <a href={href} title={app.description ?? app.name} style={style} className={cls}>{inner}</a>;
+  // A part of the hub opens in the same tab without reloading the page. An application goes through /go or /launch (route handlers that
+  // redirect, or sign the person in), which must be a real page load: those stay plain links.
+  if (href) return <Link href={href} title={app.description ?? app.name} style={style} className={cls}>{inner}</Link>;
   return <a href={app.ssoSlug ? `/launch/${app.ssoSlug}` : `/go/${app.id}`} target="_self" rel="noopener noreferrer" title={app.description ?? app.name} style={style} className={cls}>{inner}</a>;
 }

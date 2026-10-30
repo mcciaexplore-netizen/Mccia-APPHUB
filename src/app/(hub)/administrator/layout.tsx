@@ -19,7 +19,7 @@ export default async function AdministratorLayout({ children }: { children: Reac
             <MobileMenu label="Administrator menu"><AdminSidebar tabs={adminTabsFor(me)} /></MobileMenu>
           </Suspense>
         </aside>
-        <div className="min-w-0 flex-1">{children}</div>
+        <div className="page-slot min-w-0 flex-1">{children}</div>
       </div>
     </ConfirmProvider>
   );

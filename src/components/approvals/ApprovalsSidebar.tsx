@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSlidingIndicator } from "@/components/SlidingIndicator";
 
 /** One line of the Approval System sidebar, with the lines under it (HR under Approval Forms, Pending under HR, ...). */
 export type SideLink = { label: string; href: string; /** Waiting for a decision: a red badge. */ waiting?: number; /** How many the list holds: a grey number. */ count?: number; children?: SideLink[] };
@@ -31,8 +32,10 @@ function Line({ link, depth, pathname }: { link: SideLink; depth: number; pathna
 /** The Approval System's own sidebar: what this person may open in it, and nothing else. */
 export function ApprovalsSidebar({ links }: { links: SideLink[] }) {
   const pathname = usePathname();
+  const { navRef, indicator } = useSlidingIndicator();
   return (
-    <nav aria-label="Approval System" className="rounded-[14px] border border-gray-200 bg-white py-3">
+    <nav ref={navRef} aria-label="Approval System" className="relative rounded-[14px] border border-gray-200 bg-white py-3">
+      {indicator}
       <p className="px-4 pb-2 text-[0.66rem] font-bold uppercase tracking-widest text-subtle">Approval System</p>
       <ul>{links.map((l) => <Line key={l.href} link={l} depth={0} pathname={pathname} />)}</ul>
     </nav>

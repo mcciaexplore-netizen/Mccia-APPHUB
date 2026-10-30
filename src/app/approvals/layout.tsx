@@ -69,7 +69,7 @@ export default async function ApprovalsLayout({ children }: { children: React.Re
             <Suspense fallback={null}>
               <ModuleHeader roles={user.roles} unread={unread} />
             </Suspense>
-            <div className="mt-6">{children}</div>
+            <div className="page-slot mt-6">{children}</div>
           </div>
         </div>
       </ConfirmProvider>

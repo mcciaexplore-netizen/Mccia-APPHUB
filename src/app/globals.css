@@ -215,7 +215,8 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
     display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
     padding: 0.75rem 1.5rem; font-size: 0.85rem; font-weight: 600;
     border-radius: var(--radius-btn); cursor: pointer;
-    transition: all 0.3s var(--ease); border: 1px solid transparent;
+    /* The press (and the lift) is quick, 100ms; colours and shadows ease in as before. */
+    transition: all 0.3s var(--ease), transform 0.1s ease-out; border: 1px solid transparent;
   }
   .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none !important; }
   .btn-sm { padding: 0.45rem 0.9rem; font-size: 0.78rem; }
@@ -235,7 +236,7 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
     box-shadow: inset 0 1px 0 #fff, 0 2px 6px rgba(239, 68, 68, 0.12);
   }
   .btn-danger:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--c-red); box-shadow: inset 0 1px 0 #fff, 0 6px 14px rgba(239, 68, 68, 0.2); }
-  .btn:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+  .btn:active:not(:disabled) { transform: translateY(0) scale(0.97); }
 
   .input {
     width: 100%; background: var(--c-white); border: 1px solid var(--c-border);
@@ -302,6 +303,14 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
 }
 
 /* ------------------------------------------------------------------ motion (CSS only; switched off by the reduced-motion rule above) */
+/* Every page fades in when it opens: each layout marks where its pages go (.page-slot), and a page's outer element is new on every page
+   change, so the fade plays then; the sidebars and headers around it stay, and do not fade again. Opacity only: nothing moves, and no
+   transform is left that fixed dialogs would be placed in. In the lowest layer, so anything an element sets for itself wins: .page-enter keeps
+   its rise, a .skeleton its shimmer, an animate-* class its own animation. */
+@keyframes page-fade { from { opacity: 0; } to { opacity: 1; } }
+@layer base {
+  .page-slot > * { animation: page-fade 0.2s ease backwards; }
+}
 @keyframes page-enter {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -323,6 +332,50 @@ h1 { letter-spacing: -0.03em; font-weight: 800; }
   to { opacity: 1; transform: translateY(0); }
 }
 .banner-in { animation: banner-in 0.2s ease-out forwards; }
+
+/* A card coming in: on the page's first paint (staggered, see AppCard), or when it scrolls into view (src/components/Reveal.tsx). Opacity and
+   a small rise only, so nothing around it moves. "backwards": no transform is left on the card afterwards. */
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.card-in { animation: card-in 0.25s ease-out backwards; }
+/* Below the fold until it is scrolled to: hidden (it is off screen, so nothing is seen to vanish), then brought in. */
+.reveal-pending { opacity: 0; animation: none; }
+.reveal-in { animation: card-in 0.25s ease-out backwards; animation-delay: var(--reveal-delay, 0ms); }
+
+/* Toasts rise in from the bottom right and sink away when dismissed. */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(20px); }
+}
+.toast-in { animation: toast-in 0.25s ease-out both; }
+.toast-out { animation: toast-out 0.2s ease-in both; }
+
+/* Dialogs: the backdrop fades, the box rises a little and fades in; the reverse when closed by the person. */
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes dialog-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(8px); }
+}
+.backdrop-in { animation: fade-in 0.2s ease-out both; }
+.backdrop-out { animation: fade-out 0.2s ease-in both; }
+.dialog-in { animation: dialog-in 0.2s ease-out both; }
+.dialog-out { animation: dialog-out 0.2s ease-in both; }
+
+/* The sidebars' marker for the page open slides between lines (src/components/SlidingIndicator.tsx). Until it is measured, the line's own
+   left border shows it, so it is never missing. */
+.nav-indicator { transition: transform 0.2s ease-out, height 0.2s ease-out, opacity 0.15s ease-out; }
+nav[data-indicator-ready] a[aria-current="page"] { border-left-color: transparent; }
 
 /* ------------------------------------------------------------------ phones and touch screens */
 /* iPhones zoom into any text box whose text is smaller than 16px; on small screens every box uses 16px. */

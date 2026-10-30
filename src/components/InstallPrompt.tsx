@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { Download, X } from "lucide-react";
 import { Modal } from "@/components/Modal";
 
@@ -72,8 +73,7 @@ export function InstallPrompt() {
     return (
       <Modal title="Download the MCCIA App Hub" onClose={() => close(true)}>
         <div className="flex items-start gap-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icon-192.png" alt="" width={56} height={56} className="rounded-[12px] border border-line" />
+          <Image src="/icon-192.png" alt="" width={56} height={56} className="rounded-[12px] border border-line" />
           <div className="space-y-2 text-sm text-muted">
             <p>Install the App Hub on this computer or phone. It opens in its own window from your desktop or home screen, like any other app, and always has the latest version.</p>
             {how && <p>{how}</p>}
@@ -90,8 +90,7 @@ export function InstallPrompt() {
   if (show === "banner") {
     return (
       <div role="status" className="fixed inset-x-3 bottom-3 z-[80] mx-auto flex max-w-xl animate-rise items-center gap-3 rounded-md border border-line bg-white p-3 shadow-card sm:inset-x-auto sm:right-4">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/icon-192.png" alt="" width={36} height={36} className="rounded-[8px] border border-line" />
+        <Image src="/icon-192.png" alt="" width={36} height={36} className="rounded-[8px] border border-line" />
         <p className="min-w-0 flex-1 text-sm"><b className="text-ink">Download this application</b><span className="block text-xs text-muted">{offer ? "Install the App Hub on this device." : ios ? "Share → Add to Home Screen." : "Browser menu → Install MCCIA App Hub."}</span></p>
         <button className="btn btn-primary btn-sm" onClick={install}><Download size={14} /> {offer ? "Install" : "How to install"}</button>
         <button className="btn btn-ghost btn-sm" aria-label="Not now" onClick={() => close(true)}><X size={14} /></button>
