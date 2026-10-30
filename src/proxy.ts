@@ -39,7 +39,8 @@ export function proxy(req: NextRequest) {
   return res;
 }
 
-// /api/cron/ is called by Vercel Cron, which has no sign-in: that route checks CRON_SECRET itself.
+// /api/cron/ is called by Vercel Cron, which has no sign-in: that route checks CRON_SECRET itself. /api/ping (the keep-warm ping, also
+// Vercel Cron) is open to anyone and answers only "ok" and the time.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|api/cron/|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|map|txt|woff2?)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|api/cron/|api/ping$|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|map|txt|woff2?)$).*)"],
 };
