@@ -89,7 +89,10 @@ export const inventoryItems = pgTable(
   ],
 );
 
-/** How many of an item one branch has, and the level below which it counts as low there. A row appears when the branch first gets the item. */
+/**
+ * How many of an item one branch has. A row appears when the branch first gets the item. min_quantity is created by migration 0025 but is
+ * never used: production's table has no such column (it existed before the migration), so the low-stock level is the item's own.
+ */
 export const inventoryBranchStock = pgTable(
   "inventory_branch_stock",
   {

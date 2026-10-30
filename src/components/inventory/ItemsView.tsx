@@ -36,7 +36,7 @@ function ItemForm({ item, categories, branches, defaultBranchId, pending, onSubm
     <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); onSubmit(v); }}>
       <label className={field}><span className={label}>Name</span><input className="input" value={v.name} onChange={(e) => set("name", e.target.value)} required maxLength={120} autoFocus /></label>
       {item ? (
-        <p className="text-sm text-muted">Quantity and minimum below are for <b className="text-ink">{item.branchName}</b>. The other details are the same at every branch.</p>
+        <p className="text-sm text-muted">The quantity below is for <b className="text-ink">{item.branchName}</b>. The other details, minimum stock among them, are the same at every branch.</p>
       ) : (
         <label className={field}><span className={label}>Branch</span>
           <select className="input" value={v.branchId} onChange={(e) => set("branchId", e.target.value)} required>
@@ -73,9 +73,9 @@ function ItemForm({ item, categories, branches, defaultBranchId, pending, onSubm
   );
 }
 
-/** Starts keeping an item at another branch: which one, its opening stock there and its minimum. */
+/** Starts keeping an item at another branch: which one, and its opening stock there. */
 function AddToBranchForm({ item, branches, pending, onSubmit }: { item: ItemView; branches: Branch[]; pending: boolean; onSubmit: (v: Record<string, string>) => void }) {
-  const [v, setV] = useState({ branchId: "", quantity: "0", minQuantity: String(item.minQuantity) });
+  const [v, setV] = useState({ branchId: "", quantity: "0" });
   const label = "label-xs mb-1.5 block";
   return (
     <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); onSubmit(v); }}>
@@ -84,11 +84,8 @@ function AddToBranchForm({ item, branches, pending, onSubmit }: { item: ItemView
           <option value="">Choose a branch</option>
           {branches.filter((b) => b.active && b.id !== item.branchId).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select></label>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="block"><span className={label}>Opening stock</span><input className="input" type="number" min={0} step={1} value={v.quantity} onChange={(e) => setV({ ...v, quantity: e.target.value })} required /></label>
-        <label className="block"><span className={label}>Minimum stock</span><input className="input" type="number" min={0} step={1} value={v.minQuantity} onChange={(e) => setV({ ...v, minQuantity: e.target.value })} required /></label>
-      </div>
-      <p className="text-xs text-muted">To move stock from a branch that already has it, use Transfers instead.</p>
+      <label className="block"><span className={label}>Opening stock</span><input className="input" type="number" min={0} step={1} value={v.quantity} onChange={(e) => setV({ ...v, quantity: e.target.value })} required /></label>
+      <p className="text-xs text-muted">Its minimum stock ({item.minQuantity}) applies at every branch. To move stock from a branch that already has it, use Transfers instead.</p>
       <button className="btn btn-primary btn-sm" disabled={pending || !v.branchId}>Add to branch</button>
     </form>
   );

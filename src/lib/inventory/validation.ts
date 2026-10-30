@@ -76,8 +76,8 @@ export const issueInput = z
   .refine((v) => v.userId || v.name, { message: "Choose who it is issued to, or type their name", path: ["name"] });
 export type IssueInput = z.output<typeof issueInput>;
 
-/** Inventory admins: start keeping an existing item at another branch, with its opening stock there and its low-stock level. */
-export const itemBranchInput = z.object({ branchId: idSchema, quantity: wholeNumber("Opening stock"), minQuantity: wholeNumber("Minimum stock") });
+/** Inventory admins: start keeping an existing item at another branch, with its opening stock there (the item's minimum applies there too). */
+export const itemBranchInput = z.object({ branchId: idSchema, quantity: wholeNumber("Opening stock") });
 
 /** Inventory admins: move stock of one item from one branch to another. */
 export const transferInput = z

@@ -13,8 +13,9 @@ import type { ItemInput } from "./validation";
  * statement that also writes the matching row in inventory_stock_movements: the quantity can always be explained by its history.
  * Admin changes are recorded in the hub's audit log (Administrator → Activity Log) as inventory.* actions.
  *
- * Stock is per branch: inventory_branch_stock holds each branch's quantity and minimum for an item, and inventory_items.quantity is the total
- * across branches, changed by the same statement as the branch's own row.
+ * Stock is per branch: inventory_branch_stock holds each branch's quantity of an item, and inventory_items.quantity is the total across
+ * branches, changed by the same statement as the branch's own row. The low-stock level is the item's own (inventory_items.min_quantity),
+ * the same at every branch: production's inventory_branch_stock has no min_quantity column, so nothing here reads or writes one.
  */
 
 type Actor = Pick<InventoryUser, "id" | "name">;
@@ -61,7 +62,7 @@ export async function deleteCategory(id: string, actor: Actor): Promise<{ items:
 
 /* ---------------------------------------------------------------- items */
 
-/** One item at one branch: the item's own details, with that branch's quantity and minimum. */
+/** One item at one branch: the item's own details (its minimum among them), with that branch's quantity. */
 export type ItemRow = {
   id: string; name: string; categoryId: string | null; category: string | null; unit: string; quantity: number; minQuantity: number;
   ratePaise: number | null; location: string | null; notes: string | null; active: boolean; low: boolean; branchId: string; branchName: string;
@@ -70,7 +71,7 @@ export type ItemRow = {
 /** `branchId`: one branch only (a user's own, or the filter an admin chose); left out, every branch. */
 export type ItemFilters = { q?: string; categoryId?: string; low?: boolean; includeInactive?: boolean; branchId?: string };
 
-const isLow = sql<boolean>`${stock.quantity} < ${stock.minQuantity}`;
+const isLow = sql<boolean>`${stock.quantity} < ${inventoryItems.minQuantity}`;
 
 /** The items each branch keeps, one row per item and branch: the low ones first, then by name and branch. */
 export async function listItems(f: ItemFilters): Promise<ItemRow[]> {
@@ -78,12 +79,12 @@ export async function listItems(f: ItemFilters): Promise<ItemRow[]> {
   if (!f.includeInactive) where.push(eq(inventoryItems.active, true));
   if (f.q?.trim()) where.push(ilike(inventoryItems.name, `%${f.q.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}%`));
   if (f.categoryId) where.push(eq(inventoryItems.categoryId, f.categoryId));
-  if (f.low) where.push(lt(stock.quantity, stock.minQuantity));
+  if (f.low) where.push(lt(stock.quantity, inventoryItems.minQuantity));
   if (f.branchId) where.push(eq(stock.branchId, f.branchId));
   return db
     .select({
       id: inventoryItems.id, name: inventoryItems.name, categoryId: inventoryItems.categoryId, category: inventoryCategories.name, unit: inventoryItems.unit,
-      quantity: stock.quantity, minQuantity: stock.minQuantity, ratePaise: inventoryItems.ratePaise, location: inventoryItems.location,
+      quantity: stock.quantity, minQuantity: inventoryItems.minQuantity, ratePaise: inventoryItems.ratePaise, location: inventoryItems.location,
       notes: inventoryItems.notes, active: inventoryItems.active, low: isLow, branchId: stock.branchId, branchName: branches.name,
     })
     .from(stock)
@@ -112,7 +113,7 @@ export async function createItem(v: ItemInput, branch: { id: string; name: strin
       values (${v.name}, ${v.categoryId}, ${v.unit}, ${v.quantity}, ${v.minQuantity}, ${v.rate}, ${v.location}, ${v.notes}, ${v.active}, ${branch.id})
       returning id, name, quantity
     ), at_branch as (
-      insert into inventory_branch_stock (item_id, branch_id, quantity, min_quantity) select id, ${branch.id}, quantity, ${v.minQuantity} from item
+      insert into inventory_branch_stock (item_id, branch_id, quantity) select id, ${branch.id}, quantity from item
     ), opening as (
       insert into inventory_stock_movements (item_id, kind, delta, quantity_after, reason, branch_id, actor_user_id, actor_name)
       select id, 'adjust', quantity, quantity, 'Opening stock', ${branch.id}, ${actor.id}, ${actor.name} from item where quantity > 0
@@ -124,7 +125,7 @@ export async function createItem(v: ItemInput, branch: { id: string; name: strin
 }
 
 /**
- * Saves an item's details, and its quantity and minimum at one branch. A changed quantity is a recount at that branch: the difference goes
+ * Saves an item's details (its minimum among them), and its quantity at one branch. A changed quantity is a recount at that branch: the difference goes
  * to the ledger in the same statement, against the quantity as it was at that moment (so a change made by someone else in between is not
  * lost from the history), and the item's total moves by the same difference.
  */
@@ -133,13 +134,13 @@ export async function updateItem(id: string, v: ItemInput, branch: { id: string;
   // would see the row as already changed by this same statement and return nothing, and a plain read could be stale if someone saved first.
   const res = (await db.execute(sql`
     with at_branch as (
-      update inventory_branch_stock b set quantity = ${v.quantity}, min_quantity = ${v.minQuantity}
+      update inventory_branch_stock b set quantity = ${v.quantity}
       from (select item_id, branch_id, quantity from inventory_branch_stock where item_id = ${id} and branch_id = ${branch.id} for update) old
       where b.item_id = old.item_id and b.branch_id = old.branch_id
       returning old.quantity as before
     ), item as (
       update inventory_items set name = ${v.name}, category_id = ${v.categoryId}, unit = ${v.unit}, quantity = quantity + (${v.quantity} - (select before from at_branch)),
-        rate_paise = ${v.rate}, location = ${v.location}, notes = ${v.notes}, active = ${v.active}
+        min_quantity = ${v.minQuantity}, rate_paise = ${v.rate}, location = ${v.location}, notes = ${v.notes}, active = ${v.active}
       where id = ${id} and exists (select 1 from at_branch)
       returning name
     ), recount as (
@@ -153,12 +154,12 @@ export async function updateItem(id: string, v: ItemInput, branch: { id: string;
   await audit(actor, "item_update", id, row.name, row.before !== v.quantity ? { branch: branch.name, quantity: { from: row.before, to: v.quantity } } : { branch: branch.name });
 }
 
-/** Starts keeping an existing item at another branch, with its opening stock there ("Opening stock" in the ledger) and its minimum. */
-export async function addItemToBranch(id: string, v: { quantity: number; minQuantity: number }, branch: { id: string; name: string }, actor: Actor) {
+/** Starts keeping an existing item at another branch, with its opening stock there ("Opening stock" in the ledger). */
+export async function addItemToBranch(id: string, v: { quantity: number }, branch: { id: string; name: string }, actor: Actor) {
   const res = (await db.execute(sql`
     with at_branch as (
-      insert into inventory_branch_stock (item_id, branch_id, quantity, min_quantity)
-      select id, ${branch.id}, ${v.quantity}, ${v.minQuantity} from inventory_items where id = ${id}
+      insert into inventory_branch_stock (item_id, branch_id, quantity)
+      select id, ${branch.id}, ${v.quantity} from inventory_items where id = ${id}
       on conflict (item_id, branch_id) do nothing
       returning item_id
     ), item as (
@@ -210,7 +211,7 @@ export type DashboardStats = { items: number; units: number; valuePaise: number;
 
 /**
  * The dashboard's numbers, from the active items only, in one round trip: every branch together, or one branch. Low on stock counts each
- * item at each branch that is below its minimum there. Maintenance tickets are not kept per branch, so they are always the total.
+ * item at each branch that is below the item's minimum. Maintenance tickets are not kept per branch, so they are always the total.
  */
 export async function dashboardStats(branchId?: string): Promise<DashboardStats> {
   const atBranch = branchId ? sql`and b.branch_id = ${branchId}` : sql``;
@@ -219,7 +220,7 @@ export async function dashboardStats(branchId?: string): Promise<DashboardStats>
       (select count(distinct b.item_id) from inventory_branch_stock b join inventory_items i on i.id = b.item_id where i.active ${atBranch})::int as items,
       (select coalesce(sum(b.quantity), 0) from inventory_branch_stock b join inventory_items i on i.id = b.item_id where i.active ${atBranch})::bigint as units,
       (select coalesce(sum(b.quantity::bigint * coalesce(i.rate_paise, 0)), 0) from inventory_branch_stock b join inventory_items i on i.id = b.item_id where i.active ${atBranch})::bigint as value_paise,
-      (select count(*) from inventory_branch_stock b join inventory_items i on i.id = b.item_id where i.active and b.quantity < b.min_quantity ${atBranch})::int as low_stock,
+      (select count(*) from inventory_branch_stock b join inventory_items i on i.id = b.item_id where i.active and b.quantity < i.min_quantity ${atBranch})::int as low_stock,
       (select count(*) from inventory_requests where status = 'pending' ${branchId ? sql`and branch_id = ${branchId}` : sql``})::int as pending_requests,
       (select count(*) from inventory_maintenance_tickets where status <> 'resolved')::int as open_tickets`)) as unknown as {
     rows: { items: number; units: string | number; value_paise: string | number; low_stock: number; pending_requests: number; open_tickets: number }[];
@@ -230,12 +231,12 @@ export async function dashboardStats(branchId?: string): Promise<DashboardStats>
 
 export async function lowStockItems(limit = 8, branchId?: string) {
   return db
-    .select({ id: inventoryItems.id, name: inventoryItems.name, unit: inventoryItems.unit, quantity: stock.quantity, minQuantity: stock.minQuantity, branchId: stock.branchId, branchName: branches.name })
+    .select({ id: inventoryItems.id, name: inventoryItems.name, unit: inventoryItems.unit, quantity: stock.quantity, minQuantity: inventoryItems.minQuantity, branchId: stock.branchId, branchName: branches.name })
     .from(stock)
     .innerJoin(inventoryItems, eq(inventoryItems.id, stock.itemId))
     .innerJoin(branches, eq(branches.id, stock.branchId))
-    .where(and(eq(inventoryItems.active, true), lt(stock.quantity, stock.minQuantity), branchId ? eq(stock.branchId, branchId) : undefined))
-    .orderBy(sql`${stock.quantity}::float / greatest(${stock.minQuantity}, 1)`, asc(inventoryItems.name))
+    .where(and(eq(inventoryItems.active, true), lt(stock.quantity, inventoryItems.minQuantity), branchId ? eq(stock.branchId, branchId) : undefined))
+    .orderBy(sql`${stock.quantity}::float / greatest(${inventoryItems.minQuantity}, 1)`, asc(inventoryItems.name))
     .limit(limit);
 }
 
