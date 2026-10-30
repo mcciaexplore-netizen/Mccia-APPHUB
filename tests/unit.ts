@@ -449,8 +449,10 @@ eq("inventory roles: the Support Admin and the Inventory application's App Admin
   inventoryRoleFor("head_admin", false), inventoryRoleFor("member", true), inventoryRoleFor("super_admin", false), inventoryRoleFor("admin", false),
   inventoryRoleFor("admin", true), inventoryRoleFor("member", false),
 ], ["inventory_admin", "inventory_admin", "requester", "requester", "inventory_admin", "requester"]);
-eq("inventory access: only an application whose URL is /inventory stands for the module", ["/inventory", "/inventory/", "/inventory/items", "/inventory-old", "https://mccia-inventory-management.vercel.app/", "/approvals"]
-  .map((u) => new RegExp(INVENTORY_URL_PATTERN).test(u)), [true, true, false, false, false, false]);
+eq("inventory access: an application whose URL is /inventory (as a path or a full address) stands for the module; nothing else does", [
+  "/inventory", "/inventory/", "https://mccia-apphub.vercel.app/inventory", "http://localhost:3000/inventory/", "/inventory/items", "/inventory-old",
+  "https://mccia-inventory-management.vercel.app/", "https://mccia-apphub.vercel.app/inventory?x=1", "/approvals",
+].map((u) => new RegExp(INVENTORY_URL_PATTERN).test(u)), [true, true, true, true, false, false, false, false, false]);
 const navLabels = (roles: Parameters<typeof navFor>[0]) => navFor(roles).map((i) => i.label);
 eq("inventory menu: no Settings any more; Categories, purchase orders and the stock history for Inventory admins; Items and requests for everyone", [
   navLabels(["requester", "inventory_admin"]).includes("Settings"), navLabels(["requester"]).includes("Categories"), navLabels(["requester"]).includes("Purchase orders"),

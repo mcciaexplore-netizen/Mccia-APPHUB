@@ -18,8 +18,11 @@ export const ROLE_LABEL: Record<InventoryRole, string> = { requester: "User", in
 /** Inventory admin: the Support Admin always, anyone else only as an App Admin of the Inventory application. */
 export const inventoryRoleFor = (hubRole: string, isAppAdmin: boolean): InventoryRole => (hubRole === "head_admin" || isAppAdmin ? "inventory_admin" : "requester");
 
-/** The application rows that stand for this module: their URL is the module's own path (as /approvals is for the Approval System). */
-export const INVENTORY_URL_PATTERN = "^/inventory/?$";
+/**
+ * The application rows that stand for this module: their URL is the module's own path, /inventory, written either as the path or as a
+ * full address ending in it (the Add application form starts with "https://"). The same rule the Approval System uses for /approvals.
+ */
+export const INVENTORY_URL_PATTERN = "^(https?://[^/?#]+)?/inventory/?$";
 
 export type InventoryNavItem = {
   label: string;
