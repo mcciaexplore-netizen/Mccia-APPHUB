@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Approval System · MCCIA App Hub" };
 
 /**
- * What the sidebar holds for this person. Everyone: Approval Forms (the forms), My Requests (with how many of theirs are still pending)
+ * What the sidebar holds for this person. Everyone: Approval Forms (the forms), My Requests (an amber badge for theirs still pending or needing correction)
  * and Approved Forms. Under Approval Forms, whoever decides
  * requests gets the places they decide in, each with its Pending, Approved and Rejected lists: the Director General and the Support Admin
  * both HR and Expenditure, an approver the place their role gives them (HR Admin: HR, Expense Admin: Expenditure). Below Approved Forms,
@@ -34,14 +34,14 @@ async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
   const filterOf = (s: ListScreen): ListFilter =>
     ({ types: s.types, statuses: s.statuses, mine: s.mine, waitingForMe: s.waitingForMe, approvedByMe: s.approvedByMe, rejectedByMe: s.rejectedByMe });
   const screens = [...keys.flatMap((k) => REVIEW_TABS.map((t) => reviewScreen(k, t, decides))), screenFor(approvedHref.replace("/approvals/", "").split("/"))];
-  // My Requests (everyone: their own requests still pending), and My Pending Approvals and My Approvals for people who decide: counted in
+  // My Requests (everyone: their own requests still pending or needing correction), and My Pending Approvals and My Approvals for people who decide: counted in
   // the same query, with the filters their pages list by.
   const mineToo = hasAnyRole(user, MY_APPROVALS_ROLES);
-  const mineFilters: ListFilter[] = [{ mine: true, statuses: ["pending"] }, ...(mineToo ? [{ statuses: ["pending"], waitingForMe: true }, { decidedByMe: true }] satisfies ListFilter[] : [])];
+  const mineFilters: ListFilter[] = [{ mine: true, statuses: ["pending", "returned"] },...(mineToo ? [{ statuses: ["pending"], waitingForMe: true }, { decidedByMe: true }] satisfies ListFilter[] : [])];
   const got = await countRequests(user, [...screens.flatMap((s) => (s ? [filterOf(s)] : [])), ...mineFilters]);
   let next = 0;
   const counts = screens.map((s) => (s ? got[next++] : 0));
-  const [ownPending = 0, myPending = 0, myDecided = 0] = got.slice(next);
+  const [ownOpen = 0, myPending = 0, myDecided = 0] = got.slice(next);
   const placeCounts = keys.map((_, i) => counts.slice(i * REVIEW_TABS.length, (i + 1) * REVIEW_TABS.length));
   const approvedCount = counts[counts.length - 1];
   const places: SideLink[] = keys.map((k, i) => {
@@ -53,7 +53,7 @@ async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
   });
   return [
     { label: "Approval Forms", href: "/approvals", children: places },
-    { label: "My Requests", href: "/approvals/my-requests", count: ownPending },
+    { label: "My Requests", href: "/approvals/my-requests", ...(ownOpen > 0 ? { open: ownOpen } : { count: 0 }) },
     { label: "Approved Forms", href: approvedHref, count: approvedCount },
     ...(mineToo
       ? [

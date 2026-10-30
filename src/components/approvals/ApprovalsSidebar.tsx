@@ -5,7 +5,10 @@ import { usePathname } from "next/navigation";
 import { useSlidingIndicator } from "@/components/SlidingIndicator";
 
 /** One line of the Approval System sidebar, with the lines under it (HR under Approval Forms, Pending under HR, ...). */
-export type SideLink = { label: string; href: string; /** Waiting for a decision: a red badge. */ waiting?: number; /** How many the list holds: a grey number. */ count?: number; children?: SideLink[] };
+export type SideLink = {
+  label: string; href: string; /** Waiting for a decision: a red badge. */ waiting?: number; /** Still open, but in someone else's hands: an amber badge. */ open?: number;
+  /** How many the list holds: a grey number. */ count?: number; children?: SideLink[];
+};
 
 const row = (active: boolean, depth: number) =>
   `flex min-h-10 items-center gap-2 border-l-2 pr-3 text-sm transition-colors ${depth === 0 ? "pl-4 font-semibold" : depth === 1 ? "pl-8 font-medium" : "pl-12"} ${
@@ -20,7 +23,8 @@ function Line({ link, depth, pathname }: { link: SideLink; depth: number; pathna
       <Link href={link.href} aria-current={active ? "page" : undefined} className={row(active, depth)}>
         <span className="flex-1 py-2">{link.label}</span>
         {!!link.waiting && <span className="rounded-pill bg-brand-red px-2 text-[0.7rem] font-bold leading-5 text-white" title={`${link.waiting} waiting`}>{link.waiting > 99 ? "99+" : link.waiting}</span>}
-        {link.count !== undefined && <span className="rounded-pill bg-alt px-2 text-[0.7rem] font-semibold leading-5 text-muted">{link.count > 999 ? "999+" : link.count}</span>}
+        {!!link.open && <span className="rounded-pill bg-[#fff8e1] px-2 text-[0.7rem] font-bold leading-5 text-[#b45309]" title={`${link.open} open`}>{link.open > 99 ? "99+" : link.open}</span>}
+        {link.count !== undefined &&<span className="rounded-pill bg-alt px-2 text-[0.7rem] font-semibold leading-5 text-muted">{link.count > 999 ? "999+" : link.count}</span>}
       </Link>
       {link.children && link.children.length > 0 && (
         <ul>{link.children.map((c) => <Line key={c.href} link={c} depth={depth + 1} pathname={pathname} />)}</ul>

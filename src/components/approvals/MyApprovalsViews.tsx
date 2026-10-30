@@ -14,7 +14,10 @@ import type { AprRequestType } from "@/db/approvals-schema";
  */
 
 const typeLabel = (t: AprRequestType) => (t === "hr" ? "HR" : "Expenditure");
-const requestHref = (r: { id: string; type: AprRequestType }) => `/approvals/requests/${r.id}?app=${appForType(r.type)}`;
+/** An expenditure's amount, an HR request's category. */
+const amountOrCategory = (r: { type: AprRequestType; amountPaise: number | null; categoryName: string | null }) =>
+  r.type === "hr" ? (r.categoryName ?? "") : r.amountPaise == null ? "" : formatINR(r.amountPaise);
+const requestHref =(r: { id: string; type: AprRequestType }) => `/approvals/requests/${r.id}?app=${appForType(r.type)}`;
 
 /** "Showing 1–25 of 40" and plain Previous / Next links, as on the other lists. */
 function Pager({ path, page, total }: { path: string; page: number; total: number }) {
@@ -36,7 +39,8 @@ function Pager({ path, page, total }: { path: string; page: number; total: numbe
 }
 
 /**
- * Every request this person raised, newest first, with where it stands (pending amber, approved green, rejected red). Right after
+ * Every request this person raised, newest first, with where it stands (pending amber, needs correction orange, approved green, rejected
+ * red). Right after
  * submitting, `submitted` is the new request's id: a confirmation with its number stays on top of the list.
  */
 export async function MyRequestsList({ user, page, path, submitted }: { user: ApprovalsUser; page: number; path: string; submitted?: string }) {
@@ -49,16 +53,15 @@ export async function MyRequestsList({ user, page, path, submitted }: { user: Ap
           <b>Request submitted: {justSent.requestNo}.</b> Keep this number. When it is approved or rejected you will get a notification on the bell above.
         </div>
       )}
-      {rows.length === 0 ? <EmptyState kind="mine" /> : (
+      {rows.length === 0 ? <EmptyState kind="myRequests" /> : (
         <div className="table-wrap">
           <table className="apr-table">
             <thead>
               <tr>
                 <th>Request No.</th>
                 <th className="hidden md:table-cell">Type</th>
-                <th className="hidden md:table-cell">Category</th>
-                <th className="text-right">Amount (₹)</th>
                 <th className="hidden md:table-cell">Date Submitted</th>
+                <th className="text-right">Amount / Category</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -69,9 +72,8 @@ export async function MyRequestsList({ user, page, path, submitted }: { user: Ap
                   <ClickableRow key={r.id} href={href}>
                     <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{r.requestNo ?? "—"}</Link></td>
                     <td className="hidden md:table-cell">{typeLabel(r.type)}</td>
-                    <td className="hidden md:table-cell">{r.categoryName ?? ""}</td>
-                    <td className="whitespace-nowrap text-right">{r.amountPaise == null ? "" : formatINR(r.amountPaise)}</td>
                     <td className="hidden md:table-cell whitespace-nowrap">{formatDate(r.requestedAt)}</td>
+                    <td className="whitespace-nowrap text-right">{amountOrCategory(r)}</td>
                     <td className="whitespace-nowrap"><StatusPill status={r.status} /></td>
                   </ClickableRow>
                 );
@@ -112,7 +114,7 @@ export async function MyPendingApprovalsList({ user, page, path }: { user: Appro
                   <td>{r.name}</td>
                   <td className="hidden md:table-cell">{typeLabel(r.type)}</td>
                   <td className="hidden md:table-cell whitespace-nowrap">{formatDate(r.requestedAt)}</td>
-                  <td className="whitespace-nowrap text-right">{r.type === "hr" ? (r.categoryName ?? "") : r.amountPaise == null ? "" : formatINR(r.amountPaise)}</td>
+                  <td className="whitespace-nowrap text-right">{amountOrCategory(r)}</td>
                   <td className="whitespace-nowrap"><Link href={href} className="btn btn-primary btn-sm">Review</Link></td>
                 </ClickableRow>
               );
