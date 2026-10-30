@@ -71,6 +71,11 @@ export function route<P extends Record<string, string> = Record<never, never>>(o
       if (e instanceof ZodError) return fail(e.issues[0]?.message ?? "Invalid input", 400, { issues: e.issues.map((i) => ({ path: i.path.join("."), message: i.message })) });
       if (pgCode(e) === "23505") return fail("That already exists.", 409);
       if (pgCode(e) === "23503") return fail("This is still in use.", 409);
+      // A table or column the code expects is missing: a Cab Booking database script has not been run on this database.
+      if (pgCode(e) === "42P01" || pgCode(e) === "42703") {
+        logError("[cabs] the database is missing a Cab Booking table or column: run the scripts/apply-00NN-cabs-*.sql that have not been run yet", e);
+        return fail("Cab Booking's database is not up to date. Tell your administrator: a Cab Booking database script needs to be run.", 503);
+      }
       logError("[cabs] request failed", e);
       return fail("Something went wrong. Please try again.", 500);
     }

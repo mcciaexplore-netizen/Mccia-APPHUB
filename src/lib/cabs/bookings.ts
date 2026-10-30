@@ -96,7 +96,7 @@ export async function createRide(input: RideInput, user: Pick<CabUser, "id" | "n
       ${input.pickupLat}, ${input.pickupLng}, ${input.dropoffLat}, ${input.dropoffLng}, ${input.tripType}, ${input.endsAt}, ${JSON.stringify(input.stops)}::jsonb, ${input.passengers})
     returning id`));
   await writeCabAudit(user, "ride_created", { rideId: row.id, subject: subject(input), details: { when: input.tripType, scheduledFor: input.scheduledFor.toISOString(), endsAt: input.endsAt?.toISOString() ?? null, stops: input.stops.length, passengers: input.passengers } });
-  await rideReceived({ id: row.id, ...input }, { userId: user.id, email: user.email });
+  await rideReceived({ id: row.id, ...input }, { userId: user.id, email: user.email, name: user.name });
   return row;
 }
 

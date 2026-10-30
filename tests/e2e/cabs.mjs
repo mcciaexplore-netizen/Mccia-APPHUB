@@ -227,6 +227,8 @@ try {
     && r1.trip_type === "scheduled" && r1.passengers === 2 && r1.notes === "Two people, one bag", JSON.stringify(r1));
   check("My Rides shows it, Pending", (await S.page.locator(`[data-ride="${r1.id}"] [data-status]`).innerText()).trim() === "Pending");
   check("the staffer is told it was received", (await notices(staffer)).some((n) => n.title === "Your ride request has been received"));
+  check("the Cabs admins get a bell notice to assign it", (await notices(admin)).some((n) => n.title === "New ride request from ZZC Staffer" && n.body.includes("ZZC Office → ZZC Airport")));
+  check("…and only they (not the driver, nor someone without Cabs Admin)", !(await notices(driver)).some((n) => n.title.startsWith("New ride request")) && !(await notices(outsider)).some((n) => n.title.startsWith("New ride request")));
   check("a time in the past is refused", (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC a", dropoff: "b", scheduledFor: "2020-01-01T10:00" })).status === 400);
   const rNow = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Now Office", dropoff: "ZZC Now Station", tripType: "now" })).body;
   const rNowRow = await ride(rNow.id);
@@ -258,6 +260,14 @@ try {
   check("admin assigns on the page: assigned, with the driver's name and the plate kept on the ride", r1a?.driver_id === dr1.id && r1a.vehicle_id === v1.id && r1a.driver_name === "ZZC Driver" && r1a.vehicle_plate === "ZZC 01 AA 1111" && !!r1a.assigned_at, JSON.stringify(r1a));
   check("the staffer is told: confirmed, with the driver and the plate", (await notices(staffer)).some((n) => n.title === "Your ride is confirmed" && n.body.includes("Driver: ZZC Driver, Vehicle: ZZC 01 AA 1111")));
   check("the driver is told a ride was assigned to them", (await notices(driver)).some((n) => n.title === "New ride assigned to you"));
+  if (process.env.E2E_SMTP_LOG) {
+    // The site under test sends its email to a local test mail server, which records each message's recipients and subject.
+    const mails = async () => { try { return (await import("node:fs")).readFileSync(process.env.E2E_SMTP_LOG, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
+    const driverMail = await poll(async () => (await mails()).find((m) => m.to.includes("zzc-driver@gmail.com") && m.subject === "New ride assigned to you"), 15000);
+    check("the driver is emailed about the ride (it reaches drivers without a hub account too)", !!driverMail, JSON.stringify(await mails()).slice(0, 300));
+    check("the rider is emailed that the ride is confirmed", (await mails()).some((m) => m.to.includes("zzc-staffer@gmail.com") && m.subject === "Your ride is confirmed"));
+    check("the admins' new-request notice is the bell only, not an email", !(await mails()).some((m) => m.subject.startsWith("New ride request")));
+  }
   const alerted = await poll(async () => (await watch.evaluate(() => window.__notes)).find((n) => n.title === "Your ride is confirmed"), 40_000);
   check("the rider's open page alerts them that the ride is confirmed (within 30 seconds)", !!alerted && alerted.body.includes("ZZC Office") && alerted.body.includes("ZZC Driver"), JSON.stringify(alerted));
   await watch.close();

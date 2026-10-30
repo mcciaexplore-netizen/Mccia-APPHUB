@@ -67,6 +67,21 @@ export async function listHubUsers(): Promise<HubPerson[]> {
   return db.select({ id: users.id, name: users.name, email: users.email, phone: users.phone }).from(users).where(and(eq(users.isActive, true), eq(users.status, "approved"))).orderBy(asc(users.name));
 }
 
+/**
+ * Who hears about new ride requests: the App Admins of the active Cabs Admin application (URL /cabs/admin) who have also been given it
+ * (the same people who hold cab_admin through it), and who are active hub users.
+ */
+export async function cabAdminRecipients(): Promise<{ userId: string; email: string }[]> {
+  const res = (await db.execute(sql`
+    select distinct u.id, u.email from apps a
+    join departments d on d.id = a.department_id
+    join app_admins ad on ad.app_id = a.id
+    join user_app_access ua on ua.app_id = a.id and ua.user_id = ad.user_id
+    join users u on u.id = ad.user_id
+    where a.is_active and d.is_active and a.url ~ ${CABS_ADMIN_URL_PATTERN} and u.is_active and u.status = 'approved'`)) as unknown as { rows: { id: string; email: string }[] };
+  return res.rows.map((r) => ({ userId: r.id, email: r.email }));
+}
+
 /** The active hub account with this email, if there is one: where a driver's bell notifications go (they also get the email). */
 export async function hubUserIdByEmail(email: string): Promise<string | null> {
   const [u] = await db.select({ id: users.id }).from(users).where(and(sql`lower(${users.email}) = ${email.trim().toLowerCase()}`, eq(users.isActive, true)));
