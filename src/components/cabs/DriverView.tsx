@@ -64,7 +64,10 @@ const OpenNavigation = ({ href }: { href: string }) => (
  * Assigned: the rides given to this driver and not yet picked up. A ride starts when the driver enters the rider's OTP (rides from before
  * OTPs keep Start Ride); then Google Maps opens with the route and the Trip tab takes over.
  */
-export function AssignedList({ rides }: { rides: RideView[] }) {
+/** What an admin sees in place of the buttons when previewing another driver's app. */
+const PreviewNote = () => <p className="rounded-lg bg-[#f0f2f5] px-3 py-2.5 text-sm text-muted" data-preview-note>Preview only: start and complete this ride on All Rides.</p>;
+
+export function AssignedList({ rides, preview = false }: { rides: RideView[]; preview?: boolean }) {
   const router = useRouter();
   const toast = useToast();
   const [pending, start] = useTransition();
@@ -95,7 +98,8 @@ export function AssignedList({ rides }: { rides: RideView[] }) {
         <article key={r.id} className={card} data-ride={r.id}>
           <div className="flex items-start justify-between gap-3"><Route ride={r} /><StatusBadge status={r.status} /></div>
           <Facts ride={r} />
-          {r.status === "assigned" && (r.hasOtp
+          {r.status === "assigned" && preview && <PreviewNote />}
+          {r.status === "assigned" && !preview && (r.hasOtp
             ? <OtpEntry ride={r} pending={pending} onVerify={(otp) => verify(r, otp)} />
             : <button className={NAVY} disabled={pending} onClick={() => startPlain(r)}><Play size={20} /> Start Ride</button>)}
         </article>
@@ -105,7 +109,7 @@ export function AssignedList({ rides }: { rides: RideView[] }) {
 }
 
 /** Trip: the ride under way, large, with Open Navigation and Complete Ride. */
-export function TripView({ ride }: { ride: RideView | null }) {
+export function TripView({ ride, preview = false }: { ride: RideView | null; preview?: boolean }) {
   const router = useRouter();
   const toast = useToast();
   const confirm = useConfirm();
@@ -123,7 +127,7 @@ export function TripView({ ride }: { ride: RideView | null }) {
       <div className="flex items-start justify-between gap-3"><Route ride={ride} big /><StatusBadge status={ride.status} /></div>
       <Facts ride={ride} />
       <OpenNavigation href={navUrl(ride)} />
-      <button className={NAVY} disabled={pending} onClick={complete}><CheckCircle2 size={20} /> Complete Ride</button>
+      {preview ? <PreviewNote /> : <button className={NAVY} disabled={pending} onClick={complete}><CheckCircle2 size={20} /> Complete Ride</button>}
     </article>
   );
 }

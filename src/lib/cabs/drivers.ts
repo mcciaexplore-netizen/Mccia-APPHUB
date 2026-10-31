@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { writeCabAudit } from "./audit";
 import { CabsError } from "./errors";
-import type { CabUser } from "./host-adapter";
+import { hasRole, type CabUser } from "./host-adapter";
 import type { driverInput } from "./validation";
 import type { z } from "zod";
 
@@ -95,6 +95,20 @@ export async function driverProfile(driverId: string): Promise<DriverProfile | n
     from cab_drivers d left join cab_vehicles v on v.id = d.vehicle_id where d.id = ${driverId}`));
   return x ? { name: String(x.name), email: (x.email as string) ?? null, phone: String(x.phone), isAvailable: !!x.is_available, vehiclePlate: (x.number_plate as string) ?? null,
     vehicleModel: (x.model as string) ?? null, completed: Number(x.completed) } : null;
+}
+
+export type ViewedDriver = { driverId: string | null; name: string; preview: boolean };
+
+/**
+ * Which driver a driver-app page shows. A driver: themselves. A Cabs admin may pick any driver (?driver=<id>) to see the app as that driver
+ * would ("preview": nothing can be done from it); without a pick, an admin who is also a driver sees their own, and one who is not sees none.
+ */
+export async function viewedDriver(user: Pick<CabUser, "roles" | "driverId" | "name">, raw: string | undefined): Promise<ViewedDriver> {
+  if (hasRole(user, "cab_admin") && raw && /^[0-9a-f-]{36}$/i.test(raw) && raw !== user.driverId) {
+    const [d] = rows<{ id: string; name: string }>(await db.execute(sql`select id, name from cab_drivers where id = ${raw}`));
+    if (d) return { driverId: d.id, name: d.name, preview: true };
+  }
+  return { driverId: user.driverId, name: user.name, preview: false };
 }
 
 /** Removes a driver, unless they have an assigned or running ride (one statement, so a ride cannot be assigned in between). */

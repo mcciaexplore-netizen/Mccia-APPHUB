@@ -108,15 +108,41 @@ async function whyNot(id: string, wanted: string, mine?: { driverId: string | nu
   throw new CabsError(`This ride is ${ride.status.replace("_", " ")}, so it can't be ${wanted === "start" ? "started" : wanted === "complete" ? "completed" : "cancelled"} now.`, 409);
 }
 
+/** How close (either side) another ride may be before a driver or vehicle counts as busy for this one. */
+export const BUSY_WINDOW = sql`interval '2 hours'`;
+
+/**
+ * Whether a driver or vehicle (`col`) already has an assigned or running ride within 2 hours of the ride `ride` (a CTE with its id, start and
+ * end). A ride spans its scheduled time, through to its end date for a multi-day trip, so a driver away on a 3-day trip is busy throughout.
+ */
+const busyFor = (col: "driver_id" | "vehicle_id", who: SQL) => sql`exists (
+  select 1 from cab_rides x, ride where x.${sql.raw(col)} = ${who} and x.status in ('assigned', 'in_progress') and x.id <> ride.id
+    and x.scheduled_for <= ride.ends + ${BUSY_WINDOW} and coalesce(x.ends_at, x.scheduled_for) >= ride.starts - ${BUSY_WINDOW})`;
+const RIDE_SPAN = (id: string) => sql`ride as (select id, scheduled_for as starts, coalesce(ends_at, scheduled_for) as ends from cab_rides where id = ${id})`;
+
+/** The drivers and vehicles busy at this ride's time (for the assign dialog, which does not offer them). */
+export async function rideConflicts(id: string): Promise<{ drivers: string[]; vehicles: string[] }> {
+  const [x] = rows<{ drivers: string[] | null; vehicles: string[] | null }>(await db.execute(sql`
+    with ${RIDE_SPAN(id)}
+    select (select array_agg(distinct x.driver_id) from cab_rides x, ride where x.driver_id is not null and x.status in ('assigned', 'in_progress') and x.id <> ride.id
+        and x.scheduled_for <= ride.ends + ${BUSY_WINDOW} and coalesce(x.ends_at, x.scheduled_for) >= ride.starts - ${BUSY_WINDOW}) as drivers,
+      (select array_agg(distinct x.vehicle_id) from cab_rides x, ride where x.vehicle_id is not null and x.status in ('assigned', 'in_progress') and x.id <> ride.id
+        and x.scheduled_for <= ride.ends + ${BUSY_WINDOW} and coalesce(x.ends_at, x.scheduled_for) >= ride.starts - ${BUSY_WINDOW}) as vehicles`));
+  return { drivers: x?.drivers ?? [], vehicles: x?.vehicles ?? [] };
+}
+
 /**
  * Gives a pending ride a driver and a vehicle, in ONE statement that also requires the driver to be available and the vehicle active at
- * that moment, the vehicle to have a seat for every passenger, and makes the ride's OTP (expiring 2 hours after the scheduled time, never sooner than 2 hours from now). Two admins
+ * that moment and free (no assigned or running ride within 2 hours of this one), the vehicle to have a seat for every passenger and be free
+ * too, and makes the ride's OTP (expiring 2 hours after the scheduled time, never sooner than 2 hours from now). Two admins
  * assigning the same ride at once: one succeeds, the other is told it was already assigned.
  */
 export async function assignRide(id: string, input: { driverId: string; vehicleId: string }, actor: Actor): Promise<void> {
   const [row] = rows<Record<string, unknown>>(await db.execute(sql`
-    with d as (select id, name, email from cab_drivers where id = ${input.driverId} and is_available),
-    v as (select id, number_plate, model from cab_vehicles where id = ${input.vehicleId} and is_active and capacity >= (select passengers from cab_rides where id = ${id})),
+    with ${RIDE_SPAN(id)},
+    d as (select id, name, email from cab_drivers where id = ${input.driverId} and is_available and not ${busyFor("driver_id", sql`${input.driverId}::uuid`)}),
+    v as (select id, number_plate, model from cab_vehicles where id = ${input.vehicleId} and is_active and capacity >= (select passengers from cab_rides where id = ${id})
+      and not ${busyFor("vehicle_id", sql`${input.vehicleId}::uuid`)}),
     r as (
       update cab_rides set status = 'assigned', driver_id = (select id from d), vehicle_id = (select id from v),
         driver_name = (select name from d), vehicle_plate = (select number_plate from v), assigned_at = now(), updated_at = now()
@@ -128,8 +154,11 @@ export async function assignRide(id: string, input: { driverId: string; vehicleI
       on conflict (ride_id) do update set otp = excluded.otp, attempts = 0, verified_at = null, expires_at = excluded.expires_at, created_at = now())
     select r.*, d.name as driver_name, d.email as driver_email, v.number_plate, v.model from r, d, v`));
   if (!row) {
-    const [state] = rows<{ status: string | null; driver: boolean | null; available: boolean | null; vehicle: boolean | null; active: boolean | null; seats: number | null; passengers: number | null }>(await db.execute(sql`
+    const [state] = rows<{ status: string | null; driver: boolean | null; available: boolean | null; vehicle: boolean | null; active: boolean | null; seats: number | null; passengers: number | null;
+      driver_busy: boolean | null; vehicle_busy: boolean | null }>(await db.execute(sql`
+      with ${RIDE_SPAN(id)}
       select (select status::text from cab_rides where id = ${id}) as status, (select passengers from cab_rides where id = ${id}) as passengers,
+        ${busyFor("driver_id", sql`${input.driverId}::uuid`)} as driver_busy, ${busyFor("vehicle_id", sql`${input.vehicleId}::uuid`)} as vehicle_busy,
         (select capacity from cab_vehicles where id = ${input.vehicleId}) as seats,
         exists (select 1 from cab_drivers where id = ${input.driverId}) as driver, (select is_available from cab_drivers where id = ${input.driverId}) as available,
         exists (select 1 from cab_vehicles where id = ${input.vehicleId}) as vehicle, (select is_active from cab_vehicles where id = ${input.vehicleId}) as active`));
@@ -137,8 +166,10 @@ export async function assignRide(id: string, input: { driverId: string; vehicleI
     if (state.status !== "pending") return whyNot(id, "assign");
     if (!state.driver) throw new CabsError("That driver no longer exists. Reload and try again.", 404);
     if (!state.available) throw new CabsError("Driver not available. Choose another driver.", 409);
+    if (state.driver_busy) throw new CabsError("Driver already has a ride at this time", 409);
     if (!state.vehicle) throw new CabsError("That vehicle no longer exists. Reload and try again.", 404);
     if (!state.active) throw new CabsError("Vehicle inactive. Choose an active vehicle.", 409);
+    if (state.vehicle_busy) throw new CabsError("Vehicle already assigned at this time", 409);
     throw new CabsError(`That vehicle has ${state.seats} seats and this ride is for ${state.passengers} people. Choose a bigger one.`, 409);
   }
   const ride = { id, pickup: String(row.pickup), dropoff: String(row.dropoff), scheduledFor: new Date(row.scheduled_for as string) };

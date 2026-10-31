@@ -158,7 +158,7 @@ try {
   await go(A.page, "/cabs/driver");
   check("admin: opens Cabs Driver too (to see it as a driver does), with its menu", new URL(A.page.url()).pathname === "/cabs/driver"
     && (await A.page.locator('nav[aria-label="Cabs Driver"] a').allInnerTexts()).map((t) => t.trim()).join("|") === "Assigned|Trip|History|Profile"
-    && (await A.page.getByText("Admin view").count()) === 1);
+    && (await A.page.locator("header").getByText("Admin view").count()) === 1);
   check("admin: but cannot start a ride as a driver (403)", (await api(A.page, "/api/cabs/rides/00000000-0000-4000-8000-000000000000/start", "POST")).status === 403);
   await go(O.page, "/cabs"); check("someone without MCCIA Cabs is sent back to the hub", new URL(O.page.url()).pathname === "/");
   check("API: no MCCIA Cabs, no booking (403)", (await api(O.page, "/api/cabs/rides", "POST", { pickup: "a", dropoff: "b", scheduledFor: istSlot(1, 10) })).status === 403);
@@ -656,6 +656,43 @@ try {
 
   section("removing what is in use");
   check("assigning the third ride to the second driver", (await api(A.page, `/api/cabs/rides/${r3.id}/assign`, "POST", { driverId: dr2.id, vehicleId: v2.id })).status === 200);
+
+  // Conflicts: the third ride (day 3, 9:00) now has the second driver and vehicle 2.
+  const rC = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Clash Office", dropoff: "ZZC Clash Station", scheduledFor: istSlot(3, 10) })).body;
+  const busyDriver = await api(A.page, `/api/cabs/rides/${rC.id}/assign`, "POST", { driverId: dr2.id, vehicleId: v1.id });
+  check("a driver with a ride within 2 hours is refused: \"Driver already has a ride at this time\"", busyDriver.status === 409 && busyDriver.body?.error === "Driver already has a ride at this time", JSON.stringify(busyDriver));
+  const busyCar = await api(A.page, `/api/cabs/rides/${rC.id}/assign`, "POST", { driverId: dr1.id, vehicleId: v2.id });
+  check("a vehicle with a ride within 2 hours is refused: \"Vehicle already assigned at this time\"", busyCar.status === 409 && busyCar.body?.error === "Vehicle already assigned at this time", JSON.stringify(busyCar));
+  const clash = await api(A.page, `/api/cabs/rides/${rC.id}/conflicts`, "GET");
+  check("the conflicts for that ride: the busy driver and vehicle", clash.status === 200 && clash.body.drivers.includes(dr2.id) && clash.body.vehicles.includes(v2.id) && !clash.body.drivers.includes(dr1.id), JSON.stringify(clash.body));
+  await go(A.page, "/cabs/admin/rides?status=pending");
+  await A.page.locator(`tr[data-ride="${rC.id}"]`).getByRole("button", { name: "Assign" }).click();
+  await A.page.locator("[role=dialog] [data-busy-note]").waitFor({ timeout: 10000 }).catch(() => {});
+  const optDisabled = (sel) => A.page.$eval(sel, (o) => o.disabled && o.textContent.trim()).catch(() => "");
+  check("the assign dialog marks and disables the busy driver (\"Busy at this time\") and vehicle (\"In use at this time\")",
+    (await optDisabled(`[role=dialog] select[name=driverId] option[value="${dr2.id}"]`)).endsWith("Busy at this time")
+    && (await optDisabled(`[role=dialog] select[name=vehicleId] option[value="${v2.id}"]`)).includes("In use at this time")
+    && !(await optDisabled(`[role=dialog] select[name=driverId] option[value="${dr1.id}"]`)));
+  await A.page.locator("[role=dialog]").getByRole("button", { name: "Close" }).first().click();
+  const rLater = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Later Office", dropoff: "ZZC Later Station", scheduledFor: istSlot(3, 13) })).body;
+  check("4 hours later the same driver and vehicle are free", (await api(A.page, `/api/cabs/rides/${rLater.id}/assign`, "POST", { driverId: dr2.id, vehicleId: v2.id })).status === 200);
+
+  // Admin "view as driver": the second driver's app, read-only.
+  await go(A.page, "/cabs/driver");
+  check("an admin sees \"Admin view — select a driver to preview\" on the driver app", /admin view — select a driver to preview/i.test(await A.page.locator("[data-driver-picker]").innerText()));
+  await A.page.locator("select[name=viewAsDriver]").selectOption(dr2.id);
+  await A.page.waitForURL((u) => u.searchParams.get("driver") === dr2.id);
+  await A.page.locator(`[data-ride="${r3.id}"]`).waitFor({ timeout: 15000 }).catch(() => {});
+  check("…choosing a driver shows their assigned rides, with no OTP box (preview only)", await A.page.locator(`[data-ride="${r3.id}"]`).isVisible()
+    && (await A.page.locator(`[data-ride="${r3.id}"] input[name=otp]`).count()) === 0 && (await A.page.locator(`[data-ride="${r3.id}"] [data-preview-note]`).count()) === 1);
+  await A.page.locator('nav[aria-label="Cabs Driver"] a', { hasText: "Profile" }).click();
+  await A.page.waitForURL((u) => u.pathname === "/cabs/driver/profile");
+  check("…and stays on that driver from tab to tab", new URL(A.page.url()).searchParams.get("driver") === dr2.id && (await A.page.locator("[data-profile]").innerText()).includes("ZZC Second Driver"));
+  await go(D2.page, "/cabs/driver");
+  check("a driver sees only their own rides, with no picker", (await D2.page.locator("[data-driver-picker]").count()) === 0 && await D2.page.locator(`[data-ride="${r3.id}"] input[name=otp]`).isVisible());
+  check("a driver cannot look at another driver's app with ?driver=", await (async () => { await go(D2.page, `/cabs/driver?driver=${dr1.id}`); return (await D2.page.locator(`[data-ride="${r3.id}"]`).count()) === 1; })());
+  await api(S.page, `/api/cabs/rides/${rC.id}/cancel`, "POST", {});
+  await api(A.page, `/api/cabs/rides/${rLater.id}/cancel?as=admin`, "POST", { reason: "ZZC test over" });
   check("a driver with an assigned ride cannot be removed (409)", (await api(A.page, `/api/cabs/drivers/${dr2.id}`, "DELETE")).status === 409);
   check("a vehicle on an assigned ride cannot be deactivated (409)", (await api(A.page, `/api/cabs/vehicles/${v2.id}`, "DELETE")).status === 409);
   check("a driver with nothing on can be removed; their completed ride keeps their name", (await api(A.page, `/api/cabs/drivers/${dr1.id}`, "DELETE")).status === 200

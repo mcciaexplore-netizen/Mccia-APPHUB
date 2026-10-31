@@ -2,24 +2,29 @@ import Link from "next/link";
 import { ChevronLeft, LogOut } from "lucide-react";
 import { logout } from "@/actions/auth";
 import { Avatar } from "@/components/cabs/CabsShell";
-import { driverProfile } from "@/lib/cabs/drivers";
+import { driverProfile, viewedDriver } from "@/lib/cabs/drivers";
 import { requireDriverPage } from "@/lib/cabs/guard";
+import { AdminDriverPicker } from "@/components/cabs/AdminDriverPicker";
+
+const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 export const metadata = { title: "Profile · Cabs Driver · MCCIA App Hub" };
 
 /** Profile: the driver's details, their vehicle and how many rides they have completed; and the ways out. */
-export default async function DriverProfilePage() {
+export default async function DriverProfilePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireDriverPage();
-  const p = user.driverId ? await driverProfile(user.driverId) : null;
+  const view = await viewedDriver(user, one((await searchParams).driver));
+  const p = view.driverId ? await driverProfile(view.driverId) : null;
   return (
     <div className="page-enter space-y-4">
+      <AdminDriverPicker user={user} view={view} />
       <h1 className="text-2xl font-extrabold text-ink">Profile</h1>
       <section className="flex items-center gap-4 rounded-xl bg-white p-5 shadow-sm" data-profile>
-        <Avatar name={p?.name ?? user.name} size={64} />
+        <Avatar name={p?.name ?? view.name} size={64} />
         <div className="min-w-0">
-          <p className="truncate text-lg font-bold text-ink">{p?.name ?? user.name}</p>
+          <p className="truncate text-lg font-bold text-ink">{p?.name ?? view.name}</p>
           <p className="truncate text-sm text-muted">{p?.phone ?? "Not a driver (admin view)"}</p>
-          <p className="truncate text-sm text-muted">{p?.email ?? user.email}</p>
+          <p className="truncate text-sm text-muted">{p ? (p.email ?? "No email") : user.email}</p>
         </div>
       </section>
       {p && (

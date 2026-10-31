@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { CabsTopBar } from "@/components/cabs/CabsShell";
 import { CabsDriverSidebar } from "@/components/cabs/DriverSidebar";
@@ -26,7 +27,7 @@ export default async function Layout({ children }: { children: React.ReactNode }
           {running && <LocationSharer rideId={running.id} />}
           {children}
         </main>
-        <CabsDriverSidebar roles={user.roles} />
+        <Suspense fallback={null}><CabsDriverSidebar roles={user.roles} /></Suspense>
       </div>
     </ConfirmProvider>
   );

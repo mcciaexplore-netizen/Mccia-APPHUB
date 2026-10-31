@@ -409,7 +409,7 @@ const cabUnwrapped = cabRoutes.flatMap((f) => {
   const imported = /from "@\/lib\/cabs\/guard"/.test(src);
   return handlers.filter(([, , rest]) => !imported || !/^\s*=\s*route(<[^>]*>)?\(\{ roles: \[/.test(rest)).map(([, method]) => `${f}:${method}`);
 });
-eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles`, [cabRoutes.length, cabUnwrapped], [28, []]);
+eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles`, [cabRoutes.length, cabUnwrapped], [29, []]);
 
 // The application check must never be steered at an internal network
 eq("net guard: private, loopback, metadata and reserved IPv4 are refused", ["127.0.0.1", "10.0.0.5", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255"].map(isPublicAddress), Array(10).fill(false));

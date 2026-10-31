@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Clock, Inbox, Navigation, UserRound, type LucideIcon } from "lucide-react";
 import { CAB_NAV, navFor, type CabRole } from "@/lib/cabs/cabs.manifest";
 
@@ -11,6 +11,9 @@ const ICON: Record<string, LucideIcon> = { "/cabs/driver": Inbox, "/cabs/driver/
 export function CabsDriverSidebar({ roles }: { roles: CabRole[] }) {
   const pathname = usePathname();
   const items = navFor("driver", roles);
+  // An admin previewing a driver (?driver=) stays on that driver from tab to tab.
+  const viewing = useSearchParams().get("driver");
+  const hrefOf = (href: string) => (viewing ? `${href}?driver=${encodeURIComponent(viewing)}` : href);
   const active = (href: string) => pathname === href || (href !== "/cabs/driver" && pathname.startsWith(`${href}/`));
   return (
     <nav aria-label={CAB_NAV.driver.title} className="fixed bottom-0 left-1/2 z-30 w-full max-w-[480px] -translate-x-1/2 border-t border-black/5 bg-white pb-[env(safe-area-inset-bottom)]">
@@ -20,7 +23,7 @@ export function CabsDriverSidebar({ roles }: { roles: CabRole[] }) {
           const on = active(i.href);
           return (
             <li key={i.href}>
-              <Link href={i.href} aria-current={on ? "page" : undefined}
+              <Link href={hrefOf(i.href)} aria-current={on ? "page" : undefined}
                 className={`flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-semibold transition-colors ${on ? "text-[#2a6b7c]" : "text-muted hover:text-ink"}`}>
                 <Icon size={21} aria-hidden />{i.label}
               </Link>
