@@ -30,6 +30,16 @@ import {
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import { INVENTORY_URL_PATTERN, inventoryRoleFor, navFor } from "../src/lib/inventory/inventory.manifest";
+import { IVR_ADMIN_URL_PATTERN, IVR_NAV, IVR_USER_URL_PATTERN, SECTION_ROLES as IVR_SECTION_ROLES, effectiveRole as ivrEffectiveRole, ivrRolesFor, navFor as ivrNavFor } from "../src/lib/ivr/ivr.manifest";
+import { formatPhone as ivrFormatPhone, maskPhone as ivrMaskPhone, normalizePhone as ivrPhone } from "../src/lib/ivr/phone";
+import { deriveOutcome as ivrOutcome } from "../src/lib/ivr/outcome";
+import { nextStage as ivrNextStage, OPEN_STAGES as IVR_OPEN_STAGES } from "../src/lib/ivr/stage";
+import { normalizeCdr as ivrCdr, normalizeLive as ivrLive, normalizeUserAsAgent as ivrSfAgent, normalizeWebhook as ivrWebhook, parseSfTime as ivrSfTime } from "../src/lib/ivr/smartflo/normalize";
+import { detectColumns as ivrDetect, sanitizeMapping as ivrSanitize } from "../src/lib/ivr/import/detect";
+import { buildAgentIndex as ivrAgentIndex, matchAgent as ivrMatch } from "../src/lib/ivr/import/match";
+import { addDays as ivrAddDays, formatDuration as ivrDuration, istDayStart as ivrDayStart, resolveRange as ivrRange, toIstDateString as ivrDateStr } from "../src/lib/ivr/time";
+import { qs as ivrQs } from "../src/lib/ivr/lead-params";
+import { cx as ivrCx } from "../src/lib/ivr/cx";
 import { CABS_ADMIN_URL_PATTERN, CABS_DRIVER_URL_PATTERN, CABS_USER_URL_PATTERN, CAB_NAV, cabRolesFor, navFor as cabNavFor } from "../src/lib/cabs/cabs.manifest";
 import { assignInput, costInput, driverInput, fuelInput, invoiceInput, istLocalToDate, locationInput, maintenanceInput, otpInput, rideInput, rupeesToPaise as cabRupees, scheduleProblem, vehicleInput } from "../src/lib/cabs/validation";
 import { OTP_MAX_ATTEMPTS, mapsLink, otpExpiry } from "../src/lib/cabs/otp-rules";
@@ -387,7 +397,7 @@ eq("guards: the reviewed list holds only actions that really exist", [...SELF_CH
 // the Inventory module's and the Cab Booking module's routes go through their own route() wrappers, which do it centrally (checked just below).
 const appDir = new URL("../src/app/", import.meta.url);
 const allRouteFiles = (readdirSync(appDir, { recursive: true }) as string[]).filter((f) => /(^|\/)route\.ts$/.test(f));
-const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory|api\/cabs|cabs)\//.test(f));
+const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory|api\/cabs|cabs|api\/ivr|ivr)\//.test(f) && f !== "api/cron/ivr-sync/route.ts");
 // A Vercel Cron route has no sign-in: it must check CRON_SECRET instead. The only route open to anyone on purpose is the ping, which
 // touches nothing and answers only "ok" and the time (the proxy lets exactly /api/ping through).
 const PUBLIC_ROUTES = ["api/ping/route.ts"];
@@ -415,6 +425,34 @@ const cabUnwrapped = cabRoutes.flatMap((f) => {
 });
 eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles (the 4 driver sign-in routes: publicRoute())`,
   [cabRoutes.length, cabUnwrapped, CAB_PUBLIC.filter((f) => cabRoutes.includes(f)).length], [37, [], 4]);
+// IVR-CRM: every route asks the module's own checks (src/lib/ivr/dal.ts: assertUser, assertAdmin, assertSuperAdmin), which also answer 404
+// while the module is off. The two that nobody signs in to check a secret instead: Smartflo's webhook (the secret in its address, compared
+// in constant time, 404 while off) and the sync cron (CRON_SECRET, refusing everyone when it is not set).
+const ivrRoutes = allRouteFiles.filter((f) => /^api\/ivr\//.test(f) || f === "api/cron/ivr-sync/route.ts");
+const IVR_SECRET_ROUTES: Record<string, RegExp[]> = {
+  "api/ivr/webhooks/smartflo/[secret]/route.ts": [/ivrEnabled\(\)/, /safeEqual\(secret, expected\)/, /if \(!expected \|\|/],
+  "api/cron/ivr-sync/route.ts": [/if \(!secret \|\| !safeEqual\(given, secret\)\)/, /ivrEnabled\(\)/],
+};
+const ivrOpen = ivrRoutes.filter((f) => {
+  const src = readFileSync(new URL(f, appDir), "utf8");
+  if (IVR_SECRET_ROUTES[f]) return !IVR_SECRET_ROUTES[f].every((r) => r.test(src));
+  return !/from "@\/lib\/ivr\/dal"/.test(src) || !/\bassert(User|Admin|SuperAdmin)\(\)/.test(src);
+});
+eq(`guards: every one of the ${ivrRoutes.length} IVR-CRM route files checks who is asking (the webhook and the cron: their secret)`, [ivrRoutes.length, ivrOpen], [10, []]);
+// An agent sees only their own: the agents' pages get the person back acting as an agent, and the rules that keep their lists to their own
+// members (owner_id) and calls (agent_user_id) stay in place.
+const ivrSrc = (f: string) => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8");
+eq("ivr scoping: the agents' section always acts as an agent, whatever else the person holds",
+  /role: section === "agent" \? "agent" : u\.role!/.test(ivrSrc("lib/ivr/dal.ts")), true);
+eq("ivr scoping: an agent's calls are only the ones they handled (agent_user_id), in lists, KPIs and recordings",
+  [/scopeOf = \(userId\?: string\): SQL => \(userId \? sql`c\.agent_user_id = \$\{userId\}::uuid`/.test(ivrSrc("lib/ivr/missed.ts")),
+   /opts\.userId \? sql`and c\.agent_user_id = \$\{opts\.userId\}::uuid`/.test(ivrSrc("lib/ivr/stats.ts")),
+   /!isAdminRole\(user\.role\) && row\.callAgent !== user\.id/.test(ivrSrc("app/api/ivr/recordings/[callId]/route.ts")),
+   /isAdminRole\(viewer\.role\) \? undefined : eq\(calls\.agentUserId, viewer\.id\)/.test(ivrSrc("lib/ivr/leads.ts"))], [true, true, true, true]);
+eq("ivr scoping: an agent's members are only their own (owner_id), and the KPI API ignores whom an agent asks about",
+  [/!isAdminRole\(user\.role\) && lead\.ownerId !== user\.id/.test(ivrSrc("lib/ivr/actions/leads.ts")),
+   /!isAdminRole\(viewer\.role\) && lead\.ownerId !== viewer\.id/.test(ivrSrc("lib/ivr/leads.ts")),
+   /const userId = isAdminRole\(user\.role\) \? requested : user\.id;/.test(ivrSrc("app/api/ivr/kpis/route.ts"))], [true, true, true]);
 
 // The application check must never be steered at an internal network
 eq("net guard: private, loopback, metadata and reserved IPv4 are refused", ["127.0.0.1", "10.0.0.5", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255"].map(isPublicAddress), Array(10).fill(false));
@@ -820,6 +858,89 @@ const ssoTests = (async () => {
     ["/\t/evil.com", "/\n/evil.com", "/\r/evil.com", "/ /evil.com", "/\x00x", "/\x7f", "/\\evil.com", "/a\\b", "/ /evil.com"].map(safeNext), Array(9).fill("/"));
   eq("safe next: ordinary paths still pass", ["/", "/approvals/review/hr/pending?x=1", "/administrator/people", "/a%20b"].map(safeNext), ["/", "/approvals/review/hr/pending?x=1", "/administrator/people", "/a%20b"]);
 })();
+
+
+// ---- IVR-CRM: roles and menus, phone numbers, call outcomes and stages, Smartflo payloads, import column detection and agent matching ----
+{
+  const roles = (hubRole: string, userAccess: boolean, adminAppAdmin: boolean) => ivrRolesFor({ hubRole, userAccess, adminAppAdmin });
+  eq("ivr roles: given IVR-CRM = ivr_agent only", roles("member", true, false), ["ivr_agent"]);
+  eq("ivr roles: App Admin of IVR-CRM Admin (and given it) = ivr_admin only", roles("member", false, true), ["ivr_admin"]);
+  eq("ivr roles: both applications = agent and admin", roles("member", true, true), ["ivr_agent", "ivr_admin"]);
+  eq("ivr roles: nothing given = no role, even for a hub Admin or Super Admin", [roles("member", false, false), roles("admin", false, false), roles("super_admin", false, false)], [[], [], []]);
+  eq("ivr roles: the Support Admin (head_admin) holds all three, ivr_super_admin only through head_admin", roles("head_admin", false, false), ["ivr_agent", "ivr_admin", "ivr_super_admin"]);
+  eq("ivr roles: being an App Admin never makes ivr_super_admin", roles("admin", true, true).includes("ivr_super_admin"), false);
+  eq("ivr effective role: the highest one held", [ivrEffectiveRole(["ivr_agent"]), ivrEffectiveRole(["ivr_agent", "ivr_admin"]), ivrEffectiveRole(["ivr_agent", "ivr_admin", "ivr_super_admin"]), ivrEffectiveRole([])], ["agent", "admin", "super_admin", null]);
+  eq("ivr sections: /ivr needs ivr_agent; /ivr/admin needs ivr_admin or ivr_super_admin", [IVR_SECTION_ROLES.agent, IVR_SECTION_ROLES.admin], [["ivr_agent"], ["ivr_admin", "ivr_super_admin"]]);
+  const labels = (section: "agent" | "admin", r: Parameters<typeof ivrNavFor>[1]) => ivrNavFor(section, r).map((i) => i.label).join("|");
+  eq("ivr menu: agents get their four pages", labels("agent", ["ivr_agent"]), "Call queue|My calls|Pipeline|Connections");
+  eq("ivr menu: an IVR admin gets no Integrations", labels("admin", ["ivr_admin"]).includes("Integrations"), false);
+  eq("ivr menu: the Support Admin gets Integrations, last", labels("admin", ["ivr_agent", "ivr_admin", "ivr_super_admin"]).endsWith("|Integrations"), true);
+  eq("ivr menu: no role, no menu", [labels("agent", []), labels("admin", ["ivr_agent"])], ["", ""]);
+  eq("ivr menu: every line is a page of its own section", [IVR_NAV.agent.items.every((i) => i.href === "/ivr" || (i.href.startsWith("/ivr/") && !i.href.startsWith("/ivr/admin"))), IVR_NAV.admin.items.every((i) => i.href.startsWith("/ivr/admin"))], [true, true]);
+  const re = (p: string) => (u: string) => new RegExp(p).test(u);
+  eq("ivr applications: IVR-CRM is /ivr (with or without the slash), nothing else", ["/ivr", "/ivr/", "/ivr/admin", "/ivrx", "/ivr/calls"].map(re(IVR_USER_URL_PATTERN)), [true, true, false, false, false]);
+  eq("ivr applications: IVR-CRM Admin is /ivr/admin only", ["/ivr/admin", "/ivr/admin/", "/ivr", "/ivr/admin/members"].map(re(IVR_ADMIN_URL_PATTERN)), [true, true, false, false]);
+
+  eq("ivr phone: Indian numbers in any common shape become +91…", ["9876543210", "+91 98765 43210", "09876543210", "919876543210", "98765-43210", "9876543210.0"].map(ivrPhone), Array(6).fill("+919876543210"));
+  eq("ivr phone: not a phone number = null", ["", null, undefined, "12345", "abc", "+1"].map(ivrPhone), Array(6).fill(null));
+  eq("ivr phone: masked and formatted for lists", [ivrMaskPhone("+919876543210"), ivrFormatPhone("+919876543210")], ["+91 98•••• 3210", "+91 98765 43210"]);
+
+  eq("ivr outcome: answered by status or by talk time", [ivrOutcome("answered", null, 0), ivrOutcome("missed", null, 12)], ["answered", "answered"]);
+  eq("ivr outcome: from the hang-up cause", [ivrOutcome("missed", "USER_BUSY", 0), ivrOutcome("missed", "UNALLOCATED_NUMBER", 0), ivrOutcome("missed", "SUBSCRIBER_ABSENT", 0), ivrOutcome("missed", "NORMAL_TEMPORARY_FAILURE", 0), ivrOutcome("missed", "NO_ANSWER", 0)], ["busy", "invalid", "switched_off", "failed", "not_answered"]);
+  eq("ivr outcome: a call still going has none yet", ivrOutcome("ongoing", null, 0), null);
+
+  eq("ivr stage: an answered call connects the member", [ivrNextStage("new", { outcome: "answered", direction: "outbound" }), ivrNextStage("attempted", { outcome: "answered", direction: "inbound" })], ["connected", "connected"]);
+  eq("ivr stage: an unanswered outbound call moves New to Attempted, and only New", [ivrNextStage("new", { outcome: "not_answered", direction: "outbound" }), ivrNextStage("connected", { outcome: "busy", direction: "outbound" })], ["attempted", "connected"]);
+  eq("ivr stage: an unanswered inbound call changes nothing", ivrNextStage("new", { outcome: "not_answered", direction: "inbound" }), "new");
+  eq("ivr stage: closed stays closed, whatever the call", [ivrNextStage("closed", { outcome: "answered", direction: "outbound" }), ivrNextStage("closed", { outcome: "not_answered", direction: "outbound" })], ["closed", "closed"]);
+  eq("ivr stage: the queue holds New and Attempted members", IVR_OPEN_STAGES, ["new", "attempted"]);
+
+  eq("ivr smartflo time: 'YYYY-MM-DD HH:mm:ss' is India time; epoch seconds and ISO also read", [ivrSfTime("2026-10-31 10:00:00")?.toISOString(), ivrSfTime("1793433600")?.toISOString(), ivrSfTime("2026-10-31T04:30:00Z")?.toISOString(), ivrSfTime("not a time")],
+    ["2026-10-31T04:30:00.000Z", new Date(1793433600 * 1000).toISOString(), "2026-10-31T04:30:00.000Z", null]);
+  const hook = ivrWebhook({ $call_id: "c-1", direction: "inbound", customer_number: "+919876543210", call_to_number: "+912071000000", answered_agent_number: "+919800000101",
+    start_stamp: "2026-10-31 10:00:00", end_stamp: "2026-10-31 10:01:30", duration: "90", billsec: "75", call_status: "answered", digits_dialed: ["1", "2"],
+    custom_identifier: JSON.stringify({ dr: "0123456789abcdef0123456789abcdef" }) });
+  eq("ivr webhook: a finished answered call, with '$' keys, the agent's number, the menu keys and the line it came in on", hook && [hook.callId, hook.status, hook.direction, hook.agentNumber, hook.dtmf, hook.didNumber, hook.answeredSec, hook.durationSec],
+    ["c-1", "answered", "inbound", "+919800000101", "12", "+912071000000", 75, 90]);
+  eq("ivr webhook: the Call button's dial request id comes back with its dashes", hook?.dialRequestId, "01234567-89ab-cdef-0123-456789abcdef");
+  eq("ivr webhook: no end time and no duration = still ringing (ongoing)", ivrWebhook({ call_id: "c-2", customer_number: "+919876543210", start_stamp: "2026-10-31 10:00:00" })?.status, "ongoing");
+  eq("ivr webhook: an event without call data is stored, not merged (null)", [ivrWebhook({ call_id: "c-3" }), ivrWebhook({ customer_number: "1", start_stamp: "2026-10-31 10:00:00" })], [null, null]);
+  eq("ivr webhook: a dial request id that is not ours is ignored", ivrWebhook({ call_id: "c-4", customer_number: "1", start_stamp: "2026-10-31 10:00:00", custom_identifier: "{\"dr\":\"../../etc\"}" })?.dialRequestId, null);
+  const cdr = ivrCdr({ call_id: "r-1", client_number: "+919876543210", date: "2026-10-31", time: "11:00:00", direction: "outbound", status: "missed", answered_seconds: "0", hangup_cause: "USER_BUSY", agent_number: "+919800000101" });
+  eq("ivr call record: an outbound missed call from the call records API", cdr && [cdr.callId, cdr.direction, cdr.status, cdr.hangupCause, cdr.startedAt.toISOString()], ["r-1", "outbound", "missed", "USER_BUSY", "2026-10-31T05:30:00.000Z"]);
+  eq("ivr call record: without a number or a time it is skipped", ivrCdr({ call_id: "r-2", date: "2026-10-31" }), null);
+  eq("ivr smartflo users: only users with an agent profile are agents", [ivrSfAgent({ agent: { id: "77", name: "Asha", follow_me_number: "+919800000101" }, extension: "060123456", login_id: "a@x.in" }), ivrSfAgent({ name: "No agent" })],
+    [{ id: "77", name: "Asha", number: "+919800000101", extension: "060123456", loginId: "a@x.in" }, null]);
+  eq("ivr live calls: direction 2 is outbound, and the agent is the source", ivrLive({ call_id: "l-1", direction: 2, source: "+919800000101", destination: "+919876543210", customer_number: "+919876543210" })?.agentNumber, "+919800000101");
+
+  const headers = ["Member Name", "Mobile", "Email", "Organisation", "Member Code", "Call Category", "Agent Email"];
+  const sample = [["Sunil", "9876543210", "s@x.in", "Kulkarni Tools", "M-1", "Membership", "asha@mccia.in"], ["Priya", "9876543211", "p@x.in", "Foods", "M-2", "Proforma invoice", "asha@mccia.in"], ["Rakesh", "9876543212", "", "Traders", "M-3", "Hall booking", "bala@mccia.in"]];
+  const det = ivrDetect(headers, sample).mapping;
+  eq("ivr import: columns are recognised from their headings", [det.name, det.phone, det.email, det.company, det.memberCode, det.category, det.agentEmail], [0, 1, 2, 3, 4, 5, 6]);
+  eq("ivr import: 'Agent Email' is the agent's, never the member's email", det.email !== 6 && det.agentEmail === 6, true);
+  eq("ivr import: a mapping from the browser is cleaned (out-of-range or junk columns dropped)", [ivrSanitize({ phone: 1, name: 99, email: "x" }, 3).phone, ivrSanitize({ phone: 1, name: 99 }, 3).name, ivrSanitize("junk", 3).phone], [1, null, null]);
+  const index = ivrAgentIndex(
+    [{ id: "u-a", name: "Asha Patil", email: "asha@mccia.in", phone: "+919800000101", smartfloAgentId: "77" }, { id: "u-b", name: "Bala Rao", email: "shared@mccia.in", phone: "+919800000102", smartfloAgentId: null }, { id: "u-c", name: "Chitra Rao", email: "shared@mccia.in", phone: null, smartfloAgentId: null }],
+    [{ id: "77", name: "Asha", number: "+919800000101", extension: "060111", email: "asha@mccia.in", mappedUserId: "u-a" }],
+  );
+  const m = (input: Parameters<typeof ivrMatch>[1]) => { const r = ivrMatch(index, input); return [r.status, r.userId]; };
+  eq("ivr import agent: by Smartflo agent id or extension", [m({ agentRef: "77" }), m({ agentRef: "060111" })], [["matched", "u-a"], ["matched", "u-a"]]);
+  eq("ivr import agent: by the agent's phone, in any shape", m({ agentPhone: "98000 00102" }), ["matched", "u-b"]);
+  eq("ivr import agent: by a unique email", m({ agentEmail: "ASHA@mccia.in" }), ["matched", "u-a"]);
+  eq("ivr import agent: an email two people share is never guessed", m({ agentEmail: "shared@mccia.in" })[0], "ambiguous");
+  eq("ivr import agent: by name; a surname two people share is not settled", [m({ agentName: "Asha Patil" }), m({ agentName: "Rao" })[0]], [["matched", "u-a"], "ambiguous"]);
+  eq("ivr import agent: nobody named = unmatched (the allocation rules decide)", m({}), ["unmatched", null]);
+
+  const day = ivrDayStart(new Date("2026-10-31T20:00:00Z")); // 1:30 am on 1 November in India
+  eq("ivr time: the India day starts at 00:00 IST (18:30 UTC the evening before)", [day.toISOString(), ivrDateStr(day)], ["2026-10-31T18:30:00.000Z", "2026-11-01"]);
+  eq("ivr time: durations as people read them", [0, 45, 125, 3725].map(ivrDuration), ["0s", "45s", "2m 05s", "1h 02m"]);
+  const custom = ivrRange({ range: "custom", from: "2026-10-01", to: "2026-10-07" });
+  eq("ivr time: a custom range includes its last day (to is exclusive)", [custom.fromStr, custom.toStr, (custom.to.getTime() - custom.from.getTime()) / 86_400_000], ["2026-10-01", "2026-10-07", 7]);
+  eq("ivr time: a range that ends before it starts falls back to today", ivrRange({ range: "custom", from: "2026-10-07", to: "2026-10-01" }).fromStr === ivrRange({}).fromStr, true);
+  eq("ivr time: a week is the last seven days, today included", ivrDateStr(ivrAddDays(ivrRange({ range: "week" }).to, -7)) === ivrRange({ range: "week" }).fromStr, true);
+  eq("ivr list addresses: a change keeps the other filters, null removes one", [ivrQs({ stage: "new", q: "sun" }, { lead: "x" }), ivrQs({ stage: "new", lead: "x" }, { lead: null })], ["?stage=new&q=sun&lead=x", "?stage=new"]);
+  eq("ivr class names: empty parts are skipped", ivrCx("a", false, null, undefined, "b"), "a b");
+}
 
 ssoTests.then(() => {
   console.log(`\n${ok}/${ok + bad} unit checks passed`);

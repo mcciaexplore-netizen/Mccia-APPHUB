@@ -1,0 +1,133 @@
+/*
+ * IVR-CRM's own look, on the hub's tokens (src/app/globals.css). Everything here is prefixed ivr- so nothing can change a hub page: the
+ * stylesheet stays loaded once someone has opened /ivr. Buttons, inputs and tables-in-cards use the hub's own classes (btn, input); these
+ * are the pieces the hub has no class for.
+ */
+:root {
+  --ivr-accent: var(--c-primary);
+  --ivr-accent-ink: #ffffff;
+  --ivr-done: var(--c-green-text);
+  --ivr-missed: var(--c-red);
+  --ivr-incoming: var(--c-purple);
+  --ivr-purple: var(--c-purple);
+  --ivr-attempted: #d97706;
+  --ivr-sched: var(--c-primary);
+  --ivr-fg: var(--c-text);
+  --ivr-muted: var(--c-muted);
+  --ivr-subtle: var(--c-subtle);
+  --ivr-surface: #ffffff;
+  --ivr-surface-2: var(--c-alt);
+  --ivr-card: #ffffff;
+  --ivr-line: var(--c-border);
+  --ivr-line-strong: #cbd5e1;
+  --ivr-line-hover: var(--c-border-hover);
+  --ivr-row-hover: rgba(42, 107, 124, 0.04);
+  --ivr-tint-blue: var(--c-blue-tint);
+  --ivr-tint-blue-line: var(--c-blue-tint-border);
+  --ivr-tint-green: var(--c-green-tint);
+  --ivr-tint-green-line: var(--c-green-tint-border);
+  --ivr-tint-red: var(--c-red-tint);
+  --ivr-tint-red-line: var(--c-red-tint-border);
+  --ivr-shadow-card: 0 6px 24px rgba(15, 23, 42, 0.08);
+  --ivr-shadow-card-hover: 0 14px 34px rgba(15, 23, 42, 0.13);
+  --ivr-grad-primary: var(--grad-primary);
+  --ivr-font-display: var(--font-sans);
+  --ivr-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Small uppercase labels */
+.ivr-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ivr-subtle); }
+/* A field inside a label keeps its own plain text (form controls inherit the font in this stylesheet's base). */
+.ivr-label :is(input, select, textarea) { font-size: 0.85rem; font-weight: 400; letter-spacing: normal; text-transform: none; color: var(--ivr-fg); }
+
+/* Card: the hub's white panel */
+.ivr-card {
+  border: 1px solid var(--ivr-line); border-radius: var(--radius-lg, 14px); background: var(--ivr-card); box-shadow: var(--ivr-shadow-card);
+  transition: transform 0.3s var(--ivr-ease), border-color 0.3s var(--ivr-ease), box-shadow 0.3s var(--ivr-ease);
+}
+
+/* KPI tile */
+.ivr-stat {
+  border: 1px solid var(--ivr-line); border-radius: 12px; background: var(--ivr-card); box-shadow: var(--ivr-shadow-card); text-align: center;
+  min-width: 0; overflow: hidden; transition: transform 0.3s var(--ivr-ease), border-color 0.3s var(--ivr-ease), box-shadow 0.3s var(--ivr-ease);
+}
+.ivr-stat:hover { transform: translateY(-3px); border-color: var(--ivr-line-hover); box-shadow: var(--ivr-shadow-card-hover); }
+.ivr-stat-number {
+  font-family: var(--ivr-font-display); font-weight: 800; font-size: clamp(2rem, 3.2vw, 2.5rem); line-height: 1.1; letter-spacing: -0.02em;
+  color: var(--ivr-accent); font-variant-numeric: tabular-nums; white-space: nowrap; max-width: 100%;
+}
+.ivr-stat-number-text { font-size: clamp(1.4rem, 2.2vw, 1.9rem); line-height: 1.4; }
+
+/* Pills: the tone comes from --tone; the text is the tone, the background and border are tints of it */
+.ivr-pill {
+  --tone: var(--ivr-muted);
+  display: inline-flex; align-items: center; white-space: nowrap; border: 1px solid color-mix(in srgb, var(--tone) 22%, transparent);
+  border-radius: 9999px; padding: 0.125rem 0.625rem; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--tone); background: color-mix(in srgb, var(--tone) 9%, transparent);
+}
+
+/* Chips: small filters and segmented toggles */
+.ivr-chip {
+  display: inline-flex; align-items: center; gap: 0.25rem; border: 1px solid var(--ivr-line-strong); border-radius: 6px; padding: 0.25rem 0.625rem;
+  font-size: 0.75rem; font-weight: 500; color: var(--ivr-muted); background: var(--ivr-surface);
+  transition: background-color 0.2s var(--ivr-ease), border-color 0.2s var(--ivr-ease), color 0.2s var(--ivr-ease);
+}
+.ivr-chip:hover { background: var(--ivr-tint-blue); border-color: var(--ivr-tint-blue-line); color: var(--ivr-accent); }
+.ivr-chip-on { background: var(--ivr-tint-blue); border-color: var(--ivr-accent); color: var(--ivr-accent); font-weight: 600; }
+
+/* Tables */
+.ivr-th {
+  padding: 0.75rem 0.875rem; text-align: left; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; white-space: nowrap; text-transform: uppercase;
+  background: var(--ivr-surface-2); color: var(--ivr-subtle);
+}
+.ivr-td { border-bottom: 1px solid var(--ivr-line); padding: 0.75rem 0.875rem; vertical-align: middle; line-height: 1.375; }
+tr:hover > .ivr-td { background: var(--ivr-row-hover); }
+tbody tr:last-child > .ivr-td { border-bottom-width: 0; }
+
+/* Icon tiles */
+.ivr-icon-tile {
+  display: grid; place-items: center; width: 2.75rem; height: 2.75rem; flex-shrink: 0; border: 1px solid var(--ivr-tint-blue-line); border-radius: 10px;
+  background: var(--ivr-tint-blue); color: var(--ivr-accent);
+}
+.ivr-icon-tile > svg { width: 18px; height: 18px; }
+.ivr-icon-tile-green { background: var(--ivr-tint-green); border-color: var(--ivr-tint-green-line); color: var(--ivr-done); }
+.ivr-icon-tile-red { background: var(--ivr-tint-red); border-color: var(--ivr-tint-red-line); color: var(--ivr-missed); }
+.ivr-badge-num {
+  display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; color: #fff;
+  background: var(--ivr-grad-primary);
+}
+
+/* Dialogs */
+.ivr-modal { border: 1px solid var(--ivr-line); border-radius: var(--radius-lg, 14px); padding: 0; color: var(--ivr-fg); background: #fff; box-shadow: var(--ivr-shadow-card-hover); }
+.ivr-modal::backdrop, .ivr-modal-scrim { background: rgba(15, 23, 42, 0.4); }
+
+/* A draggable or clickable item (pipeline cards) */
+.ivr-tile {
+  border: 1px solid var(--ivr-line); border-radius: 12px; background: var(--ivr-surface); box-shadow: var(--ivr-shadow-card);
+  transition: transform 0.3s var(--ivr-ease), border-color 0.3s var(--ivr-ease), box-shadow 0.3s var(--ivr-ease);
+}
+.ivr-tile:hover { transform: translateY(-2px); border-color: var(--ivr-line-hover); box-shadow: var(--ivr-shadow-card-hover); }
+
+/* Messages */
+.ivr-alert {
+  display: flex; align-items: flex-start; gap: 0.625rem; border: 1px solid var(--ivr-tint-blue-line); border-radius: 12px; padding: 0.75rem 1rem;
+  font-size: 0.85rem; background: var(--ivr-tint-blue); color: var(--ivr-fg);
+}
+.ivr-alert > svg { margin-top: 0.125rem; width: 1rem; height: 1rem; flex-shrink: 0; color: var(--ivr-accent); }
+.ivr-alert-success { background: var(--ivr-tint-green); border-color: var(--ivr-tint-green-line); }
+.ivr-alert-success > svg { color: var(--ivr-done); }
+.ivr-alert-error { background: var(--ivr-tint-red); border-color: var(--ivr-tint-red-line); }
+.ivr-alert-error > svg { color: var(--ivr-missed); }
+
+.ivr-quote { border-left: 4px solid var(--ivr-accent); border-radius: 0 12px 12px 0; padding: 1rem 1.25rem; background: var(--ivr-tint-blue); }
+
+/* Motion: KPI tiles and filter cards rise in, staggered. "backwards": no transform is left afterwards. */
+@keyframes ivr-rise { from { opacity: 0; transform: translateY(12px); } }
+.ivr-stagger > * { animation: ivr-rise 0.4s var(--ivr-ease) backwards; }
+.ivr-stagger > :nth-child(2) { animation-delay: 60ms; }
+.ivr-stagger > :nth-child(3) { animation-delay: 120ms; }
+.ivr-stagger > :nth-child(4) { animation-delay: 180ms; }
+.ivr-stagger > :nth-child(n + 5) { animation-delay: 240ms; }
+
+@keyframes ivr-pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45); } 100% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } }
+.ivr-live-dot { animation: ivr-pulse-ring 1.4s var(--ivr-ease) infinite; }

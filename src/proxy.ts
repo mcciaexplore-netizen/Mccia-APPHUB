@@ -46,7 +46,8 @@ export function proxy(req: NextRequest) {
 }
 
 // /api/cron/ is called by Vercel Cron, which has no sign-in: that route checks CRON_SECRET itself. /api/ping (the keep-warm ping, also
-// Vercel Cron) is open to anyone and answers only "ok" and the time.
+// Vercel Cron) is open to anyone and answers only "ok" and the time. /api/ivr/webhooks/ is where Tata Smartflo posts IVR-CRM's call
+// events; Smartflo cannot sign in, so the route checks the secret in its own address itself (and answers 404 to anything else).
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|api/cron/|api/ping$|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|map|txt|woff2?)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|api/cron/|api/ivr/webhooks/|api/ping$|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|map|txt|woff2?)$).*)"],
 };

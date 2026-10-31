@@ -35,6 +35,8 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // The bulk-add screen checks up to 2,000 people in one request; the default 1 MB limit would stop a large file.
   experimental: { serverActions: { bodySizeLimit: "3mb" } },
+  // IVR-CRM's PDF reports: the renderer loads its fonts and layout engine from node_modules at run time, so it stays out of the bundle.
+  serverExternalPackages: ["@react-pdf/renderer"],
   async headers() {
     return [
       {

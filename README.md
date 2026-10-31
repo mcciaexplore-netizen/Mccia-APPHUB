@@ -120,6 +120,35 @@ npm run dev
 
 **Tests.** `npm run test:unit` covers the rules (budget maths, routing, validation, dates). `npm run test:e2e:approvals` (module set-up and admin screens) and `npm run test:e2e:approvals:flow` (submit, approve, reject, the typed budget, files) drive a real browser against a running server; see the header of each file.
 
+## IVR-CRM module (`/ivr`)
+
+The Membership team's calling CRM, connected to Tata Smartflo (calls, recordings) and Zoho Mail. Built into the hub like Cab Booking:
+code in `src/app/ivr`, `src/lib/ivr`, `src/components/ivr`, tables prefixed `ivr_` (`src/db/ivr-schema.ts`). It reaches the hub only through
+`src/lib/ivr/host-adapter.ts`. It is off unless `IVR_ENABLED=true`; every page and route is a 404 until then.
+
+- **Two applications** in Administrator → Applications: **IVR-CRM** (address `/ivr`), given to the Membership team, and **IVR-CRM Admin**
+  (`/ivr/admin`), given to the one or two IVR admins.
+- **Roles.** `ivr_agent`: given IVR-CRM. `ivr_admin`: an App Admin of IVR-CRM Admin who has also been given it (as for every Admin
+  application). `ivr_super_admin`: the Support Admin (`head_admin`) only, the one who also manages Integrations (the Smartflo credentials).
+- **An agent sees only their own.** Their queue, pipeline and member panel show only the members they own (`ivr_leads.owner_id`); My
+  calls, their KPIs, a member's call history and recordings only the calls they handled (`ivr_calls.agent_user_id`). In `/ivr` everyone
+  acts as an agent, admins included. The admin section sees every member and call, assigns and reassigns, imports, and has team analytics,
+  PDF reports, categories and the retry rule, and links agents to their Smartflo agent.
+- **Calls** come in three ways, all through one function keyed on the Smartflo call id (`src/lib/ivr/smartflo/ingest.ts`): Smartflo's
+  webhook (`/api/ivr/webhooks/smartflo/<SMARTFLO_WEBHOOK_SECRET>`, open in `src/proxy.ts` because Smartflo cannot sign in: the secret is
+  the gate), the Call button (Smartflo rings the agent first, then the member), and the sync: a heartbeat from every open IVR-CRM tab
+  during working hours, plus the daily cron `/api/cron/ivr-sync?hours=48` (`CRON_SECRET`). The Smartflo account is shared with other
+  departments, so only calls handled by an IVR-CRM agent or on a Membership line are kept.
+- **Settings:** `IVR_ENABLED`, `IVR_ENCRYPTION_KEY` (encrypts the stored Smartflo login and the agents' Zoho tokens), `SMARTFLO_MODE`,
+  `SMARTFLO_WEBHOOK_SECRET`, optional `SMARTFLO_CALLER_ID` and `SMARTFLO_API_BASE`, `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_DOMAIN`
+  (see `docs/ivr-zoho-setup.md`).
+- **Database:** `scripts/apply-0036-ivr.sql` (new tables only; run it before deploying).
+- **Tests:** `node tests/e2e/ivr.mjs` against a site with `IVR_ENABLED=true SMARTFLO_MODE=mock` (and `E2E_IVR_OFF=yes` against one with
+  it off).
+- **Not yet checked against a real Smartflo account** (from the original IVR app): the Click to Call request fields, whether Smartflo echoes
+  the dial request id on webhooks, and the hang-up-cause mapping. Expect to adjust `src/lib/ivr/smartflo/normalize.ts` after the first real
+  call and sync.
+
 ## Database portability
 
 - Plain Postgres only, no Neon-specific features. Portable column types; uuids come from `gen_random_uuid()` (Postgres 13+, no extension).
