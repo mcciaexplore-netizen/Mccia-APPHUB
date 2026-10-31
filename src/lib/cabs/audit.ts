@@ -18,11 +18,14 @@ export const AUDIT_ACTIONS = {
   ride_started: "Ride started",
   ride_completed: "Ride completed",
   ride_cancelled: "Ride cancelled",
+  otp_verified: "OTP verified",
   otp_failed: "Wrong OTP entered",
   otp_reset: "New OTP made",
   maintenance_added: "Maintenance recorded",
   maintenance_edited: "Maintenance edited",
   maintenance_deleted: "Maintenance deleted",
+  fuel_recorded: "Fuel cost recorded",
+  fuel_deleted: "Fuel cost deleted",
   cost_recorded: "Ride cost recorded",
   cost_edited: "Ride cost changed",
   invoice_created: "Invoice created",
@@ -30,6 +33,7 @@ export const AUDIT_ACTIONS = {
   invoice_paid: "Invoice marked paid",
   invoice_deleted: "Draft invoice deleted",
   driver_added: "Driver added",
+  driver_edited: "Driver edited",
   driver_updated: "Driver's vehicle changed",
   driver_availability: "Driver availability changed",
   driver_removed: "Driver removed",
@@ -69,7 +73,8 @@ export async function writeCabAudit(actor: Actor, action: CabAuditAction, entry:
 /* ---------------------------------------------------------------- reading */
 
 export const AUDIT_PAGE_SIZE = 50;
-export type AuditFilters = { action?: string; from?: string; to?: string };
+/** `actor`: the id of who did it; `ride`: a ride's id (the whole id, or its first 8 characters as the page shows it). */
+export type AuditFilters = { action?: string; from?: string; to?: string; actor?: string; ride?: string };
 export type AuditRow = { id: string; createdAt: Date; actorName: string; action: string; rideId: string | null; details: Record<string, unknown> | null };
 
 const isDay = (d: string | undefined): d is string => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00+05:30`));
@@ -81,6 +86,11 @@ function where(f: AuditFilters): SQL | undefined {
   if (f.action && isAuditAction(f.action)) c.push(eq(cabAuditLog.action, f.action));
   if (isDay(f.from)) c.push(gte(cabAuditLog.createdAt, dayStart(f.from)));
   if (isDay(f.to)) c.push(lt(cabAuditLog.createdAt, new Date(dayStart(f.to).getTime() + 86_400_000)));
+  if (f.actor && /^[0-9a-f-]{36}$/i.test(f.actor)) c.push(eq(cabAuditLog.actorId, f.actor));
+  const ride = f.ride?.trim().toLowerCase();
+  if (ride && /^[0-9a-f-]{36}$/.test(ride)) c.push(eq(cabAuditLog.rideId, ride));
+  else if (ride && /^[0-9a-f]{8}$/.test(ride)) c.push(sql`${cabAuditLog.rideId}::text like ${`${ride}%`}`);
+  else if (ride) c.push(sql`false`);
   return c.length ? and(...c) : undefined;
 }
 
@@ -100,6 +110,13 @@ export async function listCabAudit(f: AuditFilters, page: number): Promise<{ row
 /** Every entry the filters match, newest first, for the CSV export (at most 20,000). */
 export async function exportCabAudit(f: AuditFilters): Promise<AuditRow[]> {
   return db.select(columns).from(cabAuditLog).where(where(f)).orderBy(desc(cabAuditLog.createdAt), desc(cabAuditLog.id)).limit(20_000);
+}
+
+/** Everyone who appears in the log, by name, for the "Who" filter (an id can have had more than one name: the latest is shown). */
+export async function auditActors(): Promise<{ id: string; name: string }[]> {
+  return (await db.execute(sql`
+    select distinct on (actor_id) actor_id as id, actor_name as name from cab_audit_log order by actor_id, created_at desc`) as unknown as { rows: { id: string; name: string }[] })
+    .rows.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** What an entry was about. */

@@ -59,6 +59,7 @@ const removeTestData = async () => {
   await sql`delete from cab_invoices where branch like 'ZZC%'`;
   await sql`delete from cab_rides where requested_by_email like 'zzc-%'`;
   await sql`delete from cab_drivers where email like 'zzc-%' or name like 'ZZC%'`;
+  await sql`delete from cab_fuel_costs where vehicle_plate like 'ZZC%'`;
   await sql`delete from cab_vehicles where number_plate like 'ZZC%'`;
   await sql`delete from access_audit where action like 'cabs.%' and target_label like 'ZZC%'`;
   await sql`delete from users where email like 'zzc-%'`;
@@ -78,6 +79,8 @@ const snap = async () => JSON.stringify([
   await sql`select id, total_amount_paise, status from cab_invoices where branch not like 'ZZC%' order by id`,
   await sql`select id, base_fare_paise, invoice_id from cab_ride_costs c where not exists (select 1 from cab_rides r where r.id = c.ride_id and r.requested_by_email like 'zzc-%') order by id`,
   await sql`select id, cost_paise from cab_maintenance where vehicle_plate not like 'ZZC%' order by id`,
+  await sql`select id, cost_paise from cab_fuel_costs where vehicle_plate not like 'ZZC%' order by id`,
+  await sql`select id, login_requested_at from cab_drivers where name not like 'ZZC%' order by id`,
   await sql`select count(*)::int n from cab_driver_sessions s join cab_drivers d on d.id = s.driver_id where d.name not like 'ZZC%'`,
   await sql`select count(*)::int n from cab_driver_otps o join cab_drivers d on d.id = o.driver_id where d.name not like 'ZZC%'`,
 ]);
@@ -115,6 +118,8 @@ const signedIn = async (email, gps) => {
   await page.click("button[type=submit]"); await page.waitForURL((u) => u.pathname === "/", { timeout: 60000 });
   return { ctx, page };
 };
+/** The Cabs Admin menu's lines, without their badges (a count, a dot). */
+const navLabels = async (page) => (await page.locator('nav[aria-label="Cabs Admin"] a').allInnerTexts()).map((t) => t.replace(/\s*\d+\s*$/, "").trim()).join("|");
 const go = async (page, p) => { const r = await page.goto(BASE + p); await page.waitForLoadState("networkidle").catch(() => {}); return r; };
 const toast = (page, text) => page.getByText(text).first().waitFor({ timeout: 15000 }).then(() => true).catch(() => false);
 const api = (page, url, method, body) => page.evaluate(async ([u, m, b]) => { const r = await fetch(u, { method: m, headers: b ? { "Content-Type": "application/json" } : {}, body: b ? JSON.stringify(b) : undefined }); return { status: r.status, body: await r.json().catch(() => null) }; }, [url, method, body]);
@@ -129,7 +134,7 @@ if (process.env.E2E_CABS_OFF === "yes") {
   try {
     section("module switched off");
     const { page } = await signedIn("zzc-admin@gmail.com");
-    for (const p of ["/cabs", "/cabs/book", "/cabs/rides", "/cabs/driver", "/cabs/driver/rides", "/cabs/admin", "/cabs/admin/rides", "/cabs/admin/drivers", "/cabs/admin/vehicles", "/cabs/admin/audit"]) {
+    for (const p of ["/cabs", "/cabs/book", "/cabs/rides", "/cabs/driver", "/cabs/driver/rides", "/cabs/admin", "/cabs/admin/rides", "/cabs/admin/trips", "/cabs/admin/pending", "/cabs/admin/upcoming", "/cabs/admin/drivers", "/cabs/admin/vehicles", "/cabs/admin/audit"]) {
       check(`off: ${p} is a 404`, (await go(page, p))?.status() === 404);
     }
     for (const [m, p] of [["POST", "/api/cabs/rides"], ["GET", "/api/cabs/drivers"], ["POST", "/api/cabs/vehicles"], ["GET", "/api/cabs/audit/export"]]) {
@@ -169,8 +174,8 @@ try {
   const anon = await fetch(BASE + "/api/cabs/rides", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", redirect: "manual" });
   check("API: signed out is refused", anon.status === 401 || anon.status === 307, anon.status);
   await go(A.page, "/cabs/admin");
-  check("admin: Cabs Admin opens with its menu", (await A.page.locator('nav[aria-label="Cabs Admin"] a').allInnerTexts()).map((t) => t.trim()).join("|")
-    === "App Hub|Dashboard|Live Trips|All Rides|Drivers|Driver Activity|Vehicles|Maintenance|User Activity|Payments|Invoices|Audit Log");
+  check("admin: Cabs Admin opens with its menu", (await navLabels(A.page))
+    === "App Hub|Dashboard|Live Trips|Pending Requests|Upcoming Rides|All Trips|Drivers|Vehicles|Maintenance|Payments|Audit Log");
   await go(D.page, "/cabs/driver"); check("a driver not yet added on the Drivers page cannot open Cabs Driver", new URL(D.page.url()).pathname === "/");
 
   section("vehicles");
@@ -206,13 +211,23 @@ try {
   check("a phone number that is too short is refused (400)", (await api(A.page, "/api/cabs/drivers", "POST", { name: "ZZC Short", email: "zzc-short@gmail.com", phone: "12345" })).status === 400);
   const dr2 = (await api(A.page, "/api/cabs/drivers", "POST", { name: "ZZC Second Driver", email: "zzc-driver2@gmail.com", phone: "9822000001", vehicleId: v2.id })).body;
   check("a second driver (a vehicle sent with it is ignored)", !!dr2?.id);
-  check("the old \"give a driver a vehicle\" route is gone (405)", (await api(A.page, `/api/cabs/drivers/${dr2.id}`, "PATCH", { vehicleId: v1.id })).status === 405);
+  check("a driver can no longer be given a vehicle: editing takes a name and phone, so a vehicle alone is refused (400)", (await api(A.page, `/api/cabs/drivers/${dr2.id}`, "PATCH", { vehicleId: v1.id })).status === 400);
   const nohub = (await api(A.page, "/api/cabs/drivers", "POST", { name: "ZZC Outside Driver", email: "zzc-nohub@gmail.com", phone: "+91 98220 00002" })).body;
   await go(A.page, "/cabs/admin/drivers");
   check("a driver with no hub account can be added", !!nohub?.id);
   check("the Drivers list: Name, Phone, Availability (no Vehicle), with Get Login OTP on each driver",
     (await A.page.locator("thead th").allInnerTexts()).map((t) => t.trim().toLowerCase()).join("|") === "name|phone|availability|rides on|actions"
     && (await A.page.locator(`tr[data-driver="${nohub.id}"] [data-get-otp]`).count()) === 1);
+  check("Drivers links to Driver Activity", (await A.page.locator("[data-driver-activity-link]").getAttribute("href")) === "/cabs/admin/drivers/activity");
+  await A.page.locator(`tr[data-driver="${nohub.id}"] [data-edit-driver]`).click();
+  await A.page.fill("[role=dialog] input[name=name]", "ZZC Outside Driver Two");
+  await A.page.locator("[role=dialog]").getByRole("button", { name: "Save" }).click();
+  check("Edit: the driver's name changes, logged as \"Driver edited\" with what changed", await toast(A.page, "Driver updated")
+    && !!(await poll(async () => (await sql`select 1 from cab_drivers where id = ${nohub.id} and name = 'ZZC Outside Driver Two'`)[0]))
+    && (await sql`select details from cab_audit_log where action = 'driver_edited' and details->>'subject' = 'ZZC Outside Driver Two'`)[0]?.details?.name === "ZZC Outside Driver → ZZC Outside Driver Two");
+  const phoneClash = await api(A.page, `/api/cabs/drivers/${nohub.id}`, "PATCH", { name: "ZZC Outside Driver Two", phone: "98765 43210" });
+  check("Edit: another driver's phone is refused (409), naming them; a staffer cannot edit (403)", phoneClash.status === 409 && /ZZC Driver already has the phone number/.test(phoneClash.body?.error)
+    && (await api(S.page, `/api/cabs/drivers/${nohub.id}`, "PATCH", { name: "x", phone: "9822000099" })).status === 403, JSON.stringify(phoneClash));
   await go(A.page, "/cabs/admin/vehicles");
   check("the Vehicles list has no Drivers column", !(await A.page.locator("thead th").allInnerTexts()).some((t) => /drivers/i.test(t)));
   await go(D.page, "/cabs/driver");
@@ -276,8 +291,31 @@ try {
   });
   await watch.goto(BASE + "/cabs/rides"); await watch.waitForLoadState("networkidle").catch(() => {});
 
+  section("pending requests");
+  {
+    const [{ n: waitingNow }] = await sql`select count(*)::int as n from cab_rides where status = 'pending'`;
+    await go(A.page, "/cabs/admin/rides?status=pending");
+    check("the old All Rides address goes to All Trips, keeping its filters", new URL(A.page.url()).pathname === "/cabs/admin/trips" && new URL(A.page.url()).searchParams.get("status") === "pending");
+    check("sidebar: Pending Requests shows how many rides are waiting, in red", Number(await A.page.locator("[data-pending-badge]").innerText()) === waitingNow, waitingNow);
+    check("All Trips links to User Activity", (await A.page.locator("[data-user-activity-link]").getAttribute("href")) === "/cabs/admin/activity");
+    await go(A.page, "/cabs/admin/pending");
+    const order = await A.page.locator("article[data-ride]").evaluateAll((els) => els.map((e) => e.getAttribute("data-ride")));
+    const want = (await sql`select id from cab_rides where status = 'pending' order by created_at`).map((r) => r.id);
+    const card1 = await A.page.locator(`article[data-ride="${r1.id}"]`).innerText();
+    check("Pending Requests: every waiting ride, the longest-waiting first, with rider, branch, route, time, passengers, Assign and Cancel", order.join() === want.join()
+      && ["ZZC Staffer", "ZZC Branch", "ZZC Office", "ZZC Airport", "passenger", "Waiting"].every((t) => card1.includes(t))
+      && (await A.page.locator(`article[data-ride="${r1.id}"] button`).allInnerTexts()).map((t) => t.trim()).join("|") === "Assign|Cancel", card1);
+    const rQ = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Queue Pickup", dropoff: "ZZC Queue Drop", scheduledFor: istSlot(7, 10) })).body;
+    await go(A.page, "/cabs/admin/pending");
+    await A.page.locator(`article[data-ride="${rQ.id}"]`).getByRole("button", { name: "Cancel" }).click();
+    await A.page.fill("[role=dialog] textarea[name=reason]", "ZZC no longer needed");
+    await A.page.locator("[role=dialog]").getByRole("button", { name: "Cancel ride" }).click();
+    check("Pending Requests: Cancel with a reason", await toast(A.page, "Ride cancelled")
+      && !!(await poll(async () => { const x = await ride(rQ.id); return x.status === "cancelled" && x.cancel_reason === "ZZC no longer needed"; })));
+  }
+
   section("assigning");
-  await go(A.page, "/cabs/admin/rides?status=pending");
+  await go(A.page, "/cabs/admin/trips?status=pending");
   await A.page.locator(`tr[data-ride="${r1.id}"]`).getByRole("button", { name: "Assign" }).click();
   await A.page.locator("[role=dialog] select[name=driverId]").selectOption(dr1.id);
   check("picking a driver chooses no car for you; every active car is offered with its seats, an inactive one is not",
@@ -302,7 +340,7 @@ try {
   const alerted = await poll(async () => (await watch.evaluate(() => window.__notes)).find((n) => n.title === "Your ride is confirmed"), 40_000);
   check("the rider's open page alerts them that the ride is confirmed (within 30 seconds)", !!alerted && alerted.body.includes("ZZC Office") && alerted.body.includes("ZZC Driver"), JSON.stringify(alerted));
   await watch.close();
-  await go(A.page, "/cabs/admin/rides?status=pending");
+  await go(A.page, "/cabs/admin/trips?status=pending");
   await A.page.locator(`tr[data-ride="${rMulti.id}"]`).getByRole("button", { name: "Assign" }).click();
   const optText = (id) => A.page.$eval(`[role=dialog] select[name=vehicleId] option[value="${id}"]`, (o) => ({ disabled: o.disabled, text: o.textContent }));
   const [o1, o2] = [await optText(v1.id), await optText(v2.id)];
@@ -317,7 +355,7 @@ try {
   await go(S.page, "/cabs/rides");
   check("the rider sees the OTP on My Rides, big, to show the driver", (await S.page.locator(`[data-ride="${r1.id}"] [data-otp]`).innerText()).includes(otp1.otp)
     && (await S.page.locator(`[data-ride="${r1.id}"] [data-otp]`).innerText()).includes("Show this to your driver"));
-  await go(A.page, "/cabs/admin/rides");
+  await go(A.page, "/cabs/admin/trips");
   check("the admin's rides list never shows it", (await A.page.locator("[data-otp]").count()) === 0 && !(await A.page.locator(`tr[data-ride="${r1.id}"]`).innerText()).includes(otp1.otp));
   const asDriver = await api(D.page, `/api/cabs/rides/${r1.id}`, "GET");
   check("the driver can read the ride but not its OTP", asDriver.status === 200 && asDriver.body.ride.hasOtp === true && !JSON.stringify(asDriver.body).includes(`"${otp1.otp}"`), JSON.stringify(asDriver.body).slice(0, 200));
@@ -356,16 +394,27 @@ try {
   check("three wrong OTPs: 2 tries left, 1 try left, then locked", tries.map((t) => t.status).join() === "409,409,409" && /2 tries left/.test(tries[0].body?.error) && /1 try left/.test(tries[1].body?.error) && /locked/.test(tries[2].body?.error), JSON.stringify(tries.map((t) => t.body)));
   const afterLock = await api(D.page, `/api/cabs/rides/${r1.id}/otp/verify`, "POST", { otp: otp1.otp });
   check("once locked, even the right OTP is refused and the ride stays assigned", afterLock.status === 409 && /locked/.test(afterLock.body?.error) && (await ride(r1.id)).status === "assigned", JSON.stringify(afterLock));
+  await go(A.page, "/cabs/admin/upcoming");
+  const up1 = A.page.locator(`article[data-ride="${r1.id}"]`);
+  const upOrder = await A.page.locator("article[data-ride]").evaluateAll((els) => els.map((e) => e.getAttribute("data-ride")));
+  const upWant = (await sql`select id from cab_rides where status = 'assigned' order by scheduled_for, created_at`).map((r) => r.id);
+  check("Upcoming Rides: assigned rides soonest first; this one with its driver, car and \"OTP locked\"; New OTP and Cancel, no Assign", upOrder.join() === upWant.join()
+    && (await up1.innerText()).includes("ZZC Driver") && (await up1.innerText()).includes("ZZC 01 AA 1111") && (await up1.locator('[data-otp-state="locked"]').count()) === 1
+    && (await up1.locator("button").allInnerTexts()).map((t) => t.trim()).join("|") === "New OTP|Cancel");
   await go(S.page, "/cabs/rides");
   check("the rider is told their OTP can no longer be used", (await S.page.locator(`[data-ride="${r1.id}"]`).innerText()).includes("can no longer be used"));
   check("a staffer cannot make a new OTP (403)", (await api(S.page, `/api/cabs/rides/${r1.id}/otp/reset`, "POST")).status === 403);
-  await go(A.page, "/cabs/admin/rides");
+  await go(A.page, "/cabs/admin/trips");
   await A.page.locator(`tr[data-ride="${r1.id}"]`).getByRole("button", { name: "New OTP" }).click();
   check("an admin makes a new OTP on All Rides", await toast(A.page, "New OTP made"));
   const otp2 = await poll(async () => { const o = (await sql`select * from cab_ride_otps where ride_id = ${r1.id}`)[0]; return o.attempts === 0 ? o : null; });
   check("…with no tries used; the rider sees it, and it is recorded", !!otp2 && (await sql`select 1 from cab_audit_log where ride_id = ${r1.id} and action = 'otp_reset'`).length === 1);
   await go(S.page, "/cabs/rides");
   check("…on My Rides", (await S.page.locator(`[data-ride="${r1.id}"] [data-otp]`).innerText()).includes(otp2.otp));
+  await go(A.page, "/cabs/admin/upcoming");
+  check("…and Upcoming Rides shows it active, with until when, and Cancel only", (await A.page.locator(`article[data-ride="${r1.id}"] [data-otp-state="active"]`).count()) === 1
+    && (await A.page.locator(`article[data-ride="${r1.id}"]`).innerText()).includes("works until")
+    && (await A.page.locator(`article[data-ride="${r1.id}"] button`).allInnerTexts()).map((t) => t.trim()).join("|") === "Cancel");
 
   section("driving: navigation and live location");
   await go(D.page, "/cabs/driver");
@@ -400,7 +449,9 @@ try {
     && f1.vehicle_plate === "ZZC 01 AA 1111" && f1.driver_name === "ZZC Driver" && f2?.latitude === 18.6 && !!f2.recorded_at, JSON.stringify(fleet.body).slice(0, 300));
   check("fleet: Cabs admins only (403 for a driver or a staffer)", (await api(D.page, "/api/cabs/fleet", "GET")).status === 403 && (await api(S.page, "/api/cabs/fleet", "GET")).status === 403);
   await go(A.page, "/cabs/admin");
-  check("admin dashboard: the fleet map draws a marker for each driver, labelled with when they were last seen",
+  check("the dashboard has no map any more (it is on Live Trips)", (await A.page.locator("[data-fleet-map], .leaflet-container").count()) === 0);
+  await go(A.page, "/cabs/admin/live");
+  check("Live Trips, All drivers: the fleet map draws a marker for each driver, labelled with when they were last seen",
     await A.page.locator("[data-fleet-map] .leaflet-marker-icon").first().waitFor({ timeout: 15000 }).then(() => true).catch(() => false)
     && (await A.page.locator("[data-fleet-map] .leaflet-marker-icon").count()) >= 2 && /ZZC Driver · (just now|\d+ min ago)/.test((await A.page.locator("[data-fleet-map] .leaflet-tooltip").allInnerTexts()).join("|")),
     (await A.page.locator("[data-fleet-map] .leaflet-tooltip").allInnerTexts().catch(() => [])).join("|"));
@@ -461,8 +512,8 @@ try {
   section("phase 3: maintenance");
   await go(A.page, "/cabs/admin");
   check("with no ride in progress, no green dot", (await A.page.locator("[data-live-dot]").count()) === 0);
-  check("the admin menu: one flat list", (await A.page.locator('nav[aria-label="Cabs Admin"] a').allInnerTexts()).map((t) => t.trim()).join("|")
-    === "App Hub|Dashboard|Live Trips|All Rides|Drivers|Driver Activity|Vehicles|Maintenance|User Activity|Payments|Invoices|Audit Log");
+  check("the admin menu: one flat list", (await navLabels(A.page))
+    === "App Hub|Dashboard|Live Trips|Pending Requests|Upcoming Rides|All Trips|Drivers|Vehicles|Maintenance|Payments|Audit Log");
   const ist = (days) => new Date(Date.now() + days * 86_400_000 + 5.5 * 3600_000).toISOString().slice(0, 10);
   await go(A.page, "/cabs/admin/maintenance");
   await A.page.locator("[data-add-maintenance]").click();
@@ -494,6 +545,43 @@ try {
   const mcsv = await A.page.evaluate(async () => (await fetch("/api/cabs/maintenance/export")).text());
   check("maintenance CSV", mcsv.replace(/^\uFEFF/, "").startsWith("Vehicle,Type,Description,Cost (Rs)") && mcsv.includes("ZZC oil change and filter") && mcsv.includes("3000"));
   check("maintenance is for Cabs admins only (403)", (await api(S.page, "/api/cabs/maintenance", "POST", { vehicleId: v1.id, type: "service", description: "x", doneAt: ist(-1), doneBy: "x" })).status === 403);
+
+  section("fuel costs");
+  {
+    await go(A.page, "/cabs/admin/payments");
+    await A.page.getByRole("button", { name: "Add Fuel Cost" }).click();
+    const fuelForm = A.page.locator("[role=dialog]");
+    check("Add Fuel Cost: active vehicles only, \"Added by\" the admin signed in", (await fuelForm.locator(`select[name=vehicleId] option[value="${v3.id}"]`).count()) === 0
+      && (await fuelForm.innerText()).includes("Added by ZZC Admin"));
+    await fuelForm.locator("select[name=vehicleId]").selectOption(v1.id);
+    await fuelForm.locator("input[name=fuelledAt]").fill(`${ist(-1)}T18:45`);
+    await fuelForm.locator("input[name=litres]").fill("40.25");
+    await fuelForm.locator("input[name=cost]").fill("4,100.50");
+    await fuelForm.locator("input[name=stationName]").fill("ZZC HP Baner");
+    await fuelForm.getByRole("button", { name: "Add fuel cost" }).click();
+    const fuel1 = await poll(async () => (await sql`select * from cab_fuel_costs where vehicle_plate = 'ZZC 01 AA 1111' and station_name = 'ZZC HP Baner'`)[0]);
+    check("…recorded: the plate copied in, litres, the cost in paise, the time in India, who added it", await toast(A.page, "Fuel cost recorded") && fuel1?.litres === "40.25"
+      && fuel1.cost_paise === 410050 && fuel1.recorded_by_name === "ZZC Admin" && new Date(fuel1.fuelled_at).toISOString() === new Date(`${ist(-1)}T18:45:00+05:30`).toISOString(), JSON.stringify(fuel1));
+    const fuelRow = await A.page.locator(`tr[data-fuel-row="${fuel1?.id}"]`).innerText().catch(() => "");
+    check("…and listed: date, vehicle, litres, cost, station, added by", ["ZZC 01 AA 1111", "40.25", "ZZC HP Baner", "ZZC Admin", "4,100.5"].every((t) => fuelRow.includes(t)), fuelRow);
+    const fuelBody = (extra) => ({ vehicleId: v1.id, fuelledAt: `${ist(-2)}T09:00`, litres: "10", cost: "1000", ...extra });
+    check("fuel: a staffer cannot record it (403); an inactive vehicle (409), a time in the future, no litres or no cost (400) are refused",
+      (await api(S.page, "/api/cabs/fuel", "POST", fuelBody({}))).status === 403 && (await api(A.page, "/api/cabs/fuel", "POST", fuelBody({ vehicleId: v3.id }))).status === 409
+      && (await api(A.page, "/api/cabs/fuel", "POST", fuelBody({ fuelledAt: `${ist(2)}T09:00` }))).status === 400 && (await api(A.page, "/api/cabs/fuel", "POST", fuelBody({ litres: "0" }))).status === 400
+      && (await api(A.page, "/api/cabs/fuel", "POST", fuelBody({ cost: "" }))).status === 400);
+    const fuel2 = (await api(A.page, "/api/cabs/fuel", "POST", fuelBody({ vehicleId: v2.id, stationName: "ZZC Mistake" }))).body;
+    const fcsv = await A.page.evaluate(async () => { const r = await fetch("/api/cabs/fuel/export"); return { status: r.status, type: r.headers.get("content-type"), text: await r.text() }; });
+    check("fuel CSV: the header row and the records, newest first", fcsv.status === 200 && /text\/csv/.test(fcsv.type) && fcsv.text.replace(/^\uFEFF/, "").startsWith("Date,Vehicle,Litres,Cost (Rs),Petrol station,Added by")
+      && fcsv.text.indexOf("ZZC HP Baner") < fcsv.text.indexOf("ZZC Mistake") && (await S.page.evaluate(async () => (await fetch("/api/cabs/fuel/export")).status)) === 403, fcsv.text.slice(0, 160));
+    await go(A.page, "/cabs/admin/payments");
+    await A.page.locator(`tr[data-fuel-row="${fuel2.id}"]`).getByRole("button", { name: "Delete" }).click();
+    await A.page.locator("[role=dialog]").getByRole("button", { name: "Delete" }).click();
+    check("a fuel record entered by mistake is deleted; recording and deleting are both in the audit log", await toast(A.page, "Fuel record deleted")
+      && !!(await poll(async () => (await sql`select 1 from cab_fuel_costs where id = ${fuel2.id}`).length === 0))
+      && (await sql`select count(*)::int n from cab_audit_log where action = 'fuel_recorded' and actor_id = ${admin.id}`)[0].n === 2
+      && (await sql`select count(*)::int n from cab_audit_log where action = 'fuel_deleted' and details->>'subject' = 'ZZC 02 BB 2222'`)[0].n === 1);
+    check("Payments shows this month's fuel", /This month: ₹/.test(await A.page.locator("[data-fuel-month]").innerText()));
+  }
 
   section("phase 3: ride costs");
   check("only a completed ride gets a cost (409 for an assigned one)", (await api(A.page, `/api/cabs/rides/${r3.id}/cost`, "POST", { fare: "100" })).status === 409);
@@ -546,8 +634,8 @@ try {
   const urow = await A.page.locator(`tr[data-user-activity="${staffer.id}"]`).innerText();
   check("user activity: the staffer's rides, branch and most common pickup", urow.includes("ZZC Staffer") && urow.includes("ZZC Branch") && urow.includes(String(booked)) && urow.includes("ZZC Office"), urow);
   await A.page.locator(`tr[data-user-activity="${staffer.id}"] a`).click();
-  await A.page.waitForURL((u) => u.pathname === "/cabs/admin/rides" && u.searchParams.get("user") === staffer.id);
-  check("a user row opens All Rides with only their rides", (await A.page.locator("tbody tr[data-ride]").count()) === booked);
+  await A.page.waitForURL((u) => u.pathname === "/cabs/admin/trips" && u.searchParams.get("user") === staffer.id);
+  check("a user row opens All Trips with only their rides", (await A.page.locator("tbody tr[data-ride]").count()) === booked);
   const ucsv = await A.page.evaluate(async () => (await fetch("/api/cabs/activity/export?branch=ZZC%20Branch")).text());
   check("user activity CSV", ucsv.replace(/^\uFEFF/, "").startsWith("User,Branch,Total rides") && ucsv.includes("ZZC Staffer"));
   await go(A.page, "/cabs/admin/drivers/activity");
@@ -644,7 +732,7 @@ try {
       && (await api(S.page, `/api/cabs/rides/${r8.id}/start?as=admin`, "POST")).status === 403);
     check("nor can a Cabs admin: only the driver starts a ride (403), and it stays assigned", (await api(A.page, `/api/cabs/rides/${r8.id}/start`, "POST")).status === 403
       && (await api(A.page, `/api/cabs/rides/${r8.id}/start?as=admin`, "POST")).status === 403 && (await ride(r8.id)).status === "assigned");
-    await go(A.page, "/cabs/admin/rides");
+    await go(A.page, "/cabs/admin/trips");
     const actions8 = (await A.page.locator(`tr[data-ride="${r8.id}"] button`).allInnerTexts()).map((t) => t.trim());
     check("All Rides: an assigned ride offers New OTP and Cancel, no Start or Complete", actions8.includes("New OTP") && actions8.includes("Cancel") && !actions8.some((t) => /^(Start|Complete)/.test(t)), actions8.join("|"));
     check("the admin can still cancel it, with a reason", (await api(A.page, `/api/cabs/rides/${r8.id}/cancel?as=admin`, "POST", { reason: "ZZC driver has no app yet" })).status === 200 && (await ride(r8.id)).status === "cancelled");
@@ -668,32 +756,35 @@ try {
     await go(P.page, "/cabs/driver");
     check("no sign-in: Cabs Driver goes to the driver sign-in, not the hub's", new URL(P.page.url()).pathname === "/cabs/driver-login");
     const loginText = await P.page.locator("main").innerText();
-    check("the sign-in page, step 1: MCCIA logo, \"Driver Login\", Name and Phone, Request Access, no OTP box yet, 400px at most",
+    check("the sign-in page, step 1: MCCIA logo, \"Driver Login\", Name and Phone, Request Login, no OTP box yet, 400px at most",
       await P.page.locator('main img[alt="MCCIA"]').isVisible() && /Driver Login/.test(loginText) && /Contact your admin if you need an OTP/.test(loginText)
       && await P.page.locator("input[name=name]").isVisible() && (await P.page.locator("input[name=phone]").getAttribute("type")) === "tel"
-      && await P.page.getByRole("button", { name: "Request Access" }).isDisabled() && (await P.page.locator("input[name=otp]").count()) === 0
+      && await P.page.getByRole("button", { name: "Request Login" }).isDisabled() && (await P.page.locator("input[name=otp]").count()) === 0
       && (await P.page.locator("main").evaluate((m) => m.getBoundingClientRect().width)) <= 400);
     await P.page.fill("input[name=name]", "Nobody");
     await P.page.fill("input[name=phone]", "90000 00001");
-    await P.page.getByRole("button", { name: "Request Access" }).click();
+    await P.page.getByRole("button", { name: "Request Login" }).click();
     await P.page.locator("[data-login-error]").waitFor();
-    check("step 1, a phone that is not a driver's: \"Phone number not found. Contact your admin to be added as a driver.\", and no OTP box",
-      (await P.page.locator("[data-login-error]").innerText()) === "Phone number not found. Contact your admin to be added as a driver." && (await P.page.locator("input[name=otp]").count()) === 0);
-    const asked = () => notices(admin).then((ns) => ns.filter((n) => n.title === "Driver ZZC Phone Driver is requesting login OTP").length);
+    check("step 1, a phone that is not a driver's: \"Phone not found. Ask your admin to add you as a driver first.\", and no OTP box",
+      (await P.page.locator("[data-login-error]").innerText()) === "Phone not found. Ask your admin to add you as a driver first." && (await P.page.locator("input[name=otp]").count()) === 0);
+    const asked = () => notices(admin).then((ns) => ns.filter((n) => n.title === "Driver ZZC Phone Driver is requesting a login OTP." && n.body.startsWith("Go to Cabs Admin → Drivers to generate one.")).length);
     await P.page.fill("input[name=name]", "Phone Driver");
     await P.page.fill("input[name=phone]", "+91 98220 07777");
-    await P.page.getByRole("button", { name: "Request Access" }).click();
+    await P.page.getByRole("button", { name: "Request Login" }).click();
     await P.page.locator("[data-otp-requested]").waitFor();
-    check("step 1, a driver's phone: \"OTP requested. Ask your admin for the OTP and enter it below.\", then the OTP box and Login",
-      (await P.page.locator("[data-otp-requested]").innerText()).includes("OTP requested. Ask your admin for the OTP and enter it below.")
+    check("step 1, a driver's phone: \"Your admin has been notified. Ask them for your 6-digit OTP.\", then the OTP box and Login",
+      (await P.page.locator("[data-otp-requested]").innerText()).includes("Your admin has been notified. Ask them for your 6-digit OTP.")
       && (await P.page.locator("input[name=otp]").getAttribute("inputmode")) === "numeric" && /Enter the OTP your admin gave you/.test(await P.page.locator("main").innerText())
       && await P.page.getByRole("button", { name: "Login" }).isDisabled());
-    check("…the Cabs admins get a bell notice \"Driver ZZC Phone Driver is requesting login OTP\" (the name they gave the driver)", (await poll(asked)) === 1);
+    check("…the Cabs admins get a bell notice \"Driver ZZC Phone Driver is requesting a login OTP.\" (the name they gave the driver)", (await poll(asked)) === 1);
     check("asking again soon tells them only once; a staffer is not told", (await api(P.page, "/api/cabs/driver-access", "POST", { name: "Phone Driver", phone: "9822007777" })).status === 200
       && (await asked()) === 1 && !(await notices(staffer)).some((n) => n.title.includes("requesting login OTP")));
+    await go(A.page, "/cabs/admin/drivers");
+    check("sidebar: an amber dot on Drivers; the driver's row says \"Login requested\"", (await A.page.locator("[data-login-dot]").count()) === 1
+      && /Login requested (just now|\d+ min ago)/.test(await A.page.locator(`tr[data-driver="${dr3.id}"] [data-login-requested]`).innerText().catch(() => "")));
     check("a request without a name is refused (400)", (await api(P.page, "/api/cabs/driver-access", "POST", { name: " ", phone: "9822007777" })).status === 400);
     await P.page.locator("[data-back]").click();
-    check("← Back returns to step 1, with the name and phone editable", await P.page.getByRole("button", { name: "Request Access" }).isVisible()
+    check("← Back returns to step 1, with the name and phone editable", await P.page.getByRole("button", { name: "Request Login" }).isVisible()
       && await P.page.locator("input[name=phone]").isEditable() && (await P.page.locator("input[name=otp]").count()) === 0);
     check("no sign-in: the rest stays behind the hub's sign-in (Cabs Admin, MCCIA Cabs, admin routes)", await (async () => { await go(P.page, "/cabs/admin"); return new URL(P.page.url()).pathname === "/login"; })()
       && await (async () => { await go(P.page, "/cabs"); return new URL(P.page.url()).pathname === "/login"; })()
@@ -714,6 +805,9 @@ try {
     const shown2 = await poll(async () => { const t = (await A.page.locator("[data-otp-digits]").innerText()).trim(); return t !== shown1 ? t : null; });
     check("New OTP: different digits, and the first one is gone (one unused code per driver)", /^\d{6}$/.test(shown2 ?? "") && (await sql`select count(*)::int n from cab_driver_otps where driver_id = ${dr3.id} and used_at is null`)[0].n === 1);
     await A.page.locator("[data-login-otp]").getByRole("button", { name: "Done" }).click();
+    await go(A.page, "/cabs/admin/drivers");
+    check("once the admin has made the OTP, the dot and the label go", (await A.page.locator("[data-login-dot]").count()) === 0
+      && (await A.page.locator(`tr[data-driver="${dr3.id}"] [data-login-requested]`).count()) === 0 && (await sql`select login_requested_at from cab_drivers where id = ${dr3.id}`)[0].login_requested_at === null);
     check("only Cabs admins make login OTPs (403 for a staffer and for a hub driver)", (await api(S.page, `/api/cabs/drivers/${dr3.id}/otp`, "POST")).status === 403
       && (await api(D2.page, `/api/cabs/drivers/${dr3.id}/otp`, "POST")).status === 403);
     check("the old code no longer works (401)", shown1 === shown2 || (await login(P.page, "9822007777", shown1)).status === 401);
@@ -722,8 +816,8 @@ try {
     const wrong = shown2 === "000000" ? "111111" : "000000";
     const bad = await login(P.page, "9822007777", wrong);
     const unknown = await login(P.page, "9000000001", shown2);
-    check("a wrong OTP: 401 \"Invalid OTP. Try again.\", and it counts a try; an unknown phone: 404 \"Phone number not found…\"", bad.status === 401 && bad.body?.error === "Invalid OTP. Try again."
-      && unknown.status === 404 && /^Phone number not found/.test(unknown.body?.error) && (await sql`select attempts from cab_driver_otps where driver_id = ${dr3.id} and used_at is null`)[0].attempts === triesSoFar + 1);
+    check("a wrong OTP: 401 \"Invalid OTP. Try again.\", and it counts a try; an unknown phone: 404 \"Phone not found…\"", bad.status === 401 && bad.body?.error === "Invalid OTP. Try again."
+      && unknown.status === 404 && /^Phone not found/.test(unknown.body?.error) && (await sql`select attempts from cab_driver_otps where driver_id = ${dr3.id} and used_at is null`)[0].attempts === triesSoFar + 1);
     check("a malformed OTP is refused (400)", (await login(P.page, "9822007777", "12345")).status === 400);
     const crossSite = await fetch(BASE + "/api/cabs/driver-login", { method: "POST", headers: { "Content-Type": "application/json", Origin: "https://evil.example" }, body: JSON.stringify({ phone: "9822007777", otp: shown2 }) });
     check("a sign-in posted from another site is refused (403), and uses no try", crossSite.status === 403 && (await sql`select attempts from cab_driver_otps where driver_id = ${dr3.id} and used_at is null`)[0].attempts === triesSoFar + 1);
@@ -731,7 +825,7 @@ try {
     await go(P.page, "/cabs/driver-login");
     await P.page.fill("input[name=name]", "Phone Driver");
     await P.page.fill("input[name=phone]", "+91 98220 07777");
-    await P.page.getByRole("button", { name: "Request Access" }).click();
+    await P.page.getByRole("button", { name: "Request Login" }).click();
     await P.page.fill("input[name=otp]", shown2);
     await P.page.getByRole("button", { name: "Login" }).click();
     await P.page.waitForURL((u) => u.pathname === "/cabs/driver", { timeout: 30000 }).catch(() => {});
@@ -768,7 +862,7 @@ try {
     await go(P.page, "/cabs/driver/profile");
     check("Profile: the car of the current ride, and Sign out in place of the hub's", (await P.page.locator("[data-current-vehicle]").innerText()).includes("ZZC 01 AA 1111")
       && await P.page.locator("[data-driver-sign-out]").isVisible() && (await P.page.getByText("Back to the App Hub").count()) === 0);
-    await go(A.page, "/cabs/admin/rides");
+    await go(A.page, "/cabs/admin/trips");
     check("All Rides: a ride under way has no Complete for the admin; completing it through the API is 403",
       !(await A.page.locator(`tr[data-ride="${r9.id}"] button`).allInnerTexts()).some((t) => /Complete/.test(t))
       && (await api(A.page, `/api/cabs/rides/${r9.id}/complete`, "POST")).status === 403 && (await api(A.page, `/api/cabs/rides/${r9.id}/complete?as=admin`, "POST")).status === 403
@@ -828,7 +922,7 @@ try {
   check("…but not once it is assigned (409, ask a Cabs admin)", own.status === 409 && /Ask a Cabs admin/.test(own.body?.error), JSON.stringify(own));
   check("a staffer's ?as=admin is ignored: still only their own pending rides", (await api(S.page, `/api/cabs/rides/${r2.id}/cancel?as=admin`, "POST", { reason: "x" })).status === 409);
   check("an admin must give a reason (400)", (await api(A.page, `/api/cabs/rides/${r2.id}/cancel?as=admin`, "POST", {})).status === 400);
-  await go(A.page, "/cabs/admin/rides");
+  await go(A.page, "/cabs/admin/trips");
   await A.page.locator(`tr[data-ride="${r2.id}"]`).getByRole("button", { name: "Cancel" }).click();
   await A.page.fill("[role=dialog] textarea[name=reason]", "ZZC car needed for an event");
   await A.page.locator("[role=dialog]").getByRole("button", { name: "Cancel ride" }).click();
@@ -849,7 +943,7 @@ try {
   check("a vehicle with a ride within 2 hours is refused: \"Vehicle already assigned at this time\"", busyCar.status === 409 && busyCar.body?.error === "Vehicle already assigned at this time", JSON.stringify(busyCar));
   const clash = await api(A.page, `/api/cabs/rides/${rC.id}/conflicts`, "GET");
   check("the conflicts for that ride: the busy driver and vehicle", clash.status === 200 && clash.body.drivers.includes(dr2.id) && clash.body.vehicles.includes(v2.id) && !clash.body.drivers.includes(dr1.id), JSON.stringify(clash.body));
-  await go(A.page, "/cabs/admin/rides?status=pending");
+  await go(A.page, "/cabs/admin/trips?status=pending");
   await A.page.locator(`tr[data-ride="${rC.id}"]`).getByRole("button", { name: "Assign" }).click();
   await A.page.locator("[role=dialog] [data-busy-note]").waitFor({ timeout: 10000 }).catch(() => {});
   const optDisabled = (sel) => A.page.$eval(sel, (o) => o.disabled && o.textContent.trim()).catch(() => "");
@@ -885,7 +979,12 @@ try {
 
   section("dashboards and the audit log");
   await go(A.page, "/cabs/admin");
-  check("admin dashboard shows the figures", await A.page.locator('[data-stat="Waiting for a driver"]').isVisible() && await A.page.locator('[data-stat="Active vehicles"]').isVisible());
+  const statTiles = await A.page.locator("[data-stat]").evaluateAll((els) => els.map((e) => e.getAttribute("data-stat")));
+  const [{ pending: pendingNow }] = await sql`select count(*)::int as pending from cab_rides where status = 'pending'`;
+  check("admin dashboard: Pending rides, Active trips, Today's completed, Available drivers; View Pending (N) and View Live Trips",
+    statTiles.join("|") === "Pending rides|Active trips|Today's completed|Available drivers" && Number(await A.page.locator('[data-stat="Pending rides"] span').last().innerText()) === pendingNow
+    && (await A.page.locator('[data-quick="pending"]').innerText()).includes(`View Pending (${pendingNow})`) && (await A.page.locator('[data-quick="pending"]').getAttribute("href")) === "/cabs/admin/pending"
+    && (await A.page.locator('[data-quick="live"]').getAttribute("href")) === "/cabs/admin/live", statTiles.join("|"));
   await go(S.page, "/cabs/rides");
   check("My rides lists the upcoming (assigned) ride and the past ones", await S.page.locator(`[data-ride="${r3.id}"]`).first().isVisible() && await S.page.locator(`[data-ride="${r4.id}"]`).first().isVisible());
   await go(S.page, "/cabs/account");
@@ -897,6 +996,18 @@ try {
   check("driver and vehicle changes also went to the hub's audit log", (await sql`select count(*)::int n from access_audit where action like 'cabs.%' and target_label like 'ZZC%'`)[0].n >= 5);
   await go(A.page, "/cabs/admin/audit?action=ride_cancelled");
   check("audit page: filtered to cancellations", (await A.page.locator("tbody tr").count()) >= 2 && (await A.page.locator("tbody").innerText()).includes("ZZC Office → ZZC Station"));
+  await go(A.page, `/cabs/admin/audit?actor=${admin.id}`);
+  const whos = (await A.page.locator("tbody tr td:nth-child(2)").allInnerTexts()).map((t) => t.trim());
+  check("audit: filtered by who did it", whos.length > 0 && whos.every((w) => w === "ZZC Admin") && (await A.page.locator(`select[name=actor] option[value="${admin.id}"]`).count()) === 1, whos.slice(0, 5).join(","));
+  await go(A.page, `/cabs/admin/audit?ride=${r1.id.slice(0, 8)}`);
+  const rideCells = (await A.page.locator("tbody tr td:nth-child(5)").allInnerTexts()).map((t) => t.trim());
+  const r1Log = await A.page.locator("tbody").innerText();
+  check("audit: filtered by ride (its short id): that ride's every step, OTP verified among them", rideCells.length >= 5 && rideCells.every((c) => c === r1.id.slice(0, 8))
+    && ["Ride booked", "Ride assigned", "New OTP made", "OTP verified", "Ride started", "Ride completed"].every((a) => r1Log.toLowerCase().includes(a.toLowerCase())), r1Log.slice(0, 300));
+  const rcsv = await A.page.evaluate(async (id) => (await fetch(`/api/cabs/audit/export?ride=${id}`)).text(), r1.id);
+  check("audit CSV: the ride filter applies to the export too", rcsv.trim().split("\n").length === rideCells.length + 1 && rcsv.trim().split("\n").slice(1).every((l) => l.includes(r1.id)));
+  await go(A.page, "/cabs/admin/audit?ride=not-a-ride");
+  check("audit: a ride id that matches nothing shows nothing", (await A.page.locator("tbody").innerText()).includes("No entries match."));
   const csv = await A.page.evaluate(async () => { const r = await fetch("/api/cabs/audit/export?action=ride_assigned"); return { status: r.status, type: r.headers.get("content-type"), text: await r.text() }; });
   check("audit CSV: downloads with the header row and the assignments", csv.status === 200 && /text\/csv/.test(csv.type) && csv.text.replace(/^﻿/, "").startsWith("Time,Who,Action,About,Ride,Details") && csv.text.includes("Ride assigned"), csv.text.slice(0, 120));
   check("audit CSV: staff cannot download it (403)", (await S.page.evaluate(async () => (await fetch("/api/cabs/audit/export")).status)) === 403);

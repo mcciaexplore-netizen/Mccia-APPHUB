@@ -40,7 +40,7 @@ export const rideReceived = async (ride: RideFacts & { passengers?: number }, re
   await send(ride, [
     { to: requester, event: "created", title: "Your ride request has been received", body: `${route(ride)}, ${when(ride)}. You'll hear again once a driver and car are assigned.`, link: "/cabs/rides" },
     ...admins.map((a): Notice => ({ to: a, event: "requested", email: false, title: `New ride request${requester.name ? ` from ${requester.name}` : ""}: ${route(ride)}`,
-      body: `${when(ride)}${ride.passengers && ride.passengers > 1 ? `, ${ride.passengers} passengers` : ""}. Assign a driver and a car.`, link: "/cabs/admin/rides?status=pending" })),
+      body: `${when(ride)}${ride.passengers && ride.passengers > 1 ? `, ${ride.passengers} passengers` : ""}. Assign a driver and a car.`, link: "/cabs/admin/pending" })),
   ]);
 };
 
@@ -51,8 +51,8 @@ export const rideReceived = async (ride: RideFacts & { passengers?: number }, re
 export async function driverAccessRequested(driver: { id: string; name: string; phone: string }, minutes: number): Promise<void> {
   const bucket = Math.floor(Date.now() / (minutes * 60_000));
   await notifyUsers((await cabAdminRecipients()).map((a) => ({
-    userId: a.userId, kind: "cabs.driver-access", title: `Driver ${driver.name} is requesting login OTP`,
-    body: `${driver.phone}. Make one on Cabs Admin → Drivers (Get Login OTP) and share it with them.`, link: "/cabs/admin/drivers",
+    userId: a.userId, kind: "cabs.driver-access", title: `Driver ${driver.name} is requesting a login OTP.`,
+    body: `Go to Cabs Admin → Drivers to generate one. Phone: ${driver.phone}.`, link: "/cabs/admin/drivers",
     dedupeKey: `cabs:driver-access:${driver.id}:${bucket}:${a.userId}`,
   })));
 }

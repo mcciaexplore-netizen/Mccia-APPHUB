@@ -38,7 +38,7 @@ export default async function UserActivityPage({ searchParams }: { searchParams:
         <tbody>
           {rows.map((r) => (
             <tr key={r.userId} data-user-activity={r.userId}>
-              <td><Link href={`/cabs/admin/rides?user=${r.userId}`} className="font-semibold text-primary hover:underline">{r.name}</Link></td>
+              <td><Link href={`/cabs/admin/trips?user=${r.userId}`} className="font-semibold text-primary hover:underline">{r.name}</Link></td>
               <td>{r.branch ?? <span className="text-subtle">—</span>}</td>
               <td className="text-right font-semibold">{r.total}</td>
               <td className="text-right">{r.month}</td>

@@ -42,14 +42,15 @@ const otpHash = (driverId: string, otp: string) => createHmac("sha256", secret()
 export const sessionCookie = (secure: boolean) => ({ httpOnly: true, sameSite: "lax" as const, path: "/", secure, maxAge: DRIVER_SESSION_HOURS * 3600 });
 
 /**
- * A new sign-in code for a driver, from a cryptographic random source, replacing their unused ones. The digits are returned once, for the
- * admin to read out; only their HMAC is kept.
+ * A new sign-in code for a driver, from a cryptographic random source, replacing their unused ones, and answering their request for one
+ * (the amber dot goes). The digits are returned once, for the admin to read out; only their HMAC is kept.
  */
 export async function issueLoginOtp(driverId: string, actor: Actor): Promise<{ otp: string; expiresAt: Date; name: string }> {
   const otp = String(randomInt(0, 1_000_000)).padStart(6, "0");
   const [row] = rows<{ name: string; expires_at: string }>(await db.execute(sql`
     with d as (select id, name from cab_drivers where id = ${driverId}),
       gone as (delete from cab_driver_otps where driver_id = (select id from d) and used_at is null),
+      cleared as (update cab_drivers set login_requested_at = null where id = (select id from d)),
       made as (insert into cab_driver_otps (driver_id, otp_hash, expires_at, created_by_id, created_by_name)
         select id, ${otpHash(driverId, otp)}, now() + make_interval(hours => ${LOGIN_OTP_HOURS}), ${actor.id}, ${actor.name} from d returning expires_at)
     select d.name, made.expires_at from d, made`));
@@ -70,11 +71,13 @@ async function driverByPhone(rawPhone: string): Promise<{ id: string; name: stri
 }
 
 /**
- * Step 1: a driver asks for access with their name and phone. A phone that is not a driver's: 404. Otherwise the Cabs admins are told
- * (at most once every 15 minutes per driver), under the name the admins gave the driver. The name typed is only recorded in the audit log.
+ * Step 1: a driver asks for access with their name and phone. A phone that is not a driver's: 404. Otherwise the driver is marked as
+ * waiting (the amber dot on Drivers, until an admin makes them a code) and the Cabs admins are told (at most once every 15 minutes per
+ * driver), under the name the admins gave the driver. The name typed is only recorded in the audit log.
  */
 export async function requestAccess(name: string, rawPhone: string): Promise<{ name: string }> {
   const driver = await driverByPhone(rawPhone);
+  await db.execute(sql`update cab_drivers set login_requested_at = now() where id = ${driver.id}`);
   await driverAccessRequested(driver, ACCESS_NOTICE_MINUTES);
   await writeCabAudit({ id: driver.id, name: driver.name, via: "phone" } as Actor, "driver_access_requested", { subject: driver.name, details: { nameGiven: name } });
   return { name: driver.name };

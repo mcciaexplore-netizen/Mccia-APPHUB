@@ -17,14 +17,17 @@ import type { z } from "zod";
 type Actor = Pick<CabUser, "id" | "name">;
 const rows = <T,>(res: unknown) => (res as { rows: T[] }).rows;
 
-export type DriverRow = { id: string; name: string; email: string | null; phone: string; isAvailable: boolean; upcoming: number };
+/** `loginRequestedAt`: when they asked for a login OTP, if within the last 24 hours and not answered yet. */
+export type DriverRow = { id: string; name: string; email: string | null; phone: string; isAvailable: boolean; upcoming: number; loginRequestedAt: Date | null };
 
 export async function listDrivers(): Promise<DriverRow[]> {
   const r = rows<Record<string, unknown>>(await db.execute(sql`
     select d.id, d.name, d.email, d.phone, d.is_available,
+      case when d.login_requested_at > now() - interval '24 hours' then d.login_requested_at end as login_requested_at,
       (select count(*) from cab_rides r where r.driver_id = d.id and r.status in ('assigned', 'in_progress'))::int as upcoming
     from cab_drivers d order by d.name`));
-  return r.map((x) => ({ id: String(x.id), name: String(x.name), email: (x.email as string) ?? null, phone: String(x.phone), isAvailable: !!x.is_available, upcoming: Number(x.upcoming) }));
+  return r.map((x) => ({ id: String(x.id), name: String(x.name), email: (x.email as string) ?? null, phone: String(x.phone), isAvailable: !!x.is_available, upcoming: Number(x.upcoming),
+    loginRequestedAt: x.login_requested_at ? new Date(x.login_requested_at as string) : null }));
 }
 
 /** Adds a driver. One statement; a phone (or email) that is already a driver's is refused. */
@@ -39,6 +42,27 @@ export async function createDriver(input: z.infer<typeof driverInput>, actor: Ac
   }
   await writeCabAudit(actor, "driver_added", { subject: input.name, details: { email: input.email, phone: input.phone } });
   return row;
+}
+
+/**
+ * Edits a driver's name, phone and email (one statement). A phone or email that is another driver's is refused. Their rides keep the name
+ * they had when each was assigned.
+ */
+export async function updateDriver(id: string, input: z.infer<typeof driverInput>, actor: Actor): Promise<void> {
+  const [row] = rows<{ name: string; phone: string; email: string | null; old_name: string; old_phone: string; old_email: string | null }>(await db.execute(sql`
+    with old as (select name, phone, email from cab_drivers where id = ${id})
+    update cab_drivers d set name = ${input.name}, phone = ${input.phone}, email = ${input.email}
+    from old where d.id = ${id}
+      and not exists (select 1 from cab_drivers o where o.id <> ${id} and (o.phone = ${input.phone} or (${input.email}::text is not null and o.email = ${input.email})))
+    returning d.name, d.phone, d.email, old.name as old_name, old.phone as old_phone, old.email as old_email`));
+  if (!row) {
+    const [taken] = rows<{ name: string; phone: string }>(await db.execute(sql`
+      select name, phone from cab_drivers where id <> ${id} and (phone = ${input.phone} or (${input.email}::text is not null and email = ${input.email})) limit 1`));
+    if (taken) throw new CabsError(taken.phone === input.phone ? `${taken.name} already has the phone number ${input.phone}.` : `${input.email} is already a driver.`, 409);
+    throw new CabsError("That driver no longer exists. Reload and try again.", 404);
+  }
+  const changes = Object.fromEntries((["name", "phone", "email"] as const).filter((k) => row[k] !== row[`old_${k}`]).map((k) => [k, `${row[`old_${k}`] ?? "none"} → ${row[k] ?? "none"}`]));
+  await writeCabAudit(actor, "driver_edited", { subject: row.name, details: changes });
 }
 
 export async function setAvailability(id: string, available: boolean, actor: Actor & Partial<Pick<CabUser, "via">>): Promise<void> {

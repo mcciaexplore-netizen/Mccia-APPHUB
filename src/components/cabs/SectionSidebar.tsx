@@ -13,9 +13,10 @@ const row = (active: boolean) =>
 
 /**
  * One Cab Booking section's sidebar (the same shape as Inventory's): back to the hub, the section's name, its pages as one flat list.
- * `live`: rides in progress now, shown as a green dot on Live Trips.
+ * `live`: rides in progress now (a green dot on Live Trips); `pending`: rides waiting for a driver (a red count on Pending Requests);
+ * `loginRequests`: drivers waiting for a login OTP (an amber dot on Drivers).
  */
-export function SectionSidebar({ section, roles, live = 0 }: { section: CabSection; roles: CabRole[]; live?: number }) {
+export function SectionSidebar({ section, roles, live = 0, pending = 0, loginRequests = 0 }: { section: CabSection; roles: CabRole[]; live?: number; pending?: number; loginRequests?: number }) {
   const pathname = usePathname();
   const { navRef, indicator } = useSlidingIndicator();
   const items = navFor(section, roles);
@@ -35,6 +36,8 @@ export function SectionSidebar({ section, roles, live = 0 }: { section: CabSecti
             <Link href={i.href} aria-current={active(i.href) ? "page" : undefined} className={row(active(i.href))}>
               <span className="flex-1 py-2">{i.label}</span>
               {i.live && live > 0 && <span className="h-2.5 w-2.5 rounded-full bg-[#10b981] shadow-[0_0_0_3px_rgba(16,185,129,0.2)]" title={`${live} ${live === 1 ? "ride" : "rides"} in progress`} data-live-dot aria-label={`${live} in progress`} />}
+              {i.badge === "pending" && pending > 0 && <span className="min-w-6 rounded-full bg-brand-red px-1.5 py-0.5 text-center text-xs font-bold text-white" data-pending-badge aria-label={`${pending} waiting`}>{pending}</span>}
+              {i.badge === "login" && loginRequests > 0 && <span className="h-2.5 w-2.5 rounded-full bg-[#f59e0b] shadow-[0_0_0_3px_rgba(245,158,11,0.2)]" title={`${loginRequests} ${loginRequests === 1 ? "driver is" : "drivers are"} waiting for a login OTP`} data-login-dot aria-label={`${loginRequests} waiting for a login OTP`} />}
             </Link>
           </li>
         ))}

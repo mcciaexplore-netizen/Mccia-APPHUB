@@ -246,6 +246,13 @@
       "when": 1793426066841,
       "tag": "0034_cabs_drop_driver_vehicle",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793431052899,
+      "tag": "0035_cabs_fuel_costs",
+      "breakpoints": true
     }
   ]
 }

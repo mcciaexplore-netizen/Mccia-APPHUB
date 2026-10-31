@@ -2,17 +2,21 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Copy, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import { cabsApi } from "./api";
 
-export type DriverView = { id: string; name: string; email: string | null; phone: string; isAvailable: boolean; upcoming: number };
+export type DriverView = { id: string; name: string; email: string | null; phone: string; isAvailable: boolean; upcoming: number; loginRequestedAt: string | null };
 export type PersonOption = { id: string; name: string; email: string; phone: string | null };
 type NewDriver = { name: string; email: string; phone: string };
 const EMPTY: NewDriver = { name: "", email: "", phone: "" };
 type LoginOtp = { driverId: string; name: string; otp: string; expiresAt: string };
+
+/** "10 min ago", "3 h ago". */
+const ago = (iso: string, now: number) => { const m = Math.max(0, Math.round((now - Date.parse(iso)) / 60_000)); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
 
 /** "5:30 PM" in India time. */
 const istTime = (iso: string) => new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(iso)).toUpperCase();
@@ -61,15 +65,17 @@ function PersonPicker({ people, excludeEmails, onPick }: { people: PersonOption[
 }
 
 /**
- * The drivers: add one (name and phone; optionally an email; the hub's people can fill these in), mark them available or not, make their
- * sign-in code for Cabs Driver ("Get Login OTP"), remove them. Drivers have no car of their own: the car is chosen for each ride.
+ * The drivers: add one (name and phone; optionally an email; the hub's people can fill these in), edit one, mark them available or not,
+ * make their sign-in code for Cabs Driver ("Get Login OTP"; a driver who asked for one is marked "Login requested"), remove them. Drivers
+ * have no car of their own: the car is chosen for each ride.
  */
-export function DriversView({ drivers, people }: { drivers: DriverView[]; people: PersonOption[] }) {
+export function DriversView({ drivers, people, now }: { drivers: DriverView[]; people: PersonOption[]; now: number }) {
   const router = useRouter();
   const toast = useToast();
   const confirm = useConfirm();
   const [pending, start] = useTransition();
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<DriverView | null>(null);
   const [form, setForm] = useState<NewDriver>(EMPTY);
   const [code, setCode] = useState<LoginOtp | null>(null);
   const already = useMemo(() => new Set(drivers.flatMap((d) => (d.email ? [d.email.toLowerCase()] : []))), [drivers]);
@@ -88,13 +94,18 @@ export function DriversView({ drivers, people }: { drivers: DriverView[]; people
   };
   return (
     <div className="space-y-4">
-      <div className="flex justify-end"><button className="btn btn-primary btn-sm" onClick={() => { setForm(EMPTY); setAdding(true); }}><Plus size={14} /> Add driver</button></div>
+      <div className="flex items-center justify-between gap-3">
+        <Link href="/cabs/admin/drivers/activity" className="text-sm font-semibold text-primary" data-driver-activity-link>Driver Activity →</Link>
+        <button className="btn btn-primary btn-sm" onClick={() => { setForm(EMPTY); setAdding(true); }}><Plus size={14} /> Add driver</button>
+      </div>
       <div className="table-wrap"><table>
         <thead><tr><th>Name</th><th>Phone</th><th>Availability</th><th className="text-right">Rides on</th><th className="text-right">Actions</th></tr></thead>
         <tbody>
           {drivers.map((d) => (
             <tr key={d.id} data-driver={d.id}>
-              <td><b>{d.name}</b>{d.email && <span className="block text-xs text-muted">{d.email}</span>}</td>
+              <td><b>{d.name}</b>{d.email && <span className="block text-xs text-muted">{d.email}</span>}
+                {d.loginRequestedAt && <span className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#fef3c7] px-2 py-0.5 text-xs font-semibold text-[#b45309]" data-login-requested>
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#f59e0b]" aria-hidden /> Login requested {ago(d.loginRequestedAt, now)}</span>}</td>
               <td className="whitespace-nowrap">{d.phone}</td>
               <td>
                 <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
@@ -105,7 +116,8 @@ export function DriversView({ drivers, people }: { drivers: DriverView[]; people
               </td>
               <td className="text-right">{d.upcoming}</td>
               <td><div className="flex justify-end gap-1">
-                <button className="btn btn-ghost btn-sm" disabled={pending} onClick={() => loginOtp(d)} data-get-otp><KeyRound size={14} /> Get Login OTP</button>
+                <button className={`btn btn-sm whitespace-nowrap ${d.loginRequestedAt ? "btn-primary" : "btn-ghost"}`} disabled={pending} onClick={() => loginOtp(d)} data-get-otp><KeyRound size={14} /> Get Login OTP</button>
+                <button className="btn btn-ghost btn-sm" disabled={pending} onClick={() => { setForm({ name: d.name, email: d.email ?? "", phone: d.phone }); setEditing(d); }} data-edit-driver><Pencil size={14} /> Edit</button>
                 <button className="btn btn-ghost btn-sm text-brand-red" disabled={pending} onClick={() => remove(d)}><Trash2 size={14} /> Remove</button>
               </div></td>
             </tr>
@@ -114,6 +126,23 @@ export function DriversView({ drivers, people }: { drivers: DriverView[]; people
         </tbody>
       </table></div>
       {code && <LoginOtpDialog code={code} pending={pending} onAgain={() => loginOtp({ id: code.driverId, name: code.name })} onClose={() => setCode(null)} />}
+      {editing && (
+        <Modal title={`Edit ${editing.name}`} onClose={() => setEditing(null)}>
+          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); run(() => cabsApi(`/api/cabs/drivers/${editing.id}`, "PATCH", form), "Driver updated", () => setEditing(null)); }}>
+            <label className="block"><span className="label-xs mb-1.5 block">Name</span>
+              <input className="input" name="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={100} required autoFocus /></label>
+            <label className="block"><span className="label-xs mb-1.5 block">Phone</span>
+              <input className="input" name="phone" type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} maxLength={20} required /></label>
+            <label className="block"><span className="label-xs mb-1.5 block">Email (optional)</span>
+              <input className="input" name="email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} maxLength={254} /></label>
+            <p className="text-xs text-muted">The driver signs in with this phone number. Past rides keep the name they had when they were assigned.</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(null)}>Close</button>
+              <button className="btn btn-primary btn-sm" disabled={pending}>Save</button>
+            </div>
+          </form>
+        </Modal>
+      )}
       {adding && (
         <Modal title="Add driver" onClose={() => setAdding(false)}>
           <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); run(() => cabsApi("/api/cabs/drivers", "POST", form), `${form.name.trim()} added as a driver`, () => setAdding(false)); }}>

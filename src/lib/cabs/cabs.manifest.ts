@@ -33,8 +33,11 @@ export function cabRolesFor(input: { hubRole: string; userAccess: boolean; admin
   return roles;
 }
 
-/** A line of a section's menu (every line at the same level). `live`: shows a green dot while any ride is in progress. */
-export type CabNavItem = { label: string; href: string; live?: boolean };
+/**
+ * A line of a section's menu (every line at the same level). `live`: a green dot while any ride is in progress. `badge`: "pending", a red
+ * count of rides waiting for a driver; "login", an amber dot while a driver is waiting for a login OTP.
+ */
+export type CabNavItem = { label: string; href: string; live?: boolean; badge?: "pending" | "login" };
 
 export const CAB_NAV: Record<CabSection, { title: string; items: CabNavItem[] }> = {
   staff: { title: "MCCIA Cabs", items: [
@@ -51,14 +54,13 @@ export const CAB_NAV: Record<CabSection, { title: string; items: CabNavItem[] }>
   admin: { title: "Cabs Admin", items: [
     { label: "Dashboard", href: "/cabs/admin" },
     { label: "Live Trips", href: "/cabs/admin/live", live: true },
-    { label: "All Rides", href: "/cabs/admin/rides" },
-    { label: "Drivers", href: "/cabs/admin/drivers" },
-    { label: "Driver Activity", href: "/cabs/admin/drivers/activity" },
+    { label: "Pending Requests", href: "/cabs/admin/pending", badge: "pending" },
+    { label: "Upcoming Rides", href: "/cabs/admin/upcoming" },
+    { label: "All Trips", href: "/cabs/admin/trips" },
+    { label: "Drivers", href: "/cabs/admin/drivers", badge: "login" },
     { label: "Vehicles", href: "/cabs/admin/vehicles" },
     { label: "Maintenance", href: "/cabs/admin/maintenance" },
-    { label: "User Activity", href: "/cabs/admin/activity" },
     { label: "Payments", href: "/cabs/admin/payments" },
-    { label: "Invoices", href: "/cabs/admin/payments/invoices" },
     { label: "Audit Log", href: "/cabs/admin/audit" },
   ] },
 };

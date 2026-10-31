@@ -166,6 +166,10 @@ const optionalDay = (label: string) => z.union([z.string().trim(), z.null()]).op
 export const istDayStart = (d: string) => new Date(`${d}T00:00:00+05:30`);
 /** Today in India, "YYYY-MM-DD". */
 export const istToday = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
+/** The time now, for a page that shows "10 min ago" (read here, not while a component renders). */
+export const serverNow = () => Date.now();
+/** Now in India, "YYYY-MM-DDTHH:mm", for a date-and-time box. */
+export const istNowLocal = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 16);
 
 export const maintenanceInput = z.object({
   vehicleId: idSchema,
@@ -180,6 +184,26 @@ export const maintenanceInput = z.object({
   if (v.nextDueAt && v.nextDueAt < v.doneAt) ctx.addIssue({ code: "custom", message: "The next due date can't be before the date it was done.", path: ["nextDueAt"] });
 });
 export type MaintenanceInput = z.infer<typeof maintenanceInput>;
+
+/** Fuel bought for a vehicle: when (India time, not in the future), litres (above 0, at most 2 decimals), what it cost, and where. */
+export const fuelInput = z.object({
+  vehicleId: idSchema,
+  fuelledAt: z.string().transform((v, ctx) => {
+    const d = istLocalToDate(v);
+    if (!d) { ctx.addIssue({ code: "custom", message: "Choose the date and time." }); return z.NEVER; }
+    if (d.getTime() > Date.now() + PAST_GRACE_MS) { ctx.addIssue({ code: "custom", message: "The date and time can't be in the future." }); return z.NEVER; }
+    return d;
+  }),
+  litres: z.union([z.string(), z.number()]).transform((v, ctx) => {
+    const t = String(v).trim();
+    const n = Number(t);
+    if (!/^\d+(\.\d{1,2})?$/.test(t) || !(n > 0) || n > 1000) { ctx.addIssue({ code: "custom", message: "Enter the litres, like 35.5." }); return z.NEVER; }
+    return t;
+  }),
+  cost: rupees(true).refine((p) => p !== null && p > 0, "Enter the amount."),
+  stationName: optionalText(120),
+});
+export type FuelInput = z.infer<typeof fuelInput>;
 
 export const costInput = z.object({
   fare: rupees(true),

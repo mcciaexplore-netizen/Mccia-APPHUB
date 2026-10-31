@@ -32,7 +32,7 @@ export default async function DriverActivityPage({ searchParams }: { searchParam
         <tbody>
           {rows.map((r) => (
             <tr key={r.driverId} data-driver-activity={r.driverId}>
-              <td><Link href={`/cabs/admin/rides?driver=${r.driverId}&status=completed`} className="font-semibold text-primary hover:underline">{r.name}</Link></td>
+              <td><Link href={`/cabs/admin/trips?driver=${r.driverId}&status=completed`} className="font-semibold text-primary hover:underline">{r.name}</Link></td>
               <td className="whitespace-nowrap">{r.phone}</td>
               <td>{r.vehiclePlate ?? <span className="text-subtle">—</span>}</td>
               <td className="text-right font-semibold">{r.completed}</td>

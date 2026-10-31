@@ -1,20 +1,24 @@
 import Link from "next/link";
 import { Download } from "lucide-react";
+import { FuelView } from "@/components/cabs/FuelView";
 import { PaymentsView } from "@/components/cabs/PaymentsView";
+import { fuelThisMonth, listFuel } from "@/lib/cabs/fuel";
 import { requireAdminPage } from "@/lib/cabs/guard";
 import { formatRupees } from "@/lib/cabs/money";
 import { listCostedRides, paymentSummary, rideBranches } from "@/lib/cabs/payments";
+import { istNowLocal } from "@/lib/cabs/validation";
+import { activeVehicles } from "@/lib/cabs/vehicles";
 
 export const metadata = { title: "Payments · Cabs Admin · MCCIA App Hub" };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 
-/** What rides cost: this month's figures, then completed rides with their cost ("Add Cost" where there is none). */
+/** What rides cost: this month's figures, then completed rides with their cost ("Add Cost" where there is none); then Fuel Costs. */
 export default async function PaymentsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  await requireAdminPage();
+  const admin = await requireAdminPage();
   const sp = await searchParams;
   const f = { from: one(sp.from), to: one(sp.to), branch: one(sp.branch), missing: one(sp.missing) === "1" };
-  const [rides, summary, branches] = await Promise.all([listCostedRides(f), paymentSummary(), rideBranches()]);
+  const [rides, summary, branches, fuel, fuelMonth, vehicles] = await Promise.all([listCostedRides(f), paymentSummary(), rideBranches(), listFuel({}, 200), fuelThisMonth(), activeVehicles()]);
   const query = new URLSearchParams({ ...(f.from && { from: f.from }), ...(f.to && { to: f.to }), ...(f.branch && { branch: f.branch }) }).toString();
   const filtered = !!(f.from || f.to || f.branch || f.missing);
   const cards: [string, string][] = [["Total cost this month", formatRupees(summary.monthPaise)], ["Rides costed this month", String(summary.monthRides)], ["Average per ride", formatRupees(summary.avgPaise)]];
@@ -37,6 +41,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         {filtered && <Link href="/cabs/admin/payments" className="btn btn-ghost btn-sm">Clear</Link>}
       </form>
       <PaymentsView rides={rides.map((r) => ({ ...r, completedAt: r.completedAt ? r.completedAt.toISOString() : null }))} />
+      <FuelView records={fuel.map((r) => ({ ...r, fuelledAt: r.fuelledAt.toISOString() }))} vehicles={vehicles} month={fuelMonth} nowLocal={istNowLocal()} adminName={admin.name} />
     </div>
   );
 }

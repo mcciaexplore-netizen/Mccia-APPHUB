@@ -15,7 +15,7 @@ export const LOGIN_MAX_ATTEMPTS = 5;
 /** A wrong, used or expired code. */
 export const LOGIN_REFUSED = "Invalid OTP. Try again.";
 export const LOGIN_LOCKED = "OTP locked. Ask your admin for a new OTP.";
-export const PHONE_NOT_FOUND = "Phone number not found. Contact your admin to be added as a driver.";
+export const PHONE_NOT_FOUND = "Phone not found. Ask your admin to add you as a driver first.";
 /** Asking for access again within this many minutes does not tell the admins again. */
 export const ACCESS_NOTICE_MINUTES = 15;
 

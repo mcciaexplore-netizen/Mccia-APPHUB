@@ -31,7 +31,7 @@ import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "..
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import { INVENTORY_URL_PATTERN, inventoryRoleFor, navFor } from "../src/lib/inventory/inventory.manifest";
 import { CABS_ADMIN_URL_PATTERN, CABS_DRIVER_URL_PATTERN, CABS_USER_URL_PATTERN, CAB_NAV, cabRolesFor, navFor as cabNavFor } from "../src/lib/cabs/cabs.manifest";
-import { assignInput, costInput, driverInput, invoiceInput, istLocalToDate, locationInput, maintenanceInput, otpInput, rideInput, rupeesToPaise as cabRupees, scheduleProblem, vehicleInput } from "../src/lib/cabs/validation";
+import { assignInput, costInput, driverInput, fuelInput, invoiceInput, istLocalToDate, locationInput, maintenanceInput, otpInput, rideInput, rupeesToPaise as cabRupees, scheduleProblem, vehicleInput } from "../src/lib/cabs/validation";
 import { OTP_MAX_ATTEMPTS, mapsLink, otpExpiry } from "../src/lib/cabs/otp-rules";
 import { DRIVER_SESSION_HOURS, LOGIN_MAX_ATTEMPTS, LOGIN_OTP_HOURS, driverLoginInput, loginPhone, pickDriver } from "../src/lib/cabs/driver-login-rules";
 import { MCCIA_OFFICES, officeText, officesFor } from "../src/components/cabs/offices";
@@ -414,7 +414,7 @@ const cabUnwrapped = cabRoutes.flatMap((f) => {
   return handlers.filter(([, , rest]) => !imported || !wrapped.test(rest)).map(([, method]) => `${f}:${method}`);
 });
 eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles (the 4 driver sign-in routes: publicRoute())`,
-  [cabRoutes.length, cabUnwrapped, CAB_PUBLIC.filter((f) => cabRoutes.includes(f)).length], [34, [], 4]);
+  [cabRoutes.length, cabUnwrapped, CAB_PUBLIC.filter((f) => cabRoutes.includes(f)).length], [37, [], 4]);
 
 // The application check must never be steered at an internal network
 eq("net guard: private, loopback, metadata and reserved IPv4 are refused", ["127.0.0.1", "10.0.0.5", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255"].map(isPublicAddress), Array(10).fill(false));
@@ -553,13 +553,14 @@ eq("cabs roles: MCCIA Cabs access makes a user; a cab_drivers row a driver; an A
 eq("cabs access: each section is the application whose URL is exactly its path", ["/cabs", "/cabs/", "/cabs/driver", "/cabs/admin", "/cabs/book", "/cabs-old", "https://cabs.example.com/cabs"].map((u) => [
   new RegExp(CABS_USER_URL_PATTERN).test(u), new RegExp(CABS_DRIVER_URL_PATTERN).test(u), new RegExp(CABS_ADMIN_URL_PATTERN).test(u)]),
   [[true, false, false], [true, false, false], [false, true, false], [false, false, true], [false, false, false], [false, false, false], [false, false, false]]);
-eq("cabs menus: the rider's 3 tabs, the driver's 4 tabs, 11 admin pages in one flat list, each shown only to its roles (Cabs admins see the driver pages too)", [
+eq("cabs menus: the rider's 3 tabs, the driver's 4 tabs, 10 admin pages in one flat list, each shown only to its roles (Cabs admins see the driver pages too)", [
   cabNavFor("staff", ["cab_user"]).map((i) => i.label), cabNavFor("driver", ["cab_driver"]).map((i) => i.label), cabNavFor("admin", ["cab_admin"]).map((i) => i.label),
   cabNavFor("admin", ["cab_user", "cab_driver"]).length, cabNavFor("driver", ["cab_user", "cab_admin"]).length, cabNavFor("driver", ["cab_user"]).length, [CAB_NAV.staff.title, CAB_NAV.driver.title, CAB_NAV.admin.title],
-], [["Book", "My rides", "Account"], ["Assigned", "Trip", "History", "Profile"], ["Dashboard", "Live Trips", "All Rides", "Drivers", "Driver Activity", "Vehicles", "Maintenance", "User Activity", "Payments", "Invoices", "Audit Log"], 0, 4, 0, ["MCCIA Cabs", "Cabs Driver", "Cabs Admin"]]);
-eq("cabs admin menu: no nested lines; Live Trips carries the live dot", [
+], [["Book", "My rides", "Account"], ["Assigned", "Trip", "History", "Profile"], ["Dashboard", "Live Trips", "Pending Requests", "Upcoming Rides", "All Trips", "Drivers", "Vehicles", "Maintenance", "Payments", "Audit Log"], 0, 4, 0, ["MCCIA Cabs", "Cabs Driver", "Cabs Admin"]]);
+eq("cabs admin menu: no nested lines; Live Trips carries the live dot, Pending Requests the red count, Drivers the amber login dot", [
   CAB_NAV.admin.items.every((i) => !("children" in i)), CAB_NAV.admin.items.filter((i) => i.live).map((i) => i.label),
-], [true, ["Live Trips"]]);
+  CAB_NAV.admin.items.filter((i) => i.badge).map((i) => `${i.label}:${i.badge}`),
+], [true, ["Live Trips"], ["Pending Requests:pending", "Drivers:login"]]);
 {
   const now = Date.parse("2026-11-02T04:00:00Z"); // 09:30 in India
   eq("cabs times: a datetime-local value is India time; a full ISO time keeps its own offset; junk is refused", [
@@ -588,6 +589,15 @@ eq("cabs admin menu: no nested lines; Live Trips carries the live dot", [
     okParse(driverInput, { name: "", email: "ravi@x.org", phone: "9876543210" }), okParse(driverInput, { userId: v, vehicleId: v }),
     driverInput.parse({ name: "Suresh", phone: "98220 00001" }).email, driverInput.parse({ name: "Suresh", phone: "9822000001", email: "" }).email, okParse(driverInput, { name: "Suresh", email: "s@x.org" }),
   ], [{ name: "Ravi Patil", email: "ravi.patil@mccia.org", phone: "+919876543210" }, false, false, false, false, null, null, false]);
+  {
+    const fuel = (extra: Record<string, unknown>) => fuelInput.safeParse({ vehicleId: v, fuelledAt: "2026-01-05T09:30", litres: "35.5", cost: "3,550", ...extra });
+    const okFuel = fuel({ stationName: " HP Baner " });
+    eq("cabs fuel: a vehicle, a time (India, not in the future), litres above 0 with at most 2 decimals, a cost; the station is optional", [
+      okFuel.success && [okFuel.data.litres, okFuel.data.cost, okFuel.data.fuelledAt.toISOString(), okFuel.data.stationName], fuel({}).success && fuel({}).data?.stationName,
+      fuel({ litres: "0" }).success, fuel({ litres: "12.345" }).success, fuel({ litres: "abc" }).success, fuel({ litres: "1001" }).success,
+      fuel({ cost: "" }).success, fuel({ cost: "0" }).success, fuel({ fuelledAt: "2099-01-01T10:00" }).success, fuel({ fuelledAt: "yesterday" }).success, fuel({ vehicleId: "x" }).success,
+    ], [["35.5", 355000, "2026-01-05T04:00:00.000Z", "HP Baner"], null, false, false, false, false, false, false, false, false, false]);
+  }
   eq("cabs driver login: a phone is matched as typed (digits, + kept) or by its last 10 digits; fewer than 10 or more than 15 digits is no phone", [
     loginPhone(" +91 98765-43210 "), loginPhone("98765 43210"), loginPhone("919876543210"), loginPhone("12345"), loginPhone("1234567890123456"), loginPhone(""),
   ], [{ exact: "+919876543210", last10: "9876543210" }, { exact: "9876543210", last10: "9876543210" }, { exact: "919876543210", last10: "9876543210" }, null, null, null]);

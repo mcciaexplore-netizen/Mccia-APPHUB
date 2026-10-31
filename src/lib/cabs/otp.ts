@@ -56,6 +56,7 @@ export async function verifyOtp(rideId: string, given: string, driver: Pick<CabU
     select (select attempts from o) as attempts, (select verified_at from o) as verified_at, r.* from (select 1) one left join r on true`));
   if (row?.pickup) {
     const ride = { pickup: String(row.pickup), dropoff: String(row.dropoff) };
+    await writeCabAudit(driver, "otp_verified", { rideId, subject: `${ride.pickup} → ${ride.dropoff}` });
     await writeCabAudit(driver, "ride_started", { rideId, subject: `${ride.pickup} → ${ride.dropoff}`, details: { by: "OTP" } });
     const stops = (Array.isArray(row.stops) ? row.stops : typeof row.stops === "string" ? JSON.parse(row.stops) : []) as { text: string; lat: number | null; lng: number | null }[];
     return { mapsUrl: mapsLink({ text: ride.pickup, lat: num(row.pickup_lat), lng: num(row.pickup_lng) }, { text: ride.dropoff, lat: num(row.dropoff_lat), lng: num(row.dropoff_lng) }, stops) };

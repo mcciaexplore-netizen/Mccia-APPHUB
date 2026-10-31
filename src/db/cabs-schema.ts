@@ -42,6 +42,8 @@ export const cabDrivers = pgTable("cab_drivers", {
   email: text("email").unique(),
   phone: text("phone").notNull().unique(),
   isAvailable: boolean("is_available").notNull().default(true),
+  /** When the driver last asked for a login OTP on /cabs/driver-login; cleared when an admin makes one (the amber dot on Drivers). */
+  loginRequestedAt: timestamp("login_requested_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
 
@@ -239,6 +241,27 @@ export const cabRideCosts = pgTable(
     invoiceId: uuid("invoice_id").references(() => cabInvoices.id, { onDelete: "set null" }),
   },
   (t) => [index("cab_ride_costs_invoice_idx").on(t.invoiceId)],
+);
+
+/**
+ * Fuel bought for a vehicle, recorded on Cabs Admin → Payments. The plate is copied in, so a record still reads after the vehicle is
+ * edited. Money is integer paise.
+ */
+export const cabFuelCosts = pgTable(
+  "cab_fuel_costs",
+  {
+    id: id(),
+    vehicleId: uuid("vehicle_id").notNull().references(() => cabVehicles.id),
+    vehiclePlate: text("vehicle_plate").notNull(),
+    litres: decimal("litres", { precision: 8, scale: 2 }).notNull(),
+    costPaise: integer("cost_paise").notNull(),
+    fuelledAt: timestamp("fuelled_at", { withTimezone: true }).notNull(),
+    stationName: text("station_name"),
+    recordedById: uuid("recorded_by_id").notNull(),
+    recordedByName: text("recorded_by_name").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("cab_fuel_costs_vehicle_idx").on(t.vehicleId, t.fuelledAt.desc()), index("cab_fuel_costs_fuelled_idx").on(t.fuelledAt.desc())],
 );
 
 /** The module's own audit log (Cabs Admin → Audit Log). Names are snapshots, so an entry still reads correctly after the person is gone. */

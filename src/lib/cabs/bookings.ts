@@ -81,6 +81,26 @@ export async function listRides(f: RideFilter = {}, limit = 200): Promise<RideRo
   return rows<Record<string, unknown>>(await db.execute(sql`${select} where ${sql.join(c, sql` and `)} order by ${order}, r.created_at desc limit ${limit}`)).map(toRide);
 }
 
+/** Pending Requests: rides waiting for a driver, the longest-waiting (earliest booked) first. */
+export async function pendingRides(limit = 200): Promise<RideRow[]> {
+  return rows<Record<string, unknown>>(await db.execute(sql`${SELECT} where r.status = 'pending' order by r.created_at asc limit ${limit}`)).map(toRide);
+}
+
+/** Where an assigned ride's OTP stands, for the admins (never the code itself): usable until it expires, locked by wrong tries, expired, or none. */
+export type OtpState = "active" | "locked" | "expired" | "none";
+export type UpcomingRide = RideRow & { otpState: OtpState; otpExpiresAt: Date | null };
+
+/** Upcoming Rides: assigned rides, soonest first, with where each one's OTP stands. */
+export async function upcomingRides(limit = 200): Promise<UpcomingRide[]> {
+  return rows<Record<string, unknown>>(await db.execute(sql`
+    select r.*, v.model as vehicle_model, o.ride_id is not null as has_otp, o.expires_at as otp_expires_at,
+      case when o.ride_id is null then 'none' when o.attempts >= ${OTP_MAX_ATTEMPTS} then 'locked' when o.expires_at <= now() then 'expired' else 'active' end as otp_state
+    from cab_rides r left join cab_vehicles v on v.id = r.vehicle_id left join cab_ride_otps o on o.ride_id = r.id
+    where r.status = 'assigned' order by r.scheduled_for asc, r.created_at asc limit ${limit}`)).map((x) => ({
+    ...toRide(x), otpState: x.otp_state as OtpState, otpExpiresAt: x.otp_expires_at ? new Date(x.otp_expires_at as string) : null,
+  }));
+}
+
 export async function getRide(id: string): Promise<RideRow | null> {
   const [x] = rows<Record<string, unknown>>(await db.execute(sql`${SELECT} where r.id = ${id}`));
   return x ? toRide(x) : null;
@@ -234,16 +254,30 @@ export async function cancelRide(id: string, actor: Actor, opts: { asAdmin: bool
 }
 
 /** The admin dashboard's figures: rides waiting, today's rides (India time), running now, and the fleet. */
-export async function adminStats(): Promise<{ pending: number; today: number; inProgress: number; vehicles: number; drivers: number; available: number }> {
+export async function adminStats(): Promise<{ pending: number; today: number; inProgress: number; completedToday: number; vehicles: number; drivers: number; available: number }> {
   const [x] = rows<Record<string, number>>(await db.execute(sql`
     select (select count(*) from cab_rides where status = 'pending')::int as pending,
+      (select count(*) from cab_rides where status = 'completed'
+        and (completed_at at time zone 'Asia/Kolkata')::date = (now() at time zone 'Asia/Kolkata')::date)::int as completed_today,
       (select count(*) from cab_rides where status <> 'cancelled'
         and (scheduled_for at time zone 'Asia/Kolkata')::date = (now() at time zone 'Asia/Kolkata')::date)::int as today,
       (select count(*) from cab_rides where status = 'in_progress')::int as in_progress,
       (select count(*) from cab_vehicles where is_active)::int as vehicles,
       (select count(*) from cab_drivers)::int as drivers,
       (select count(*) from cab_drivers where is_available)::int as available`));
-  return { pending: x.pending, today: x.today, inProgress: x.in_progress, vehicles: x.vehicles, drivers: x.drivers, available: x.available };
+  return { pending: x.pending, today: x.today, inProgress: x.in_progress, completedToday: x.completed_today, vehicles: x.vehicles, drivers: x.drivers, available: x.available };
+}
+
+/**
+ * The Cabs Admin sidebar's badges, in one query: rides in progress (Live Trips), rides waiting for a driver (Pending Requests), and drivers
+ * who asked for a login OTP in the last 24 hours and have not been given one yet (Drivers).
+ */
+export async function adminBadges(): Promise<{ live: number; pending: number; loginRequests: number }> {
+  const [x] = rows<{ live: number; pending: number; login: number }>(await db.execute(sql`
+    select count(*) filter (where status = 'in_progress')::int as live, count(*) filter (where status = 'pending')::int as pending,
+      (select count(*) from cab_drivers where login_requested_at > now() - interval '24 hours')::int as login
+    from cab_rides where status in ('in_progress', 'pending')`));
+  return { live: x?.live ?? 0, pending: x?.pending ?? 0, loginRequests: x?.login ?? 0 };
 }
 
 /** How many rides this person has booked this month (India time), for their Account page. */

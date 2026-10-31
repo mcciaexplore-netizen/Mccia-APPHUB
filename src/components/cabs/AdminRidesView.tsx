@@ -3,11 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { KeyRound, UserCheck, X } from "lucide-react";
-import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
-import { formatIST } from "@/lib/format";
 import { cabsApi } from "./api";
 import { AssignDialog, type DriverOption, type VehicleOption } from "./AssignDialog";
+import { CancelRideDialog } from "./CancelRideDialog";
 import { StatusBadge, whenText, type RideView } from "./RideCard";
 
 /**
@@ -21,7 +20,6 @@ export function AdminRidesView({ rides, drivers, vehicles, empty }: { rides: Rid
   const [pending, start] = useTransition();
   const [assigning, setAssigning] = useState<RideView | null>(null);
   const [cancelling, setCancelling] = useState<RideView | null>(null);
-  const [reason, setReason] = useState("");
   const run = (fn: () => Promise<unknown>, done: string, after: () => void) => start(async () => {
     try { await fn(); toast.success(done); after(); router.refresh(); } catch (e) { toast.error((e as Error).message); }
   });
@@ -44,7 +42,7 @@ export function AdminRidesView({ rides, drivers, vehicles, empty }: { rides: Rid
                 {r.status === "pending" && <button className="btn btn-primary btn-sm" disabled={pending} onClick={() => setAssigning(r)}><UserCheck size={14} /> Assign</button>}
                 {r.status === "assigned" && r.hasOtp && <button className="btn btn-ghost btn-sm" disabled={pending} title="Make a new OTP: the rider sees it on My Rides"
                   onClick={() => run(() => cabsApi(`/api/cabs/rides/${r.id}/otp/reset`, "POST"), "New OTP made. The rider sees it on My Rides.", () => {})}><KeyRound size={14} /> New OTP</button>}
-                {(r.status === "pending" || r.status === "assigned") && <button className="btn btn-ghost btn-sm text-brand-red" disabled={pending} onClick={() => { setReason(""); setCancelling(r); }}><X size={14} /> Cancel</button>}
+                {(r.status === "pending" || r.status === "assigned") && <button className="btn btn-ghost btn-sm text-brand-red" disabled={pending} onClick={() => setCancelling(r)}><X size={14} /> Cancel</button>}
               </div></td>
             </tr>
           ))}
@@ -53,19 +51,8 @@ export function AdminRidesView({ rides, drivers, vehicles, empty }: { rides: Rid
       </table></div>
       {assigning && <AssignDialog ride={assigning} drivers={drivers} vehicles={vehicles} pending={pending}
         onAssign={(v) => run(() => cabsApi(`/api/cabs/rides/${assigning.id}/assign`, "POST", v), "Ride assigned", () => setAssigning(null))} onClose={() => setAssigning(null)} />}
-      {cancelling && (
-        <Modal title="Cancel ride" onClose={() => setCancelling(null)}>
-          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); run(() => cabsApi(`/api/cabs/rides/${cancelling.id}/cancel?as=admin`, "POST", { reason }), "Ride cancelled", () => setCancelling(null)); }}>
-            <p className="text-sm text-muted"><b className="text-ink">{cancelling.pickup} → {cancelling.dropoff}</b><br />{formatIST(cancelling.scheduledFor)} · {cancelling.requestedByName}</p>
-            <label className="block"><span className="label-xs mb-1.5 block">Reason (they will be told)</span>
-              <textarea className="input min-h-20" name="reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} required autoFocus /></label>
-            <div className="flex justify-end gap-2">
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCancelling(null)}>Close</button>
-              <button className="btn btn-danger btn-sm" disabled={pending || !reason.trim()}>Cancel ride</button>
-            </div>
-          </form>
-        </Modal>
-      )}
+      {cancelling && <CancelRideDialog ride={cancelling} pending={pending} onClose={() => setCancelling(null)}
+        onCancel={(reason) => run(() => cabsApi(`/api/cabs/rides/${cancelling.id}/cancel?as=admin`, "POST", { reason }), "Ride cancelled", () => setCancelling(null))} />}
     </>
   );
 }
