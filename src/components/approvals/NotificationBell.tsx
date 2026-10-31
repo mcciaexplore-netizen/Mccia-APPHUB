@@ -26,9 +26,12 @@ export function NotificationBell({ initialUnread }: { initialUnread: number }) {
     } catch { /* the bell keeps what it had */ }
   }, []);
 
+  // Every minute while the tab is in view (a hidden tab asks nothing), and at once when the person comes back to it.
   useEffect(() => {
-    const t = setInterval(load, 60_000);
-    return () => clearInterval(t);
+    const tick = () => { if (document.visibilityState === "visible") void load(); };
+    const t = setInterval(tick, 60_000);
+    document.addEventListener("visibilitychange", tick);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", tick); };
   }, [load]);
 
   useEffect(() => {

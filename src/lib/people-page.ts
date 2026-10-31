@@ -45,22 +45,25 @@ const loadManagers = (actor: Pick<User, "role">) =>
     .where(and(eq(users.isActive, true), eq(users.status, "approved"), isSuper(actor) ? undefined : inArray(users.role, ["member", "dept_lead"])))
     .orderBy(asc(users.name)).limit(5000);
 
-async function loadTemplates(allowed?: Set<string>) {
-  const [list, rows] = await Promise.all([db.select().from(accessTemplates).orderBy(asc(accessTemplates.name)), db.select().from(accessTemplateApps)]);
-  return list.map((t) => ({ id: t.id, name: t.name, appIds: rows.filter((x) => x.templateId === t.id && (!allowed || allowed.has(x.appId))).map((x) => x.appId) }));
-}
+/** Every template and its applications. Read alongside everything else (it needs nothing first); narrowed afterwards by templatesFor. */
+const loadTemplates = () => Promise.all([db.select().from(accessTemplates).orderBy(asc(accessTemplates.name)), db.select().from(accessTemplateApps)]);
+
+/** The templates, each keeping only the applications this person may hand out (`allowed`; all of them when it is not given). */
+const templatesFor = ([list, rows]: Awaited<ReturnType<typeof loadTemplates>>, allowed?: Set<string>) =>
+  list.map((t) => ({ id: t.id, name: t.name, appIds: rows.filter((x) => x.templateId === t.id && (!allowed || allowed.has(x.appId))).map((x) => x.appId) }));
 
 /** Everything the directory screen needs, for the administrator (/administrator/users) or a team manager (/team). */
 export async function loadDirectory(actor: User, sp: SP, base: string): Promise<DirectoryProps> {
   const filters = parsePeopleFilters(sp);
   const full = canGrantAny(actor);
-  const [result, options, catalog, managers] = await Promise.all([
+  const [result, options, catalog, managers, templateRows] = await Promise.all([
     listPeople(actor, filters),
     loadOptions(),
     grantableCatalog(actor),
     full ? loadManagers(actor) : Promise.resolve([]),
+    loadTemplates(),
   ]);
-  const templates = await loadTemplates(full ? undefined : new Set(catalog.apps.map((a) => a.id)));
+  const templates = templatesFor(templateRows, full ? undefined : new Set(catalog.apps.map((a) => a.id)));
   return {
     base, result, filters, options: { ...options, managers }, catalog, templates, domains: domainsLabel(), meId: actor.id,
     caps: capabilities(actor),
@@ -72,14 +75,15 @@ export async function loadProfile(actor: User, id: string, base: string) {
   const person = await getPerson(actor, id);
   if (!person) return null;
   const full = canGrantAny(actor);
-  const [options, managers, catalog, names, auditRows] = await Promise.all([
+  const [options, managers, catalog, names, auditRows, templateRows] = await Promise.all([
     loadOptions(),
     full ? loadManagers(actor) : Promise.resolve([]),
     grantableCatalog(actor),
     db.select({ id: apps.id, name: apps.name }).from(apps),
     hasArea(actor, "audit") ? listAudit({ page: 1, targetId: id }, 10) : Promise.resolve(null),
+    loadTemplates(),
   ]);
-  const templates = await loadTemplates(full ? undefined : new Set(catalog.apps.map((a) => a.id)));
+  const templates = templatesFor(templateRows, full ? undefined : new Set(catalog.apps.map((a) => a.id)));
   const inCatalog = new Set(catalog.apps.map((a) => a.id));
   const nameOf = new Map(names.map((a) => [a.id, a.name]));
   return {

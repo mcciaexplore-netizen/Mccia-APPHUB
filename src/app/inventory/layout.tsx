@@ -3,6 +3,7 @@ import { HubShell } from "@/components/HubShell";
 import { MobileMenu } from "@/components/MobileMenu";
 import { InventorySidebar } from "@/components/inventory/InventorySidebar";
 import { requirePage } from "@/lib/inventory/guard";
+import { noticeUnread } from "@/lib/notice-feed";
 import { requireUser } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +15,10 @@ export const metadata = { title: "Inventory · MCCIA App Hub" };
  * answer with a real 404 or redirect.
  */
 export default async function InventoryLayout({ children }: { children: React.ReactNode }) {
-  const [hubUser, user] = await Promise.all([requireUser(), requirePage()]);
+  // The bell's count waits only for the sign-in (one cached read), not for the Inventory checks.
+  const [hubUser, user, unread] = await Promise.all([requireUser(), requirePage(), requireUser().then((u) => noticeUnread(u.id))]);
   return (
-    <HubShell user={{ name: hubUser.name, role: hubUser.role }}>
+    <HubShell user={{ name: hubUser.name, role: hubUser.role }} unread={unread}>
       <ConfirmProvider>
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
           <aside className="w-full shrink-0 lg:sticky lg:top-20 lg:w-72">

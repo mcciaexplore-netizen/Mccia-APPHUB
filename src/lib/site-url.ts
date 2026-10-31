@@ -14,3 +14,9 @@ export function siteUrl(env: Record<string, string | undefined> = process.env): 
   const vercel = (env.VERCEL_URL ?? "").trim();
   return vercel ? `https://${vercel}` : "http://localhost:3000";
 }
+
+/**
+ * An application's address when it is a page of this site ("/cabs", "/inventory?x=1"), or null for another site ("https://…", and "//host"
+ * or "/\\host", which browsers read as another site too). Such a page opens in place from the hub (see LaunchLink).
+ */
+export const sitePath = (url: string): string | null => (/^\/(?![/\\])/.test(url) ? url : null);

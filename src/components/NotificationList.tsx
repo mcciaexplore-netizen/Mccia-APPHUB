@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Bell, CheckCheck } from "lucide-react";
 import { markAllNotificationsRead, markNotificationRead } from "@/actions/notifications";
+import { NOTICES_CHANGED } from "@/components/HubBell";
 import { useToast } from "@/components/Toast";
 import { formatIST } from "@/lib/format";
 
@@ -24,12 +25,13 @@ export function NotificationList({ items }: { items: NoticeItem[] }) {
       if (i.source === "hub") await markNotificationRead(i.id);
       else await fetch("/api/approvals/notifications", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: i.id }) }).catch(() => {});
       router.refresh();
+      window.dispatchEvent(new Event(NOTICES_CHANGED));
     });
   };
   const markAll = () => start(async () => {
     const r = await markAllNotificationsRead();
     await fetch("/api/approvals/notifications", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
-    if (r.ok) { setRead(new Set(items.map((i) => i.key))); toast.success("All marked as read"); router.refresh(); } else toast.error(r.error);
+    if (r.ok) { setRead(new Set(items.map((i) => i.key))); toast.success("All marked as read"); router.refresh(); window.dispatchEvent(new Event(NOTICES_CHANGED)); } else toast.error(r.error);
   });
 
   if (items.length === 0) {

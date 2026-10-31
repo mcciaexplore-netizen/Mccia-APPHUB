@@ -22,7 +22,8 @@ export type Access = { status: "anonymous" } | { status: "no_access" } | { statu
 
 /**
  * For the active Inventory application (URL /inventory, in an active category): whether this person has been given it (the hub's own rule
- * for applications), and whether they are one of its App Admins or App Staff. One query.
+ * for applications), and whether they are one of its App Admins or App Staff. One query. An application marked Unavailable counts as not
+ * given: typing its address must not open what its card cannot (the head admin, who opens it to test, does not come here).
  */
 async function inventoryStanding(userId: string): Promise<{ access: boolean; admin: boolean; staff: boolean }> {
   const res = (await db.execute(sql`
@@ -33,7 +34,7 @@ async function inventoryStanding(userId: string): Promise<{ access: boolean; adm
     left join user_app_access ua on ua.app_id = a.id and ua.user_id = ${userId}
     left join app_admins ad on ad.app_id = a.id and ad.user_id = ${userId}
     left join app_staff st on st.app_id = a.id and st.user_id = ${userId}
-    where a.is_active and d.is_active and a.url ~ ${INVENTORY_URL_PATTERN}`)) as unknown as { rows: { access: boolean; admin: boolean; staff: boolean }[] };
+    where a.is_active and d.is_active and a.status <> 'unavailable' and a.url ~ ${INVENTORY_URL_PATTERN}`)) as unknown as { rows: { access: boolean; admin: boolean; staff: boolean }[] };
   return { access: !!res.rows[0]?.access, admin: !!res.rows[0]?.admin, staff: !!res.rows[0]?.staff };
 }
 

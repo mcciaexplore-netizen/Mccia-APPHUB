@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { ArrowRight, ArrowUpRight, Clock, Users } from "lucide-react";
 import { Icon } from "@/components/Icon";
+import { LaunchLink } from "@/components/LaunchLink";
 
-/** `ssoSlug` is set for an application with single sign-on: it opens through /launch/<ssoSlug> (which signs the person in) instead of /go/<id>. */
-export type CardApp = { id: string; name: string; description: string | null; icon: string; status?: "active" | "testing" | "unavailable"; ssoSlug?: string | null };
+/**
+ * `ssoSlug` is set for an application with single sign-on: it opens through /launch/<ssoSlug> (which signs the person in) instead of /go/<id>.
+ * `path` is set for an application built into the hub (its address is a page of this site, such as /cabs): it opens there directly.
+ */
+export type CardApp = { id: string; name: string; description: string | null; icon: string; status?: "active" | "testing" | "unavailable"; ssoSlug?: string | null; path?: string | null };
 
 /** One of six colour palettes (see .tile-0 to .tile-5 in globals.css), picked from the application's id so it always keeps its own. */
 const palette = (id: string) => {
@@ -34,7 +38,8 @@ export function AppCard({ app, deptName, index = 0, canOpenUnavailable = false, 
 }) {
   const status = app.status;
   const blocked = status === "unavailable" && !canOpenUnavailable;
-  const external = !href;
+  const builtIn = !!app.path && !app.ssoSlug;
+  const external = !href && !builtIn;
   // Comes in staggered (60ms each; the first dozen only, so a long list does not keep the page waiting; cards further down come in as they
   // are scrolled to, see Reveal). On hover it lifts 3px with a deeper shadow and a teal edge (its coloured top stays); pressed, it gives a little.
   const cls = `tile-${palette(app.id)} group flex min-h-52 card-in flex-col overflow-hidden rounded-[14px] border border-gray-200 border-t-[3px] border-t-[color:var(--tile-ink)] bg-white p-5 transition-[translate,scale,box-shadow,border-color] duration-150 ease-out ${blocked ? "opacity-55" : "hover:-translate-y-[3px] hover:border-[color:var(--c-primary)] hover:border-t-[color:var(--tile-ink)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.10)] active:scale-[0.98] active:duration-100"}`;
@@ -65,8 +70,10 @@ export function AppCard({ app, deptName, index = 0, canOpenUnavailable = false, 
   );
   const style = { animationDelay: `${Math.min(index, 11) * 60}ms` };
   if (blocked) return <div className={cls} style={style} title={app.description ?? app.name} aria-disabled="true">{inner}</div>;
-  // A part of the hub opens in the same tab without reloading the page. An application goes through /go or /launch (route handlers that
-  // redirect, or sign the person in), which must be a real page load: those stay plain links.
+  // A part of the hub, or an application built into it, opens in the same tab without reloading the page (the built-in one records the
+  // launch on the side). Any other application goes through /go or /launch (route handlers that redirect, or sign the person in), which
+  // must be a real page load: those stay plain links.
   if (href) return <Link href={href} title={app.description ?? app.name} style={style} className={cls}>{inner}</Link>;
+  if (builtIn) return <LaunchLink appId={app.id} href={app.path!} title={app.description ?? app.name} style={style} className={cls}>{inner}</LaunchLink>;
   return <a href={app.ssoSlug ? `/launch/${app.ssoSlug}` : `/go/${app.id}`} target="_self" rel="noopener noreferrer" title={app.description ?? app.name} style={style} className={cls}>{inner}</a>;
 }

@@ -13,7 +13,7 @@ import { isPublicAddress } from "../src/lib/net-guard";
 import { clientIp } from "../src/lib/ip";
 import { isAdminPath } from "../src/lib/admin-paths";
 import { errorSummary } from "../src/lib/log-error";
-import { siteUrl } from "../src/lib/site-url";
+import { sitePath, siteUrl } from "../src/lib/site-url";
 import { WINDOW_MS as SIR_WINDOW, refusedUntil as sirRefusedUntil, slowDownMs as sirSlowDownMs } from "../src/lib/sign-in-rules";
 import { adminTabsFor } from "../src/lib/admin-tabs";
 import { scrub } from "../src/lib/scrub";
@@ -461,6 +461,11 @@ eq("admin paths: Administrator and the Approval System's admin pages count; noth
   eq("site url: a Preview uses its own Vercel address", siteUrl({ VERCEL_ENV: "preview", VERCEL_URL: "mccia-apphub-git-security-fixes.vercel.app", NODE_ENV: "production" }), "https://mccia-apphub-git-security-fixes.vercel.app");
   eq("site url: local development falls back to localhost", siteUrl({ NODE_ENV: "development" }), "http://localhost:3000");
 }
+
+// Applications built into the hub (src/lib/site-url.ts sitePath): only a page of this site opens in place; any other address goes through /go.
+eq("site path: a page of this site is kept as it is", [sitePath("/cabs"), sitePath("/cabs/admin"), sitePath("/inventory?tab=1")], ["/cabs", "/cabs/admin", "/inventory?tab=1"]);
+eq("site path: another site is never a site path (https, http, //host, /\\host, javascript:, a bare name, empty)",
+  ["https://example.com/x", "http://a.b", "//evil.example", "/\\evil.example", "javascript:alert(1)", "cabs", ""].map(sitePath), [null, null, null, null, null, null, null]);
 
 
 // Single sign-on (src/lib/sso.ts, sso-rules.ts, sso-page.ts): the token contract, the rules for a slug and a callback address, and the hand-off page.

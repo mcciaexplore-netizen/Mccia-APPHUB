@@ -4,10 +4,10 @@ import { useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell } from "lucide-react";
 import { lockAdmin } from "@/actions/auth";
 import { isAdminPath } from "@/lib/admin-paths";
 import type { Role } from "@/db/schema";
+import { HubBell } from "@/components/HubBell";
 import { UserMenu } from "@/components/UserMenu";
 
 export type ShellUser = { name: string; role: Role };
@@ -42,12 +42,7 @@ export function HubShell({ user, unread, children }: { user: ShellUser | null; /
         </Link>
         {user ? (
           <div className="flex items-center gap-3">
-            {unread !== undefined && (
-              <Link href="/notifications" aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"} className="relative grid h-10 w-10 place-items-center rounded-md text-muted transition-colors hover:bg-alt hover:text-primary">
-                <Bell size={20} />
-                {unread > 0 && <span className="absolute right-1 top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-brand-red px-1 text-[0.62rem] font-bold leading-none text-white">{unread > 99 ? "99+" : unread}</span>}
-              </Link>
-            )}
+            {unread !== undefined && <HubBell unread={unread} />}
             <UserMenu name={user.name} role={user.role} />
           </div>
         ) : null}

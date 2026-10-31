@@ -31,7 +31,8 @@ type Standing = { userAccess: boolean; adminAppAdmin: boolean; driverId: string 
  * application (URL /cabs/admin) and have been given it (being an App Admin does not give access, as everywhere in the hub), and the
  * driver row with their email, compared without regard to case (drivers are not tied to hub accounts otherwise), and whether that driver
  * is online. Being offline only stops new rides being assigned: an offline driver still opens their page (to go online again). Only active
- * applications in active categories count.
+ * applications in active categories count, and not one marked Unavailable: typing its address must not open what its card cannot (the
+ * head admin, who opens it to test, does not depend on this).
  */
 async function cabsStanding(userId: string, email: string): Promise<Standing> {
   const res = (await db.execute(sql`
@@ -43,7 +44,7 @@ async function cabsStanding(userId: string, email: string): Promise<Standing> {
     join departments d on d.id = a.department_id
     left join user_app_access ua on ua.app_id = a.id and ua.user_id = ${userId}
     left join app_admins ad on ad.app_id = a.id and ad.user_id = ${userId}
-    where a.is_active and d.is_active and (a.url ~ ${CABS_USER_URL_PATTERN} or a.url ~ ${CABS_ADMIN_URL_PATTERN})`)) as unknown as {
+    where a.is_active and d.is_active and a.status <> 'unavailable' and (a.url ~ ${CABS_USER_URL_PATTERN} or a.url ~ ${CABS_ADMIN_URL_PATTERN})`)) as unknown as {
     rows: { user_access: boolean; admin_app_admin: boolean; driver_id: string | null; driver_available: boolean | null }[];
   };
   const r = res.rows[0];
