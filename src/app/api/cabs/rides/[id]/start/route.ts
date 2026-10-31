@@ -1,18 +1,14 @@
-import { adminStartRide, startRide } from "@/lib/cabs/bookings";
-import { hasRole } from "@/lib/cabs/host-adapter";
-import { CabsError } from "@/lib/cabs/errors";
+import { startRide } from "@/lib/cabs/bookings";
 import { idParam, ok, route } from "@/lib/cabs/guard";
 
 export const dynamic = "force-dynamic";
 
 /**
- * The ride's own driver sets off: assigned → in progress (a ride with an OTP starts with the OTP instead). ?as=admin: a Cabs admin starts it
- * for the driver (a driver without the driver app).
+ * The ride's own driver sets off: assigned → in progress, for a ride with no OTP (one assigned before OTPs existed; a ride with an OTP
+ * starts when the driver enters it). Drivers only, signed in to the hub or by phone: a Cabs admin gets 403 (unless they are this ride's
+ * driver), and another driver's ride is refused.
  */
-export const POST = route<{ id: string }>({ roles: ["cab_driver", "cab_admin"] }, async ({ req, user, params }) => {
-  const id = idParam(params.id);
-  if (req.nextUrl.searchParams.get("as") === "admin" && hasRole(user, "cab_admin")) await adminStartRide(id, user);
-  else if (hasRole(user, "cab_driver")) await startRide(id, user);
-  else throw new CabsError("Not allowed.", 403);
+export const POST = route<{ id: string }>({ roles: ["cab_driver"] }, async ({ user, params }) => {
+  await startRide(idParam(params.id), user);
   return ok();
 });

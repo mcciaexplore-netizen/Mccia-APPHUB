@@ -7,7 +7,7 @@ export type DriverChoice = { id: string; name: string; isAvailable: boolean };
 
 /**
  * For Cabs admins on the driver app: "Viewing as: [driver] ▼", to see the app as that driver would. Kept in the address (?driver=), so it
- * stays on as the tabs change. Nothing can be done from the preview: rides are started and completed on All Rides.
+ * stays on as the tabs change. Nothing can be done from the preview: only the driver starts and completes their rides.
  */
 export function DriverPicker({ drivers, selected }: { drivers: DriverChoice[]; selected: string }) {
   const router = useRouter();

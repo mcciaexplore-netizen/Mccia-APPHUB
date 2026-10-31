@@ -66,7 +66,7 @@ const OpenNavigation = ({ href }: { href: string }) => (
  * taps, because a phone blocks a page opening Maps by itself after waiting for the server. The Trip tab has the same button.
  */
 /** What an admin sees in place of the buttons when previewing another driver's app. */
-const PreviewNote = () => <p className="rounded-lg bg-[#f0f2f5] px-3 py-2.5 text-sm text-muted" data-preview-note>Preview only: start and complete this ride on All Rides.</p>;
+const PreviewNote = () => <p className="rounded-lg bg-[#f0f2f5] px-3 py-2.5 text-sm text-muted" data-preview-note>Preview only: the driver starts this ride with the rider&apos;s OTP and completes it in their app.</p>;
 
 export function AssignedList({ rides, preview = false }: { rides: RideView[]; preview?: boolean }) {
   const router = useRouter();

@@ -2,8 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { CheckCircle2, KeyRound, Play, UserCheck, X } from "lucide-react";
-import { useConfirm } from "@/components/ConfirmDialog";
+import { KeyRound, UserCheck, X } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import { formatIST } from "@/lib/format";
@@ -13,28 +12,19 @@ import { StatusBadge, whenText, type RideView } from "./RideCard";
 
 /**
  * Every ride, as a table: assign a pending one, cancel a pending or assigned one with a reason, and make a new OTP for an assigned one
- * (after three wrong tries, or once it expired; the rider sees it, never this screen). Start and Complete run a ride for a driver who has
- * no driver app (no email, or no hub account): the admin is trusted to have checked the pickup, so no OTP is asked for. The filters are a
- * plain form (the page reads them).
+ * (after three wrong tries, or once it expired; the rider sees it, never this screen). Only the driver starts a ride (by entering the
+ * rider's OTP) and completes it, in the driver app. The filters are a plain form (the page reads them).
  */
 export function AdminRidesView({ rides, drivers, vehicles, empty }: { rides: RideView[]; drivers: DriverOption[]; vehicles: VehicleOption[]; empty: string }) {
   const router = useRouter();
   const toast = useToast();
   const [pending, start] = useTransition();
-  const confirm = useConfirm();
   const [assigning, setAssigning] = useState<RideView | null>(null);
   const [cancelling, setCancelling] = useState<RideView | null>(null);
   const [reason, setReason] = useState("");
   const run = (fn: () => Promise<unknown>, done: string, after: () => void) => start(async () => {
     try { await fn(); toast.success(done); after(); router.refresh(); } catch (e) { toast.error((e as Error).message); }
   });
-  // Asked before the transition starts: a dialog opened inside one never shows.
-  const forDriver = async (r: RideView, step: "start" | "complete") => {
-    const go = await confirm(step === "start"
-      ? { title: "Start this ride for the driver?", message: `${r.pickup} → ${r.dropoff}, ${r.driverName ?? "the driver"}. Use this when the driver has no driver app and has picked up ${r.requestedByName}.`, confirmLabel: "Start ride" }
-      : { title: "Complete this ride for the driver?", message: `${r.pickup} → ${r.dropoff}. ${r.requestedByName} will be told it is complete.`, confirmLabel: "Complete ride" });
-    if (go) run(() => cabsApi(`/api/cabs/rides/${r.id}/${step}?as=admin`, "POST"), step === "start" ? "Ride started" : "Ride completed", () => {});
-  };
   return (
     <>
       <div className="table-wrap"><table>
@@ -52,8 +42,6 @@ export function AdminRidesView({ rides, drivers, vehicles, empty }: { rides: Rid
               <td><StatusBadge status={r.status} />{r.status === "cancelled" && r.cancelReason && <span className="mt-1 block max-w-xs text-xs text-muted">{r.cancelReason}</span>}</td>
               <td><div className="flex justify-end gap-1.5">
                 {r.status === "pending" && <button className="btn btn-primary btn-sm" disabled={pending} onClick={() => setAssigning(r)}><UserCheck size={14} /> Assign</button>}
-                {r.status === "assigned" && <button className="btn btn-ghost btn-sm" disabled={pending} onClick={() => forDriver(r, "start")} title="For a driver without the driver app"><Play size={14} /> Start</button>}
-                {r.status === "in_progress" && <button className="btn btn-primary btn-sm" disabled={pending} onClick={() => forDriver(r, "complete")} title="For a driver without the driver app"><CheckCircle2 size={14} /> Complete</button>}
                 {r.status === "assigned" && r.hasOtp && <button className="btn btn-ghost btn-sm" disabled={pending} title="Make a new OTP: the rider sees it on My Rides"
                   onClick={() => run(() => cabsApi(`/api/cabs/rides/${r.id}/otp/reset`, "POST"), "New OTP made. The rider sees it on My Rides.", () => {})}><KeyRound size={14} /> New OTP</button>}
                 {(r.status === "pending" || r.status === "assigned") && <button className="btn btn-ghost btn-sm text-brand-red" disabled={pending} onClick={() => { setReason(""); setCancelling(r); }}><X size={14} /> Cancel</button>}

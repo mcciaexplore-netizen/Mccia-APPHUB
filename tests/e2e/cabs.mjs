@@ -640,17 +640,14 @@ try {
     check("the same phone number twice is refused (409), naming who has it", samePhone.status === 409 && /ZZC Phone Driver already has the phone number/.test(samePhone.body?.error), JSON.stringify(samePhone));
     const r8 = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Phone Pickup", dropoff: "ZZC Phone Drop", scheduledFor: istSlot(5, 11) })).body;
     check("a ride can be assigned to them", (await api(A.page, `/api/cabs/rides/${r8.id}/assign`, "POST", { driverId: dr3.id, vehicleId: v1.id })).status === 200);
-    check("a staffer cannot start a ride for a driver, even as ?as=admin (403)", (await api(S.page, `/api/cabs/rides/${r8.id}/start?as=admin`, "POST")).status === 403);
+    check("a staffer cannot start a ride (403), with or without ?as=admin", (await api(S.page, `/api/cabs/rides/${r8.id}/start`, "POST")).status === 403
+      && (await api(S.page, `/api/cabs/rides/${r8.id}/start?as=admin`, "POST")).status === 403);
+    check("nor can a Cabs admin: only the driver starts a ride (403), and it stays assigned", (await api(A.page, `/api/cabs/rides/${r8.id}/start`, "POST")).status === 403
+      && (await api(A.page, `/api/cabs/rides/${r8.id}/start?as=admin`, "POST")).status === 403 && (await ride(r8.id)).status === "assigned");
     await go(A.page, "/cabs/admin/rides");
-    await A.page.locator(`tr[data-ride="${r8.id}"]`).getByRole("button", { name: "Start" }).click();
-    await A.page.locator("[role=dialog]").getByRole("button", { name: "Start ride" }).click();
-    check("the admin starts it for the driver on All Rides", await toast(A.page, "Ride started") && (await poll(async () => (await ride(r8.id)).status === "in_progress")));
-    const doneBefore = (await notices(staffer)).filter((n) => n.title === "Your ride is complete").length;
-    await A.page.locator(`tr[data-ride="${r8.id}"]`).getByRole("button", { name: "Complete" }).click();
-    await A.page.locator("[role=dialog]").getByRole("button", { name: "Complete ride" }).click();
-    check("…and completes it; the rider is told", await toast(A.page, "Ride completed") && (await poll(async () => (await ride(r8.id)).status === "completed"))
-      && (await poll(async () => (await notices(staffer)).filter((n) => n.title === "Your ride is complete").length === doneBefore + 1)));
-    check("both are in the audit log as done by the admin", (await sql`select count(*)::int n from cab_audit_log where ride_id = ${r8.id} and action in ('ride_started', 'ride_completed') and details->>'byAdmin' = 'true'`)[0].n === 2);
+    const actions8 = (await A.page.locator(`tr[data-ride="${r8.id}"] button`).allInnerTexts()).map((t) => t.trim());
+    check("All Rides: an assigned ride offers New OTP and Cancel, no Start or Complete", actions8.includes("New OTP") && actions8.includes("Cancel") && !actions8.some((t) => /^(Start|Complete)/.test(t)), actions8.join("|"));
+    check("the admin can still cancel it, with a reason", (await api(A.page, `/api/cabs/rides/${r8.id}/cancel?as=admin`, "POST", { reason: "ZZC driver has no app yet" })).status === 200 && (await ride(r8.id)).status === "cancelled");
     if (process.env.E2E_SMTP_LOG) {
       const all = (await import("node:fs")).readFileSync(process.env.E2E_SMTP_LOG, "utf8");
       check("no email is attempted for a driver without one", !all.split("\n").filter(Boolean).map((l) => JSON.parse(l)).some((m) => m.subject === "New ride assigned to you" && !m.to.some((t) => t.startsWith("zzc-"))));
@@ -746,8 +743,15 @@ try {
     await go(P.page, "/cabs/driver/profile");
     check("Profile: the car of the current ride, and Sign out in place of the hub's", (await P.page.locator("[data-current-vehicle]").innerText()).includes("ZZC 01 AA 1111")
       && await P.page.locator("[data-driver-sign-out]").isVisible() && (await P.page.getByText("Back to the App Hub").count()) === 0);
-    check("the phone driver completes the ride", (await api(P.page, `/api/cabs/rides/${r9.id}/complete`, "POST")).status === 200 && (await ride(r9.id)).status === "completed"
-      && (await sql`select 1 from cab_audit_log where ride_id = ${r9.id} and action = 'ride_completed' and actor_id = ${dr3.id}`).length === 1);
+    await go(A.page, "/cabs/admin/rides");
+    check("All Rides: a ride under way has no Complete for the admin; completing it through the API is 403",
+      !(await A.page.locator(`tr[data-ride="${r9.id}"] button`).allInnerTexts()).some((t) => /Complete/.test(t))
+      && (await api(A.page, `/api/cabs/rides/${r9.id}/complete`, "POST")).status === 403 && (await api(A.page, `/api/cabs/rides/${r9.id}/complete?as=admin`, "POST")).status === 403
+      && (await ride(r9.id)).status === "in_progress");
+    const doneBefore = (await notices(staffer)).filter((n) => n.title === "Your ride is complete").length;
+    check("the phone driver completes the ride; the rider is told \"Your ride is complete\"", (await api(P.page, `/api/cabs/rides/${r9.id}/complete`, "POST")).status === 200 && (await ride(r9.id)).status === "completed"
+      && (await sql`select 1 from cab_audit_log where ride_id = ${r9.id} and action = 'ride_completed' and actor_id = ${dr3.id}`).length === 1
+      && !!(await poll(async () => (await notices(staffer)).filter((n) => n.title === "Your ride is complete").length === doneBefore + 1)));
     await go(P.page, "/cabs/driver/profile");
     check("…and with no ride on, Profile says so", (await P.page.locator("[data-current-vehicle]").innerText()).includes("No ride right now"));
     check("the phone driver goes offline and online again", (await api(P.page, "/api/cabs/driver/availability", "POST", { available: false })).status === 200

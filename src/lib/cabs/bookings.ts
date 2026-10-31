@@ -178,28 +178,6 @@ export async function assignRide(id: string, input: { driverId: string; vehicleI
     { ...(await driverPerson((row.driver_email as string | null) ?? null)), name: String(row.driver_name) }, { plate: String(row.number_plate), model: String(row.model) });
 }
 
-/**
- * A Cabs admin starts a ride for its driver (one without the driver app, who cannot enter the rider's OTP): assigned → in progress. The
- * admin is trusted to have checked the pickup, so no OTP is asked for.
- */
-export async function adminStartRide(id: string, admin: Actor): Promise<void> {
-  const [row] = rows<{ pickup: string; dropoff: string }>(await db.execute(sql`
-    update cab_rides set status = 'in_progress', started_at = now(), updated_at = now() where id = ${id} and status = 'assigned' returning pickup, dropoff`));
-  if (!row) return whyNot(id, "start");
-  await writeCabAudit(admin, "ride_started", { rideId: id, subject: subject(row), details: { byAdmin: true } });
-}
-
-/** A Cabs admin completes a ride for its driver: in progress → completed, and the rider is told. */
-export async function adminCompleteRide(id: string, admin: Actor): Promise<void> {
-  const [row] = rows<Record<string, unknown>>(await db.execute(sql`
-    update cab_rides set status = 'completed', completed_at = now(), updated_at = now() where id = ${id} and status = 'in_progress'
-    returning pickup, dropoff, scheduled_for, requested_by_id, requested_by_email`));
-  if (!row) return whyNot(id, "complete");
-  const ride = { id, pickup: String(row.pickup), dropoff: String(row.dropoff), scheduledFor: new Date(row.scheduled_for as string) };
-  await writeCabAudit(admin, "ride_completed", { rideId: id, subject: subject(ride), details: { byAdmin: true } });
-  await rideCompleted(ride, { userId: String(row.requested_by_id), email: String(row.requested_by_email) });
-}
-
 /** The assigned driver sets off, for a ride with no OTP (assigned before OTPs existed). Only their own ride, only from assigned. */
 export async function startRide(id: string, driver: Pick<CabUser, "id" | "name" | "driverId">): Promise<void> {
   if (!driver.driverId) throw new CabsError("Not allowed.", 403);
