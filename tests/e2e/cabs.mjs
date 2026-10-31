@@ -250,7 +250,7 @@ try {
     && r1.trip_type === "scheduled" && r1.passengers === 2 && r1.notes === "Two people, one bag", JSON.stringify(r1));
   check("My Rides shows it, Pending", (await S.page.locator(`[data-ride="${r1.id}"] [data-status]`).innerText()).trim() === "Pending");
   check("the staffer is told it was received", (await notices(staffer)).some((n) => n.title === "Your ride request has been received"));
-  check("the Cabs admins get a bell notice to assign it", (await notices(admin)).some((n) => n.title === "New ride request from ZZC Staffer" && n.body.includes("ZZC Office → ZZC Airport")));
+  check("the Cabs admins get a bell notice to assign it", (await notices(admin)).some((n) => n.title === "New ride request from ZZC Staffer: ZZC Office → ZZC Airport"));
   check("…and only they (not the driver, nor someone without Cabs Admin)", !(await notices(driver)).some((n) => n.title.startsWith("New ride request")) && !(await notices(outsider)).some((n) => n.title.startsWith("New ride request")));
   check("a time in the past is refused", (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC a", dropoff: "b", scheduledFor: "2020-01-01T10:00" })).status === 400);
   const soon = new Date(Date.now() + 5 * 60_000 + 5.5 * 3600_000).toISOString().slice(0, 16);
@@ -377,7 +377,8 @@ try {
   const nav = D.page.locator(`[data-ride="${r1.id}"] [data-navigation]`);
   await nav.waitFor({ timeout: 15000 }).catch(() => {});
   const href = await nav.getAttribute("href").catch(() => "");
-  check("Open Navigation: Google Maps directions from pickup to drop-off", href?.startsWith("https://www.google.com/maps/dir/?api=1&origin=ZZC+Office&destination=ZZC+Airport&travelmode=driving"), href);
+  check("Pickup confirmed: a full-width Open Google Maps button with the directions from pickup to drop-off", (await nav.innerText().catch(() => "")).includes("Open Google Maps")
+    && (await D.page.locator(`[data-ride="${r1.id}"][data-picked-up]`).count()) === 1 && href?.startsWith("https://www.google.com/maps/dir/?api=1&origin=ZZC+Office&destination=ZZC+Airport&travelmode=driving"), href);
   check("\"Sharing location\", and the driver is asked to keep the page open", await D.page.getByText("Sharing location").first().waitFor({ timeout: 15000 }).then(() => true).catch(() => false)
     && (await D.page.getByText("Keep this page open to share your location").count()) > 0);
   const pos = await poll(async () => (await sql`select * from cab_driver_locations where driver_id = ${dr1.id} order by recorded_at desc limit 1`)[0]);
@@ -426,6 +427,9 @@ try {
   await A.page.waitForTimeout(11_000);
   check("Live Trips refreshes every 5 seconds", livePolls.length >= 2 && livePolls.length <= 3, livePolls.length);
 
+  await D.page.locator(`[data-ride="${r1.id}"]`).getByRole("button", { name: "Go to Trip" }).click();
+  await D.page.waitForURL((u) => u.pathname === "/cabs/driver/trip");
+  check("Go to Trip: the ride under way, with Open Google Maps and Complete Ride", (await D.page.locator(`[data-ride="${r1.id}"] [data-navigation]`).innerText()).includes("Open Google Maps"));
   await D.page.locator(`[data-ride="${r1.id}"]`).getByRole("button", { name: "Complete Ride" }).click();
   await D.page.locator("[role=dialog]").getByRole("button", { name: "Complete" }).click();
   check("the driver completes it: completed, with the times recorded", await toast(D.page, "Ride completed") && !!(await poll(async () => { const x = await ride(r1.id); return x.status === "completed" && x.started_at && x.completed_at; })));

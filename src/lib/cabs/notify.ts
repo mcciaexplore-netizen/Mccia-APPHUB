@@ -39,8 +39,8 @@ export const rideReceived = async (ride: RideFacts & { passengers?: number }, re
   const admins = (await cabAdminRecipients()).filter((a) => a.userId !== requester.userId);
   await send(ride, [
     { to: requester, event: "created", title: "Your ride request has been received", body: `${route(ride)}, ${when(ride)}. You'll hear again once a driver and car are assigned.`, link: "/cabs/rides" },
-    ...admins.map((a): Notice => ({ to: a, event: "requested", email: false, title: `New ride request${requester.name ? ` from ${requester.name}` : ""}`,
-      body: `${route(ride)}, ${when(ride)}${ride.passengers && ride.passengers > 1 ? `, ${ride.passengers} passengers` : ""}. Assign a driver and a car.`, link: "/cabs/admin/rides?status=pending" })),
+    ...admins.map((a): Notice => ({ to: a, event: "requested", email: false, title: `New ride request${requester.name ? ` from ${requester.name}` : ""}: ${route(ride)}`,
+      body: `${when(ride)}${ride.passengers && ride.passengers > 1 ? `, ${ride.passengers} passengers` : ""}. Assign a driver and a car.`, link: "/cabs/admin/rides?status=pending" })),
   ]);
 };
 

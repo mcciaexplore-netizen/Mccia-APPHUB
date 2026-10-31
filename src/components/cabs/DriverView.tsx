@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { CalendarClock, CheckCircle2, Inbox, MapPin, Navigation, Play, UserRound, Users } from "lucide-react";
+import { CalendarClock, CheckCircle2, ChevronRight, Inbox, MapPin, Navigation, Play, UserRound, Users } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
 import { formatIST } from "@/lib/format";
@@ -55,14 +55,15 @@ function OtpEntry({ ride, pending, onVerify }: { ride: RideView; pending: boolea
   );
 }
 
-/** "Open Navigation": Google Maps with the route from pickup to drop-off (through any stops). */
+/** "Open Google Maps": the route from pickup to drop-off (through any stops), by coordinates when the ride has them, else by the addresses. */
 const OpenNavigation = ({ href }: { href: string }) => (
-  <a href={href} target="_blank" rel="noopener noreferrer" className={TEAL} data-navigation><Navigation size={20} /> Open Navigation</a>
+  <a href={href} target="_blank" rel="noopener noreferrer" className={TEAL} data-navigation><Navigation size={20} /> Open Google Maps</a>
 );
 
 /**
  * Assigned: the rides given to this driver and not yet picked up. A ride starts when the driver enters the rider's OTP (rides from before
- * OTPs keep Start Ride); then Google Maps opens with the route and the Trip tab takes over.
+ * OTPs keep Start Ride). A right OTP turns the card into "Pickup confirmed" with a full-width Open Google Maps button: a link the driver
+ * taps, because a phone blocks a page opening Maps by itself after waiting for the server. The Trip tab has the same button.
  */
 /** What an admin sees in place of the buttons when previewing another driver's app. */
 const PreviewNote = () => <p className="rounded-lg bg-[#f0f2f5] px-3 py-2.5 text-sm text-muted" data-preview-note>Preview only: start and complete this ride on All Rides.</p>;
@@ -71,19 +72,30 @@ export function AssignedList({ rides, preview = false }: { rides: RideView[]; pr
   const router = useRouter();
   const toast = useToast();
   const [pending, start] = useTransition();
+  // The ride just picked up, kept here after the refresh takes it off this list (it is in progress now).
+  const [picked, setPicked] = useState<{ ride: RideView; mapsUrl: string } | null>(null);
   const verify = (r: RideView, otp: string) => start(async () => {
     try {
       const { mapsUrl } = await cabsApi<{ mapsUrl: string }>(`/api/cabs/rides/${r.id}/otp/verify`, "POST", { otp });
-      toast.success("Pickup confirmed. Opening navigation…");
-      window.open(mapsUrl, "_blank", "noopener"); // a phone may block this: the Trip tab has Open Navigation
-      router.push("/cabs/driver/trip");
-      router.refresh();
+      toast.success("Pickup confirmed");
+      setPicked({ ride: { ...r, status: "in_progress" }, mapsUrl });
+      router.refresh(); // starts sharing the phone's position (the driver app's frame does it while a ride is under way)
     } catch (e) { toast.error((e as Error).message); }
   });
   const startPlain = (r: RideView) => start(async () => {
     try { await cabsApi(`/api/cabs/rides/${r.id}/start`, "POST"); toast.success("Ride started"); router.push("/cabs/driver/trip"); router.refresh(); }
     catch (e) { toast.error((e as Error).message); }
   });
+  const pickedCard = picked && (
+    <article className={card} data-ride={picked.ride.id} data-picked-up>
+      <div className="flex items-start justify-between gap-3"><Route ride={picked.ride} /><StatusBadge status="in_progress" /></div>
+      <p className="flex items-center gap-2 text-base font-bold text-[#15803d]"><CheckCircle2 size={20} aria-hidden /> Pickup confirmed. The ride is under way.</p>
+      <OpenNavigation href={picked.mapsUrl} />
+      <button type="button" className={NAVY} onClick={() => { router.push("/cabs/driver/trip"); router.refresh(); }}>Go to Trip <ChevronRight size={20} aria-hidden /></button>
+    </article>
+  );
+  const others = rides.filter((r) => r.id !== picked?.ride.id);
+  if (!others.length && pickedCard) return pickedCard;
   if (!rides.length) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl bg-white px-6 py-10 text-center shadow-sm" data-empty-assigned>
@@ -94,7 +106,8 @@ export function AssignedList({ rides, preview = false }: { rides: RideView[]; pr
   }
   return (
     <div className="space-y-4">
-      {rides.map((r) => (
+      {pickedCard}
+      {others.map((r) => (
         <article key={r.id} className={card} data-ride={r.id}>
           <div className="flex items-start justify-between gap-3"><Route ride={r} /><StatusBadge status={r.status} /></div>
           <Facts ride={r} />
