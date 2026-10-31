@@ -9,7 +9,7 @@ import { useToast } from "@/components/Toast";
 import { cabsApi } from "./api";
 
 export type VehicleView = {
-  id: string; numberPlate: string; model: string; capacity: number; isActive: boolean; drivers: string | null; activeRides: number;
+  id: string; numberPlate: string; model: string; capacity: number; isActive: boolean; activeRides: number;
   /** From the vehicle's latest maintenance record. */
   lastMaintenanceAt: string | null; nextDueAt: string | null;
 };
@@ -42,14 +42,13 @@ export function VehiclesView({ vehicles, today }: { vehicles: VehicleView[]; tod
     <div className="space-y-4">
       <div className="flex justify-end"><button className="btn btn-primary btn-sm" onClick={() => open("new")}><Plus size={14} /> Add vehicle</button></div>
       <div className="table-wrap"><table>
-        <thead><tr><th>Number plate</th><th>Model</th><th className="text-right">Seats</th><th>Drivers</th><th>Last maintenance</th><th>Next due</th><th>Status</th><th className="text-right">Actions</th></tr></thead>
+        <thead><tr><th>Number plate</th><th>Model</th><th className="text-right">Seats</th><th>Last maintenance</th><th>Next due</th><th>Status</th><th className="text-right">Actions</th></tr></thead>
         <tbody>
           {vehicles.map((v) => (
             <tr key={v.id} data-vehicle={v.id}>
               <td><b>{v.numberPlate}</b></td>
               <td>{v.model}</td>
               <td className="text-right">{v.capacity}</td>
-              <td>{v.drivers ?? <span className="text-subtle">—</span>}</td>
               <td className="whitespace-nowrap text-xs text-muted">{v.lastMaintenanceAt ? shortDay(v.lastMaintenanceAt) : "—"}</td>
               <td className={`whitespace-nowrap text-xs ${v.nextDueAt && istDay(v.nextDueAt) <= soon ? "font-bold text-brand-red" : "text-muted"}`} data-due-soon={(v.nextDueAt && istDay(v.nextDueAt) <= soon) || undefined}>
                 {v.nextDueAt ? `${shortDay(v.nextDueAt)}${istDay(v.nextDueAt) < today ? " · overdue" : ""}` : "—"}</td>
@@ -61,7 +60,7 @@ export function VehiclesView({ vehicles, today }: { vehicles: VehicleView[]; tod
               </div></td>
             </tr>
           ))}
-          {vehicles.length === 0 && <tr><td colSpan={8} className="text-subtle">No vehicles yet.</td></tr>}
+          {vehicles.length === 0 && <tr><td colSpan={7} className="text-subtle">No vehicles yet.</td></tr>}
         </tbody>
       </table></div>
       {editing && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { MapPinOff, Radio, RotateCw } from "lucide-react";
 import { gpsErrorMessage } from "./geo";
 
@@ -9,6 +9,8 @@ export const SEND_EVERY_MS = 10_000;
 
 type State = "asking" | "sharing" | "denied" | "unavailable" | "timeout";
 
+const noSubscribe = () => () => {};
+
 /**
  * While the driver has a ride in progress, sends the phone's position to /api/cabs/location every 10 seconds, for the admins' fleet map.
  * It stops when the ride ends (this component goes away) or the page is closed. A web page cannot read the position while it is in the
@@ -16,8 +18,11 @@ type State = "asking" | "sharing" | "denied" | "unavailable" | "timeout";
  * tabs.
  */
 export function LocationSharer({ rideId }: { rideId: string }) {
-  // A browser with no location at all is known at once; everything else is learned from the phone.
-  const [state, setState] = useState<State>(() => (typeof navigator !== "undefined" && !navigator.geolocation ? "unavailable" : "asking"));
+  // A browser with no location at all is known at once; everything else is learned from the phone. Read through useSyncExternalStore so the
+  // server's HTML (which assumes there is one: Node has a `navigator` too, without geolocation) and the first render in the browser agree.
+  const hasGps = useSyncExternalStore(noSubscribe, () => !!navigator.geolocation, () => true);
+  const [watched, setState] = useState<State>("asking");
+  const state: State = hasGps ? watched : "unavailable";
   const [sentAt, setSentAt] = useState<Date | null>(null);
   const latest = useRef<GeolocationPosition | null>(null);
   // Bumped by "Try again": starts a fresh watch (and a fresh permission prompt where the browser allows one).

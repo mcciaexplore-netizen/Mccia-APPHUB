@@ -232,6 +232,20 @@
       "when": 1793393817491,
       "tag": "0032_cabs_driver_email_optional",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793426062044,
+      "tag": "0033_cabs_driver_login",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793426066841,
+      "tag": "0034_cabs_drop_driver_vehicle",
+      "breakpoints": true
     }
   ]
 }

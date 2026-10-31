@@ -9,7 +9,13 @@ import { ADMIN_COOKIE, ADMIN_IDLE, SESSION_COOKIE, cookieOptions, sign, verify }
  *   - loading any page outside /administrator (a full page load) locks it again; moving around inside the app is handled by
  *     the page frame (HubShell), which calls lockAdmin() when you really leave Administrator (background prefetches must not count).
  * Every server action and page still checks for itself (src/lib/permissions.ts); this is the first line, not the only one.
+ *
+ * Cab Booking's drivers can sign in to Cabs Driver with their phone instead of a hub account (src/lib/cabs/driver-session.ts). Without a
+ * hub sign-in, only the driver pages and the few routes the driver app calls go through (DRIVER_PATH), and each of those checks the
+ * driver's own sign-in itself, sending anyone without one to /cabs/driver-login. Someone signed in to the hub is handled as before.
  */
+const DRIVER_PATH = /^\/(?:cabs\/driver(?:\/.*)?|cabs\/driver-login|api\/cabs\/(?:driver-login|driver-logout|driver-me|driver\/availability|location|rides\/[^/]+\/(?:otp\/verify|start|complete)))$/;
+
 export function proxy(req: NextRequest) {
   const { pathname, search, protocol } = req.nextUrl;
   const secure = protocol === "https:";
@@ -20,7 +26,7 @@ export function proxy(req: NextRequest) {
   if (pathname === "/login" || pathname === "/set-password") return NextResponse.next();
 
   const session = verify(req.cookies.get(SESSION_COOKIE)?.value, "session");
-  if (!session) return to(`/login?next=${here}`);
+  if (!session) return DRIVER_PATH.test(pathname) ? NextResponse.next() : to(`/login?next=${here}`);
 
   const unlock = verify(req.cookies.get(ADMIN_COOKIE)?.value, "admin");
   const unlocked = !!unlock && unlock.u === session.u;

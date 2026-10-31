@@ -33,6 +33,7 @@ import { INVENTORY_URL_PATTERN, inventoryRoleFor, navFor } from "../src/lib/inve
 import { CABS_ADMIN_URL_PATTERN, CABS_DRIVER_URL_PATTERN, CABS_USER_URL_PATTERN, CAB_NAV, cabRolesFor, navFor as cabNavFor } from "../src/lib/cabs/cabs.manifest";
 import { assignInput, costInput, driverInput, invoiceInput, istLocalToDate, locationInput, maintenanceInput, otpInput, rideInput, rupeesToPaise as cabRupees, scheduleProblem, vehicleInput } from "../src/lib/cabs/validation";
 import { OTP_MAX_ATTEMPTS, mapsLink, otpExpiry } from "../src/lib/cabs/otp-rules";
+import { DRIVER_SESSION_HOURS, LOGIN_MAX_ATTEMPTS, LOGIN_OTP_HOURS, driverLoginInput, loginPhone, pickDriver } from "../src/lib/cabs/driver-login-rules";
 import { MCCIA_OFFICES, officeText, officesFor } from "../src/components/cabs/offices";
 import { issueInput, poInput, receiveInput, ticketInput, ticketUpdate, requestDecision, requestInput, returnInput, rupeesToPaise, transferInput, vendorInput } from "../src/lib/inventory/validation";
 import { financialYear, nextPoNo, poPrefix } from "../src/lib/inventory/po-number";
@@ -401,15 +402,19 @@ const unwrapped = inventoryRoutes.flatMap((f) => {
   return handlers.filter(([, , rest]) => !imported || !/^\s*=\s*route[<(]/.test(rest)).map(([, method]) => `${f}:${method}`);
 });
 eq(`guards: every handler in the ${inventoryRoutes.length} Inventory route files goes through the Inventory guard's route()`, [inventoryRoutes.length > 0, unwrapped], [true, []]);
-// The same for Cab Booking: every handler is wrapped in its guard's route(), which always names the roles that may call it.
+// The same for Cab Booking: every handler is wrapped in its guard's route(), which always names the roles that may call it. Only the drivers'
+// sign-in, sign-out and "who am I" (called before anyone is signed in) use publicRoute() instead.
+const CAB_PUBLIC = ["api/cabs/driver-login/route.ts", "api/cabs/driver-logout/route.ts", "api/cabs/driver-me/route.ts"];
 const cabRoutes = allRouteFiles.filter((f) => /^api\/cabs\//.test(f));
 const cabUnwrapped = cabRoutes.flatMap((f) => {
   const src = readFileSync(new URL(f, appDir), "utf8");
   const handlers = [...src.matchAll(/export (?:const|async function|function) (GET|POST|PUT|PATCH|DELETE)\b(.*)/g)];
   const imported = /from "@\/lib\/cabs\/guard"/.test(src);
-  return handlers.filter(([, , rest]) => !imported || !/^\s*=\s*route(<[^>]*>)?\(\{ roles: \[/.test(rest)).map(([, method]) => `${f}:${method}`);
+  const wrapped = CAB_PUBLIC.includes(f) ? /^\s*=\s*publicRoute\(/ : /^\s*=\s*route(<[^>]*>)?\(\{ roles: \[/;
+  return handlers.filter(([, , rest]) => !imported || !wrapped.test(rest)).map(([, method]) => `${f}:${method}`);
 });
-eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles`, [cabRoutes.length, cabUnwrapped], [29, []]);
+eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles (the 3 driver sign-in routes: publicRoute())`,
+  [cabRoutes.length, cabUnwrapped, CAB_PUBLIC.filter((f) => cabRoutes.includes(f)).length], [33, [], 3]);
 
 // The application check must never be steered at an internal network
 eq("net guard: private, loopback, metadata and reserved IPv4 are refused", ["127.0.0.1", "10.0.0.5", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255"].map(isPublicAddress), Array(10).fill(false));
@@ -577,12 +582,23 @@ eq("cabs admin menu: no nested lines; Live Trips carries the live dot", [
     vehicleInput.parse({ numberPlate: "  mh 12   ab 1234 ", model: "Innova", capacity: "7" }), okParse(vehicleInput, { numberPlate: "MH12AB1234", model: "Innova", capacity: 0 }),
     okParse(assignInput, { driverId: v, vehicleId: v }), okParse(assignInput, { driverId: v }),
   ], [{ numberPlate: "MH 12 AB 1234", model: "Innova", capacity: 7 }, false, true, false]);
-  eq("cabs forms: a driver is a name and a phone of 10 to 15 digits (kept as digits); an email is optional (kept lower case); the vehicle is optional", [
+  eq("cabs forms: a driver is a name and a phone of 10 to 15 digits (kept as digits); an email is optional (kept lower case); no vehicle of their own", [
     driverInput.parse({ name: " Ravi Patil ", email: " Ravi.Patil@MCCIA.org ", phone: "+91 98765-43210", vehicleId: "" }),
     okParse(driverInput, { name: "Ravi", email: "ravi@x.org", phone: "12345" }), okParse(driverInput, { name: "Ravi", email: "not-an-email", phone: "9876543210" }),
     okParse(driverInput, { name: "", email: "ravi@x.org", phone: "9876543210" }), okParse(driverInput, { userId: v, vehicleId: v }),
     driverInput.parse({ name: "Suresh", phone: "98220 00001" }).email, driverInput.parse({ name: "Suresh", phone: "9822000001", email: "" }).email, okParse(driverInput, { name: "Suresh", email: "s@x.org" }),
-  ], [{ name: "Ravi Patil", email: "ravi.patil@mccia.org", phone: "+919876543210", vehicleId: null }, false, false, false, false, null, null, false]);
+  ], [{ name: "Ravi Patil", email: "ravi.patil@mccia.org", phone: "+919876543210" }, false, false, false, false, null, null, false]);
+  eq("cabs driver login: a phone is matched as typed (digits, + kept) or by its last 10 digits; fewer than 10 or more than 15 digits is no phone", [
+    loginPhone(" +91 98765-43210 "), loginPhone("98765 43210"), loginPhone("919876543210"), loginPhone("12345"), loginPhone("1234567890123456"), loginPhone(""),
+  ], [{ exact: "+919876543210", last10: "9876543210" }, { exact: "9876543210", last10: "9876543210" }, { exact: "919876543210", last10: "9876543210" }, null, null, null]);
+  const ds = [{ id: "a", phone: "+919876543210" }, { id: "b", phone: "9822000001" }, { id: "c", phone: "+919822000002" }, { id: "d", phone: "+449822000002" }];
+  eq("cabs driver login: the exact number first; else the one driver ending in the same 10 digits; two such drivers is nobody", [
+    pickDriver(ds, loginPhone("+919876543210")!)?.id, pickDriver(ds, loginPhone("98765 43210")!)?.id, pickDriver(ds, loginPhone("+91 98220 00001")!)?.id,
+    pickDriver(ds, loginPhone("9822000002")!)?.id ?? null, pickDriver(ds, loginPhone("+449822000002")!)?.id, pickDriver(ds, loginPhone("9000000000")!)?.id ?? null,
+  ], ["a", "a", "b", null, "d", null]);
+  eq("cabs driver login: the OTP is exactly 6 digits; a session lasts 12 hours, an OTP 24, and 5 wrong tries lock it", [
+    ...["847291", " 000042 ", "84729", "8472910", "84a291"].map((otp) => okParse(driverLoginInput, { phone: "9876543210", otp })), DRIVER_SESSION_HOURS, LOGIN_OTP_HOURS, LOGIN_MAX_ATTEMPTS,
+  ], [true, true, false, false, false, 12, 24, 5]);
 }
 
 {

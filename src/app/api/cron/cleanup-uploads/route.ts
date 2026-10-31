@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { deleteOrphanUploads } from "@/lib/approvals/cleanup";
+import { deleteExpiredDriverLogins } from "@/lib/cabs/driver-session";
 import { deleteOldLocations } from "@/lib/cabs/tracking";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,8 @@ export const dynamic = "force-dynamic";
 const digest = (v: string) => createHash("sha256").update(v).digest();
 
 /**
- * Daily clean-up, called by Vercel Cron (vercel.json): abandoned uploads, and Cab Booking drivers' positions older than 24 hours. Vercel sends "Authorization: Bearer <CRON_SECRET>"; anything
+ * Daily clean-up, called by Vercel Cron (vercel.json): abandoned uploads, Cab Booking drivers' positions older than 24 hours, and drivers'
+ * expired phone sign-ins and login OTPs. Vercel sends "Authorization: Bearer <CRON_SECRET>"; anything
  * else is refused, and with no CRON_SECRET set the route refuses everyone, so it can never be run by a visitor.
  */
 export async function GET(req: NextRequest) {
@@ -23,12 +25,19 @@ export async function GET(req: NextRequest) {
   } catch (e) {
     console.error("[cron] driver position clean-up failed:", e instanceof Error ? e.message : "unknown error");
   }
+  let driverLogins: { sessions: number; otps: number } | null = null;
+  try {
+    driverLogins = await deleteExpiredDriverLogins();
+    console.log(`[cron] removed ${driverLogins.sessions} expired driver sign-in(s) and ${driverLogins.otps} old driver login OTP(s)`);
+  } catch (e) {
+    console.error("[cron] driver sign-in clean-up failed:", e instanceof Error ? e.message : "unknown error");
+  }
   try {
     const removed = await deleteOrphanUploads();
     console.log(`[cron] removed ${removed.files} abandoned upload(s), ${removed.bytes} bytes`);
-    return NextResponse.json({ ok: true, ...removed, locations });
+    return NextResponse.json({ ok: true, ...removed, locations, driverLogins });
   } catch (e) {
     console.error("[cron] upload clean-up failed:", e instanceof Error ? e.message : "unknown error");
-    return NextResponse.json({ ok: false, locations }, { status: 500 });
+    return NextResponse.json({ ok: false, locations, driverLogins }, { status: 500 });
   }
 }

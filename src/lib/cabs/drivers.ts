@@ -9,90 +9,65 @@ import type { z } from "zod";
 
 /**
  * Drivers, added on Cabs Admin → Drivers: a name and a phone number (one driver per phone), and optionally an email, with no hub account
- * needed. Someone signed in to the hub with a driver's email opens Cabs Driver (see host-adapter.ts); a driver without one cannot, and a
- * Cabs admin starts and completes their rides. Removing a driver ends that; their past rides keep the driver's name,
- * taken when each ride was assigned.
+ * needed. A driver signs in to Cabs Driver with their phone and a code an admin gives them (driver-session.ts); someone signed in to the
+ * hub with a driver's email opens it too (host-adapter.ts). A driver has no car of their own: the car is chosen for each ride. Removing a
+ * driver ends their sign-ins; their past rides keep the driver's name, taken when each ride was assigned.
  */
 
 type Actor = Pick<CabUser, "id" | "name">;
 const rows = <T,>(res: unknown) => (res as { rows: T[] }).rows;
 
-export type DriverRow = {
-  id: string; name: string; email: string | null; phone: string; isAvailable: boolean; vehicleId: string | null; vehiclePlate: string | null; vehicleModel: string | null;
-  vehicleActive: boolean | null; upcoming: number;
-};
+export type DriverRow = { id: string; name: string; email: string | null; phone: string; isAvailable: boolean; upcoming: number };
 
 export async function listDrivers(): Promise<DriverRow[]> {
   const r = rows<Record<string, unknown>>(await db.execute(sql`
-    select d.id, d.name, d.email, d.phone, d.is_available, d.vehicle_id, v.number_plate, v.model, v.is_active,
+    select d.id, d.name, d.email, d.phone, d.is_available,
       (select count(*) from cab_rides r where r.driver_id = d.id and r.status in ('assigned', 'in_progress'))::int as upcoming
-    from cab_drivers d left join cab_vehicles v on v.id = d.vehicle_id
-    order by d.name`));
-  return r.map((x) => ({
-    id: String(x.id), name: String(x.name), email: (x.email as string) ?? null, phone: String(x.phone), isAvailable: !!x.is_available,
-    vehicleId: (x.vehicle_id as string) ?? null, vehiclePlate: (x.number_plate as string) ?? null, vehicleModel: (x.model as string) ?? null,
-    vehicleActive: x.is_active == null ? null : !!x.is_active, upcoming: Number(x.upcoming),
-  }));
+    from cab_drivers d order by d.name`));
+  return r.map((x) => ({ id: String(x.id), name: String(x.name), email: (x.email as string) ?? null, phone: String(x.phone), isAvailable: !!x.is_available, upcoming: Number(x.upcoming) }));
 }
 
-/** Why a vehicle cannot be given to a driver, after a statement that required it came back empty. */
-async function vehicleProblem(vehicleId: string | null): Promise<string | null> {
-  if (!vehicleId) return null;
-  const [v] = rows<{ is_active: boolean }>(await db.execute(sql`select is_active from cab_vehicles where id = ${vehicleId}`));
-  return !v ? "That vehicle no longer exists. Reload and try again." : !v.is_active ? "That vehicle is inactive. Choose an active one." : null;
-}
-
-/** Adds a driver, optionally with a vehicle (which must be active). One statement; a phone (or email) that is already a driver's is refused. */
+/** Adds a driver. One statement; a phone (or email) that is already a driver's is refused. */
 export async function createDriver(input: z.infer<typeof driverInput>, actor: Actor): Promise<{ id: string }> {
   const [row] = rows<{ id: string }>(await db.execute(sql`
-    insert into cab_drivers (name, email, phone, vehicle_id)
-    select ${input.name}, ${input.email}, ${input.phone}, ${input.vehicleId}::uuid
-    where ${input.vehicleId}::uuid is null or exists (select 1 from cab_vehicles where id = ${input.vehicleId}::uuid and is_active)
+    insert into cab_drivers (name, email, phone) values (${input.name}, ${input.email}, ${input.phone})
     on conflict do nothing returning id`));
   if (!row) {
-    const problem = await vehicleProblem(input.vehicleId);
-    if (problem) throw new CabsError(problem, 409);
     const [taken] = rows<{ name: string; phone: string }>(await db.execute(sql`
       select name, phone from cab_drivers where phone = ${input.phone} or (${input.email}::text is not null and email = ${input.email}) limit 1`));
     throw new CabsError(taken?.phone === input.phone ? `${taken.name} already has the phone number ${input.phone}.` : `${input.email} is already a driver.`, 409);
   }
-  await writeCabAudit(actor, "driver_added", { subject: input.name, details: { email: input.email, phone: input.phone, vehicleId: input.vehicleId } });
+  await writeCabAudit(actor, "driver_added", { subject: input.name, details: { email: input.email, phone: input.phone } });
   return row;
 }
 
-/** Gives a driver a vehicle (active only), or none. */
-export async function updateDriver(id: string, input: { vehicleId: string | null }, actor: Actor): Promise<void> {
-  const [row] = rows<{ name: string; number_plate: string | null }>(await db.execute(sql`
-    update cab_drivers d set vehicle_id = ${input.vehicleId}::uuid
-    where d.id = ${id} and (${input.vehicleId}::uuid is null or exists (select 1 from cab_vehicles where id = ${input.vehicleId}::uuid and is_active))
-    returning d.name, (select number_plate from cab_vehicles where id = ${input.vehicleId}::uuid) as number_plate`));
-  if (!row) {
-    const problem = await vehicleProblem(input.vehicleId);
-    throw new CabsError(problem ?? "That driver no longer exists. Reload and try again.", problem ? 409 : 404);
-  }
-  await writeCabAudit(actor, "driver_updated", { subject: row.name, details: { vehicle: row.number_plate ?? "none" } });
-}
-
-export async function setAvailability(id: string, available: boolean, actor: Actor): Promise<void> {
+export async function setAvailability(id: string, available: boolean, actor: Actor & Partial<Pick<CabUser, "via">>): Promise<void> {
   const [row] = rows<{ name: string }>(await db.execute(sql`update cab_drivers set is_available = ${available} where id = ${id} returning name`));
   if (!row) throw new CabsError("That driver no longer exists. Reload and try again.", 404);
   await writeCabAudit(actor, "driver_availability", { subject: row.name, details: { available } });
 }
 
 /** A driver goes online or offline themselves (the Online/Offline switch on their page). Offline: no new rides are assigned to them. */
-export async function setOwnAvailability(driver: Pick<CabUser, "id" | "name" | "driverId">, available: boolean): Promise<void> {
+export async function setOwnAvailability(driver: Pick<CabUser, "id" | "name" | "driverId" | "via">, available: boolean): Promise<void> {
   if (!driver.driverId) throw new CabsError("Only drivers go online or offline.", 403);
   await setAvailability(driver.driverId, available, driver);
 }
 
 export type DriverProfile = { name: string; email: string | null; phone: string; isAvailable: boolean; vehiclePlate: string | null; vehicleModel: string | null; completed: number };
 
-/** A driver's own details for their Profile tab: who they are, their vehicle, and how many rides they have completed. */
+/**
+ * A driver's own details for their Profile tab: who they are, the car of their current ride (the one under way, else their next assigned
+ * one; drivers have no car of their own), and how many rides they have completed.
+ */
 export async function driverProfile(driverId: string): Promise<DriverProfile | null> {
   const [x] = rows<Record<string, unknown>>(await db.execute(sql`
-    select d.name, d.email, d.phone, d.is_available, v.number_plate, v.model,
+    select d.name, d.email, d.phone, d.is_available, cr.vehicle_plate as number_plate, v.model,
       (select count(*) from cab_rides r where r.driver_id = d.id and r.status = 'completed')::int as completed
-    from cab_drivers d left join cab_vehicles v on v.id = d.vehicle_id where d.id = ${driverId}`));
+    from cab_drivers d
+    left join lateral (select vehicle_id, vehicle_plate from cab_rides where driver_id = d.id and status in ('in_progress', 'assigned')
+      order by (status = 'in_progress') desc, scheduled_for limit 1) cr on true
+    left join cab_vehicles v on v.id = cr.vehicle_id
+    where d.id = ${driverId}`));
   return x ? { name: String(x.name), email: (x.email as string) ?? null, phone: String(x.phone), isAvailable: !!x.is_available, vehiclePlate: (x.number_plate as string) ?? null,
     vehicleModel: (x.model as string) ?? null, completed: Number(x.completed) } : null;
 }

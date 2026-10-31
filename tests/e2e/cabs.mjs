@@ -4,7 +4,7 @@
  * cancelling (by the person and by an admin, with a reason), the notifications each step sends, the audit log and its CSV; and phase 2:
  * the ride OTP (made on assign, shown only to the rider, three tries, an admin's New OTP), starting a ride with it and the Google Maps
  * link, the driver's phone sharing its position (a simulated GPS), and the admins' fleet map; and phase 3: Live Trips, vehicle
- * maintenance, ride costs, invoices, and user and driver activity. Run against a
+ * maintenance, ride costs, invoices, and user and driver activity; and drivers signing in by phone with an admin's login OTP. Run against a
  * site with CABS_ENABLED=true:
  *   E2E_BASE_URL=http://localhost:3000 node tests/e2e/cabs.mjs
  * With the module switched off (CABS_ENABLED unset), E2E_CABS_OFF=yes checks instead that every /cabs page and /api/cabs route is a 404.
@@ -15,7 +15,7 @@
  * other cab_ row is exactly as before. It refuses a Neon database unless E2E_ALLOW_NEON=yes.
  */
 import { createRequire } from "node:module";
-import { randomBytes, scryptSync } from "node:crypto";
+import { createHash, randomBytes, scryptSync } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -55,6 +55,7 @@ const removeTestData = async () => {
   const rides = (await sql`select id from cab_rides where requested_by_email like 'zzc-%'`).map((r) => r.id);
   for (const id of people) { await sql`delete from cab_audit_log where actor_id = ${id}`; await sql`delete from hub_notifications where user_id = ${id}`; await sql`delete from activity_log where user_id = ${id}`; }
   for (const id of rides) await sql`delete from cab_audit_log where ride_id = ${id}`;
+  await sql`delete from cab_audit_log where actor_name like 'ZZC%'`; // phone drivers' own actions (their actor id is their driver id)
   await sql`delete from cab_invoices where branch like 'ZZC%'`;
   await sql`delete from cab_rides where requested_by_email like 'zzc-%'`;
   await sql`delete from cab_drivers where email like 'zzc-%' or name like 'ZZC%'`;
@@ -69,7 +70,7 @@ const removeTestData = async () => {
 // Every cab_ row that is not this test's own, so the end can prove none of it changed.
 const snap = async () => JSON.stringify([
   await sql`select id, number_plate, model, capacity, is_active from cab_vehicles where number_plate not like 'ZZC%' order by id`,
-  await sql`select id, name, email, phone, vehicle_id, is_available from cab_drivers where coalesce(email, '') not like 'zzc-%' and name not like 'ZZC%' order by id`,
+  await sql`select id, name, email, phone, is_available from cab_drivers where coalesce(email, '') not like 'zzc-%' and name not like 'ZZC%' order by id`,
   await sql`select id, status, driver_id, vehicle_id, updated_at from cab_rides where requested_by_email not like 'zzc-%' order by id`,
   await sql`select count(*)::int n from cab_audit_log`,
   await sql`select count(*)::int n from cab_driver_locations l join cab_drivers d on d.id = l.driver_id where d.email not like 'zzc-%'`,
@@ -77,6 +78,8 @@ const snap = async () => JSON.stringify([
   await sql`select id, total_amount_paise, status from cab_invoices where branch not like 'ZZC%' order by id`,
   await sql`select id, base_fare_paise, invoice_id from cab_ride_costs c where not exists (select 1 from cab_rides r where r.id = c.ride_id and r.requested_by_email like 'zzc-%') order by id`,
   await sql`select id, cost_paise from cab_maintenance where vehicle_plate not like 'ZZC%' order by id`,
+  await sql`select count(*)::int n from cab_driver_sessions s join cab_drivers d on d.id = s.driver_id where d.name not like 'ZZC%'`,
+  await sql`select count(*)::int n from cab_driver_otps o join cab_drivers d on d.id = o.driver_id where d.name not like 'ZZC%'`,
 ]);
 
 await removeTestData();
@@ -107,7 +110,7 @@ const signedIn = async (email, gps) => {
   ctx.setDefaultTimeout(45000);
   await ctx.addInitScript(() => { try { localStorage.setItem("mccia-install-popup-seen", "1"); localStorage.setItem("mccia-install-snoozed-until", String(Date.now() + 864e5)); } catch {} });
   const page = await ctx.newPage();
-  page.on("pageerror", (e) => pageErrors.push(String(e).slice(0, 160)));
+  page.on("pageerror", (e) => pageErrors.push(`${new URL(page.url()).pathname}: ${String(e).slice(0, 120)}`));
   await page.goto(BASE + "/login"); await page.fill("input[name=email]", email); await page.fill("input[name=password]", PW);
   await page.click("button[type=submit]"); await page.waitForURL((u) => u.pathname === "/", { timeout: 60000 });
   return { ctx, page };
@@ -193,20 +196,25 @@ try {
   await A.page.locator("[role=dialog] li button", { hasText: "zzc-driver@gmail.com" }).click();
   check("picking one of the hub's people fills in the name and email", (await A.page.inputValue("[role=dialog] input[name=name]")) === "ZZC Driver" && (await A.page.inputValue("[role=dialog] input[name=email]")) === "zzc-driver@gmail.com");
   await A.page.fill("[role=dialog] input[name=phone]", "98765 43210");
-  await A.page.locator('[role=dialog] select[name=vehicleId]').selectOption(v1.id);
+  check("the Add driver form has no vehicle: drivers have no car of their own", (await A.page.locator("[role=dialog] select[name=vehicleId]").count()) === 0);
   await A.page.locator("[role=dialog]").getByRole("button", { name: "Add driver" }).click();
   check("admin adds a driver on the page: name, email and phone (kept as digits), no hub user id", await toast(A.page, "added as a driver")
-    && !!(await poll(async () => (await sql`select 1 from cab_drivers where email = 'zzc-driver@gmail.com' and name = 'ZZC Driver' and phone = '9876543210' and vehicle_id = ${v1.id}`)[0])));
+    && !!(await poll(async () => (await sql`select 1 from cab_drivers where email = 'zzc-driver@gmail.com' and name = 'ZZC Driver' and phone = '9876543210'`)[0])));
+  check("cab_drivers has no vehicle column any more (migration 0034)", (await sql`select 1 from information_schema.columns where table_name = 'cab_drivers' and column_name = 'vehicle_id'`).length === 0);
   const [dr1] = await sql`select id from cab_drivers where email = 'zzc-driver@gmail.com'`;
   check("the same email twice is refused, whatever its case (409)", (await api(A.page, "/api/cabs/drivers", "POST", { name: "Again", email: "ZZC-Driver@gmail.com", phone: "9876543210" })).status === 409);
   check("a phone number that is too short is refused (400)", (await api(A.page, "/api/cabs/drivers", "POST", { name: "ZZC Short", email: "zzc-short@gmail.com", phone: "12345" })).status === 400);
-  check("a driver cannot be given an inactive vehicle (409)", (await api(A.page, "/api/cabs/drivers", "POST", { name: "ZZC Second Driver", email: "zzc-driver2@gmail.com", phone: "9822000001", vehicleId: v3.id })).status === 409);
   const dr2 = (await api(A.page, "/api/cabs/drivers", "POST", { name: "ZZC Second Driver", email: "zzc-driver2@gmail.com", phone: "9822000001", vehicleId: v2.id })).body;
-  check("a second driver, with a vehicle", !!dr2?.id);
+  check("a second driver (a vehicle sent with it is ignored)", !!dr2?.id);
+  check("the old \"give a driver a vehicle\" route is gone (405)", (await api(A.page, `/api/cabs/drivers/${dr2.id}`, "PATCH", { vehicleId: v1.id })).status === 405);
   const nohub = (await api(A.page, "/api/cabs/drivers", "POST", { name: "ZZC Outside Driver", email: "zzc-nohub@gmail.com", phone: "+91 98220 00002" })).body;
   await go(A.page, "/cabs/admin/drivers");
-  check("a driver with no hub account can be added, and is marked as one who cannot open Cabs Driver", !!nohub?.id
-    && (await A.page.locator(`tr[data-driver="${nohub.id}"] [data-no-app]`).count()) === 1 && (await A.page.locator(`tr[data-driver="${dr1.id}"] [data-no-app]`).count()) === 0);
+  check("a driver with no hub account can be added", !!nohub?.id);
+  check("the Drivers list: Name, Phone, Availability (no Vehicle), with Get Login OTP on each driver",
+    (await A.page.locator("thead th").allInnerTexts()).map((t) => t.trim().toLowerCase()).join("|") === "name|phone|availability|rides on|actions"
+    && (await A.page.locator(`tr[data-driver="${nohub.id}"] [data-get-otp]`).count()) === 1);
+  await go(A.page, "/cabs/admin/vehicles");
+  check("the Vehicles list has no Drivers column", !(await A.page.locator("thead th").allInnerTexts()).some((t) => /drivers/i.test(t)));
   await go(D.page, "/cabs/driver");
   check("once added, the driver opens Cabs Driver", new URL(D.page.url()).pathname === "/cabs/driver" && await D.page.locator('nav[aria-label="Cabs Driver"]').isVisible());
 
@@ -272,7 +280,12 @@ try {
   await go(A.page, "/cabs/admin/rides?status=pending");
   await A.page.locator(`tr[data-ride="${r1.id}"]`).getByRole("button", { name: "Assign" }).click();
   await A.page.locator("[role=dialog] select[name=driverId]").selectOption(dr1.id);
-  check("picking a driver offers their usual vehicle", (await A.page.locator("[role=dialog] select[name=vehicleId]").inputValue()) === v1.id);
+  check("picking a driver chooses no car for you; every active car is offered with its seats, an inactive one is not",
+    (await A.page.locator("[role=dialog] select[name=vehicleId]").inputValue()) === ""
+    && (await A.page.locator(`[role=dialog] select[name=vehicleId] option[value="${v1.id}"]`).innerText()).includes("seats")
+    && (await A.page.locator(`[role=dialog] select[name=vehicleId] option[value="${v2.id}"]`).count()) === 1
+    && (await A.page.locator(`[role=dialog] select[name=vehicleId] option[value="${v3.id}"]`).count()) === 0);
+  await A.page.locator("[role=dialog] select[name=vehicleId]").selectOption(v1.id);
   await A.page.locator("[role=dialog]").getByRole("button", { name: "Assign", exact: true }).click();
   const r1a = await poll(async () => { const x = await ride(r1.id); return x.status === "assigned" ? x : null; });
   check("admin assigns on the page: assigned, with the driver's name and the plate kept on the ride", r1a?.driver_id === dr1.id && r1a.vehicle_id === v1.id && r1a.driver_name === "ZZC Driver" && r1a.vehicle_plate === "ZZC 01 AA 1111" && !!r1a.assigned_at, JSON.stringify(r1a));
@@ -289,6 +302,12 @@ try {
   const alerted = await poll(async () => (await watch.evaluate(() => window.__notes)).find((n) => n.title === "Your ride is confirmed"), 40_000);
   check("the rider's open page alerts them that the ride is confirmed (within 30 seconds)", !!alerted && alerted.body.includes("ZZC Office") && alerted.body.includes("ZZC Driver"), JSON.stringify(alerted));
   await watch.close();
+  await go(A.page, "/cabs/admin/rides?status=pending");
+  await A.page.locator(`tr[data-ride="${rMulti.id}"]`).getByRole("button", { name: "Assign" }).click();
+  const optText = (id) => A.page.$eval(`[role=dialog] select[name=vehicleId] option[value="${id}"]`, (o) => ({ disabled: o.disabled, text: o.textContent }));
+  const [o1, o2] = [await optText(v1.id), await optText(v2.id)];
+  check("assign dialog: a car with too few seats is marked \"Too small\" and can't be chosen; a big enough one can", o2.disabled && /Too small/.test(o2.text) && !o1.disabled && /7 seats/.test(o1.text), JSON.stringify([o1, o2]));
+  await A.page.locator("[role=dialog]").getByRole("button", { name: "Close", exact: true }).last().click();
   const small = await api(A.page, `/api/cabs/rides/${rMulti.id}/assign`, "POST", { driverId: dr2.id, vehicleId: v2.id });
   check("a car with fewer seats than passengers is refused (409)", small.status === 409 && /4 seats and this ride is for 6/.test(small.body?.error), JSON.stringify(small));
   await api(S.page, `/api/cabs/rides/${rMulti.id}/cancel`, "POST", {}); await api(S.page, `/api/cabs/rides/${rNow.id}/cancel`, "POST", {});
@@ -533,8 +552,9 @@ try {
   await go(A.page, "/cabs/admin/drivers/activity?available=no");
   check("driver activity: the availability filter", (await A.page.locator(`tr[data-driver-activity="${dr1.id}"]`).count()) === 0);
   await go(D.page, "/cabs/driver/profile");
-  check("driver Profile: name, phone, vehicle and rides completed", (await D.page.locator("[data-profile]").innerText()).includes("9876543210")
-    && (await D.page.locator("[data-completed]").innerText()).trim() === "3" && (await D.page.getByText("ZZC 01 AA 1111").count()) >= 1);
+  const [current] = await sql`select vehicle_plate from cab_rides where driver_id = ${dr1.id} and status in ('in_progress', 'assigned') order by (status = 'in_progress') desc, scheduled_for limit 1`;
+  check("driver Profile: name, phone, the current ride's car (or none) and rides completed", (await D.page.locator("[data-profile]").innerText()).includes("9876543210")
+    && (await D.page.locator("[data-completed]").innerText()).trim() === "3" && (await D.page.locator("[data-current-vehicle]").innerText()).includes(current?.vehicle_plate ?? "No ride right now"));
   check("activity pages are for Cabs admins only", (await go(S.page, "/cabs/admin/activity")) && new URL(S.page.url()).pathname === "/");
 
   section("maps, address search and GPS fallbacks");
@@ -601,7 +621,7 @@ try {
     check("GPS timed out: \"Location request timed out. Please try again.\"", (await gps(3)) === "Location request timed out. Please try again.");
   }
 
-  section("a driver without an email (no driver app)");
+  section("a driver without an email");
   {
     await go(A.page, "/cabs/admin/drivers");
     await A.page.getByRole("button", { name: "Add driver" }).click();
@@ -611,8 +631,7 @@ try {
     const dr3 = await poll(async () => (await sql`select * from cab_drivers where name = 'ZZC Phone Driver'`)[0]);
     check("a driver with only a name and a phone: added, with no email", await toast(A.page, "added as a driver") && dr3?.email === null && dr3.phone === "9822007777", JSON.stringify(dr3));
     await go(A.page, "/cabs/admin/drivers");
-    check("the Drivers list shows name and phone, and marks a driver without the app", (await A.page.locator(`tr[data-driver="${dr3.id}"]`).innerText()).includes("9822007777")
-      && (await A.page.locator(`tr[data-driver="${dr3.id}"] [data-no-app]`).count()) === 1);
+    check("the Drivers list shows their name and phone", (await A.page.locator(`tr[data-driver="${dr3.id}"]`).innerText()).includes("9822007777"));
     const samePhone = await api(A.page, "/api/cabs/drivers", "POST", { name: "ZZC Twin", phone: "+9822007777".replace("+", "") });
     check("the same phone number twice is refused (409), naming who has it", samePhone.status === 409 && /ZZC Phone Driver already has the phone number/.test(samePhone.body?.error), JSON.stringify(samePhone));
     const r8 = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Phone Pickup", dropoff: "ZZC Phone Drop", scheduledFor: istSlot(5, 11) })).body;
@@ -632,6 +651,138 @@ try {
       const all = (await import("node:fs")).readFileSync(process.env.E2E_SMTP_LOG, "utf8");
       check("no email is attempted for a driver without one", !all.split("\n").filter(Boolean).map((l) => JSON.parse(l)).some((m) => m.subject === "New ride assigned to you" && !m.to.some((t) => t.startsWith("zzc-"))));
     }
+
+    section("drivers signing in by phone");
+    // A phone with no hub sign-in at all, as a driver's would be.
+    const P = await (async () => {
+      const ctx = await browser.newContext({ viewport: { width: 400, height: 860 }, geolocation: { latitude: 18.53, longitude: 73.85, accuracy: 10 }, permissions: ["geolocation"] });
+      ctx.setDefaultTimeout(45000);
+      await ctx.addInitScript(() => { try { localStorage.setItem("mccia-install-popup-seen", "1"); localStorage.setItem("mccia-install-snoozed-until", String(Date.now() + 864e5)); } catch {} });
+      const page = await ctx.newPage();
+      page.on("pageerror", (e) => pageErrors.push(`${new URL(page.url()).pathname}: ${String(e).slice(0, 120)}`));
+      return { ctx, page };
+    })();
+    const login = (page, phone, otp) => api(page, "/api/cabs/driver-login", "POST", { phone, otp });
+    const gated = (page, url, method = "GET") => page.evaluate(async ([u, m]) => (await fetch(u, { method: m, redirect: "manual" })).type === "opaqueredirect", [url, method]);
+    await go(P.page, "/cabs/driver");
+    check("no sign-in: Cabs Driver goes to the driver sign-in, not the hub's", new URL(P.page.url()).pathname === "/cabs/driver-login");
+    const loginText = await P.page.locator("main").innerText();
+    check("the sign-in page: MCCIA logo, \"Driver Login\", phone and OTP boxes, a Login button, \"Contact your admin if you need an OTP\", 400px at most",
+      await P.page.locator('main img[alt="MCCIA"]').isVisible() && /Driver Login/.test(loginText) && /Contact your admin if you need an OTP/.test(loginText)
+      && (await P.page.locator("input[name=phone]").getAttribute("type")) === "tel" && (await P.page.locator("input[name=otp]").getAttribute("inputmode")) === "numeric"
+      && await P.page.getByRole("button", { name: "Login" }).isDisabled() && (await P.page.locator("main").evaluate((m) => m.getBoundingClientRect().width)) <= 400);
+    check("no sign-in: the rest stays behind the hub's sign-in (Cabs Admin, MCCIA Cabs, admin routes)", await (async () => { await go(P.page, "/cabs/admin"); return new URL(P.page.url()).pathname === "/login"; })()
+      && await (async () => { await go(P.page, "/cabs"); return new URL(P.page.url()).pathname === "/login"; })()
+      && await gated(P.page, "/api/cabs/drivers") && await gated(P.page, `/api/cabs/drivers/${dr3.id}/otp`, "POST") && await gated(P.page, `/api/cabs/rides/${r8.id}/assign`, "POST"));
+    check("no sign-in: who-am-I is 401, and so is a driver route", (await api(P.page, "/api/cabs/driver-me", "GET")).status === 401 && (await api(P.page, "/api/cabs/location", "POST", { latitude: 18.5, longitude: 73.8 })).status === 401);
+
+    await go(A.page, "/cabs/admin/drivers");
+    await A.page.locator(`tr[data-driver="${dr3.id}"] [data-get-otp]`).click();
+    await A.page.locator("[data-login-otp]").waitFor();
+    const shown1 = (await A.page.locator("[data-otp-digits]").innerText()).trim();
+    const dialog = await A.page.locator("[data-login-otp]").innerText();
+    check("Get Login OTP: \"Share with ZZC Phone Driver\", 6 digits, \"Valid for 24 hours (until … tomorrow)\", a Copy button", /^\d{6}$/.test(shown1) && /Share with\s+ZZC Phone Driver/.test(dialog)
+      && /Valid for 24 hours \(until \d{1,2}:\d{2} [AP]M tomorrow\)/.test(dialog) && await A.page.locator("[data-login-otp]").getByRole("button", { name: "Copy" }).isVisible(), dialog);
+    const row1 = (await sql`select * from cab_driver_otps where driver_id = ${dr3.id}`)[0];
+    check("…only a hash of it is stored (never the digits), expiring in 24 hours, made by the admin", row1 && row1.otp_hash.length === 64 && !row1.otp_hash.includes(shown1)
+      && Math.abs(new Date(row1.expires_at).getTime() - Date.now() - 24 * 3600_000) < 120_000 && row1.created_by_id === admin.id, JSON.stringify(row1));
+    await A.page.locator("[data-login-otp]").getByRole("button", { name: "New OTP" }).click();
+    const shown2 = await poll(async () => { const t = (await A.page.locator("[data-otp-digits]").innerText()).trim(); return t !== shown1 ? t : null; });
+    check("New OTP: different digits, and the first one is gone (one unused code per driver)", /^\d{6}$/.test(shown2 ?? "") && (await sql`select count(*)::int n from cab_driver_otps where driver_id = ${dr3.id} and used_at is null`)[0].n === 1);
+    await A.page.locator("[data-login-otp]").getByRole("button", { name: "Done" }).click();
+    check("only Cabs admins make login OTPs (403 for a staffer and for a hub driver)", (await api(S.page, `/api/cabs/drivers/${dr3.id}/otp`, "POST")).status === 403
+      && (await api(D2.page, `/api/cabs/drivers/${dr3.id}/otp`, "POST")).status === 403);
+    check("the old code no longer works (401)", shown1 === shown2 || (await login(P.page, "9822007777", shown1)).status === 401);
+    // The old code, tried just above, counted as a wrong try on the current one.
+    const triesSoFar = (await sql`select attempts from cab_driver_otps where driver_id = ${dr3.id} and used_at is null`)[0].attempts;
+    const wrong = shown2 === "000000" ? "111111" : "000000";
+    const bad = await login(P.page, "9822007777", wrong);
+    const unknown = await login(P.page, "9000000001", shown2);
+    check("a wrong OTP and an unknown phone get the same 401 \"Invalid phone or OTP\"; the wrong one counts a try", bad.status === 401 && bad.body?.error === "Invalid phone or OTP"
+      && unknown.status === 401 && unknown.body?.error === "Invalid phone or OTP" && (await sql`select attempts from cab_driver_otps where driver_id = ${dr3.id} and used_at is null`)[0].attempts === triesSoFar + 1);
+    check("a malformed OTP is refused (400)", (await login(P.page, "9822007777", "12345")).status === 400);
+    const crossSite = await fetch(BASE + "/api/cabs/driver-login", { method: "POST", headers: { "Content-Type": "application/json", Origin: "https://evil.example" }, body: JSON.stringify({ phone: "9822007777", otp: shown2 }) });
+    check("a sign-in posted from another site is refused (403), and uses no try", crossSite.status === 403 && (await sql`select attempts from cab_driver_otps where driver_id = ${dr3.id} and used_at is null`)[0].attempts === triesSoFar + 1);
+
+    await go(P.page, "/cabs/driver-login");
+    await P.page.fill("input[name=phone]", "+91 98220 07777");
+    await P.page.fill("input[name=otp]", shown2);
+    await P.page.getByRole("button", { name: "Login" }).click();
+    await P.page.waitForURL((u) => u.pathname === "/cabs/driver", { timeout: 30000 }).catch(() => {});
+    check("the driver signs in on the page with +91 in front (matched on the last 10 digits) and lands on Assigned", new URL(P.page.url()).pathname === "/cabs/driver"
+      && /Hi ZZC/i.test(await P.page.locator("main").innerText()));
+    check("…with no way back to the hub (they have no hub account)", (await P.page.locator('header a[href="/"]').count()) === 0);
+    const cookie = (await P.ctx.cookies()).find((c) => c.name === "cab_driver_session");
+    const hoursLeft = cookie ? (cookie.expires * 1000 - Date.now()) / 3600_000 : 0;
+    check("the session cookie: httpOnly, SameSite=Lax, 12 hours", !!cookie && cookie.httpOnly && cookie.sameSite === "Lax" && hoursLeft > 11.9 && hoursLeft <= 12.01, JSON.stringify({ ...cookie, value: "…" }));
+    const sess = (await sql`select * from cab_driver_sessions where driver_id = ${dr3.id}`);
+    check("…the database keeps only the SHA-256 of the cookie, expiring in 12 hours", sess.length === 1 && sess[0].token === createHash("sha256").update(cookie?.value ?? "").digest("hex")
+      && sess[0].token !== cookie?.value && Math.abs(new Date(sess[0].expires_at).getTime() - Date.now() - 12 * 3600_000) < 120_000);
+    check("the code is used up: the same code again is 401", (await sql`select used_at from cab_driver_otps where driver_id = ${dr3.id}`)[0].used_at !== null
+      && await (async () => { const c = await browser.newContext(); const p = await c.newPage(); await p.goto(BASE + "/cabs/driver-login"); const r = await login(p, "9822007777", shown2); await c.close(); return r.status === 401; })());
+    const me = await api(P.page, "/api/cabs/driver-me", "GET");
+    check("who-am-I: the driver's name and phone", me.status === 200 && me.body?.driver?.name === "ZZC Phone Driver" && me.body.driver.phone === "9822007777");
+    check("signing in is in the Cab audit log, and not in the hub's (no hub account)", (await sql`select 1 from cab_audit_log where action = 'driver_signed_in' and actor_id = ${dr3.id}`).length === 1
+      && (await sql`select 1 from cab_audit_log where action = 'driver_login_otp' and actor_id = ${admin.id}`).length >= 2
+      && (await sql`select 1 from access_audit where action = 'cabs.driver_signed_in'`).length === 0);
+    check("a phone driver still cannot reach admin pages or routes", await (async () => { await go(P.page, "/cabs/admin"); return new URL(P.page.url()).pathname === "/login"; })()
+      && await gated(P.page, "/api/cabs/drivers") && await gated(P.page, `/api/cabs/rides/${r8.id}/otp/reset`, "POST"));
+
+    // A ride for them, done entirely in the driver app.
+    const r9 = (await api(S.page, "/api/cabs/rides", "POST", { pickup: "ZZC Phone Pickup 2", dropoff: "ZZC Phone Drop 2", scheduledFor: istSlot(6, 15) })).body;
+    check("a ride is assigned to the phone driver, with a car chosen for this ride", (await api(A.page, `/api/cabs/rides/${r9.id}/assign`, "POST", { driverId: dr3.id, vehicleId: v1.id })).status === 200);
+    const code9 = (await sql`select otp from cab_ride_otps where ride_id = ${r9.id}`)[0].otp;
+    check("the phone driver cannot act on another driver's ride", (await api(P.page, `/api/cabs/rides/${r3.id}/otp/verify`, "POST", { otp: "0000" })).status === 404
+      && (await api(P.page, `/api/cabs/rides/${r3.id}/start`, "POST")).status >= 400);
+    await go(P.page, "/cabs/driver");
+    await P.page.locator(`[data-ride="${r9.id}"] input[name=otp]`).fill(code9);
+    await P.page.locator(`[data-ride="${r9.id}"]`).getByRole("button", { name: "Confirm pickup" }).click();
+    check("the phone driver enters the rider's OTP: the ride is under way", await toast(P.page, "Pickup confirmed") && !!(await poll(async () => (await ride(r9.id)).status === "in_progress")));
+    check("…their phone shares its position", !!(await poll(async () => (await sql`select 1 from cab_driver_locations where driver_id = ${dr3.id}`).length > 0, 30000)));
+    await go(P.page, "/cabs/driver/profile");
+    check("Profile: the car of the current ride, and Sign out in place of the hub's", (await P.page.locator("[data-current-vehicle]").innerText()).includes("ZZC 01 AA 1111")
+      && await P.page.locator("[data-driver-sign-out]").isVisible() && (await P.page.getByText("Back to the App Hub").count()) === 0);
+    check("the phone driver completes the ride", (await api(P.page, `/api/cabs/rides/${r9.id}/complete`, "POST")).status === 200 && (await ride(r9.id)).status === "completed"
+      && (await sql`select 1 from cab_audit_log where ride_id = ${r9.id} and action = 'ride_completed' and actor_id = ${dr3.id}`).length === 1);
+    await go(P.page, "/cabs/driver/profile");
+    check("…and with no ride on, Profile says so", (await P.page.locator("[data-current-vehicle]").innerText()).includes("No ride right now"));
+    check("the phone driver goes offline and online again", (await api(P.page, "/api/cabs/driver/availability", "POST", { available: false })).status === 200
+      && (await sql`select is_available from cab_drivers where id = ${dr3.id}`)[0].is_available === false
+      && (await api(P.page, "/api/cabs/driver/availability", "POST", { available: true })).status === 200);
+
+    await sql`update cab_driver_sessions set expires_at = now() - interval '1 second' where driver_id = ${dr3.id}`;
+    await go(P.page, "/cabs/driver");
+    check("after 12 hours the session has ended: back to the driver sign-in", new URL(P.page.url()).pathname === "/cabs/driver-login");
+    if (process.env.CRON_SECRET) {
+      const cron = await P.page.evaluate(async (s) => { const r = await fetch("/api/cron/cleanup-uploads", { headers: { Authorization: `Bearer ${s}` } }); return { status: r.status, body: await r.json().catch(() => null) }; }, process.env.CRON_SECRET);
+      check("the daily cron deletes expired sessions and old codes", cron.body?.driverLogins?.sessions >= 1 && (await sql`select 1 from cab_driver_sessions where driver_id = ${dr3.id}`).length === 0, JSON.stringify(cron));
+    }
+
+    // The lock: five wrong tries.
+    const fresh = (await api(A.page, `/api/cabs/drivers/${dr3.id}/otp`, "POST")).body;
+    check("the OTP route answers the digits and the expiry, uncached", /^\d{6}$/.test(fresh?.otp) && !!fresh.expires_at);
+    const wrong2 = fresh.otp === "000000" ? "111111" : "000000";
+    const five = [];
+    for (let i = 0; i < 5; i++) five.push((await login(P.page, "9822007777", wrong2)).status);
+    const afterLock = await login(P.page, "9822007777", fresh.otp);
+    check("tries 1–4 are 401, the 5th is 429, and then even the right code is 429", five.join(",") === "401,401,401,401,429" && afterLock.status === 429
+      && afterLock.body?.error === "Too many wrong tries. Ask your admin for a new OTP.", five.join(",") + " " + JSON.stringify(afterLock));
+
+    // Signing out; and removing a driver ends their sign-in.
+    const again = (await api(A.page, `/api/cabs/drivers/${dr3.id}/otp`, "POST")).body;
+    check("a new code from the admin unlocks them", (await login(P.page, "9822007777", again.otp)).status === 200);
+    await go(P.page, "/cabs/driver/profile");
+    await P.page.locator("[data-driver-sign-out]").click();
+    await P.page.waitForURL((u) => u.pathname === "/cabs/driver-login").catch(() => {});
+    check("Sign out: back to the driver sign-in, the session is deleted, who-am-I is 401", new URL(P.page.url()).pathname === "/cabs/driver-login"
+      && (await sql`select 1 from cab_driver_sessions where driver_id = ${dr3.id}`).length === 0 && (await api(P.page, "/api/cabs/driver-me", "GET")).status === 401
+      && !(await P.ctx.cookies()).some((c) => c.name === "cab_driver_session" && c.value));
+    const last = (await api(A.page, `/api/cabs/drivers/${dr3.id}/otp`, "POST")).body;
+    await login(P.page, "9822007777", last.otp);
+    check("removing the driver ends their sign-in at once", (await api(A.page, `/api/cabs/drivers/${dr3.id}`, "DELETE")).status === 200
+      && await (async () => { await go(P.page, "/cabs/driver"); return new URL(P.page.url()).pathname === "/cabs/driver-login"; })()
+      && (await sql`select count(*)::int n from cab_driver_otps where driver_id = ${dr3.id}`)[0].n === 0);
+    await P.ctx.close();
   }
 
   section("cancelling");

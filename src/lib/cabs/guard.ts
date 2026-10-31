@@ -12,13 +12,14 @@ import { logError } from "@/lib/log-error";
 /** Role protection for the Cab Booking module, the same shape as Inventory's (src/lib/inventory/guard.ts). */
 
 /**
- * For pages and layouts of one section. Off looks like a page that does not exist; not signed in goes to the hub's sign-in; signed in
- * without one of that section's roles goes back to the hub's home (it is a separate application there). Cabs admins open Cabs Driver too.
+ * For pages and layouts of one section. Off looks like a page that does not exist; not signed in goes to the hub's sign-in (Cabs Driver:
+ * to the drivers' phone sign-in); signed in without one of that section's roles goes back to the hub's home (it is a separate application
+ * there). Cabs admins open Cabs Driver too.
  */
 async function requireSection(section: CabSection): Promise<CabUser> {
   if (!cabsEnabled()) notFound();
   const a = await resolveAccess();
-  if (a.status === "anonymous") redirect("/login");
+  if (a.status === "anonymous") redirect(section === "driver" ? "/cabs/driver-login" : "/login");
   if (await needsOwnPassword()) redirect("/change-password");
   if (!hasAnyRole(a.user, SECTION_ROLES[section])) redirect("/");
   return a.user;
@@ -51,9 +52,27 @@ function sameOrigin(req: NextRequest): boolean {
   }
 }
 
+/** One place that turns refusals, validation and database errors into clean JSON. */
+function failure(e: unknown): Response {
+  if (e instanceof CabsError) return fail(e.message, e.status);
+  if (e instanceof ZodError) return fail(e.issues[0]?.message ?? "Invalid input", 400, { issues: e.issues.map((i) => ({ path: i.path.join("."), message: i.message })) });
+  if (pgCode(e) === "23505") return fail("That already exists.", 409);
+  if (pgCode(e) === "23503") return fail("This is still in use.", 409);
+  // A table or column the code expects is missing: a Cab Booking database script has not been run on this database.
+  if (pgCode(e) === "42P01" || pgCode(e) === "42703") {
+    logError("[cabs] the database is missing a Cab Booking table or column: run the scripts/apply-00NN-cabs-*.sql that have not been run yet", e);
+    return fail("Cab Booking's database is not up to date. Tell your administrator: a Cab Booking database script needs to be run.", 503);
+  }
+  logError("[cabs] request failed", e);
+  return fail("Something went wrong. Please try again.", 500);
+}
+
+const isWrite = (req: NextRequest) => !["GET", "HEAD", "OPTIONS"].includes(req.method);
+
 /**
  * Wraps every route handler: 404 when the module is off, 401/403 for people who may not be here, a same-origin check on writes, and one
- * place that turns validation and database errors into clean JSON. `roles` lists the roles that may call it (any one is enough).
+ * place that turns validation and database errors into clean JSON. `roles` lists the roles that may call it (any one is enough). A driver
+ * signed in by phone holds cab_driver (see resolveAccess).
  */
 export function route<P extends Record<string, string> = Record<never, never>>(opts: { roles: CabRole[] }, fn: (c: Ctx<P>) => Promise<Response>) {
   return async (req: NextRequest, ctx: { params: Promise<P> }): Promise<Response> => {
@@ -63,21 +82,26 @@ export function route<P extends Record<string, string> = Record<never, never>>(o
       if (a.status === "anonymous") return fail("Please sign in.", 401);
       if (await needsOwnPassword()) return fail("Choose your own password first: you are still using the temporary one.", 403);
       if (!hasAnyRole(a.user, opts.roles)) return fail("Not allowed.", 403);
-      const write = !["GET", "HEAD", "OPTIONS"].includes(req.method);
-      if (write && !sameOrigin(req)) return fail("Not allowed.", 403);
+      if (isWrite(req) && !sameOrigin(req)) return fail("Not allowed.", 403);
       return await fn({ req, user: a.user, params: await ctx.params });
     } catch (e) {
-      if (e instanceof CabsError) return fail(e.message, e.status);
-      if (e instanceof ZodError) return fail(e.issues[0]?.message ?? "Invalid input", 400, { issues: e.issues.map((i) => ({ path: i.path.join("."), message: i.message })) });
-      if (pgCode(e) === "23505") return fail("That already exists.", 409);
-      if (pgCode(e) === "23503") return fail("This is still in use.", 409);
-      // A table or column the code expects is missing: a Cab Booking database script has not been run on this database.
-      if (pgCode(e) === "42P01" || pgCode(e) === "42703") {
-        logError("[cabs] the database is missing a Cab Booking table or column: run the scripts/apply-00NN-cabs-*.sql that have not been run yet", e);
-        return fail("Cab Booking's database is not up to date. Tell your administrator: a Cab Booking database script needs to be run.", 503);
-      }
-      logError("[cabs] request failed", e);
-      return fail("Something went wrong. Please try again.", 500);
+      return failure(e);
+    }
+  };
+}
+
+/**
+ * For the drivers' sign-in, sign-out and "who am I" only, which are called by people with no sign-in yet: the switch, the same-origin
+ * check on writes and the error handling of route(), and no roles. Each handler decides for itself what to answer.
+ */
+export function publicRoute(fn: (c: { req: NextRequest }) => Promise<Response>) {
+  return async (req: NextRequest): Promise<Response> => {
+    if (!cabsEnabled()) return new NextResponse("Not found", { status: 404 });
+    try {
+      if (isWrite(req) && !sameOrigin(req)) return fail("Not allowed.", 403);
+      return await fn({ req });
+    } catch (e) {
+      return failure(e);
     }
   };
 }

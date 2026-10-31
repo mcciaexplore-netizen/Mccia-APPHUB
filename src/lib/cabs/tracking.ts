@@ -39,19 +39,18 @@ export type FleetEntry = {
 
 /**
  * Each driver's latest position from the last 24 hours, with the ride they are on now (in progress first, else their next assigned one)
- * and its vehicle (else their usual one). Drivers who have sent nothing in that time are not on the map.
+ * and that ride's vehicle (drivers have no car of their own). Drivers who have sent nothing in that time are not on the map.
  */
 export async function fleet(): Promise<FleetEntry[]> {
   const r = rows<Record<string, unknown>>(await db.execute(sql`
     select d.id as driver_id, d.name as driver_name, d.is_available, l.latitude, l.longitude, l.heading, l.speed, l.recorded_at,
       cr.id as current_ride_id, cr.status::text as current_ride_status, cr.pickup || ' → ' || cr.dropoff as current_ride,
-      coalesce(cr.vehicle_plate, v.number_plate) as vehicle_plate
+      cr.vehicle_plate
     from cab_drivers d
     join lateral (select latitude, longitude, heading, speed, recorded_at from cab_driver_locations
       where driver_id = d.id and recorded_at > now() - make_interval(hours => ${KEEP_HOURS}) order by recorded_at desc limit 1) l on true
     left join lateral (select id, status, pickup, dropoff, vehicle_plate from cab_rides
       where driver_id = d.id and status in ('in_progress', 'assigned') order by (status = 'in_progress') desc, scheduled_for limit 1) cr on true
-    left join cab_vehicles v on v.id = d.vehicle_id
     order by d.name`));
   return r.map((x) => ({
     driver_id: String(x.driver_id), driver_name: String(x.driver_name), is_available: !!x.is_available, latitude: Number(x.latitude), longitude: Number(x.longitude),

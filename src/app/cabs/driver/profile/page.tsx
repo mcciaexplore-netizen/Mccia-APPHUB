@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronLeft, LogOut } from "lucide-react";
 import { logout } from "@/actions/auth";
 import { Avatar } from "@/components/cabs/CabsShell";
+import { DriverSignOut } from "@/components/cabs/DriverSignOut";
 import { driverProfile, viewedDriver } from "@/lib/cabs/drivers";
 import { requireDriverPage } from "@/lib/cabs/guard";
 import { AdminDriverPicker } from "@/components/cabs/AdminDriverPicker";
@@ -10,7 +11,10 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 export const metadata = { title: "Profile · Cabs Driver · MCCIA App Hub" };
 
-/** Profile: the driver's details, their vehicle and how many rides they have completed; and the ways out. */
+/**
+ * Profile: the driver's details, the car of their current ride (drivers have no car of their own) and how many rides they have completed;
+ * and the ways out. A driver signed in by phone signs out of the driver app only (they have no hub account).
+ */
 export default async function DriverProfilePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireDriverPage();
   const view = await viewedDriver(user, one((await searchParams).driver));
@@ -29,15 +33,17 @@ export default async function DriverProfilePage({ searchParams }: { searchParams
       </section>
       {p && (
         <section className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase tracking-widest text-muted">Vehicle</p>
-            <p className="mt-1 font-bold text-ink">{p.vehiclePlate ?? "None assigned"}</p>{p.vehicleModel && <p className="text-sm text-muted">{p.vehicleModel}</p>}</div>
+          <div className="rounded-xl bg-white p-4 shadow-sm" data-current-vehicle><p className="text-xs font-bold uppercase tracking-widest text-muted">Current ride&apos;s car</p>
+            <p className="mt-1 font-bold text-ink">{p.vehiclePlate ?? "No ride right now"}</p>{p.vehicleModel && <p className="text-sm text-muted">{p.vehicleModel}</p>}</div>
           <div className="rounded-xl bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase tracking-widest text-muted">Rides completed</p>
             <p className="mt-1 text-3xl font-extrabold text-ink" data-completed>{p.completed}</p></div>
         </section>
       )}
       <section className="divide-y divide-black/5 overflow-hidden rounded-xl bg-white shadow-sm">
-        <Link href="/" className="flex min-h-14 items-center gap-3 px-5 text-base font-semibold text-ink hover:bg-[#f0f2f5]"><ChevronLeft size={18} aria-hidden /> Back to the App Hub</Link>
-        <form action={logout}><button className="flex min-h-14 w-full items-center gap-3 px-5 text-left text-base font-semibold text-brand-red hover:bg-[#f0f2f5]"><LogOut size={18} aria-hidden /> Sign out</button></form>
+        {user.via === "phone" ? <DriverSignOut /> : <>
+          <Link href="/" className="flex min-h-14 items-center gap-3 px-5 text-base font-semibold text-ink hover:bg-[#f0f2f5]"><ChevronLeft size={18} aria-hidden /> Back to the App Hub</Link>
+          <form action={logout}><button className="flex min-h-14 w-full items-center gap-3 px-5 text-left text-base font-semibold text-brand-red hover:bg-[#f0f2f5]"><LogOut size={18} aria-hidden /> Sign out</button></form>
+        </>}
       </section>
     </div>
   );

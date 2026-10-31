@@ -19,7 +19,7 @@ export default async function CabsAdminDashboard() {
   return (
     <div className="page-enter space-y-6">
       <div><h1 className="text-2xl">Cabs Admin</h1><p className="text-sm text-muted">Assign drivers and cars to rides, and keep the fleet in order. {s.drivers} {s.drivers === 1 ? "driver" : "drivers"} in all.</p></div>
-      <FleetMap drivers={drivers.map((d) => ({ id: d.id, name: d.name, isAvailable: d.isAvailable, vehiclePlate: d.vehiclePlate }))} />
+      <FleetMap drivers={drivers.map((d) => ({ id: d.id, name: d.name, isAvailable: d.isAvailable }))} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {tiles.map(([label, n, href, tone]) => (
           <Link key={label} href={href} className="glass glass-hover block p-4" data-stat={label}>

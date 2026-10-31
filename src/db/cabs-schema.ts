@@ -32,18 +32,54 @@ export const cabVehicles = pgTable("cab_vehicles", {
 
 /**
  * Drivers, added on Cabs Admin → Drivers: a name and a phone number (one driver per phone), and optionally an email (kept lower case, one
- * driver per email). A driver need not have a hub account. Someone signed in to the hub whose email is a driver's opens Cabs Driver; that
- * is the only link between the two, so a driver without an email cannot use the driver app (an admin starts and completes their rides).
+ * driver per email). A driver need not have a hub account: they sign in to Cabs Driver with their phone and a one-time code an admin gives
+ * them (cab_driver_otps, cab_driver_sessions). Someone signed in to the hub whose email is a driver's also opens Cabs Driver. A driver has
+ * no car of their own: the car is chosen for each ride when it is assigned.
  */
 export const cabDrivers = pgTable("cab_drivers", {
   id: id(),
   name: text("name").notNull(),
   email: text("email").unique(),
   phone: text("phone").notNull().unique(),
-  vehicleId: uuid("vehicle_id").references(() => cabVehicles.id, { onDelete: "set null" }),
   isAvailable: boolean("is_available").notNull().default(true),
   createdAt: createdAt(),
 });
+
+/**
+ * A driver's sign-in to Cabs Driver by phone, made when they enter a right code. `token` is the SHA-256 of the cookie's value (the value
+ * itself is only ever in the driver's cookie). Lasts 12 hours; expired ones are deleted by the daily cron.
+ */
+export const cabDriverSessions = pgTable(
+  "cab_driver_sessions",
+  {
+    id: id(),
+    driverId: uuid("driver_id").notNull().references(() => cabDrivers.id, { onDelete: "cascade" }),
+    token: text("token").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("cab_driver_sessions_driver_idx").on(t.driverId), index("cab_driver_sessions_expires_idx").on(t.expiresAt)],
+);
+
+/**
+ * The 6-digit codes an admin makes on Cabs Admin → Drivers and gives the driver by hand (no SMS). Only a keyed SHA-256 of the code is kept.
+ * A new code replaces the driver's unused ones; a code works once, for 24 hours, and five wrong tries lock it.
+ */
+export const cabDriverOtps = pgTable(
+  "cab_driver_otps",
+  {
+    id: id(),
+    driverId: uuid("driver_id").notNull().references(() => cabDrivers.id, { onDelete: "cascade" }),
+    otpHash: text("otp_hash").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdById: uuid("created_by_id").notNull(),
+    createdByName: text("created_by_name").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("cab_driver_otps_driver_idx").on(t.driverId, t.createdAt.desc()), index("cab_driver_otps_expires_idx").on(t.expiresAt)],
+);
 
 export const cabRides = pgTable(
   "cab_rides",

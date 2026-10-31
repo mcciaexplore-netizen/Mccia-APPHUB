@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { branches, users } from "@/db/schema";
 import { getCurrentUser as hostCurrentUser } from "@/lib/permissions";
 import { CABS_ADMIN_URL_PATTERN, CABS_USER_URL_PATTERN, cabRolesFor, type CabRole } from "./cabs.manifest";
+import { getDriverSession } from "./driver-session";
 
 /**
  * The only file in the Cab Booking module that knows about the host: its session, its users and its application access. Everything else
@@ -12,8 +13,15 @@ import { CABS_ADMIN_URL_PATTERN, CABS_USER_URL_PATTERN, cabRolesFor, type CabRol
  */
 
 export type { CabRole };
-/** `driverId`: their row in cab_drivers when they are a driver. `branchName`: their branch in the hub, copied onto the rides they book. */
-export type CabUser = { id: string; name: string; email: string; roles: CabRole[]; hubRole: string; branchName: string | null; driverId: string | null; driverAvailable: boolean | null };
+/**
+ * `driverId`: their row in cab_drivers when they are a driver. `branchName`: their branch in the hub, copied onto the rides they book.
+ * `via`: "hub" for someone signed in to the hub; "phone" for a driver signed in to Cabs Driver with their phone (see driver-session.ts),
+ * who has no hub account: their `id` is their driver id, they have no email, and their only role is cab_driver.
+ */
+export type CabUser = {
+  id: string; name: string; email: string; roles: CabRole[]; hubRole: string; branchName: string | null; driverId: string | null; driverAvailable: boolean | null;
+  via: "hub" | "phone";
+};
 export type Access = { status: "anonymous" } | { status: "ok"; user: CabUser };
 
 type Standing = { userAccess: boolean; adminAppAdmin: boolean; driverId: string | null; driverAvailable: boolean | null };
@@ -42,16 +50,23 @@ async function cabsStanding(userId: string, email: string): Promise<Standing> {
   return { userAccess: !!r?.user_access, adminAppAdmin: !!r?.admin_app_admin, driverId: r?.driver_id ?? null, driverAvailable: r?.driver_available ?? null };
 }
 
-/** Who is asking and their roles here (see cabs.manifest.ts). Someone signed in with no role at all is still "ok", with no roles. */
+/**
+ * Who is asking and their roles here (see cabs.manifest.ts). Someone signed in with no role at all is still "ok", with no roles. Someone
+ * signed in to the hub is that person; failing that, a driver signed in by phone is a driver and nothing else.
+ */
 export const resolveAccess = cache(async (): Promise<Access> => {
   const host = await hostCurrentUser();
-  if (!host) return { status: "anonymous" };
+  if (!host) {
+    const d = await getDriverSession();
+    if (!d) return { status: "anonymous" };
+    return { status: "ok", user: { id: d.driverId, name: d.name, email: "", roles: ["cab_driver"], hubRole: "", branchName: null, driverId: d.driverId, driverAvailable: d.isAvailable, via: "phone" } };
+  }
   const [standing, [branch]] = await Promise.all([
     cabsStanding(host.id, host.email),
     host.branchId ? db.select({ name: branches.name }).from(branches).where(eq(branches.id, host.branchId)) : Promise.resolve([]),
   ]);
   const roles = cabRolesFor({ hubRole: host.role, userAccess: standing.userAccess, adminAppAdmin: standing.adminAppAdmin, isDriver: !!standing.driverId });
-  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles, hubRole: host.role, branchName: branch?.name ?? null, driverId: standing.driverId, driverAvailable: standing.driverAvailable } };
+  return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles, hubRole: host.role, branchName: branch?.name ?? null, driverId: standing.driverId, driverAvailable: standing.driverAvailable, via: "hub" } };
 });
 
 /** Whether the person is still on the temporary password they were emailed: they must choose their own before using the module. */

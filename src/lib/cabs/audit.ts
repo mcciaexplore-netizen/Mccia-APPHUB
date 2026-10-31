@@ -33,6 +33,8 @@ export const AUDIT_ACTIONS = {
   driver_updated: "Driver's vehicle changed",
   driver_availability: "Driver availability changed",
   driver_removed: "Driver removed",
+  driver_login_otp: "Driver sign-in OTP made",
+  driver_signed_in: "Driver signed in by phone",
   vehicle_added: "Vehicle added",
   vehicle_updated: "Vehicle edited",
   vehicle_deactivated: "Vehicle deactivated",
@@ -40,7 +42,7 @@ export const AUDIT_ACTIONS = {
 export type CabAuditAction = keyof typeof AUDIT_ACTIONS;
 export const isAuditAction = (v: string): v is CabAuditAction => Object.hasOwn(AUDIT_ACTIONS, v);
 
-type Actor = Pick<CabUser, "id" | "name">;
+type Actor = Pick<CabUser, "id" | "name"> & Partial<Pick<CabUser, "via">>;
 
 /**
  * Records one action, after it has happened: a failure to record it is logged, not reported, because the change the person made is saved
@@ -53,7 +55,8 @@ export async function writeCabAudit(actor: Actor, action: CabAuditAction, entry:
   } catch (e) {
     logError(`[cabs] audit entry not saved: ${action}`, e);
   }
-  if (action.startsWith("driver_") || action.startsWith("vehicle_")) {
+  // A driver signed in by phone has no hub account, so their own actions (going online, signing in) stay in the module's log only.
+  if ((action.startsWith("driver_") || action.startsWith("vehicle_")) && actor.via !== "phone") {
     try {
       await writeAudit(actor, [{ action: `cabs.${action}`, targetType: "system", targetLabel: entry.subject.slice(0, 200), details: entry.details ?? {} }]);
     } catch (e) {

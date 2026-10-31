@@ -285,7 +285,6 @@ export async function myRideStatuses(userId: string): Promise<{ id: string; stat
 }
 
 /** Available drivers, for assigning a ride (with their usual vehicle, offered first). */
-export async function availableDrivers(): Promise<{ id: string; name: string; vehicleId: string | null }[]> {
-  return rows<{ id: string; name: string; vehicle_id: string | null }>(await db.execute(sql`select id, name, vehicle_id from cab_drivers where is_available order by name`))
-    .map((d) => ({ id: d.id, name: d.name, vehicleId: d.vehicle_id }));
+export async function availableDrivers(): Promise<{ id: string; name: string }[]> {
+  return rows<{ id: string; name: string }>(await db.execute(sql`select id, name from cab_drivers where is_available order by name`));
 }

@@ -126,20 +126,16 @@ export const vehicleInput = z.object({
 });
 export const vehicleUpdate = vehicleInput.partial().extend({ isActive: z.boolean().optional() });
 
-const optionalId = z.union([idSchema, z.literal(""), z.null()]).optional().transform((v) => (v ? v : null));
-
 /** A phone number as people type it, kept as its digits (with a leading + when given). */
 export const normalisePhone = (v: string) => { const t = v.trim(); return (t.startsWith("+") ? "+" : "") + t.replace(/\D/g, ""); };
 
-/** A driver: a name and a phone; an email only if they will use the driver app (it must be the email they sign in to the hub with). */
+/** A driver: a name and a phone (which they sign in to Cabs Driver with); an email only if they also sign in to the hub with it. */
 export const driverInput = z.object({
   name: text("name", 100),
   email: z.union([z.literal(""), z.null(), z.string().trim().toLowerCase().email("Enter a valid email address, or leave it empty.").max(254)]).optional()
     .transform((v) => (v ? v : null)),
   phone: z.string().transform(normalisePhone).pipe(z.string().regex(/^\+?\d{10,15}$/, "Enter a phone number of 10 to 15 digits.")),
-  vehicleId: optionalId,
 });
-export const driverUpdate = z.object({ vehicleId: optionalId });
 export const availabilityInput = z.object({ available: z.boolean() });
 
 /* ------------------------------------------------------------ phase 3: maintenance, costs, invoices */

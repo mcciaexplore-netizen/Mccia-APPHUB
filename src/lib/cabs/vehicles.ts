@@ -14,18 +14,17 @@ const rows = <T,>(res: unknown) => (res as { rows: T[] }).rows;
 const pgCode = (e: unknown) => (e as { code?: string; cause?: { code?: string } })?.code ?? (e as { cause?: { code?: string } })?.cause?.code;
 const DUPLICATE = "A vehicle with that number plate already exists.";
 
-export type VehicleRow = { id: string; numberPlate: string; model: string; capacity: number; isActive: boolean; drivers: string | null; activeRides: number };
+export type VehicleRow = { id: string; numberPlate: string; model: string; capacity: number; isActive: boolean; activeRides: number };
 
 export async function listVehicles(): Promise<VehicleRow[]> {
   const r = rows<Record<string, unknown>>(await db.execute(sql`
     select v.id, v.number_plate, v.model, v.capacity, v.is_active,
-      (select string_agg(d.name, ', ' order by d.name) from cab_drivers d where d.vehicle_id = v.id) as drivers,
       (select count(*) from cab_rides r where r.vehicle_id = v.id and r.status in ('assigned', 'in_progress'))::int as active_rides
     from cab_vehicles v order by v.is_active desc, v.number_plate`));
-  return r.map((x) => ({ id: String(x.id), numberPlate: String(x.number_plate), model: String(x.model), capacity: Number(x.capacity), isActive: !!x.is_active, drivers: (x.drivers as string) ?? null, activeRides: Number(x.active_rides) }));
+  return r.map((x) => ({ id: String(x.id), numberPlate: String(x.number_plate), model: String(x.model), capacity: Number(x.capacity), isActive: !!x.is_active, activeRides: Number(x.active_rides) }));
 }
 
-/** Active vehicles, for assigning a ride and a driver's car. */
+/** Active vehicles, for assigning a ride. */
 export async function activeVehicles(): Promise<{ id: string; numberPlate: string; model: string; capacity: number }[]> {
   return (await listVehicles()).filter((v) => v.isActive).map(({ id, numberPlate, model, capacity }) => ({ id, numberPlate, model, capacity }));
 }
