@@ -14,7 +14,7 @@ import { ADMIN_COOKIE, ADMIN_IDLE, SESSION_COOKIE, cookieOptions, sign, verify }
  * hub sign-in, only the driver pages and the few routes the driver app calls go through (DRIVER_PATH), and each of those checks the
  * driver's own sign-in itself, sending anyone without one to /cabs/driver-login. Someone signed in to the hub is handled as before.
  */
-const DRIVER_PATH = /^\/(?:cabs\/driver(?:\/.*)?|cabs\/driver-login|api\/cabs\/(?:driver-login|driver-logout|driver-me|driver\/availability|location|rides\/[^/]+\/(?:otp\/verify|start|complete)))$/;
+const DRIVER_PATH = /^\/(?:cabs\/driver(?:\/.*)?|cabs\/driver-login|api\/cabs\/(?:driver-access|driver-login|driver-logout|driver-me|driver\/availability|location|rides\/[^/]+\/(?:otp\/verify|start|complete)))$/;
 
 export function proxy(req: NextRequest) {
   const { pathname, search, protocol } = req.nextUrl;

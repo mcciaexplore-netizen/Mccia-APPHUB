@@ -35,6 +35,7 @@ export const AUDIT_ACTIONS = {
   driver_removed: "Driver removed",
   driver_login_otp: "Driver sign-in OTP made",
   driver_signed_in: "Driver signed in by phone",
+  driver_access_requested: "Driver asked for a login OTP",
   vehicle_added: "Vehicle added",
   vehicle_updated: "Vehicle edited",
   vehicle_deactivated: "Vehicle deactivated",

@@ -32,7 +32,7 @@ function LoginOtpDialog({ code, pending, onAgain, onClose }: { code: LoginOtp; p
           <button type="button" className="btn btn-ghost btn-sm" onClick={copy}><Copy size={14} /> Copy</button>
         </div>
         <p className="text-sm text-muted" data-otp-valid>Valid for 24 hours (until {istTime(code.expiresAt)} tomorrow). It works once; making a new one cancels this one.</p>
-        <p className="text-xs text-muted">The driver opens <b>/cabs/driver-login</b>, enters their phone number and this OTP. Only you see these digits: they are not saved.</p>
+        <p className="text-xs text-muted">The driver opens <b>/cabs/driver-login</b>, enters their name and phone, then this OTP. Only you see these digits: they are not saved.</p>
         <div className="flex justify-end gap-2">
           <button type="button" className="btn btn-ghost btn-sm" disabled={pending} onClick={onAgain}>New OTP</button>
           <button type="button" className="btn btn-primary btn-sm" onClick={onClose}>Done</button>

@@ -404,7 +404,7 @@ const unwrapped = inventoryRoutes.flatMap((f) => {
 eq(`guards: every handler in the ${inventoryRoutes.length} Inventory route files goes through the Inventory guard's route()`, [inventoryRoutes.length > 0, unwrapped], [true, []]);
 // The same for Cab Booking: every handler is wrapped in its guard's route(), which always names the roles that may call it. Only the drivers'
 // sign-in, sign-out and "who am I" (called before anyone is signed in) use publicRoute() instead.
-const CAB_PUBLIC = ["api/cabs/driver-login/route.ts", "api/cabs/driver-logout/route.ts", "api/cabs/driver-me/route.ts"];
+const CAB_PUBLIC = ["api/cabs/driver-access/route.ts", "api/cabs/driver-login/route.ts", "api/cabs/driver-logout/route.ts", "api/cabs/driver-me/route.ts"];
 const cabRoutes = allRouteFiles.filter((f) => /^api\/cabs\//.test(f));
 const cabUnwrapped = cabRoutes.flatMap((f) => {
   const src = readFileSync(new URL(f, appDir), "utf8");
@@ -413,8 +413,8 @@ const cabUnwrapped = cabRoutes.flatMap((f) => {
   const wrapped = CAB_PUBLIC.includes(f) ? /^\s*=\s*publicRoute\(/ : /^\s*=\s*route(<[^>]*>)?\(\{ roles: \[/;
   return handlers.filter(([, , rest]) => !imported || !wrapped.test(rest)).map(([, method]) => `${f}:${method}`);
 });
-eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles (the 3 driver sign-in routes: publicRoute())`,
-  [cabRoutes.length, cabUnwrapped, CAB_PUBLIC.filter((f) => cabRoutes.includes(f)).length], [33, [], 3]);
+eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles (the 4 driver sign-in routes: publicRoute())`,
+  [cabRoutes.length, cabUnwrapped, CAB_PUBLIC.filter((f) => cabRoutes.includes(f)).length], [34, [], 4]);
 
 // The application check must never be steered at an internal network
 eq("net guard: private, loopback, metadata and reserved IPv4 are refused", ["127.0.0.1", "10.0.0.5", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255"].map(isPublicAddress), Array(10).fill(false));

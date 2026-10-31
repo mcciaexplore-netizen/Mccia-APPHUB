@@ -668,10 +668,33 @@ try {
     await go(P.page, "/cabs/driver");
     check("no sign-in: Cabs Driver goes to the driver sign-in, not the hub's", new URL(P.page.url()).pathname === "/cabs/driver-login");
     const loginText = await P.page.locator("main").innerText();
-    check("the sign-in page: MCCIA logo, \"Driver Login\", phone and OTP boxes, a Login button, \"Contact your admin if you need an OTP\", 400px at most",
+    check("the sign-in page, step 1: MCCIA logo, \"Driver Login\", Name and Phone, Request Access, no OTP box yet, 400px at most",
       await P.page.locator('main img[alt="MCCIA"]').isVisible() && /Driver Login/.test(loginText) && /Contact your admin if you need an OTP/.test(loginText)
-      && (await P.page.locator("input[name=phone]").getAttribute("type")) === "tel" && (await P.page.locator("input[name=otp]").getAttribute("inputmode")) === "numeric"
-      && await P.page.getByRole("button", { name: "Login" }).isDisabled() && (await P.page.locator("main").evaluate((m) => m.getBoundingClientRect().width)) <= 400);
+      && await P.page.locator("input[name=name]").isVisible() && (await P.page.locator("input[name=phone]").getAttribute("type")) === "tel"
+      && await P.page.getByRole("button", { name: "Request Access" }).isDisabled() && (await P.page.locator("input[name=otp]").count()) === 0
+      && (await P.page.locator("main").evaluate((m) => m.getBoundingClientRect().width)) <= 400);
+    await P.page.fill("input[name=name]", "Nobody");
+    await P.page.fill("input[name=phone]", "90000 00001");
+    await P.page.getByRole("button", { name: "Request Access" }).click();
+    await P.page.locator("[data-login-error]").waitFor();
+    check("step 1, a phone that is not a driver's: \"Phone number not found. Contact your admin to be added as a driver.\", and no OTP box",
+      (await P.page.locator("[data-login-error]").innerText()) === "Phone number not found. Contact your admin to be added as a driver." && (await P.page.locator("input[name=otp]").count()) === 0);
+    const asked = () => notices(admin).then((ns) => ns.filter((n) => n.title === "Driver ZZC Phone Driver is requesting login OTP").length);
+    await P.page.fill("input[name=name]", "Phone Driver");
+    await P.page.fill("input[name=phone]", "+91 98220 07777");
+    await P.page.getByRole("button", { name: "Request Access" }).click();
+    await P.page.locator("[data-otp-requested]").waitFor();
+    check("step 1, a driver's phone: \"OTP requested. Ask your admin for the OTP and enter it below.\", then the OTP box and Login",
+      (await P.page.locator("[data-otp-requested]").innerText()).includes("OTP requested. Ask your admin for the OTP and enter it below.")
+      && (await P.page.locator("input[name=otp]").getAttribute("inputmode")) === "numeric" && /Enter the OTP your admin gave you/.test(await P.page.locator("main").innerText())
+      && await P.page.getByRole("button", { name: "Login" }).isDisabled());
+    check("…the Cabs admins get a bell notice \"Driver ZZC Phone Driver is requesting login OTP\" (the name they gave the driver)", (await poll(asked)) === 1);
+    check("asking again soon tells them only once; a staffer is not told", (await api(P.page, "/api/cabs/driver-access", "POST", { name: "Phone Driver", phone: "9822007777" })).status === 200
+      && (await asked()) === 1 && !(await notices(staffer)).some((n) => n.title.includes("requesting login OTP")));
+    check("a request without a name is refused (400)", (await api(P.page, "/api/cabs/driver-access", "POST", { name: " ", phone: "9822007777" })).status === 400);
+    await P.page.locator("[data-back]").click();
+    check("← Back returns to step 1, with the name and phone editable", await P.page.getByRole("button", { name: "Request Access" }).isVisible()
+      && await P.page.locator("input[name=phone]").isEditable() && (await P.page.locator("input[name=otp]").count()) === 0);
     check("no sign-in: the rest stays behind the hub's sign-in (Cabs Admin, MCCIA Cabs, admin routes)", await (async () => { await go(P.page, "/cabs/admin"); return new URL(P.page.url()).pathname === "/login"; })()
       && await (async () => { await go(P.page, "/cabs"); return new URL(P.page.url()).pathname === "/login"; })()
       && await gated(P.page, "/api/cabs/drivers") && await gated(P.page, `/api/cabs/drivers/${dr3.id}/otp`, "POST") && await gated(P.page, `/api/cabs/rides/${r8.id}/assign`, "POST"));
@@ -699,14 +722,16 @@ try {
     const wrong = shown2 === "000000" ? "111111" : "000000";
     const bad = await login(P.page, "9822007777", wrong);
     const unknown = await login(P.page, "9000000001", shown2);
-    check("a wrong OTP and an unknown phone get the same 401 \"Invalid phone or OTP\"; the wrong one counts a try", bad.status === 401 && bad.body?.error === "Invalid phone or OTP"
-      && unknown.status === 401 && unknown.body?.error === "Invalid phone or OTP" && (await sql`select attempts from cab_driver_otps where driver_id = ${dr3.id} and used_at is null`)[0].attempts === triesSoFar + 1);
+    check("a wrong OTP: 401 \"Invalid OTP. Try again.\", and it counts a try; an unknown phone: 404 \"Phone number not found…\"", bad.status === 401 && bad.body?.error === "Invalid OTP. Try again."
+      && unknown.status === 404 && /^Phone number not found/.test(unknown.body?.error) && (await sql`select attempts from cab_driver_otps where driver_id = ${dr3.id} and used_at is null`)[0].attempts === triesSoFar + 1);
     check("a malformed OTP is refused (400)", (await login(P.page, "9822007777", "12345")).status === 400);
     const crossSite = await fetch(BASE + "/api/cabs/driver-login", { method: "POST", headers: { "Content-Type": "application/json", Origin: "https://evil.example" }, body: JSON.stringify({ phone: "9822007777", otp: shown2 }) });
     check("a sign-in posted from another site is refused (403), and uses no try", crossSite.status === 403 && (await sql`select attempts from cab_driver_otps where driver_id = ${dr3.id} and used_at is null`)[0].attempts === triesSoFar + 1);
 
     await go(P.page, "/cabs/driver-login");
+    await P.page.fill("input[name=name]", "Phone Driver");
     await P.page.fill("input[name=phone]", "+91 98220 07777");
+    await P.page.getByRole("button", { name: "Request Access" }).click();
     await P.page.fill("input[name=otp]", shown2);
     await P.page.getByRole("button", { name: "Login" }).click();
     await P.page.waitForURL((u) => u.pathname === "/cabs/driver", { timeout: 30000 }).catch(() => {});
@@ -774,7 +799,7 @@ try {
     for (let i = 0; i < 5; i++) five.push((await login(P.page, "9822007777", wrong2)).status);
     const afterLock = await login(P.page, "9822007777", fresh.otp);
     check("tries 1–4 are 401, the 5th is 429, and then even the right code is 429", five.join(",") === "401,401,401,401,429" && afterLock.status === 429
-      && afterLock.body?.error === "Too many wrong tries. Ask your admin for a new OTP.", five.join(",") + " " + JSON.stringify(afterLock));
+      && afterLock.body?.error === "OTP locked. Ask your admin for a new OTP.", five.join(",") + " " + JSON.stringify(afterLock));
 
     // Signing out; and removing a driver ends their sign-in.
     const again = (await api(A.page, `/api/cabs/drivers/${dr3.id}/otp`, "POST")).body;

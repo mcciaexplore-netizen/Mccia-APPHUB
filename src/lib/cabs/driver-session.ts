@@ -8,13 +8,16 @@ import { db } from "@/db";
 import { writeCabAudit } from "./audit";
 import { CabsError } from "./errors";
 import type { CabUser } from "./host-adapter";
+import { driverAccessRequested } from "./notify";
 import {
-  DRIVER_SESSION_COOKIE, DRIVER_SESSION_HOURS, LOGIN_LOCKED, LOGIN_MAX_ATTEMPTS, LOGIN_OTP_HOURS, LOGIN_REFUSED, loginPhone, pickDriver,
+  ACCESS_NOTICE_MINUTES, DRIVER_SESSION_COOKIE, DRIVER_SESSION_HOURS, LOGIN_LOCKED, LOGIN_MAX_ATTEMPTS, LOGIN_OTP_HOURS, LOGIN_REFUSED, PHONE_NOT_FOUND,
+  loginPhone, pickDriver,
 } from "./driver-login-rules";
 
 /**
- * Drivers' sign-in to Cabs Driver by phone, for drivers without a hub account. A Cabs admin makes a 6-digit code on Cabs Admin → Drivers
- * and gives it to the driver by hand (no SMS); the driver enters their phone and the code on /cabs/driver-login and gets a 12-hour session.
+ * Drivers' sign-in to Cabs Driver by phone, for drivers without a hub account, in two steps on /cabs/driver-login: the driver gives their
+ * name and phone and asks for access (the Cabs admins get a bell notice); a Cabs admin makes a 6-digit code on Cabs Admin → Drivers and
+ * gives it to the driver by hand (no SMS); the driver enters it and gets a 12-hour session.
  *
  * Nothing that would let someone sign in is stored readable: a code is kept as an HMAC-SHA256 (keyed with AUTH_SECRET and the driver's id,
  * so a copy of the table cannot be tried against the million possible codes), and a session as the SHA-256 of the cookie's random value.
@@ -55,17 +58,34 @@ export async function issueLoginOtp(driverId: string, actor: Actor): Promise<{ o
   return { otp, expiresAt: new Date(row.expires_at), name: row.name };
 }
 
-/**
- * Signs a driver in with their phone and code. Right: a new session, whose cookie value is returned. Wrong, used, expired, or an unknown
- * phone: 401 with the same message. The fifth wrong try on a code (and any try after it): 429.
- */
-export async function loginWithOtp(rawPhone: string, otp: string): Promise<{ token: string; driver: { id: string; name: string } }> {
+/** The driver a phone number means (see pickDriver), or a 404 saying it is not a driver's. */
+async function driverByPhone(rawPhone: string): Promise<{ id: string; name: string; phone: string }> {
   const phone = loginPhone(rawPhone);
-  if (!phone) throw new CabsError(LOGIN_REFUSED, 401);
+  if (!phone) throw new CabsError(PHONE_NOT_FOUND, 404);
   const candidates = rows<{ id: string; name: string; phone: string }>(await db.execute(sql`
     select id, name, phone from cab_drivers where phone = ${phone.exact} or right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = ${phone.last10}`));
   const driver = pickDriver(candidates, phone);
-  if (!driver) throw new CabsError(LOGIN_REFUSED, 401);
+  if (!driver) throw new CabsError(PHONE_NOT_FOUND, 404);
+  return driver;
+}
+
+/**
+ * Step 1: a driver asks for access with their name and phone. A phone that is not a driver's: 404. Otherwise the Cabs admins are told
+ * (at most once every 15 minutes per driver), under the name the admins gave the driver. The name typed is only recorded in the audit log.
+ */
+export async function requestAccess(name: string, rawPhone: string): Promise<{ name: string }> {
+  const driver = await driverByPhone(rawPhone);
+  await driverAccessRequested(driver, ACCESS_NOTICE_MINUTES);
+  await writeCabAudit({ id: driver.id, name: driver.name, via: "phone" } as Actor, "driver_access_requested", { subject: driver.name, details: { nameGiven: name } });
+  return { name: driver.name };
+}
+
+/**
+ * Step 2: signs a driver in with their phone and code. Right: a new session, whose cookie value is returned. Wrong, used or expired: 401.
+ * The fifth wrong try on a code (and any try after it): 429. A phone that is not a driver's: 404.
+ */
+export async function loginWithOtp(rawPhone: string, otp: string): Promise<{ token: string; driver: { id: string; name: string } }> {
+  const driver = await driverByPhone(rawPhone);
   const hash = otpHash(driver.id, otp);
   const [tried] = rows<{ ok: boolean; attempts: number }>(await db.execute(sql`
     with o as (select id from cab_driver_otps where driver_id = ${driver.id} and used_at is null and expires_at > now() and attempts < ${LOGIN_MAX_ATTEMPTS}

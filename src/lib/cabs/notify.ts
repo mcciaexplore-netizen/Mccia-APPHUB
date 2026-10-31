@@ -45,6 +45,19 @@ export const rideReceived = async (ride: RideFacts & { passengers?: number }, re
 };
 
 /**
+ * A driver asked for a login OTP on /cabs/driver-login: the Cabs admins get a bell notice to make one (Cabs Admin → Drivers → Get Login
+ * OTP). Asking again within `minutes` is the same notice, so the sign-in page cannot flood the admins.
+ */
+export async function driverAccessRequested(driver: { id: string; name: string; phone: string }, minutes: number): Promise<void> {
+  const bucket = Math.floor(Date.now() / (minutes * 60_000));
+  await notifyUsers((await cabAdminRecipients()).map((a) => ({
+    userId: a.userId, kind: "cabs.driver-access", title: `Driver ${driver.name} is requesting login OTP`,
+    body: `${driver.phone}. Make one on Cabs Admin → Drivers (Get Login OTP) and share it with them.`, link: "/cabs/admin/drivers",
+    dedupeKey: `cabs:driver-access:${driver.id}:${bucket}:${a.userId}`,
+  })));
+}
+
+/**
  * A driver, as cab_drivers knows them: their bell goes to the hub account with their email, if any, and the email to that address. A driver
  * with no email gets neither (said in the server log).
  */

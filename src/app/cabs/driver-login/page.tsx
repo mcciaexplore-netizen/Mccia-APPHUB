@@ -6,8 +6,9 @@ import { hasAnyRole, resolveAccess } from "@/lib/cabs/host-adapter";
 export const metadata = { title: "Driver Login · MCCIA Cabs" };
 
 /**
- * Where drivers without a hub account sign in to Cabs Driver: their phone and a 6-digit OTP from a Cabs admin (Cabs Admin → Drivers →
- * Get Login OTP). Open to anyone; someone who can already open Cabs Driver goes straight there.
+ * Where drivers without a hub account sign in to Cabs Driver: their name and phone ("Request Access" tells the Cabs admins), then the
+ * 6-digit OTP an admin made for them (Cabs Admin → Drivers → Get Login OTP). Open to anyone; someone who can already open Cabs Driver goes
+ * straight there.
  */
 export default async function DriverLoginPage() {
   const a = await resolveAccess();
