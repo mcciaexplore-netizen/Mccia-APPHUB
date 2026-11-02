@@ -128,8 +128,8 @@ code in `src/app/ivr`, `src/lib/ivr`, `src/components/ivr`, tables prefixed `ivr
 
 - **Two applications** in Administrator → Applications: **IVR-CRM** (address `/ivr`), given to the Membership team, and **IVR-CRM Admin**
   (`/ivr/admin`), given to the one or two IVR admins.
-- **Roles.** `ivr_agent`: given IVR-CRM. `ivr_admin`: an App Admin of IVR-CRM Admin who has also been given it (as for every Admin
-  application). `ivr_super_admin`: the Support Admin (`head_admin`) only, the one who also manages Integrations (the Smartflo credentials).
+- **Roles.** `ivr_agent`: given IVR-CRM. `ivr_admin`: given IVR-CRM Admin, whatever their hub role (being listed among its App Admins
+  is not needed). `ivr_super_admin`: the Support Admin (`head_admin`) only, the one who also manages Integrations (the Smartflo credentials).
 - **An agent sees only their own.** Their queue, pipeline and member panel show only the members they own (`ivr_leads.owner_id`); My
   calls, their KPIs, a member's call history and recordings only the calls they handled (`ivr_calls.agent_user_id`). In `/ivr` everyone
   acts as an agent, admins included. The admin section sees every member and call, assigns and reassigns, imports, and has team analytics,

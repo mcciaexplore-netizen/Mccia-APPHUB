@@ -30,21 +30,21 @@ const agentIdsSql = sql`select ua.user_id from user_app_access ua
 export const isIvrAgent = (column: SQL | ReturnType<typeof sql.raw> | typeof users.id): SQL => sql`${column} in (${agentIdsSql})`;
 
 /**
- * One query: whether the person has been given the IVR-CRM application (URL /ivr), and whether they are an App Admin of the IVR-CRM Admin
- * application (URL /ivr/admin) and have been given it (being an App Admin does not give access, as everywhere in the hub). Only active
- * applications in active categories count, and not one marked Unavailable (the head admin, who opens it to test, does not depend on this).
+ * One query: whether the person has been given the IVR-CRM application (URL /ivr) and whether they have been given the IVR-CRM Admin
+ * application (URL /ivr/admin). Having the application is all that counts: their hub role, and whether they are listed among its App
+ * Admins, make no difference. Only active applications in active categories count, and not one marked Unavailable (the head admin, who
+ * opens it to test, does not depend on this).
  */
-async function ivrStanding(userId: string): Promise<{ userAccess: boolean; adminAppAdmin: boolean }> {
+async function ivrStanding(userId: string): Promise<{ userAccess: boolean; adminAccess: boolean }> {
   const res = await db.execute(sql`
     select coalesce(bool_or(a.url ~ ${IVR_USER_URL_PATTERN} and ua.user_id is not null), false) as user_access,
-      coalesce(bool_or(a.url ~ ${IVR_ADMIN_URL_PATTERN} and ua.user_id is not null and ad.user_id is not null), false) as admin_app_admin
+      coalesce(bool_or(a.url ~ ${IVR_ADMIN_URL_PATTERN} and ua.user_id is not null), false) as admin_access
     from apps a
     join departments d on d.id = a.department_id
     left join user_app_access ua on ua.app_id = a.id and ua.user_id = ${userId}
-    left join app_admins ad on ad.app_id = a.id and ad.user_id = ${userId}
     where a.is_active and d.is_active and a.status <> 'unavailable' and (a.url ~ ${IVR_USER_URL_PATTERN} or a.url ~ ${IVR_ADMIN_URL_PATTERN})`);
-  const r = rowsOf<{ user_access: boolean; admin_app_admin: boolean }>(res)[0];
-  return { userAccess: !!r?.user_access, adminAppAdmin: !!r?.admin_app_admin };
+  const r = rowsOf<{ user_access: boolean; admin_access: boolean }>(res)[0];
+  return { userAccess: !!r?.user_access, adminAccess: !!r?.admin_access };
 }
 
 /** Who is asking and their roles here (see ivr.manifest.ts). Someone signed in with no role at all is still "ok", with no roles. */
@@ -52,7 +52,7 @@ export const resolveAccess = cache(async (): Promise<Access> => {
   const host = await hostCurrentUser();
   if (!host) return { status: "anonymous" };
   const standing = await ivrStanding(host.id);
-  const roles = ivrRolesFor({ hubRole: host.role, userAccess: standing.userAccess, adminAppAdmin: standing.adminAppAdmin });
+  const roles = ivrRolesFor({ hubRole: host.role, userAccess: standing.userAccess, adminAccess: standing.adminAccess });
   return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles, role: effectiveRole(roles), hubRole: host.role } };
 });
 

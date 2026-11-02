@@ -8,9 +8,10 @@
  *
  * Roles:
  *   ivr_agent        anyone who has been given the IVR-CRM application
- *   ivr_admin        the App Admins of the IVR-CRM Admin application who have also been given it (as for every Admin application)
+ *   ivr_admin        anyone who has been given the IVR-CRM Admin application, whatever their hub role
  *   ivr_super_admin  the Support Admin (head_admin) only: also the Smartflo connection (Integrations)
- * The Support Admin holds all three, as they do in Cab Booking and Inventory.
+ * The application a person has been given decides; their hub role (admin, staff, member ...) does not. The Support Admin holds all three,
+ * as they do in Cab Booking and Inventory.
  *
  * Data: an agent sees ONLY their own members (ivr_leads.owner_id) and their own calls (ivr_calls.agent_user_id), everywhere in /ivr, even
  * when they are also an admin. The admin section sees everyone's.
@@ -27,11 +28,11 @@ export const IVR_ADMIN_URL_PATTERN = "^/ivr/admin/?$";
 export const SECTION_ROLES: Record<IvrSection, readonly IvrRole[]> = { agent: ["ivr_agent"], admin: ["ivr_admin", "ivr_super_admin"] };
 
 /** A person's roles from what the hub says about them (see the header). */
-export function ivrRolesFor(input: { hubRole: string; userAccess: boolean; adminAppAdmin: boolean }): IvrRole[] {
+export function ivrRolesFor(input: { hubRole: string; userAccess: boolean; adminAccess: boolean }): IvrRole[] {
   const head = input.hubRole === "head_admin";
   const roles: IvrRole[] = [];
   if (head || input.userAccess) roles.push("ivr_agent");
-  if (head || input.adminAppAdmin) roles.push("ivr_admin");
+  if (head || input.adminAccess) roles.push("ivr_admin");
   if (head) roles.push("ivr_super_admin");
   return roles;
 }

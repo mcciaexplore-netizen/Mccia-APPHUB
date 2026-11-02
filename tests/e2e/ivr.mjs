@@ -107,7 +107,9 @@ const adminApp = await app("ZZI IVR-CRM Admin", "/ivr/admin", "ClipboardList");
 const grant = (u, a) => sql`insert into user_app_access (user_id, app_id) values (${u.id}, ${a.id}) on conflict do nothing`;
 for (const u of [agentA, agentB, admin]) await grant(u, crmApp);
 await grant(admin, adminApp); await grant(adminOnly, adminApp);
-for (const u of [admin, adminOnly, appAdminNoAccess]) await sql`insert into app_admins (app_id, user_id) values (${adminApp.id}, ${u.id})`;
+// The application decides, not the App Admin list: "ZZI Admin Only" is a plain member given IVR-CRM Admin and is NOT one of its App Admins;
+// "ZZI App Admin Without Access" is listed as an App Admin but was never given the application.
+for (const u of [admin, appAdminNoAccess]) await sql`insert into app_admins (app_id, user_id) values (${adminApp.id}, ${u.id})`;
 
 // What Smartflo rings for each agent, and the test members and calls: Asha owns A1 and A2, Bala owns B1, one is unassigned. Bala also made
 // a call to Asha's member A1: Asha must not see it.
@@ -193,7 +195,15 @@ try {
   await go(A.page, "/ivr/admin/integrations"); check("agent: Integrations sends them back to their queue", pathOf(A.page) === "/ivr");
   await go(O.page, "/ivr"); check("someone without IVR-CRM is sent back to the hub", pathOf(O.page) === "/");
   await go(O.page, "/ivr/admin"); check("someone without IVR-CRM Admin is sent back to the hub", pathOf(O.page) === "/");
-  await go(NA.page, "/ivr/admin"); check("an App Admin of IVR-CRM Admin who was not given it is sent back to the hub (as for every Admin application)", pathOf(NA.page) === "/");
+  await go(NA.page, "/ivr/admin"); check("listed as an App Admin of IVR-CRM Admin but never given it: sent back to the hub (the application decides)", pathOf(NA.page) === "/");
+  await go(MO.page, "/ivr/admin");
+  check("a plain member given only IVR-CRM Admin (not an App Admin, no hub admin role) gets the full admin section", pathOf(MO.page) === "/ivr/admin"
+    && (await navLabels(MO.page, "IVR-CRM Admin")) === "Team overview|Members and assignment|Import members|Team calls|Pipeline|Analytics|PDF reports|Categories|Agents");
+  for (const p of ["/ivr/admin/members", "/ivr/admin/import", "/ivr/admin/calls", "/ivr/admin/pipeline", "/ivr/admin/analytics", "/ivr/admin/reports", "/ivr/admin/categories", "/ivr/admin/agents"]) {
+    const r = await go(MO.page, p);
+    check(`that member opens ${p}`, r?.status() === 200 && pathOf(MO.page) === p, r?.status());
+  }
+  await go(MO.page, "/ivr/admin/integrations"); check("that member: Integrations stays with the Support Admin", pathOf(MO.page) === "/ivr/admin");
   await go(M.page, "/ivr/admin");
   check("admin: /ivr/admin opens on Team overview, with the admin menu and no Integrations", pathOf(M.page) === "/ivr/admin"
     && (await navLabels(M.page, "IVR-CRM Admin")) === "Team overview|Members and assignment|Import members|Team calls|Pipeline|Analytics|PDF reports|Categories|Agents");
@@ -252,6 +262,11 @@ try {
   check("members: all four test members, with their owners", ["ZZI Member A1", "ZZI Member A2", "ZZI Member B1", "ZZI Member Unassigned"].every((n) => membersM.includes(n)));
   await go(M.page, "/ivr/admin/calls");
   check("team calls: all three test calls", (await rows(M.page)) >= 3 && (await mainText(M.page)).includes("ZZI Member B1"));
+  await go(MO.page, "/ivr/admin/calls");
+  check("team calls: the plain member given IVR-CRM Admin sees every agent's calls too", (await rows(MO.page)) >= 3 && (await mainText(MO.page)).includes("ZZI Member B1") && (await mainText(MO.page)).includes("ZZI Member A1"));
+  const kMO = await api(MO.page, "/api/ivr/kpis?range=today");
+  check("KPIs: and team-wide numbers", (kMO.body?.kpis?.connected ?? 0) >= 3, JSON.stringify(kMO.body?.kpis));
+  check("PDF report: and may download it", (await api(MO.page, "/api/ivr/reports/pdf")).status === 200);
   const kM = await api(M.page, "/api/ivr/kpis?range=today");
   check("KPIs: the admin's team numbers count every agent's calls", (kM.body?.kpis?.connected ?? 0) >= 3, JSON.stringify(kM.body?.kpis));
   const kMB = await api(M.page, `/api/ivr/kpis?range=today&user=${agentB.id}`);

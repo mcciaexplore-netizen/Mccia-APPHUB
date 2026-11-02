@@ -862,13 +862,13 @@ const ssoTests = (async () => {
 
 // ---- IVR-CRM: roles and menus, phone numbers, call outcomes and stages, Smartflo payloads, import column detection and agent matching ----
 {
-  const roles = (hubRole: string, userAccess: boolean, adminAppAdmin: boolean) => ivrRolesFor({ hubRole, userAccess, adminAppAdmin });
+  const roles = (hubRole: string, userAccess: boolean, adminAccess: boolean) => ivrRolesFor({ hubRole, userAccess, adminAccess });
   eq("ivr roles: given IVR-CRM = ivr_agent only", roles("member", true, false), ["ivr_agent"]);
-  eq("ivr roles: App Admin of IVR-CRM Admin (and given it) = ivr_admin only", roles("member", false, true), ["ivr_admin"]);
+  eq("ivr roles: given IVR-CRM Admin = ivr_admin, whatever the hub role (a plain member or staff too)", [roles("member", false, true), roles("dept_lead", false, true), roles("admin", false, true)], [["ivr_admin"], ["ivr_admin"], ["ivr_admin"]]);
   eq("ivr roles: both applications = agent and admin", roles("member", true, true), ["ivr_agent", "ivr_admin"]);
   eq("ivr roles: nothing given = no role, even for a hub Admin or Super Admin", [roles("member", false, false), roles("admin", false, false), roles("super_admin", false, false)], [[], [], []]);
   eq("ivr roles: the Support Admin (head_admin) holds all three, ivr_super_admin only through head_admin", roles("head_admin", false, false), ["ivr_agent", "ivr_admin", "ivr_super_admin"]);
-  eq("ivr roles: being an App Admin never makes ivr_super_admin", roles("admin", true, true).includes("ivr_super_admin"), false);
+  eq("ivr roles: having both applications never makes ivr_super_admin (only head_admin does)", [roles("admin", true, true), roles("super_admin", true, true)].some((r) => r.includes("ivr_super_admin")), false);
   eq("ivr effective role: the highest one held", [ivrEffectiveRole(["ivr_agent"]), ivrEffectiveRole(["ivr_agent", "ivr_admin"]), ivrEffectiveRole(["ivr_agent", "ivr_admin", "ivr_super_admin"]), ivrEffectiveRole([])], ["agent", "admin", "super_admin", null]);
   eq("ivr sections: /ivr needs ivr_agent; /ivr/admin needs ivr_admin or ivr_super_admin", [IVR_SECTION_ROLES.agent, IVR_SECTION_ROLES.admin], [["ivr_agent"], ["ivr_admin", "ivr_super_admin"]]);
   const labels = (section: "agent" | "admin", r: Parameters<typeof ivrNavFor>[1]) => ivrNavFor(section, r).map((i) => i.label).join("|");
