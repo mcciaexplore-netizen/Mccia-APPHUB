@@ -102,24 +102,27 @@ export function normalizeCdr(r: Rec): SfCall | null {
 const has = (p: Rec, k: string) => p[k] !== undefined && p[k] !== null && String(p[k]).trim() !== "";
 
 /**
- * What a webhook was about, for the event log (ivr_call_events.trigger). Smartflo sends no event name of its own (each webhook is set up
- * for one trigger and carries `uuid`, `call_id`, `direction`, `billsec` ...), so one is read from a field when a template adds it, and
- * otherwise worked out from what the payload holds: "hangup" once the call has ended, "answered" once someone picked up, else "received".
+ * What a webhook was about, for the event log (ivr_call_events.trigger). Smartflo sends two: "received" while the call rings or is in
+ * progress, and "hangup" once it has ended. The name is read from a field when a template adds one; otherwise a payload with an end time,
+ * a hang-up cause or talk time (billsec above 0) is a hang-up and anything else is "received" (a ringing call carries billsec 0).
  */
 export function webhookEvent(payload: Rec): string {
   const p = stripDollar(payload);
   const named = str(p.trigger) ?? str(p.event) ?? str(p.event_type) ?? str(p.call_event);
   if (named) return named;
-  if (has(p, "end_stamp") || has(p, "hangup_cause") || has(p, "billsec") || has(p, "duration")) return "hangup";
-  if (has(p, "answer_stamp") || has(p, "answered_agent") || has(p, "answered_agent_number")) return "answered";
+  if (parseSfTime(p.end_stamp) || has(p, "hangup_cause") || int(p.billsec) > 0) return "hangup";
   return "received";
 }
+
+/** A hang-up event, by whatever name the template gave it; everything else ("received", "answered", "ringing" ...) is a call still going. */
+const isHangup = (event: string) => /hang|end|complet|disconnect/i.test(event);
 
 /**
  * Webhook payload. Returns null only when there is no call id or no caller's number (the event is still stored, not merged). The start
  * time is `start_stamp` (or `start_date` + `start_time`); failing those, the answer time, or the end time less the call's length, and as a
- * last resort the moment it arrived less its length, so a hang-up webhook without a start time still becomes a call. A call is finished
- * once it has an end time, a length (`duration` or `billsec`) or a hang-up cause.
+ * last resort the moment it arrived less its length, so a hang-up webhook without a start time still becomes a call.
+ *
+ * Status: a "received" webhook is always "ongoing", never missed. A "hangup" is "answered" when billsec (talk time) is above 0, else "missed".
  */
 export function normalizeWebhook(payload: Rec, receivedAt: Date = new Date()): SfCall | null {
   const p = stripDollar(payload);
@@ -144,11 +147,10 @@ export function normalizeWebhook(payload: Rec, receivedAt: Date = new Date()): S
     (ended ? back(ended) : back(receivedAt));
   const answeredAgent = (p.answered_agent as Rec | undefined) ?? undefined;
   const digits = Array.isArray(p.digits_dialed) ? (p.digits_dialed as unknown[]).join("") : str(p.digits_dialed);
-  const isFinal = !!ended || has(p, "duration") || has(p, "billsec") || has(p, "hangup_cause");
   return {
     callId,
     direction,
-    status: isFinal ? statusOf(p.call_status, answeredSec) : "ongoing",
+    status: !isHangup(webhookEvent(payload)) ? "ongoing" : answeredSec > 0 ? "answered" : "missed",
     customerNumber: customer,
     // Often empty in real payloads; the Membership filter then goes by the agent who took the call.
     didNumber: str(p.call_to_number) ?? str(p.did_number),

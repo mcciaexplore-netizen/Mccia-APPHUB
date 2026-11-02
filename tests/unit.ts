@@ -924,14 +924,30 @@ const ssoTests = (async () => {
   eq("ivr agent match: answered_agent_number 0607128930025 is the agent whose softphone extension it is",
     [ivrResolveAgent(ctx, { agentId: null, agentNumber: prod?.agentNumber ?? null }).userId, ivrResolveAgent(ctx, { agentId: null, agentNumber: "0607128930099" }).userId, ivrResolveAgent(ctx, { agentId: null, agentNumber: "+91 98000 00102" }).userId],
     ["u-ext", null, "u-other"]);
+  // Production: the profiles hold Smartflo agent ids (050...), ivr_smartflo_agents holds extensions (060...); same seat, different prefix.
+  const tails = ivrAgentCtx(
+    [{ id: "sf-22", extension: "0607128930022", number: null, mappedUserId: "u-22" }, { id: "sf-x", extension: "0607128930099", number: null, mappedUserId: null }],
+    [{ id: "u-20", phone: null, smartfloAgentId: "0507128930020", ext: null }, { id: "u-22", phone: null, smartfloAgentId: "0507128930022", ext: null }]);
+  const who = (n: string) => ivrResolveAgent(tails, { agentId: null, agentNumber: n }).userId;
+  eq("ivr agent match: an extension matches the agent id or extension it shares its last 10 digits with",
+    [who("0607128930020"), who("0507128930022"), who("0607128930022")], ["u-20", "u-22", "u-22"]);
+  eq("ivr agent match: a seat nobody holds (0607128930025 here), an unmapped Smartflo agent, or a tail two people share matches nobody",
+    [who("0607128930025"), who("0507128930099"), ivrResolveAgent(ivrAgentCtx([], [{ id: "a", phone: null, smartfloAgentId: "0507128930020", ext: null }, { id: "b", phone: null, smartfloAgentId: null, ext: "0607128930020" }]), { agentId: null, agentNumber: "0707128930020" }).userId],
+    [null, null, null]);
   const real = ivrWebhook({ uuid: "6ae83af08ccef", call_id: "HYD7-T12-1793604336.78319", direction: "inbound", caller_id_number: "+919876543210", billsec: "42", end_stamp: "2026-11-02 10:05:00", call_status: "answered" });
   eq("ivr webhook: a real hang-up payload (no start time, no duration) is a finished call: length from billsec, start = end less the length",
     real && [real.callId, real.status, real.answeredSec, real.durationSec, real.startedAt.toISOString()], ["HYD7-T12-1793604336.78319", "answered", 42, 42, "2026-11-02T04:34:18.000Z"]);
   const bare = ivrWebhook({ call_id: "c-5", caller_id_number: "+919876543210", billsec: "0", hangup_cause: "NO_ANSWER" }, new Date("2026-11-02T05:00:00Z"));
   eq("ivr webhook: no time at all: it started when it arrived (less its length), and a hang-up cause means finished", bare && [bare.startedAt.toISOString(), bare.status !== "ongoing"], ["2026-11-02T05:00:00.000Z", true]);
   eq("ivr webhook event: a named trigger is kept; otherwise worked out from the payload",
-    [ivrEvent({ $trigger: "call_hangup" }), ivrEvent({ uuid: "u", call_id: "c", billsec: "10" }), ivrEvent({ call_id: "c", hangup_cause: "NORMAL_CLEARING" }), ivrEvent({ call_id: "c", answered_agent_number: "+91..." }), ivrEvent({ uuid: "u", call_id: "c", direction: "inbound" })],
-    ["call_hangup", "hangup", "hangup", "answered", "received"]);
+    [ivrEvent({ $trigger: "call_hangup" }), ivrEvent({ uuid: "u", call_id: "c", billsec: "10" }), ivrEvent({ call_id: "c", hangup_cause: "NORMAL_CLEARING" }), ivrEvent({ call_id: "c", answered_agent_number: "+91..." }), ivrEvent({ uuid: "u", call_id: "c", direction: "inbound" }), ivrEvent({ call_id: "c", billsec: "0", duration: "0", end_stamp: "" })],
+    ["call_hangup", "hangup", "hangup", "received", "received", "received"]);
+  const ringing = { uuid: "u-r", call_id: "c-r", direction: "inbound", caller_id_number: "9004768014", answered_agent_number: "0607128930025", start_stamp: "2026-11-02 11:00:00", billsec: "0", duration: "0" };
+  eq("ivr webhook status: 'received' is ongoing, never missed (billsec 0 while it rings, named or not)",
+    [ivrWebhook(ringing)?.status, ivrWebhook({ ...ringing, trigger: "received" })?.status, ivrWebhook({ ...ringing, trigger: "received", billsec: "30", end_stamp: "2026-11-02 11:01:00" })?.status], ["ongoing", "ongoing", "ongoing"]);
+  eq("ivr webhook status: a hang-up with talk time is answered, without it missed (whatever call_status says)",
+    [ivrWebhook({ ...ringing, end_stamp: "2026-11-02 11:01:00", billsec: "48", duration: "60" })?.status, ivrWebhook({ ...ringing, end_stamp: "2026-11-02 11:00:40", duration: "40" })?.status,
+      ivrWebhook({ ...ringing, trigger: "hangup", billsec: "0", call_status: "answered" })?.status], ["answered", "missed", "missed"]);
   eq("ivr webhook: a dial request id that is not ours is ignored", ivrWebhook({ call_id: "c-4", customer_number: "1", start_stamp: "2026-10-31 10:00:00", custom_identifier: "{\"dr\":\"../../etc\"}" })?.dialRequestId, null);
   const cdr = ivrCdr({ call_id: "r-1", client_number: "+919876543210", date: "2026-10-31", time: "11:00:00", direction: "outbound", status: "missed", answered_seconds: "0", hangup_cause: "USER_BUSY", agent_number: "+919800000101" });
   eq("ivr call record: an outbound missed call from the call records API", cdr && [cdr.callId, cdr.direction, cdr.status, cdr.hangupCause, cdr.startedAt.toISOString()], ["r-1", "outbound", "missed", "USER_BUSY", "2026-10-31T05:30:00.000Z"]);

@@ -56,11 +56,12 @@ const PW = "zzi-Test-pass-123";
 const testPeople = async () => (await sql`select id from users where email like 'zzi-%'`).map((r) => r.id);
 const removeTestData = async () => {
   const people = await testPeople();
-  const leadIds = (await sql`select id from ivr_leads where name like 'ZZI%' or phone like '+9191111%'`).map((r) => r.id);
+  // Also what a (mock) sync gave the test agents: members they own and calls they took, whatever the number.
+  const leadIds = (await sql`select id from ivr_leads where name like 'ZZI%' or phone like '+9191111%' or owner_id in (select id from users where email like 'zzi-%')`).map((r) => r.id);
   for (const id of leadIds) { await sql`delete from ivr_dial_requests where lead_id = ${id}`; await sql`delete from ivr_calls where lead_id = ${id}`; }
-  await sql`delete from ivr_calls where smartflo_call_id like 'zzi-%' or customer_number like '+9191111%'`;
+  await sql`delete from ivr_calls where smartflo_call_id like 'zzi-%' or customer_number like '+9191111%' or agent_user_id in (select id from users where email like 'zzi-%')`;
   await sql`delete from ivr_call_events where call_id like 'zzi-%'`;
-  await sql`delete from ivr_leads where name like 'ZZI%' or phone like '+9191111%'`;
+  await sql`delete from ivr_leads where name like 'ZZI%' or phone like '+9191111%' or owner_id in (select id from users where email like 'zzi-%')`;
   for (const id of people) {
     await sql`delete from ivr_audit where user_id = ${id}`;
     await sql`delete from ivr_import_batches where uploaded_by = ${id}`;
@@ -365,6 +366,14 @@ try {
   await hook(WEBHOOK_SECRET, { uuid: "zzi-uuid-1", call_id: "zzi-wh-nolines", direction: "inbound", caller_id_number: "+919111100077", call_to_number: "+911100000000", billsec: "0", hangup_cause: "NO_ANSWER", call_status: "missed" });
   const nolines = await poll(async () => (await sql`select status, direction, agent_user_id, lead_id, started_at from ivr_calls where smartflo_call_id = 'zzi-wh-nolines'`)[0]);
   check("webhook: with no Membership line set, an inbound call nobody answered is kept (a missed call, with a new 'Unknown caller' member)", nolines?.status === "missed" && nolines?.direction === "inbound" && !nolines?.agent_user_id && !!nolines?.lead_id && !!nolines?.started_at, JSON.stringify(nolines));
+  // Smartflo's two triggers: "received" while the call rings (billsec 0), then "hangup" once it ends.
+  const ring = { uuid: "zzi-uuid-2", call_id: "zzi-wh-ring", direction: "inbound", caller_id_number: "9111100079", start_stamp: ist(new Date()), billsec: "0", duration: "0" };
+  await hook(WEBHOOK_SECRET, ring);
+  const ringing = await poll(async () => (await sql`select status, customer_number from ivr_calls where smartflo_call_id = 'zzi-wh-ring'`)[0]);
+  check("webhook: a 'received' webhook (still ringing, billsec 0) is ongoing, not missed; the caller's 10 digits get +91", ringing?.status === "ongoing" && ringing?.customer_number === "+919111100079", JSON.stringify(ringing));
+  await hook(WEBHOOK_SECRET, { ...ring, end_stamp: ist(new Date(Date.now() + 20_000)), duration: "20" });
+  const hungUp = await poll(async () => (await sql`select status from ivr_calls where smartflo_call_id = 'zzi-wh-ring' and status <> 'ongoing'`)[0]);
+  check("webhook: its 'hangup' with no talk time makes it missed", hungUp?.status === "missed", JSON.stringify(hungUp));
   await hook(WEBHOOK_SECRET, { call_id: "zzi-wh-out-nolines", direction: "outbound", customer_number: "+919111100078", agent_number: "+919999999999", billsec: "0", call_status: "missed" });
   check("webhook: but an outbound call by someone who is not an IVR-CRM agent is still not", (await sql`select count(*)::int n from ivr_calls where smartflo_call_id = 'zzi-wh-out-nolines'`)[0].n === 0);
   // The line goes back before the sync runs below: with no line set the (mock) sync would keep every inbound call on the account.
