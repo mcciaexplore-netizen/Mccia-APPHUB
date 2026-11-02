@@ -102,18 +102,24 @@ export async function personById(id: string): Promise<IvrAgent | null> {
   return p ?? null;
 }
 
+/** Whether this is an active hub user (who can sign in). */
+export async function isActiveHubUser(userId: string): Promise<boolean> {
+  const [r] = await db.select({ id: users.id }).from(users).where(and(eq(users.id, userId), eq(users.isActive, true), eq(users.status, "approved"))).limit(1);
+  return !!r;
+}
+
 /** Whether this hub user is an agent now (given IVR-CRM, active). */
 export async function isAgentNow(userId: string): Promise<boolean> {
   const [r] = await db.select({ id: users.id }).from(users).where(and(eq(users.id, userId), isIvrAgent(users.id))).limit(1);
   return !!r;
 }
 
-/** A hub user offered in "Add an agent": someone who has IVR-CRM. */
+/** A hub user offered in "Add an agent". */
 export type AgentSuggestion = { id: string; name: string; email: string; smartflo_agent_id: string | null };
 
 /**
- * "Add an agent" typeahead: people who have the IVR-CRM application, whose name or email contains `q` (any case), and who are not yet
- * linked to a Smartflo agent. Names that start with `q` come first. At most `limit`.
+ * "Add an agent" typeahead: every active hub user (whether or not they have been given IVR-CRM yet) whose name or email contains `q` (any
+ * case), and who is not yet linked to a Smartflo agent. Names that start with `q` come first. At most `limit`.
  */
 export async function searchUnlinkedAgents(q: string, limit = 8): Promise<AgentSuggestion[]> {
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -123,7 +129,8 @@ export async function searchUnlinkedAgents(q: string, limit = 8): Promise<AgentS
     .from(users)
     .leftJoin(agentProfiles, eq(agentProfiles.userId, users.id))
     .where(and(
-      isIvrAgent(users.id),
+      eq(users.isActive, true),
+      eq(users.status, "approved"),
       sql`(${users.name} ilike ${like} or ${users.email} ilike ${like})`,
       sql`${agentProfiles.smartfloAgentId} is null`,
       sql`not exists (select 1 from ivr_smartflo_agents s where s.mapped_user_id = ${users.id})`,

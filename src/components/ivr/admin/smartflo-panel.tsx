@@ -217,8 +217,9 @@ export function SmartfloPanel({
         <h3 className="text-[0.95rem]">Membership agents</h3>
         <p className="text-[13px] text-muted">
           The Smartflo account is shared, so only Membership agents are kept: those that match an IVR-CRM agent, and any you add here. Other agents are
-          ignored and are not stored, and the daily sync does not re-read the agent list. To add someone, pick them below (people given IVR-CRM who
-          are not linked yet): their Smartflo agent is found by their phone, softphone extension, email or exact name, and linked to them.
+          ignored and are not stored, and the daily sync does not re-read the agent list. To add someone, pick any hub user below who is not linked
+          yet: their Smartflo agent is found by their phone, softphone extension, email or exact name, and linked to them. Give them the IVR-CRM
+          application too, so they can open their own queue and calls.
         </p>
         <form
           className="flex flex-wrap items-end gap-2"

@@ -7,7 +7,7 @@ export type PickedAgent = { id: string; name: string; email: string };
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
 
 /**
- * Typeahead over the people who have IVR-CRM and are not linked to a Smartflo agent yet (GET /api/ivr/agents/search). Type to search by
+ * Typeahead over the hub's active users who are not linked to a Smartflo agent yet (GET /api/ivr/agents/search). Type to search by
  * name or email; pick with the mouse, or with the arrow keys and Enter. Escape or a click outside closes the list. Typing again after a pick
  * clears it, so `onPick(null)` always means "nothing chosen".
  */
@@ -95,9 +95,9 @@ export function AgentPicker({ label, disabled, picked, onPick }: { label: string
         onKeyDown={onKey}
       />
       {showList && (
-        <ul id={listId} role="listbox" aria-label="People with IVR-CRM" className="absolute top-full left-0 z-20 mt-1 max-h-80 w-full overflow-y-auto rounded-[12px] border border-line bg-white py-1 shadow-[0_14px_34px_rgba(15,23,42,0.13)]">
+        <ul id={listId} role="listbox" aria-label="Hub users" className="absolute top-full left-0 z-20 mt-1 max-h-80 w-full overflow-y-auto rounded-[12px] border border-line bg-white py-1 shadow-[0_14px_34px_rgba(15,23,42,0.13)]">
           {items.length === 0 ? (
-            <li className="px-3 py-2.5 text-[13px] text-muted">{loading ? "Searching…" : "Nobody with IVR-CRM matches, or they are already linked."}</li>
+            <li className="px-3 py-2.5 text-[13px] text-muted">{loading ? "Searching…" : "Nobody in the hub matches, or they are already linked."}</li>
           ) : (
             items.map((p, i) => (
               <li

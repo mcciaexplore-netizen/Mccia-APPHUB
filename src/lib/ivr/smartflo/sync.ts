@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/ivr/db";
 import { callEvents, integrations, smartfloAgents } from "@/db/ivr-schema";
-import { isAgentNow, listCallers, listIvrAgents, personById, saveProfile } from "@/lib/ivr/host-adapter";
+import { isActiveHubUser, listCallers, listIvrAgents, personById, saveProfile } from "@/lib/ivr/host-adapter";
 import { env } from "@/lib/ivr/env";
 import { normalizePhone } from "@/lib/ivr/phone";
 import { getAutoSyncConfig, lineKey } from "@/lib/ivr/settings";
@@ -122,13 +122,14 @@ export async function syncAgents(opts: { match?: string } = {}): Promise<{ agent
 }
 
 /**
- * "Add an agent" on Integrations: the Support Admin picks a hub user who has IVR-CRM, and this finds THAT person's agent in Smartflo
+ * "Add an agent" on Integrations: the Support Admin picks any active hub user (they need not have IVR-CRM yet; they need it to open
+ * their own queue and calls), and this finds THAT person's agent in Smartflo
  * (one request for the agent list), keeps it and links it to them. An agent counts as theirs when its phone is their phone, its extension
  * is their softphone extension, or its login email is their email and no other Smartflo agent shares it; failing all of those, when its
  * name is exactly their name. Nothing is guessed: no match, or more than one, is an error that says what to do.
  */
 export async function linkSmartfloAgentForUser(userId: string): Promise<{ agentId: string; agentName: string; how: string }> {
-  if (!(await isAgentNow(userId))) throw new Error("That person does not have the IVR-CRM application, so they cannot be a Membership agent.");
+  if (!(await isActiveHubUser(userId))) throw new Error("That person is not an active hub user.");
   const person = await personById(userId);
   if (!person) throw new Error("That person was not found.");
   const sf = await getSmartflo();
