@@ -932,8 +932,19 @@ const ssoTests = (async () => {
   eq("ivr agent match: an extension matches the agent id or extension it shares its last 10 digits with",
     [who("0607128930020"), who("0507128930022"), who("0607128930022")], ["u-20", "u-22", "u-22"]);
   eq("ivr agent match: a seat nobody holds (0607128930025 here), an unmapped Smartflo agent, or a tail two people share matches nobody",
-    [who("0607128930025"), who("0507128930099"), ivrResolveAgent(ivrAgentCtx([], [{ id: "a", phone: null, smartfloAgentId: "0507128930020", ext: null }, { id: "b", phone: null, smartfloAgentId: null, ext: "0607128930020" }]), { agentId: null, agentNumber: "0707128930020" }).userId],
+    [who("0607128930025"), who("0507128930099"), ivrResolveAgent(ivrAgentCtx([{ id: "0507128930020", extension: null, number: null, mappedUserId: "a" }, { id: "0807128930020", extension: null, number: null, mappedUserId: "b" }], []), { agentId: null, agentNumber: "0607128930020" }).userId],
     [null, null, null]);
+  // Production as it stands: both profiles hold softphone_extension "0" (only Smartflo's prefix), the agents are mapped (or only named in a profile).
+  const prodAgents = ivrAgentCtx(
+    [{ id: "0507128930020", extension: "0607128930003", number: "+918329115020", mappedUserId: "u-aish" }, { id: "0507128930022", extension: "0607128930004", number: "+919850588380", mappedUserId: null }],
+    [{ id: "u-aish", phone: null, smartfloAgentId: "0507128930020", ext: "0" }, { id: "u-sonal", phone: "+919850588381", smartfloAgentId: "0507128930022", ext: "0" }, { id: "u-x", phone: "+919000000999", smartfloAgentId: null, ext: "0" }]);
+  const prodWho = (n: string) => ivrResolveAgent(prodAgents, { agentId: null, agentNumber: n });
+  eq("ivr agent match: id exactly, then last 10 of the agent id, the agent's number, the caller's phone; an extension of '0' matches nothing",
+    [prodWho("0507128930020").userId, prodWho("0607128930020").userId, prodWho("0607128930022").userId, prodWho("08329115020").userId, prodWho("+91 98505 88380").userId, prodWho("9000000999").userId, prodWho("0").userId],
+    ["u-aish", "u-aish", "u-sonal", "u-aish", "u-sonal", "u-x", null]);
+  eq("ivr agent match: an agent row without mapped_user_id belongs to the profile that names it, and the call keeps that agent id",
+    prodWho("0607128930022"), { userId: "u-sonal", agentId: "0507128930022" });
+  eq("ivr agent match: 0607128930025 is none of these seats", prodWho("0607128930025"), { userId: null, agentId: null });
   const real = ivrWebhook({ uuid: "6ae83af08ccef", call_id: "HYD7-T12-1793604336.78319", direction: "inbound", caller_id_number: "+919876543210", billsec: "42", end_stamp: "2026-11-02 10:05:00", call_status: "answered" });
   eq("ivr webhook: a real hang-up payload (no start time, no duration) is a finished call: length from billsec, start = end less the length",
     real && [real.callId, real.status, real.answeredSec, real.durationSec, real.startedAt.toISOString()], ["HYD7-T12-1793604336.78319", "answered", 42, 42, "2026-11-02T04:34:18.000Z"]);
