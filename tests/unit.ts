@@ -442,6 +442,9 @@ eq(`guards: every one of the ${ivrRoutes.length} IVR-CRM route files checks who 
 // An agent sees only their own: the agents' pages get the person back acting as an agent, and the rules that keep their lists to their own
 // members (owner_id) and calls (agent_user_id) stay in place.
 const ivrSrc = (f: string) => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8");
+// Once Smartflo is connected it cannot be removed from the module (only replaced with new credentials): no disconnect action or button.
+eq("ivr smartflo: there is no way to disconnect Smartflo, only to replace its credentials",
+  [/disconnectSmartflo|smartflo\.disconnect/.test(ivrSrc("lib/ivr/actions/admin.ts") + ivrSrc("components/ivr/admin/smartflo-panel.tsx")), /export async function connectSmartflo\(/.test(ivrSrc("lib/ivr/actions/admin.ts"))], [false, true]);
 eq("ivr scoping: the agents' section always acts as an agent, whatever else the person holds",
   /role: section === "agent" \? "agent" : u\.role!/.test(ivrSrc("lib/ivr/dal.ts")), true);
 eq("ivr scoping: an agent's calls are only the ones they handled (agent_user_id), in lists, KPIs and recordings",

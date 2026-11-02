@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   addMembershipAgent,
   connectSmartflo,
-  disconnectSmartflo,
   refreshAgents,
   removeUnlinkedAgentsAction,
   saveAutoSyncAction,
@@ -153,7 +152,10 @@ export function SmartfloPanel({
               </label>
             </div>
           )}
-          <p className="text-[12px] text-muted">We test the login first and store it encrypted. An API token expires, so the account login is the better choice.</p>
+          <p className="text-[12px] text-muted">
+            We test the login first and store it encrypted. An API token expires, so the account login is the better choice.
+            {connected && " Once connected, Smartflo stays connected: to change the account, enter the new login here and it replaces the old one."}
+          </p>
           <div>
             <button className="btn btn-primary" disabled={pending || (useToken ? token.length < 10 : !email || !password)}>
               {pending ? "Testing…" : "Test and save"}
@@ -169,11 +171,6 @@ export function SmartfloPanel({
         <button className="btn btn-ghost" disabled={pending || (!connected && mode === "live")} onClick={() => run(() => syncNow(24 * 30))}>
           Backfill 30 days
         </button>
-        {connected && mode === "live" && (
-          <button className="btn btn-danger ml-auto" disabled={pending} onClick={() => run(() => disconnectSmartflo())}>
-            Disconnect
-          </button>
-        )}
       </div>
 
       <section className="grid gap-3 border-t border-line pt-4">

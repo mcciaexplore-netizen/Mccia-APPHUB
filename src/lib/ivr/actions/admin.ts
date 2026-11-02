@@ -160,18 +160,6 @@ export async function removeUnlinkedAgentsAction(): Promise<ActionResult> {
   }
 }
 
-export async function disconnectSmartflo(): Promise<ActionResult> {
-  try {
-    const me = await assertSuperAdmin();
-    await db.delete(integrations).where(and(eq(integrations.provider, "smartflo_org"), isNull(integrations.userId)));
-    await audit(me.id, "smartflo.disconnect");
-    revalidatePath("/ivr/admin/integrations");
-    return { ok: true, message: "Disconnected. Existing calls and leads are kept." };
-  } catch (e) {
-    return fail(e);
-  }
-}
-
 export async function syncNow(hours: number): Promise<ActionResult> {
   try {
     const me = await assertSuperAdmin();
