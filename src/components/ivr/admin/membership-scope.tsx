@@ -16,14 +16,15 @@ export function MembershipScope({ initial, mappedAgents }: { initial: string[]; 
       <div>
         <h2 className="text-xl">Membership scope</h2>
         <p className="text-[13px] text-muted">
-          Your Smartflo account is shared with other departments, so this CRM only keeps Membership calls. A call is kept when an agent linked to a
-          IVR-CRM agent handled it ({mappedAgents} linked now), or when it came in on one of the phone lines below. Everything else is ignored and is
-          never deleted from Smartflo.
+          Your Smartflo account is shared with other departments, so once phone lines are set below this CRM keeps only Membership calls: those an
+          IVR-CRM agent handled ({mappedAgents} linked now), or that came in on one of these lines. Everything else is ignored (never deleted from
+          Smartflo). With no line set, every inbound call is kept.
         </p>
       </div>
       {initial.length === 0 && (
         <Alert kind="info">
-          No Membership phone line is set. Missed inbound calls that no agent picked up will be ignored until you add the Membership number(s).
+          No Membership phone line is set, so every inbound call on the Smartflo account is kept, including other departments&apos; if the account is
+          shared. Add the Membership number(s) to keep only those.
         </Alert>
       )}
       <form

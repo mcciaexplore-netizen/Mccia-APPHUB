@@ -91,6 +91,8 @@ const sameCategories = async () => {
 await removeTestData();
 const before = await snap();
 const retryBefore = (await sql`select value from ivr_settings where key = 'retry'`)[0]?.value ?? null;
+const linesBefore = (await sql`select value from ivr_settings where key = 'membership_lines'`)[0]?.value ?? null;
+const setLines = (lines) => sql`insert into ivr_settings (key, value) values ('membership_lines', ${JSON.stringify(lines)}::jsonb) on conflict (key) do update set value = excluded.value`;
 
 const person = async (name, email, role = "member") => (await sql`insert into users (name, email, password_hash, status, role) values (${name}, ${email}, ${hash(PW)}, 'approved', ${role}) returning id`)[0];
 const agentA = await person("ZZI Agent Asha", "zzi-agent-a@gmail.com");
@@ -140,6 +142,9 @@ const signedIn = async (email, password = PW) => {
   const ctx = await browser.newContext({ viewport: { width: 1360, height: 1000 } });
   ctx.setDefaultTimeout(45000);
   await ctx.addInitScript(() => { try { localStorage.setItem("mccia-install-popup-seen", "1"); localStorage.setItem("mccia-install-snoozed-until", String(Date.now() + 864e5)); } catch {} });
+  // The pages' own once-a-minute sync heartbeat is answered here, not by the site: a sync at a random moment would pull the mock account's
+  // calls in (while the test has no Membership line set, all of its inbound calls). The heartbeat route itself is checked directly below.
+  await ctx.route("**/api/ivr/sync/tick", (r) => (r.request().headers()["x-zzi-tick"] ? r.continue() : r.fulfill({ status: 200, contentType: "application/json", body: '{"ran":false,"reason":"test"}' })));
   const page = await ctx.newPage();
   page.on("pageerror", (e) => pageErrors.push(`${new URL(page.url()).pathname}: ${String(e).slice(0, 120)}`));
   await page.goto(BASE + "/login"); await page.fill("input[name=email]", email); await page.fill("input[name=password]", password);
@@ -228,7 +233,7 @@ try {
   check("API: an agent cannot download the PDF report (403)", (await api(A.page, "/api/ivr/reports/pdf")).status === 403);
   check("API: an agent cannot download the number CSV (403)", (await api(A.page, "/api/ivr/analytics/numbers")).status === 403);
   check("API: someone without IVR-CRM cannot read KPIs (403)", (await api(O.page, "/api/ivr/kpis?range=today")).status === 403);
-  check("API: someone without IVR-CRM cannot trigger a sync (403)", (await api(O.page, "/api/ivr/sync/tick", "POST")).status === 403);
+  check("API: someone without IVR-CRM cannot trigger a sync (403)", await O.page.evaluate(async () => (await fetch("/api/ivr/sync/tick", { method: "POST", headers: { "x-zzi-tick": "1" } })).status) === 403);
   const anon = await fetch(`${BASE}/api/ivr/kpis?range=today`, { redirect: "manual" });
   check("API: signed out is refused", anon.status === 401 || anon.status === 307, anon.status);
 
@@ -340,6 +345,7 @@ try {
 
   section("Smartflo webhook, sync cron and heartbeat");
   check("webhook: a wrong secret is a 404", (await hook("not-the-secret", { call_id: "zzi-wh-x" })).status === 404);
+  await setLines(["+91 20 6000 0001"]); // the Membership line is set for these checks; the empty case is checked below
   const started = new Date(Date.now() - 10 * 60_000);
   const payload = { call_id: "zzi-wh-1", direction: "inbound", customer_number: B1.phone, call_to_number: "+912071000000", answered_agent_number: PHONE_B,
     start_stamp: ist(started), end_stamp: ist(new Date(started.getTime() + 90_000)), duration: 90, billsec: 75, call_status: "answered" };
@@ -353,6 +359,16 @@ try {
   await hook(WEBHOOK_SECRET, { ...payload, call_id: "zzi-wh-other", customer_number: "+919111199999", answered_agent_number: "+919999999999", call_to_number: "+911100000000" });
   check("webhook: another department's call (no Membership agent, not a Membership line) is ignored", (await sql`select count(*)::int n from ivr_calls where smartflo_call_id = 'zzi-wh-other'`)[0].n === 0
     && (await sql`select count(*)::int n from ivr_call_events where call_id = 'zzi-wh-other'`)[0].n === 1);
+  check("webhook: the event log names what it was (Smartflo sends no event name)", (await sql`select trigger from ivr_call_events where call_id = 'zzi-wh-1' limit 1`)[0]?.trigger === "hangup");
+  await setLines([]);
+  // Smartflo's real hang-up payload: uuid, call_id, direction, billsec; here no start time, no duration and no agent (nobody picked up).
+  await hook(WEBHOOK_SECRET, { uuid: "zzi-uuid-1", call_id: "zzi-wh-nolines", direction: "inbound", caller_id_number: "+919111100077", call_to_number: "+911100000000", billsec: "0", hangup_cause: "NO_ANSWER", call_status: "missed" });
+  const nolines = await poll(async () => (await sql`select status, direction, agent_user_id, lead_id, started_at from ivr_calls where smartflo_call_id = 'zzi-wh-nolines'`)[0]);
+  check("webhook: with no Membership line set, an inbound call nobody answered is kept (a missed call, with a new 'Unknown caller' member)", nolines?.status === "missed" && nolines?.direction === "inbound" && !nolines?.agent_user_id && !!nolines?.lead_id && !!nolines?.started_at, JSON.stringify(nolines));
+  await hook(WEBHOOK_SECRET, { call_id: "zzi-wh-out-nolines", direction: "outbound", customer_number: "+919111100078", agent_number: "+919999999999", billsec: "0", call_status: "missed" });
+  check("webhook: but an outbound call by someone who is not an IVR-CRM agent is still not", (await sql`select count(*)::int n from ivr_calls where smartflo_call_id = 'zzi-wh-out-nolines'`)[0].n === 0);
+  // The line goes back before the sync runs below: with no line set the (mock) sync would keep every inbound call on the account.
+  await setLines(["+91 20 6000 0001"]);
   await go(B.page, "/ivr/calls");
   check("webhook: Bala sees the new call in My calls", (await rows(B.page)) === 3);
   await go(A.page, "/ivr/calls");
@@ -363,7 +379,7 @@ try {
     const c = await fetch(`${BASE}/api/cron/ivr-sync?force=1`, { headers: { authorization: `Bearer ${CRON_SECRET}` } });
     check("cron: the right secret runs a sync (mock)", c.status === 200, c.status);
   } else check("cron: CRON_SECRET is set for the test", false);
-  const tick = await api(A.page, "/api/ivr/sync/tick", "POST");
+  const tick = await A.page.evaluate(async () => (await fetch("/api/ivr/sync/tick", { method: "POST", headers: { "x-zzi-tick": "1" } })).status).then((status) => ({ status }));
   check("heartbeat: an agent's tab may trigger the (throttled) sync", tick.status === 200, tick.status);
 
   section("add an agent: typeahead of hub users");
@@ -470,6 +486,8 @@ try {
 
 await browser.close();
 // Put the retry rule back as it was, then remove everything this test made, and prove nothing else changed.
+if (linesBefore === null) await sql`delete from ivr_settings where key = 'membership_lines'`;
+else await setLines(linesBefore);
 if (retryBefore === null) await sql`delete from ivr_settings where key = 'retry'`;
 else await sql`update ivr_settings set value = ${JSON.stringify(retryBefore)}::jsonb where key = 'retry'`;
 await removeTestData();

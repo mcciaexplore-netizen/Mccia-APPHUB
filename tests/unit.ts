@@ -34,7 +34,7 @@ import { IVR_ADMIN_URL_PATTERN, IVR_NAV, IVR_USER_URL_PATTERN, SECTION_ROLES as 
 import { formatPhone as ivrFormatPhone, maskPhone as ivrMaskPhone, normalizePhone as ivrPhone } from "../src/lib/ivr/phone";
 import { deriveOutcome as ivrOutcome } from "../src/lib/ivr/outcome";
 import { nextStage as ivrNextStage, OPEN_STAGES as IVR_OPEN_STAGES } from "../src/lib/ivr/stage";
-import { normalizeCdr as ivrCdr, normalizeLive as ivrLive, normalizeUserAsAgent as ivrSfAgent, normalizeWebhook as ivrWebhook, parseSfTime as ivrSfTime } from "../src/lib/ivr/smartflo/normalize";
+import { normalizeCdr as ivrCdr, normalizeLive as ivrLive, normalizeUserAsAgent as ivrSfAgent, normalizeWebhook as ivrWebhook, parseSfTime as ivrSfTime, webhookEvent as ivrEvent } from "../src/lib/ivr/smartflo/normalize";
 import { detectColumns as ivrDetect, sanitizeMapping as ivrSanitize } from "../src/lib/ivr/import/detect";
 import { buildAgentIndex as ivrAgentIndex, matchAgent as ivrMatch } from "../src/lib/ivr/import/match";
 import { addDays as ivrAddDays, formatDuration as ivrDuration, istDayStart as ivrDayStart, resolveRange as ivrRange, toIstDateString as ivrDateStr } from "../src/lib/ivr/time";
@@ -907,7 +907,16 @@ const ssoTests = (async () => {
     ["c-1", "answered", "inbound", "+919800000101", "12", "+912071000000", 75, 90]);
   eq("ivr webhook: the Call button's dial request id comes back with its dashes", hook?.dialRequestId, "01234567-89ab-cdef-0123-456789abcdef");
   eq("ivr webhook: no end time and no duration = still ringing (ongoing)", ivrWebhook({ call_id: "c-2", customer_number: "+919876543210", start_stamp: "2026-10-31 10:00:00" })?.status, "ongoing");
-  eq("ivr webhook: an event without call data is stored, not merged (null)", [ivrWebhook({ call_id: "c-3" }), ivrWebhook({ customer_number: "1", start_stamp: "2026-10-31 10:00:00" })], [null, null]);
+  eq("ivr webhook: without a call id or a caller's number it is stored, not merged (null)", [ivrWebhook({ call_id: "c-3" }), ivrWebhook({ customer_number: "1", start_stamp: "2026-10-31 10:00:00" })], [null, null]);
+  // Smartflo's real hang-up payload carries uuid, call_id, direction and billsec, and may have no start time, no duration and no event name.
+  const real = ivrWebhook({ uuid: "6ae83af08ccef", call_id: "HYD7-T12-1793604336.78319", direction: "inbound", caller_id_number: "+919876543210", billsec: "42", end_stamp: "2026-11-02 10:05:00", call_status: "answered" });
+  eq("ivr webhook: a real hang-up payload (no start time, no duration) is a finished call: length from billsec, start = end less the length",
+    real && [real.callId, real.status, real.answeredSec, real.durationSec, real.startedAt.toISOString()], ["HYD7-T12-1793604336.78319", "answered", 42, 42, "2026-11-02T04:34:18.000Z"]);
+  const bare = ivrWebhook({ call_id: "c-5", caller_id_number: "+919876543210", billsec: "0", hangup_cause: "NO_ANSWER" }, new Date("2026-11-02T05:00:00Z"));
+  eq("ivr webhook: no time at all: it started when it arrived (less its length), and a hang-up cause means finished", bare && [bare.startedAt.toISOString(), bare.status !== "ongoing"], ["2026-11-02T05:00:00.000Z", true]);
+  eq("ivr webhook event: a named trigger is kept; otherwise worked out from the payload",
+    [ivrEvent({ $trigger: "call_hangup" }), ivrEvent({ uuid: "u", call_id: "c", billsec: "10" }), ivrEvent({ call_id: "c", hangup_cause: "NORMAL_CLEARING" }), ivrEvent({ call_id: "c", answered_agent_number: "+91..." }), ivrEvent({ uuid: "u", call_id: "c", direction: "inbound" })],
+    ["call_hangup", "hangup", "hangup", "answered", "received"]);
   eq("ivr webhook: a dial request id that is not ours is ignored", ivrWebhook({ call_id: "c-4", customer_number: "1", start_stamp: "2026-10-31 10:00:00", custom_identifier: "{\"dr\":\"../../etc\"}" })?.dialRequestId, null);
   const cdr = ivrCdr({ call_id: "r-1", client_number: "+919876543210", date: "2026-10-31", time: "11:00:00", direction: "outbound", status: "missed", answered_seconds: "0", hangup_cause: "USER_BUSY", agent_number: "+919800000101" });
   eq("ivr call record: an outbound missed call from the call records API", cdr && [cdr.callId, cdr.direction, cdr.status, cdr.hangupCause, cdr.startedAt.toISOString()], ["r-1", "outbound", "missed", "USER_BUSY", "2026-10-31T05:30:00.000Z"]);

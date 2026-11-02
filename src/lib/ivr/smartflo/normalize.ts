@@ -99,8 +99,29 @@ export function normalizeCdr(r: Rec): SfCall | null {
   };
 }
 
-/** Webhook payload. Returns null for events that carry no final call data (they are stored but not merged). */
-export function normalizeWebhook(payload: Rec): SfCall | null {
+const has = (p: Rec, k: string) => p[k] !== undefined && p[k] !== null && String(p[k]).trim() !== "";
+
+/**
+ * What a webhook was about, for the event log (ivr_call_events.trigger). Smartflo sends no event name of its own (each webhook is set up
+ * for one trigger and carries `uuid`, `call_id`, `direction`, `billsec` ...), so one is read from a field when a template adds it, and
+ * otherwise worked out from what the payload holds: "hangup" once the call has ended, "answered" once someone picked up, else "received".
+ */
+export function webhookEvent(payload: Rec): string {
+  const p = stripDollar(payload);
+  const named = str(p.trigger) ?? str(p.event) ?? str(p.event_type) ?? str(p.call_event);
+  if (named) return named;
+  if (has(p, "end_stamp") || has(p, "hangup_cause") || has(p, "billsec") || has(p, "duration")) return "hangup";
+  if (has(p, "answer_stamp") || has(p, "answered_agent") || has(p, "answered_agent_number")) return "answered";
+  return "received";
+}
+
+/**
+ * Webhook payload. Returns null only when there is no call id or no caller's number (the event is still stored, not merged). The start
+ * time is `start_stamp` (or `start_date` + `start_time`); failing those, the answer time, or the end time less the call's length, and as a
+ * last resort the moment it arrived less its length, so a hang-up webhook without a start time still becomes a call. A call is finished
+ * once it has an end time, a length (`duration` or `billsec`) or a hang-up cause.
+ */
+export function normalizeWebhook(payload: Rec, receivedAt: Date = new Date()): SfCall | null {
   const p = stripDollar(payload);
   const callId = str(p.call_id);
   const customer =
@@ -108,13 +129,19 @@ export function normalizeWebhook(payload: Rec): SfCall | null {
     str(p.customer_no_with_prefix) ??
     str(p.customer_number) ??
     str(p.caller_id_number);
-  const started = parseSfTime(p.start_stamp) ?? parseSfTime(`${str(p.start_date) ?? ""} ${str(p.start_time) ?? ""}`.trim());
-  if (!callId || !customer || !started) return null;
+  if (!callId || !customer) return null;
   const answeredSec = int(p.billsec);
+  const durationSec = int(p.duration) || answeredSec;
   const ended = parseSfTime(p.end_stamp);
+  const back = (from: Date) => new Date(from.getTime() - durationSec * 1000);
+  const started =
+    parseSfTime(p.start_stamp) ??
+    parseSfTime(`${str(p.start_date) ?? ""} ${str(p.start_time) ?? ""}`.trim()) ??
+    parseSfTime(p.answer_stamp) ??
+    (ended ? back(ended) : back(receivedAt));
   const answeredAgent = (p.answered_agent as Rec | undefined) ?? undefined;
   const digits = Array.isArray(p.digits_dialed) ? (p.digits_dialed as unknown[]).join("") : str(p.digits_dialed);
-  const isFinal = !!ended || p.duration !== undefined;
+  const isFinal = !!ended || has(p, "duration") || has(p, "billsec") || has(p, "hangup_cause");
   return {
     callId,
     direction: directionOf(p.direction),
@@ -127,7 +154,7 @@ export function normalizeWebhook(payload: Rec): SfCall | null {
       str(p.answered_agent_number) ?? str(p.answer_agent_number) ?? str(answeredAgent?.number) ?? str(p.agent_number),
     startedAt: started,
     endedAt: ended,
-    durationSec: int(p.duration),
+    durationSec,
     answeredSec,
     recordingUrl: str(p.recording_url),
     dtmf: digits,

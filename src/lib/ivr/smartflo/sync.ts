@@ -8,7 +8,7 @@ import { normalizePhone } from "@/lib/ivr/phone";
 import { getAutoSyncConfig, lineKey } from "@/lib/ivr/settings";
 import { getSmartflo } from "./index";
 import { ingestCalls } from "./ingest";
-import { normalizeWebhook } from "./normalize";
+import { normalizeWebhook, webhookEvent } from "./normalize";
 import type { SfCall, SfLiveCall } from "./types";
 
 /** Make sure the organisation connection row exists (mock mode has no credentials to store). */
@@ -322,7 +322,7 @@ export async function runIncrementalSync(opts: { force?: boolean } = {}): Promis
 
 /** Store a webhook payload untouched, then merge it into calls when it carries call data. */
 export async function processWebhook(payload: Record<string, unknown>) {
-  const trigger = String(payload.trigger ?? payload.event ?? payload.$trigger ?? "") || null;
+  const trigger = webhookEvent(payload);
   const callId = String(payload.call_id ?? payload.$call_id ?? "") || null;
   const [ev] = await db.insert(callEvents).values({ trigger, callId, payload }).returning({ id: callEvents.id });
   try {

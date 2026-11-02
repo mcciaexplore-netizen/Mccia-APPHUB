@@ -138,7 +138,8 @@ code in `src/app/ivr`, `src/lib/ivr`, `src/components/ivr`, tables prefixed `ivr
   webhook (`/api/ivr/webhooks/smartflo/<SMARTFLO_WEBHOOK_SECRET>`, open in `src/proxy.ts` because Smartflo cannot sign in: the secret is
   the gate), the Call button (Smartflo rings the agent first, then the member), and the sync: a heartbeat from every open IVR-CRM tab
   during working hours, plus the daily cron `/api/cron/ivr-sync?hours=48` (`CRON_SECRET`). The Smartflo account is shared with other
-  departments, so only calls handled by an IVR-CRM agent or on a Membership line are kept.
+  departments: once Membership lines are set (Integrations → Membership scope), only calls handled by an IVR-CRM agent or on those
+  lines are kept; until then every inbound call is.
 - **Settings:** `IVR_ENABLED`, `IVR_ENCRYPTION_KEY` (encrypts the stored Smartflo login and the agents' Zoho tokens), `SMARTFLO_MODE`,
   `SMARTFLO_WEBHOOK_SECRET`, optional `SMARTFLO_CALLER_ID` and `SMARTFLO_API_BASE`, `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_DOMAIN`
   (see `docs/ivr-zoho-setup.md`).

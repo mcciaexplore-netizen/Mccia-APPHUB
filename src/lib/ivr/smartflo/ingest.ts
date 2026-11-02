@@ -90,7 +90,10 @@ export async function ingestCalls(all: SfCall[], source: "sync" | "webhook" | "c
 
   // The Smartflo account is shared with other departments: keep only Membership calls. A call is Membership's when an agent
   // linked to an IVR-CRM agent handled it or it came in on one of the configured Membership lines. Calls placed from the Call button are ours.
+  // Until any Membership line is set (Integrations → Membership scope), every inbound call is kept, so calls show up straight away; once
+  // lines are set, only inbound calls on those lines (or handled by a linked agent) are.
   const lines = new Set((await getMembershipLines()).map(lineKey).filter(Boolean));
+  const allInbound = lines.size === 0;
   // A call placed from this CRM (the Call button) is Membership's by definition: recognise it by its dial request.
   const ourIds = new Set<string>();
   const ourRefs = new Set<string>();
@@ -114,6 +117,7 @@ export async function ingestCalls(all: SfCall[], source: "sync" | "webhook" | "c
       : all.filter(
           (c) =>
             !!resolveAgent(ctx, c).userId ||
+            (allInbound && c.direction === "inbound") ||
             (!!c.didNumber && lines.has(lineKey(c.didNumber))) ||
             (!!c.refId && ourRefs.has(c.refId)) ||
             (!!c.dialRequestId && ourIds.has(c.dialRequestId.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5"))),
