@@ -371,9 +371,23 @@ try {
   await hook(WEBHOOK_SECRET, ring);
   const ringing = await poll(async () => (await sql`select status, customer_number from ivr_calls where smartflo_call_id = 'zzi-wh-ring'`)[0]);
   check("webhook: a 'received' webhook (still ringing, billsec 0) is ongoing, not missed; the caller's 10 digits get +91", ringing?.status === "ongoing" && ringing?.customer_number === "+919111100079", JSON.stringify(ringing));
+  // A call whose hang-up never came, from 7 hours ago, is not "active" any more.
+  await hook(WEBHOOK_SECRET, { ...ring, uuid: "zzi-uuid-3", call_id: "zzi-wh-stale", caller_id_number: "9111100080", start_stamp: ist(new Date(Date.now() - 7 * 3600_000)) });
+  await poll(async () => (await sql`select 1 from ivr_calls where smartflo_call_id = 'zzi-wh-stale'`)[0]);
+  const liveM = (await api(M.page, "/api/ivr/kpis?range=today")).body?.kpis;
+  const ringRow = liveM?.activeCalls?.find((c) => c.callId === "zzi-wh-ring");
+  check("active calls: the admin's count includes the ringing call, though no agent is linked to it", (liveM?.active ?? 0) >= 1 && ringRow?.customerNumber === "+91 91111 00079" && ringRow?.agentName === null, JSON.stringify(liveM?.activeCalls));
+  check("active calls: one left ongoing for 7 hours (its hang-up never came) is not counted", !liveM?.activeCalls?.some((c) => c.callId === "zzi-wh-stale"));
+  const liveA = (await api(A.page, "/api/ivr/kpis?range=today")).body?.kpis;
+  check("active calls: an agent's count is only calls they are on (not this one)", !!liveA && !liveA.activeCalls.some((c) => c.callId === "zzi-wh-ring") && liveA.active === liveA.activeCalls.length);
+  await go(M.page, "/ivr/admin");
+  const progress = M.page.locator("section", { hasText: "Calls in progress" });
+  check("active calls: Team overview lists it under Calls in progress, with the caller and a running clock", (await progress.innerText()).includes("+91 91111 00079") && (await progress.innerText()).includes("Agent not linked yet")
+    && (await progress.locator(".ivr-live-dot").count()) === 1, await progress.innerText().catch(() => ""));
   await hook(WEBHOOK_SECRET, { ...ring, end_stamp: ist(new Date(Date.now() + 20_000)), duration: "20" });
   const hungUp = await poll(async () => (await sql`select status from ivr_calls where smartflo_call_id = 'zzi-wh-ring' and status <> 'ongoing'`)[0]);
   check("webhook: its 'hangup' with no talk time makes it missed", hungUp?.status === "missed", JSON.stringify(hungUp));
+  check("active calls: once it hangs up it is no longer active", !(await api(M.page, "/api/ivr/kpis?range=today")).body?.kpis?.activeCalls?.some((c) => c.callId === "zzi-wh-ring"));
   await hook(WEBHOOK_SECRET, { call_id: "zzi-wh-out-nolines", direction: "outbound", customer_number: "+919111100078", agent_number: "+919999999999", billsec: "0", call_status: "missed" });
   check("webhook: but an outbound call by someone who is not an IVR-CRM agent is still not", (await sql`select count(*)::int n from ivr_calls where smartflo_call_id = 'zzi-wh-out-nolines'`)[0].n === 0);
   // The line goes back before the sync runs below: with no line set the (mock) sync would keep every inbound call on the account.

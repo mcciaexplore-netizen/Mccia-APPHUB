@@ -2,14 +2,29 @@ import "server-only";
 import { and, count, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import { db, rowsOf } from "@/lib/ivr/db";
 import { leads } from "@/db/ivr-schema";
-import { listIvrAgents } from "./host-adapter";
+import { listIvrAgents, namesOf } from "./host-adapter";
 import { istDayStart, addDays } from "./time";
 import { missedCounts } from "./missed";
 import { cachedLiveCalls, getLiveCalls } from "./smartflo/sync";
-import { normalizePhone } from "./phone";
+import { formatPhone, normalizePhone } from "./phone";
+import type { SfLiveCall } from "./smartflo/types";
+
+/** A call in progress, for the dashboard's live list. */
+export type ActiveCall = {
+  callId: string;
+  direction: "inbound" | "outbound";
+  /** Ready to show (+91 98765 43210). */
+  customerNumber: string;
+  memberName: string | null;
+  agentName: string | null;
+  /** Epoch ms, so the browser can count the call's length up. */
+  startedAtMs: number;
+};
 
 export type Kpis = {
+  /** Calls in progress right now (activeCalls.length). */
   active: number;
+  activeCalls: ActiveCall[];
   /** Outbound calls placed in the range. */
   attempted: number;
   /** Calls the member answered, either direction. */
@@ -35,10 +50,49 @@ async function agentLines(userId: string): Promise<Set<string | null>> {
   return new Set(rows.map((r) => normalizePhone(r.number)).filter(Boolean));
 }
 
+/**
+ * A call stays "ongoing" from its "received" webhook until its "hangup". A hang-up that never arrives would leave it ongoing for good, so
+ * anything that started longer ago than any real call lasts is not counted as active. There is no other date filter: a call that began
+ * before midnight, or before the chosen range, still shows.
+ */
+export const ACTIVE_CALL_MAX_HOURS = 6;
 
 /**
- * `live: false` is for page renders: "active calls" comes from the last known value instead of waiting on Smartflo,
- * and the KPI strip refreshes it a moment later through /api/kpis (which does ask Smartflo).
+ * Calls in progress: every ongoing call in ivr_calls, whether or not it is tied to an agent yet, plus any call Smartflo's live-calls API
+ * reports on a Membership line that no webhook has told us about. An agent's list is only the calls they are on.
+ */
+async function getActiveCalls(userId: string | undefined, live: SfLiveCall[], mine: Set<string | null> | null): Promise<ActiveCall[]> {
+  const rows = rowsOf<{ call_id: string; direction: string; customer_number: string; member_name: string | null; agent_user_id: string | null; agent_name: string | null; at_ms: string | number }>(
+    await db.execute(sql`
+      select c.smartflo_call_id as call_id, c.direction, c.customer_number, l.name as member_name, c.agent_user_id, c.agent_name,
+        (extract(epoch from c.started_at) * 1000)::bigint as at_ms
+      from ivr_calls c left join ivr_leads l on l.id = c.lead_id
+      where c.status = 'ongoing' and c.started_at >= now() - ${sql.raw(`interval '${ACTIVE_CALL_MAX_HOURS} hours'`)}
+        ${userId ? sql`and c.agent_user_id = ${userId}::uuid` : sql``}
+      order by c.started_at desc
+      limit 100`),
+  );
+  const names = await namesOf([...new Set(rows.map((r) => r.agent_user_id).filter((x): x is string => !!x))]);
+  const out: ActiveCall[] = rows.map((r) => ({
+    callId: r.call_id,
+    direction: r.direction === "outbound" ? "outbound" : "inbound",
+    customerNumber: formatPhone(r.customer_number),
+    memberName: r.member_name,
+    agentName: (r.agent_user_id && names.get(r.agent_user_id)) || r.agent_name,
+    startedAtMs: Number(r.at_ms),
+  }));
+  const seen = new Set(out.map((c) => c.callId));
+  for (const l of live) {
+    if (seen.has(l.callId)) continue;
+    if (mine && !mine.has(normalizePhone(l.agentNumber))) continue;
+    out.push({ callId: l.callId, direction: l.direction, customerNumber: formatPhone(normalizePhone(l.customerNumber) ?? l.customerNumber), memberName: null, agentName: l.agentName, startedAtMs: (l.startedAt ?? new Date()).getTime() });
+  }
+  return out;
+}
+
+/**
+ * Active calls always come from ivr_calls. `live: false` is for page renders: Smartflo's live-calls list is then the last known value
+ * instead of a wait on Smartflo, and the KPI strip asks again a moment later through /api/ivr/kpis.
  */
 export async function getKpis(opts: { userId?: string; from: Date; to: Date; live?: boolean }): Promise<Kpis> {
   // An agent's numbers count only the calls they handled themselves.
@@ -68,15 +122,11 @@ export async function getKpis(opts: { userId?: string; from: Date; to: Date; liv
     talk: 0,
   };
 
-  const active = mine
-    ? live.filter((l) => {
-        const n = normalizePhone(l.agentNumber);
-        return !!n && mine.has(n);
-      }).length
-    : live.length;
+  const activeCalls = await getActiveCalls(opts.userId, live, mine);
 
   return {
-    active,
+    active: activeCalls.length,
+    activeCalls,
     attempted: c.attempted,
     connected: c.connected,
     pickupRate: c.attempted ? Math.round((c.out_answered / c.attempted) * 100) : null,

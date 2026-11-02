@@ -3,13 +3,17 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PhoneMissed } from "lucide-react";
+import { ActiveCalls } from "@/components/ivr/active-calls";
 import { Kpi } from "@/components/ivr/ui";
 import { formatDuration } from "@/lib/ivr/time";
 import type { Kpis } from "@/lib/ivr/stats";
 
 type Payload = { kpis: Kpis };
 
-/** KPIs that refresh every 30 seconds while the tab is in view (and when it comes back), so "active calls" stays live. */
+/**
+ * KPIs that refresh every 10 seconds while the tab is in view (and at once when it comes back), so "active calls" stays live. The admin
+ * strip also lists the calls in progress.
+ */
 export function KpiStrip({
   initial,
   query,
@@ -33,33 +37,36 @@ export function KpiStrip({
       } catch { /* offline for a moment: keep what it shows */ }
     };
     const onVisible = () => { if (document.visibilityState === "visible") void load(); };
-    const t = setInterval(load, 30_000);
+    const t = setInterval(load, 10_000);
     document.addEventListener("visibilitychange", onVisible);
     return () => { stopped = true; clearInterval(t); document.removeEventListener("visibilitychange", onVisible); };
   }, [initial, query]);
   return (
-    <div className="ivr-stagger grid grid-cols-2 gap-4 md:grid-cols-4">
-      <Kpi label="Active calls" value={k.active} live hint="right now" />
-      <Kpi label="Attempted" value={k.attempted} tone="attempted" hint="outbound calls" />
-      <Kpi label="Connected" value={k.connected} tone="done" hint="answered calls" />
-      <Kpi label="Pick-up rate" value={k.pickupRate === null ? "–" : `${k.pickupRate}%`} hint="outbound answered" />
-      <Kpi label="Talk time" value={k.talkSec ? formatDuration(k.talkSec) : "0s"} hint="answered calls" />
-      {variant === "agent" ? (
-        <Kpi label="Queue" value={k.queue} tone={k.queue ? "incoming" : undefined} hint="members left to call" />
-      ) : (
-        <Kpi label="Unassigned" value={k.unassigned ?? 0} tone={k.unassigned ? "incoming" : undefined} hint="members need an owner" />
-      )}
-      <Kpi
-        className="col-span-2"
-        label="Missed calls"
-        value={k.missedOpen}
-        tone={k.missedOpen ? "missed" : undefined}
-        hint={variant === "agent" ? "inbound, not reached yet · last 30 days" : "inbound, team-wide, not reached yet · last 30 days"}
-      >
-        <Link className="btn btn-ghost btn-sm mt-1" href={variant === "agent" ? "/ivr/calls?tab=missed" : "/ivr/admin/calls?tab=missed"}>
-          <PhoneMissed className="h-3.5 w-3.5" aria-hidden /> See missed calls
-        </Link>
-      </Kpi>
-    </div>
+    <>
+      <div className="ivr-stagger grid grid-cols-2 gap-4 md:grid-cols-4">
+        <Kpi label="Active calls" value={k.active} live={k.active > 0} tone={k.active > 0 ? "done" : undefined} hint="right now" />
+        <Kpi label="Attempted" value={k.attempted} tone="attempted" hint="outbound calls" />
+        <Kpi label="Connected" value={k.connected} tone="done" hint="answered calls" />
+        <Kpi label="Pick-up rate" value={k.pickupRate === null ? "–" : `${k.pickupRate}%`} hint="outbound answered" />
+        <Kpi label="Talk time" value={k.talkSec ? formatDuration(k.talkSec) : "0s"} hint="answered calls" />
+        {variant === "agent" ? (
+          <Kpi label="Queue" value={k.queue} tone={k.queue ? "incoming" : undefined} hint="members left to call" />
+        ) : (
+          <Kpi label="Unassigned" value={k.unassigned ?? 0} tone={k.unassigned ? "incoming" : undefined} hint="members need an owner" />
+        )}
+        <Kpi
+          className="col-span-2"
+          label="Missed calls"
+          value={k.missedOpen}
+          tone={k.missedOpen ? "missed" : undefined}
+          hint={variant === "agent" ? "inbound, not reached yet · last 30 days" : "inbound, team-wide, not reached yet · last 30 days"}
+        >
+          <Link className="btn btn-ghost btn-sm mt-1" href={variant === "agent" ? "/ivr/calls?tab=missed" : "/ivr/admin/calls?tab=missed"}>
+            <PhoneMissed className="h-3.5 w-3.5" aria-hidden /> See missed calls
+          </Link>
+        </Kpi>
+      </div>
+      {variant === "admin" && <ActiveCalls calls={k.activeCalls} />}
+    </>
   );
 }

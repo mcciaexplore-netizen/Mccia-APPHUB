@@ -48,7 +48,7 @@ export function Kpi({
         {typeof value === "number" ? <CountUp value={value} /> : value}
       </span>
       <span className="ivr-label flex items-center gap-1.5">
-        {live && <span className="ivr-live-dot h-2 w-2 rounded-full bg-brand-red" aria-hidden />}
+        {live && <span className="ivr-live-dot h-2 w-2 rounded-full bg-brand-green" aria-hidden />}
         {label}
       </span>
       {hint && <span className="text-[0.75rem] text-muted">{hint}</span>}
