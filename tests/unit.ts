@@ -35,6 +35,7 @@ import { formatPhone as ivrFormatPhone, maskPhone as ivrMaskPhone, normalizePhon
 import { deriveOutcome as ivrOutcome } from "../src/lib/ivr/outcome";
 import { nextStage as ivrNextStage, OPEN_STAGES as IVR_OPEN_STAGES } from "../src/lib/ivr/stage";
 import { normalizeCdr as ivrCdr, normalizeLive as ivrLive, normalizeUserAsAgent as ivrSfAgent, normalizeWebhook as ivrWebhook, parseSfTime as ivrSfTime, webhookEvent as ivrEvent } from "../src/lib/ivr/smartflo/normalize";
+import { buildAgentCtx as ivrAgentCtx, resolveAgent as ivrResolveAgent } from "../src/lib/ivr/smartflo/agent-match";
 import { detectColumns as ivrDetect, sanitizeMapping as ivrSanitize } from "../src/lib/ivr/import/detect";
 import { buildAgentIndex as ivrAgentIndex, matchAgent as ivrMatch } from "../src/lib/ivr/import/match";
 import { addDays as ivrAddDays, formatDuration as ivrDuration, istDayStart as ivrDayStart, resolveRange as ivrRange, toIstDateString as ivrDateStr } from "../src/lib/ivr/time";
@@ -909,6 +910,20 @@ const ssoTests = (async () => {
   eq("ivr webhook: no end time and no duration = still ringing (ongoing)", ivrWebhook({ call_id: "c-2", customer_number: "+919876543210", start_stamp: "2026-10-31 10:00:00" })?.status, "ongoing");
   eq("ivr webhook: without a call id or a caller's number it is stored, not merged (null)", [ivrWebhook({ call_id: "c-3" }), ivrWebhook({ customer_number: "1", start_stamp: "2026-10-31 10:00:00" })], [null, null]);
   // Smartflo's real hang-up payload carries uuid, call_id, direction and billsec, and may have no start time, no duration and no event name.
+  // The production payload (numbers as Smartflo sent them): caller in caller_id_number, customer_number and did_number empty, a softphone answer.
+  const prod = ivrWebhook({ uuid: "u-prod", call_id: "c-prod", direction: "inbound", caller_id_number: "9004768014", customer_number: null, did_number: null,
+    answered_agent_number: "0607128930025", start_stamp: "2026-11-02 11:00:00", end_stamp: "2026-11-02 11:01:00", duration: "60", billsec: "48" });
+  eq("ivr webhook: production payload: the caller comes from caller_id_number, no line, the softphone extension as the agent number",
+    prod && [prod.customerNumber, ivrPhone(prod.customerNumber), prod.didNumber, prod.agentNumber, prod.status, prod.durationSec, prod.answeredSec],
+    ["9004768014", "+919004768014", null, "0607128930025", "answered", 60, 48]);
+  eq("ivr webhook: inbound prefers caller_id_number over customer_number; outbound the other way round",
+    [ivrWebhook({ call_id: "i", direction: "inbound", caller_id_number: "9004768014", customer_number: "9999999999", billsec: "1" })?.customerNumber,
+      ivrWebhook({ call_id: "o", direction: "outbound", caller_id_number: "02071000000", customer_number: "9004768014", billsec: "1" })?.customerNumber],
+    ["9004768014", "9004768014"]);
+  const ctx = ivrAgentCtx([{ id: "sf-9", extension: null, number: null, mappedUserId: null }], [{ id: "u-ext", phone: "+919800000101", smartfloAgentId: null, ext: "0607128930025" }, { id: "u-other", phone: "+919800000102", smartfloAgentId: null, ext: "0607128930003" }]);
+  eq("ivr agent match: answered_agent_number 0607128930025 is the agent whose softphone extension it is",
+    [ivrResolveAgent(ctx, { agentId: null, agentNumber: prod?.agentNumber ?? null }).userId, ivrResolveAgent(ctx, { agentId: null, agentNumber: "0607128930099" }).userId, ivrResolveAgent(ctx, { agentId: null, agentNumber: "+91 98000 00102" }).userId],
+    ["u-ext", null, "u-other"]);
   const real = ivrWebhook({ uuid: "6ae83af08ccef", call_id: "HYD7-T12-1793604336.78319", direction: "inbound", caller_id_number: "+919876543210", billsec: "42", end_stamp: "2026-11-02 10:05:00", call_status: "answered" });
   eq("ivr webhook: a real hang-up payload (no start time, no duration) is a finished call: length from billsec, start = end less the length",
     real && [real.callId, real.status, real.answeredSec, real.durationSec, real.startedAt.toISOString()], ["HYD7-T12-1793604336.78319", "answered", 42, 42, "2026-11-02T04:34:18.000Z"]);

@@ -17,6 +17,7 @@ import { normalizePhone } from "@/lib/ivr/phone";
 import { getMembershipLines, lineKey } from "@/lib/ivr/settings";
 import { nextStage } from "@/lib/ivr/stage";
 import type { SfCall } from "./types";
+import { buildAgentCtx, resolveAgent, type AgentCtx } from "./agent-match";
 import { listCallers } from "@/lib/ivr/host-adapter";
 
 const chunk = <T,>(arr: T[], n: number): T[][] => {
@@ -25,61 +26,12 @@ const chunk = <T,>(arr: T[], n: number): T[][] => {
   return out;
 };
 
-type AgentCtx = {
-  byAgentId: Map<string, { userId: string | null; id: string }>;
-  byNumber: Map<string, string>; // e164 -> user id
-  byExt: Map<string, string>; // softphone extension digits -> user id
-};
-
-const digitsOf = (n: string | null | undefined): string => (n ?? "").replace(/\D/g, "");
-
 async function loadAgentCtx(): Promise<AgentCtx> {
   const [agents, us] = await Promise.all([
     db.select().from(smartfloAgents),
     listCallers().then((ps) => ps.map((p) => ({ id: p.id, phone: p.phone, smartfloAgentId: p.smartfloAgentId, ext: p.softphoneExtension }))),
   ]);
-  const byAgentId = new Map<string, { userId: string | null; id: string }>();
-  const byNumber = new Map<string, string>();
-  const byExt = new Map<string, string>();
-  for (const a of agents) {
-    const ext = digitsOf(a.extension);
-    if (ext.length >= 3 && a.mappedUserId) byExt.set(ext, a.mappedUserId);
-    byAgentId.set(a.id, { userId: a.mappedUserId, id: a.id });
-    const n = normalizePhone(a.number);
-    if (n && a.mappedUserId) byNumber.set(n, a.mappedUserId);
-  }
-  for (const u of us) {
-    const ext = digitsOf(u.ext);
-    if (ext.length >= 3) byExt.set(ext, u.id);
-    if (u.smartfloAgentId && !byAgentId.get(u.smartfloAgentId)?.userId) {
-      byAgentId.set(u.smartfloAgentId, { userId: u.id, id: u.smartfloAgentId });
-    }
-    const n = normalizePhone(u.phone);
-    if (n && !byNumber.has(n)) byNumber.set(n, u.id);
-  }
-  return { byAgentId, byNumber, byExt };
-}
-
-function resolveAgent(ctx: AgentCtx, c: SfCall): { userId: string | null; agentId: string | null } {
-  if (c.agentId && ctx.byAgentId.has(c.agentId)) {
-    const hit = ctx.byAgentId.get(c.agentId)!;
-    return { userId: hit.userId, agentId: hit.id };
-  }
-  // Calls taken on a browser softphone report the extension as the agent number.
-  const extUid = ctx.byExt.get(digitsOf(c.agentNumber));
-  if (extUid) {
-    const u = [...ctx.byAgentId.values()].find((a) => a.userId === extUid);
-    return { userId: extUid, agentId: u?.id ?? c.agentId };
-  }
-  const n = normalizePhone(c.agentNumber);
-  if (n) {
-    const uid = ctx.byNumber.get(n);
-    if (uid) {
-      const u = [...ctx.byAgentId.values()].find((a) => a.userId === uid);
-      return { userId: uid, agentId: u?.id ?? c.agentId };
-    }
-  }
-  return { userId: null, agentId: c.agentId };
+  return buildAgentCtx(agents, us);
 }
 
 export type IngestResult = { upserted: number; newLeads: number; skipped: number };

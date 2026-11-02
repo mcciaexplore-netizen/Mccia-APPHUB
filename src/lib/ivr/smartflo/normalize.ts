@@ -124,11 +124,14 @@ export function webhookEvent(payload: Rec): string {
 export function normalizeWebhook(payload: Rec, receivedAt: Date = new Date()): SfCall | null {
   const p = stripDollar(payload);
   const callId = str(p.call_id);
+  const direction = directionOf(p.direction);
+  // Real inbound payloads carry the caller in caller_id_number and leave customer_number empty. On an outbound call caller_id_number is
+  // the number Smartflo showed the member (our own line), so there the customer fields come first. ingest.ts adds +91 to a bare 10 digits.
+  const customerFields = [str(p.customer_number_with_prefix), str(p.customer_no_with_prefix), str(p.customer_number)];
   const customer =
-    str(p.customer_number_with_prefix) ??
-    str(p.customer_no_with_prefix) ??
-    str(p.customer_number) ??
-    str(p.caller_id_number);
+    direction === "inbound"
+      ? str(p.caller_id_number) ?? customerFields.find(Boolean) ?? null
+      : customerFields.find(Boolean) ?? str(p.caller_id_number);
   if (!callId || !customer) return null;
   const answeredSec = int(p.billsec);
   const durationSec = int(p.duration) || answeredSec;
@@ -144,10 +147,11 @@ export function normalizeWebhook(payload: Rec, receivedAt: Date = new Date()): S
   const isFinal = !!ended || has(p, "duration") || has(p, "billsec") || has(p, "hangup_cause");
   return {
     callId,
-    direction: directionOf(p.direction),
+    direction,
     status: isFinal ? statusOf(p.call_status, answeredSec) : "ongoing",
     customerNumber: customer,
-    didNumber: str(p.call_to_number),
+    // Often empty in real payloads; the Membership filter then goes by the agent who took the call.
+    didNumber: str(p.call_to_number) ?? str(p.did_number),
     agentId: str(answeredAgent?.id),
     agentName: str(p.answered_agent_name) ?? str(answeredAgent?.name) ?? str(p.agent_name),
     agentNumber:
