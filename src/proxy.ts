@@ -13,7 +13,11 @@ import { ADMIN_COOKIE, ADMIN_IDLE, SESSION_COOKIE, cookieOptions, sign, verify }
  * Cab Booking's drivers can sign in to Cabs Driver with their phone instead of a hub account (src/lib/cabs/driver-session.ts). Without a
  * hub sign-in, only the driver pages and the few routes the driver app calls go through (DRIVER_PATH), and each of those checks the
  * driver's own sign-in itself, sending anyone without one to /cabs/driver-login. Someone signed in to the hub is handled as before.
+ *
+ * DesignDesk's review and tracking links (/review/<token>, /track/<token>, and the review's file under /api/design/public/) work without a
+ * hub sign-in: the token in the address is the key, and each page checks it itself (src/lib/design/tokens.ts).
  */
+const DESIGN_PUBLIC_PATH = /^\/(?:review\/[A-Za-z0-9_-]{20,100}|track\/[A-Za-z0-9.-]{6,80}|api\/design\/public\/review\/[A-Za-z0-9_-]{20,100}\/file)$/;
 const DRIVER_PATH = /^\/(?:cabs\/driver(?:\/.*)?|cabs\/driver-login|api\/cabs\/(?:driver-access|driver-login|driver-logout|driver-me|driver\/availability|location|rides\/[^/]+\/(?:otp\/verify|start|complete)))$/;
 
 export function proxy(req: NextRequest) {
@@ -26,7 +30,7 @@ export function proxy(req: NextRequest) {
   if (pathname === "/login" || pathname === "/set-password") return NextResponse.next();
 
   const session = verify(req.cookies.get(SESSION_COOKIE)?.value, "session");
-  if (!session) return DRIVER_PATH.test(pathname) ? NextResponse.next() : to(`/login?next=${here}`);
+  if (!session) return DRIVER_PATH.test(pathname) || DESIGN_PUBLIC_PATH.test(pathname) ? NextResponse.next() : to(`/login?next=${here}`);
 
   const unlock = verify(req.cookies.get(ADMIN_COOKIE)?.value, "admin");
   const unlocked = !!unlock && unlock.u === session.u;

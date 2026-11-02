@@ -1,0 +1,263 @@
+"use client";
+
+import Link from "next/link";
+import { useMemo, useState, useTransition } from "react";
+import { CheckCircle2, Copy, Plus, Trash2 } from "lucide-react";
+import type { DesignQuestion } from "@/db/design-schema";
+import { submitRequest } from "@/lib/design/actions/requests";
+import { MAX_FILES, MAX_FILE_MB, MAX_REFERENCE_LINKS } from "@/lib/design/form";
+import { priorityFor } from "@/lib/design/rules";
+import { FileDrop } from "../file-drop";
+import { Card, PriorityBadge } from "../ui";
+
+/**
+ * The request form, in four cards: what is needed (each ticked design opens its own questions), the brief and event, when it is needed
+ * (the priority follows from the date), and reference files. Files upload as they are added; the button waits for them.
+ */
+
+type FormType = { key: string; name: string; questions: DesignQuestion[] };
+type Answers = Record<string, Record<string, string>>;
+
+const required = <span className="text-[var(--ds-red)]" aria-hidden> *</span>;
+
+function Question({ q, id, value, onChange }: { q: DesignQuestion; id: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <label className="flex flex-col gap-1 text-sm" htmlFor={id}>
+      <span className="font-medium text-ink">
+        {q.label}
+        {q.required && required}
+      </span>
+      {q.type === "select" ? (
+        <select id={id} className="input" value={value} required={q.required} onChange={(e) => onChange(e.target.value)}>
+          <option value="">Choose…</option>
+          {q.options?.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input id={id} className="input" type={q.type === "number" ? "number" : "text"} min={q.type === "number" ? 1 : undefined} value={value} required={q.required} maxLength={200} onChange={(e) => onChange(e.target.value)} />
+      )}
+    </label>
+  );
+}
+
+export function RequestForm({ types, departments, defaultDepartment, minDelivery, today }: { types: FormType[]; departments: string[]; defaultDepartment: string; minDelivery: string; today: string }) {
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [answers, setAnswers] = useState<Answers>({});
+  const [brief, setBrief] = useState("");
+  const [eventName, setEventName] = useState("");
+  const [eventDate, setEventDate] = useState("");
+  const [links, setLinks] = useState<string[]>([""]);
+  const [department, setDepartment] = useState(defaultDepartment);
+  const [delivery, setDelivery] = useState("");
+  const [fileIds, setFileIds] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<{ number: string; trackingUrl: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [formKey, setFormKey] = useState(0);
+  const [pending, start] = useTransition();
+
+  const byKey = useMemo(() => new Map(types.map((t) => [t.key, t])), [types]);
+  const toggle = (key: string) => setChosen((c) => (c.includes(key) ? c.filter((k) => k !== key) : [...c, key]));
+  const answer = (type: string, q: string, v: string) => setAnswers((a) => ({ ...a, [type]: { ...(a[type] ?? {}), [q]: v } }));
+
+  const reset = () => {
+    setChosen([]);
+    setAnswers({});
+    setBrief("");
+    setEventName("");
+    setEventDate("");
+    setLinks([""]);
+    setDepartment(defaultDepartment);
+    setDelivery("");
+    setFileIds([]);
+    setError(null);
+    setDone(null);
+    setCopied(false);
+    setFormKey((k) => k + 1);
+  };
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!chosen.length) return setError("Choose at least one kind of design.");
+    start(async () => {
+      const res = await submitRequest({
+        requirements: chosen,
+        details: Object.fromEntries(chosen.map((k) => [k, answers[k] ?? {}])),
+        brief,
+        eventName,
+        eventDate,
+        department,
+        deliveryDate: delivery,
+        referenceLinks: links,
+        fileIds,
+      });
+      if (res.ok) {
+        setDone({ number: res.data.number, trackingUrl: res.data.trackingUrl });
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else setError(res.error);
+    });
+  };
+
+  if (done)
+    return (
+      <div className="ds-card flex flex-col items-center gap-4 px-6 py-10 text-center">
+        <CheckCircle2 size={48} className="text-[var(--ds-green)]" aria-hidden />
+        <div>
+          <p className="text-sm ds-muted">Ticket</p>
+          <p className="text-3xl font-extrabold text-[var(--ds-navy)]">{done.number}</p>
+        </div>
+        <h2 className="text-xl font-bold text-ink">Your request has been submitted</h2>
+        <p className="max-w-md text-sm ds-muted">A design lead will review it shortly. We have emailed you a confirmation. Follow its progress with this link:</p>
+        <div className="flex w-full max-w-lg items-center gap-2 rounded-lg border border-[var(--ds-navy-line)] bg-[var(--ds-navy-tint)] px-3 py-2">
+          <a href={done.trackingUrl} className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-[var(--ds-navy)] hover:underline" target="_blank" rel="noreferrer">
+            {done.trackingUrl}
+          </a>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={() => {
+              void navigator.clipboard?.writeText(done.trackingUrl);
+              setCopied(true);
+            }}
+          >
+            <Copy size={14} aria-hidden /> {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <div className="flex flex-wrap justify-center gap-3">
+          <Link href="/design/my-requests" className="btn btn-sm ds-btn-navy">
+            See my requests
+          </Link>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={reset}>
+            Submit another request
+          </button>
+        </div>
+      </div>
+    );
+
+  const priority = delivery && delivery >= minDelivery ? priorityFor(delivery, today) : null;
+
+  return (
+    <form key={formKey} onSubmit={submit} className="flex flex-col gap-5" noValidate={false}>
+      <Card title="What do you need?">
+        <fieldset>
+          <legend className="sr-only">Kinds of design</legend>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {types.map((t) => {
+              const on = chosen.includes(t.key);
+              return (
+                <label key={t.key} className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${on ? "border-[var(--ds-navy)] bg-[var(--ds-navy-tint)] text-[var(--ds-navy)]" : "border-[var(--ds-line)] bg-white text-ink hover:border-[var(--ds-navy-line)]"}`}>
+                  <input type="checkbox" className="h-4 w-4 accent-[#003F8A]" checked={on} onChange={() => toggle(t.key)} />
+                  {t.name}
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+        {chosen.length > 0 && (
+          <div className="mt-5 flex flex-col gap-4">
+            {chosen.map((k) => {
+              const t = byKey.get(k);
+              if (!t) return null;
+              return (
+                <div key={k} className="rounded-lg border border-[var(--ds-line)] bg-[#fafafa] p-4">
+                  <p className="ds-label mb-3">{t.name}</p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {t.questions.map((q) => (
+                      <Question key={q.id} q={q} id={`q-${k}-${q.id}`} value={answers[k]?.[q.id] ?? ""} onChange={(v) => answer(k, q.id, v)} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      <Card title="Request details">
+        <div className="flex flex-col gap-4">
+          <label className="flex flex-col gap-1 text-sm" htmlFor="brief">
+            <span className="font-medium text-ink">Title / brief{required}</span>
+            <textarea id="brief" className="input min-h-32" required minLength={5} maxLength={5000} value={brief} onChange={(e) => setBrief(e.target.value)} placeholder="What is the design for, what should it say, any colours, logos or wording to use…" />
+          </label>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-sm" htmlFor="event-name">
+              <span className="font-medium text-ink">Event name (if applicable)</span>
+              <input id="event-name" className="input" maxLength={200} value={eventName} onChange={(e) => setEventName(e.target.value)} />
+            </label>
+            <label className="flex flex-col gap-1 text-sm" htmlFor="event-date">
+              <span className="font-medium text-ink">Event date</span>
+              <input id="event-date" type="date" className="input" min={today} value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
+            </label>
+          </div>
+          <div className="flex flex-col gap-2 text-sm">
+            <span className="font-medium text-ink">Reference links</span>
+            {links.map((l, i) => (
+              <div key={i} className="flex gap-2">
+                <input
+                  className="input flex-1"
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://"
+                  aria-label={`Reference link ${i + 1}`}
+                  value={l}
+                  onChange={(e) => setLinks((ls) => ls.map((x, j) => (j === i ? e.target.value : x)))}
+                />
+                {links.length > 1 && (
+                  <button type="button" className="btn btn-sm btn-ghost" aria-label={`Remove link ${i + 1}`} onClick={() => setLinks((ls) => ls.filter((_, j) => j !== i))}>
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+            {links.length < MAX_REFERENCE_LINKS && (
+              <button type="button" className="btn btn-sm btn-ghost self-start" onClick={() => setLinks((ls) => [...ls, ""])}>
+                <Plus size={14} aria-hidden /> Add a link
+              </button>
+            )}
+          </div>
+          <label className="flex flex-col gap-1 text-sm" htmlFor="department">
+            <span className="font-medium text-ink">Department</span>
+            <input id="department" className="input" list="ds-departments" maxLength={120} value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Choose or type your department" />
+            <datalist id="ds-departments">
+              {departments.map((d) => (
+                <option key={d} value={d} />
+              ))}
+            </datalist>
+          </label>
+        </div>
+      </Card>
+
+      <Card title="When do you need it?">
+        <div className="flex flex-wrap items-end gap-4">
+          <label className="flex flex-col gap-1 text-sm" htmlFor="delivery">
+            <span className="font-medium text-ink">Delivery date{required}</span>
+            <input id="delivery" type="date" className="input" required min={minDelivery} value={delivery} onChange={(e) => setDelivery(e.target.value)} />
+          </label>
+          <div className="flex items-center gap-2 pb-2 text-sm" aria-live="polite">
+            <span className="ds-muted">Priority:</span>
+            {priority ? <PriorityBadge priority={priority} /> : <span className="ds-muted">choose a date</span>}
+          </div>
+        </div>
+        <p className="mt-2 text-xs ds-muted">Next day or sooner is Urgent, within 3 days High, within 10 days Normal, later Low.</p>
+      </Card>
+
+      <Card title="Reference files">
+        <FileDrop purpose="attachment" maxFiles={MAX_FILES} maxMb={MAX_FILE_MB} onChange={setFileIds} onBusy={setUploading} />
+      </Card>
+
+      {error && (
+        <p role="alert" className="alert alert-red text-sm">
+          {error}
+        </p>
+      )}
+      <button type="submit" className="btn ds-btn-navy w-full justify-center py-3 text-base" disabled={pending || uploading}>
+        {uploading ? "Waiting for files to upload…" : pending ? "Submitting…" : "Submit request →"}
+      </button>
+    </form>
+  );
+}

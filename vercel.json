@@ -6,6 +6,7 @@
   "crons": [
     { "path": "/api/cron/cleanup-uploads", "schedule": "30 21 * * *" },
     { "path": "/api/ping", "schedule": "0 2 * * *" },
-    { "path": "/api/cron/ivr-sync?hours=48", "schedule": "0 1 * * *" }
+    { "path": "/api/cron/ivr-sync?hours=48", "schedule": "0 1 * * *" },
+    { "path": "/api/cron/design-tick", "schedule": "30 1 * * *" }
   ]
 }

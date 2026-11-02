@@ -1,0 +1,104 @@
+/*
+ * DesignDesk's own look on the hub's base (src/app/globals.css): navy #003F8A with green #10B981, white 12px cards on a light grey page.
+ * Everything here is prefixed ds- (or scoped under .ds-root) so nothing can change a hub page: the stylesheet stays loaded once someone has
+ * opened /design. Buttons and inputs use the hub's own classes (btn, input), recoloured inside .ds-root.
+ */
+:root {
+  --ds-navy: #003f8a;
+  --ds-navy-2: #0056b3;
+  --ds-navy-tint: rgba(0, 63, 138, 0.07);
+  --ds-navy-line: rgba(0, 63, 138, 0.16);
+  --ds-green: #10b981;
+  --ds-green-text: #059669;
+  --ds-green-tint: rgba(16, 185, 129, 0.09);
+  --ds-amber: #d97706;
+  --ds-amber-tint: rgba(217, 119, 6, 0.1);
+  --ds-red: #dc2626;
+  --ds-red-tint: rgba(220, 38, 38, 0.08);
+  --ds-purple: #7c3aed;
+  --ds-purple-tint: rgba(124, 58, 237, 0.09);
+  --ds-grey: #64748b;
+  --ds-grey-tint: #f1f5f9;
+  --ds-page: #f5f5f5;
+  --ds-line: #e5e7eb;
+  --ds-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 14px rgba(15, 23, 42, 0.05);
+  --ds-shadow-hover: 0 6px 22px rgba(15, 23, 42, 0.1);
+}
+
+/* The page behind DesignDesk is light grey; the hub frame around other pages is untouched. */
+.min-h-screen:has(.ds-root) { background: var(--ds-page); }
+.ds-public { min-height: 100vh; background: var(--ds-page); }
+
+.ds-root { --c-primary: var(--ds-navy); --grad-primary: linear-gradient(135deg, var(--ds-navy) 0%, var(--ds-navy-2) 100%); --c-border-hover: var(--ds-navy-line); --c-blue-tint: var(--ds-navy-tint); --c-blue-tint-border: var(--ds-navy-line); }
+.ds-root .text-primary { color: var(--ds-navy); }
+
+.ds-card { background: #fff; border: 1px solid var(--ds-line); border-radius: 12px; box-shadow: var(--ds-shadow); }
+.ds-card-hover { transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease; }
+.ds-card-hover:hover { box-shadow: var(--ds-shadow-hover); border-color: var(--ds-navy-line); transform: translateY(-1px); }
+.ds-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ds-grey); }
+.ds-muted { color: var(--ds-grey); }
+
+/* Badges: a tone sets the colour */
+.ds-badge { display: inline-flex; align-items: center; gap: 0.3rem; border-radius: 99px; padding: 0.15rem 0.6rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; border: 1px solid transparent; line-height: 1.5; }
+.ds-tone-neutral { background: var(--ds-grey-tint); color: #475569; border-color: #e2e8f0; }
+.ds-tone-blue { background: var(--ds-navy-tint); color: var(--ds-navy); border-color: var(--ds-navy-line); }
+.ds-tone-amber { background: var(--ds-amber-tint); color: #b45309; border-color: rgba(217, 119, 6, 0.22); }
+.ds-tone-purple { background: var(--ds-purple-tint); color: var(--ds-purple); border-color: rgba(124, 58, 237, 0.2); }
+.ds-tone-green { background: var(--ds-green-tint); color: var(--ds-green-text); border-color: rgba(16, 185, 129, 0.22); }
+.ds-tone-red { background: var(--ds-red-tint); color: var(--ds-red); border-color: rgba(220, 38, 38, 0.2); }
+.ds-tone-orange { background: rgba(234, 88, 12, 0.09); color: #c2410c; border-color: rgba(234, 88, 12, 0.22); }
+
+/* Buttons in DesignDesk's colours */
+.ds-btn-navy { background: var(--ds-navy); color: #fff; border: 1px solid var(--ds-navy); }
+.ds-btn-navy:hover:not(:disabled) { background: #00336f; }
+.ds-btn-green { background: var(--ds-green); color: #fff; border: 1px solid var(--ds-green); }
+.ds-btn-green:hover:not(:disabled) { background: #0e9f6e; }
+.ds-btn-outline-red { background: #fff; color: var(--ds-red); border: 1px solid rgba(220, 38, 38, 0.45); }
+.ds-btn-outline-red:hover:not(:disabled) { background: var(--ds-red-tint); }
+.ds-root .btn:disabled, .ds-public .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* The five progress steps */
+.ds-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.35rem; }
+.ds-step-bar { height: 6px; border-radius: 99px; background: #e5e7eb; }
+.ds-step-bar[data-on="true"] { background: var(--ds-navy); }
+.ds-step-bar[data-done="true"] { background: var(--ds-green); }
+.ds-step-text { margin-top: 0.3rem; font-size: 0.68rem; color: var(--ds-grey); line-height: 1.25; }
+.ds-step-text[data-on="true"] { color: var(--ds-navy); font-weight: 700; }
+
+/* Kanban */
+.ds-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(250px, 1fr); gap: 0.85rem; overflow-x: auto; padding-bottom: 0.75rem; }
+.ds-col { background: #eef0f3; border-radius: 12px; padding: 0.6rem; min-height: 200px; display: flex; flex-direction: column; gap: 0.55rem; }
+.ds-col[data-over="true"] { outline: 2px dashed var(--ds-navy); outline-offset: -2px; background: var(--ds-navy-tint); }
+.ds-col-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.15rem 0.35rem 0.25rem; }
+.ds-tcard { background: #fff; border: 1px solid var(--ds-line); border-radius: 10px; padding: 0.7rem 0.75rem; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05); cursor: grab; }
+.ds-tcard:hover { border-color: var(--ds-navy-line); box-shadow: var(--ds-shadow-hover); }
+.ds-tcard[data-selected="true"] { outline: 2px solid var(--ds-navy); }
+.ds-tcard[data-dragging="true"] { opacity: 0.45; }
+
+/* Avatar */
+.ds-avatar { display: inline-grid; place-items: center; border-radius: 99px; background: var(--ds-navy); color: #fff; font-weight: 700; flex-shrink: 0; }
+
+/* Drop zone */
+.ds-drop { border: 2px dashed #cbd5e1; border-radius: 12px; background: #fafafa; transition: border-color 0.15s ease, background 0.15s ease; }
+.ds-drop[data-over="true"] { border-color: var(--ds-navy); background: var(--ds-navy-tint); }
+
+/* Tabs */
+.ds-tabs { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; background: #fff; border: 1px solid var(--ds-line); border-radius: 10px; padding: 0.25rem; }
+.ds-tab { padding: 0.4rem 0.85rem; border-radius: 7px; font-size: 0.82rem; font-weight: 600; color: var(--ds-grey); }
+.ds-tab[aria-selected="true"], .ds-tab[aria-current="page"] { background: var(--ds-navy); color: #fff; }
+.ds-tab:not([aria-selected="true"]):not([aria-current="page"]):hover { background: var(--ds-grey-tint); color: #0f172a; }
+
+/* Live dot */
+@keyframes ds-pulse { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); } 70% { box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+.ds-live { width: 8px; height: 8px; border-radius: 99px; background: var(--ds-green); animation: ds-pulse 1.8s infinite; }
+@media (prefers-reduced-motion: reduce) { .ds-live { animation: none; } .ds-card-hover:hover { transform: none; } }
+
+/* Workload cells */
+.ds-load-free { background: var(--ds-green-tint); color: var(--ds-green-text); }
+.ds-load-full { background: var(--ds-amber-tint); color: #b45309; }
+.ds-load-over { background: var(--ds-red-tint); color: var(--ds-red); }
+.ds-load-off { background: #f3f4f6; color: #9ca3af; }
+
+/* Pins on an image */
+.ds-pin { position: absolute; transform: translate(-50%, -50%); width: 26px; height: 26px; border-radius: 99px; background: var(--ds-red); color: #fff; font-size: 0.72rem; font-weight: 800; display: grid; place-items: center; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3); }
+.ds-pin[data-resolved="true"] { background: var(--ds-green); }

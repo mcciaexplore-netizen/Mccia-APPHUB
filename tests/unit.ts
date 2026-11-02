@@ -59,6 +59,16 @@ import {
   recentFinancialYears, todayIST, toDateTimeLocal,
 } from "../src/lib/approvals/format";
 
+import { DESIGN_ADMIN_URL_PATTERN, DESIGN_TEAM_URL_PATTERN, designRolesFor, isLead as designIsLead, navFor as designNavFor } from "../src/lib/design/design.manifest";
+import {
+  DEFAULT_SCHEDULE as DESIGN_SCHEDULE, baseNumber as designBase, changeCutoff as designCutoff, dueHealth as designDueHealth, formatTicketNumber as designNumber, istMoment as designIst,
+  isSlackWebhook as designSlack, figmaEmbedUrl as designFigma, priorityFor as designPriority, requesterTabOf as designTab, revisionTags as designRevTags, slaHoursFor as designSla,
+  stepOf as designStep, versionNumber as designVersion, workingDue as designWorkingDue,
+} from "../src/lib/design/rules";
+import { MAX_FILES as DESIGN_MAX_FILES, SEED_TYPES as DESIGN_SEED, checkRequest as designCheck, cleanLinks as designLinks, ticketTitle as designTitle } from "../src/lib/design/form";
+import { loadTone as designTone, suggestAssignee as designSuggest, workingDays as designDays, workloadGrid as designGrid } from "../src/lib/design/capacity";
+import { mimeFor as designMime, safeFileName as designSafeName } from "../src/lib/design/file-types";
+
 let ok = 0, bad = 0;
 const eq = (name: string, got: unknown, want: unknown) => {
   const pass = JSON.stringify(got) === JSON.stringify(want);
@@ -398,12 +408,35 @@ eq("guards: the reviewed list holds only actions that really exist", [...SELF_CH
 // the Inventory module's and the Cab Booking module's routes go through their own route() wrappers, which do it centrally (checked just below).
 const appDir = new URL("../src/app/", import.meta.url);
 const allRouteFiles = (readdirSync(appDir, { recursive: true }) as string[]).filter((f) => /(^|\/)route\.ts$/.test(f));
-const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory|api\/cabs|cabs|api\/ivr|ivr)\//.test(f) && f !== "api/cron/ivr-sync/route.ts");
+const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory|api\/cabs|cabs|api\/ivr|ivr|api\/design|design)\//.test(f) && f !== "api/cron/ivr-sync/route.ts");
 // A Vercel Cron route has no sign-in: it must check CRON_SECRET instead. The only route open to anyone on purpose is the ping, which
 // touches nothing and answers only "ok" and the time (the proxy lets exactly /api/ping through).
 const PUBLIC_ROUTES = ["api/ping/route.ts"];
 const openRoutes = routeFiles.filter((f) => !PUBLIC_ROUTES.includes(f) && !/\b(assertHeadAdmin|assertArea|getCurrentUser|requireUser|requireHeadAdmin|requireArea|requireAdministrator)\(|process\.env\.CRON_SECRET/.test(readFileSync(new URL(f, appDir), "utf8")));
 eq(`guards: all ${routeFiles.length} route handlers outside the Approval System and Inventory check who is asking`, openRoutes, []);
+// Every DesignDesk server action proves who is asking through its guard; the review page's decision is checked by the link's token.
+const designActionsDir = new URL("../src/lib/design/actions/", import.meta.url);
+const designUnguarded: string[] = [];
+let designActionCount = 0;
+for (const file of readdirSync(designActionsDir).filter((f) => f.endsWith(".ts"))) {
+  const src = readFileSync(new URL(file, designActionsDir), "utf8");
+  // A file's helper (lead(), team(), ok() ...) may hold the guard for every action that uses it.
+  const helperGuards = [...src.matchAll(/^const (\w+) = [^\n]*\n?(?:(?!const ).*\n){0,4}?.*\bassert(?:Requester|Team|Lead|SuperAdmin)\(/gm)].map((m) => m[1]);
+  for (const part of src.split(/^export async function /m).slice(1)) {
+    designActionCount++;
+    const name = /^(\w+)/.exec(part)?.[1] ?? "?";
+    const guarded = /\bassert(Requester|Team|Lead|SuperAdmin)\(/.test(part) || helperGuards.some((h) => new RegExp(`\\b${h}\\(`).test(part)) || (name === "decideReview" && /decideByToken\(/.test(part));
+    if (!guarded) designUnguarded.push(`${file}:${name}`);
+  }
+}
+eq(`guards: every one of the ${designActionCount} DesignDesk server actions checks who is asking`, designUnguarded, []);
+// DesignDesk's routes check who is asking through its own guard (src/lib/design/dal.ts); the review link's file checks the link's token.
+const designRoutes = allRouteFiles.filter((f) => f.startsWith("api/design/"));
+const DESIGN_TOKEN_ROUTES = ["api/design/public/review/[token]/file/route.ts"];
+eq(`guards: every one of the ${designRoutes.length} DesignDesk route files checks who is asking (the review-link file: its token)`, designRoutes.filter((f) => {
+  const src = readFileSync(new URL(f, appDir), "utf8");
+  return DESIGN_TOKEN_ROUTES.includes(f) ? !/reviewFileByToken\(/.test(src) : !/\bassert(Requester|Team|Lead|SuperAdmin)\(/.test(src);
+}), []);
 // Every handler an Inventory route file exports is wrapped in the Inventory guard's route() (sign-in, roles, same-site writes, clean errors).
 const inventoryRoutes = allRouteFiles.filter((f) => /^api\/inventory\//.test(f));
 const unwrapped = inventoryRoutes.flatMap((f) => {
@@ -994,6 +1027,67 @@ const ssoTests = (async () => {
   eq("ivr time: a week is the last seven days, today included", ivrDateStr(ivrAddDays(ivrRange({ range: "week" }).to, -7)) === ivrRange({ range: "week" }).fromStr, true);
   eq("ivr list addresses: a change keeps the other filters, null removes one", [ivrQs({ stage: "new", q: "sun" }, { lead: "x" }), ivrQs({ stage: "new", lead: "x" }, { lead: null })], ["?stage=new&q=sun&lead=x", "?stage=new"]);
   eq("ivr class names: empty parts are skipped", ivrCx("a", false, null, undefined, "b"), "a b");
+}
+
+
+{
+  // DesignDesk: roles and menus
+  const roles = (hubRole: string, teamAccess: boolean, adminAccess: boolean) => designRolesFor({ hubRole, teamAccess, adminAccess });
+  eq("design roles: the Design Team app makes a member, the Admin app a lead (whatever the hub role)", [roles("member", true, false), roles("member", false, true), roles("admin", false, false)], [["design_member"], ["design_lead"], []]);
+  eq("design roles: the Support Admin holds all three", roles("head_admin", false, false), ["design_member", "design_lead", "design_super_admin"]);
+  eq("design menus: the admin menu only for leads; the request menu for everyone", [designNavFor("admin", ["design_member"]).length, designNavFor("team", ["design_member"]).map((i) => i.href)[0], designNavFor("requester", []).length], [0, "/design", 4]);
+  eq("design apps: the two URLs, and nothing else matches", ["/design", "/design/", "/design/admin", "/design/request", "/designs"].map((u) => [new RegExp(DESIGN_TEAM_URL_PATTERN).test(u), new RegExp(DESIGN_ADMIN_URL_PATTERN).test(u)]), [[true, false], [true, false], [false, true], [false, false], [false, false]]);
+  eq("design leads: a lead or the Support Admin", [designIsLead(["design_lead"]), designIsLead(["design_super_admin"]), designIsLead(["design_member"])], [true, true, false]);
+
+  // Priority from the delivery date, and deadlines in working hours
+  eq("design priority: next day urgent, 3 days high, 10 days normal, beyond low", ["2026-11-03", "2026-11-05", "2026-11-12", "2026-11-13"].map((d) => designPriority(d, "2026-11-02")), ["urgent", "high", "normal", "low"]);
+  const fri6pm = designIst("2026-11-06", 18);
+  eq("design deadline: 2 working hours from Friday 18:00 IST is Monday 11:00", designWorkingDue(fri6pm, 2, DESIGN_SCHEDULE, new Set()).toISOString(), designIst("2026-11-09", 11).toISOString());
+  eq("design deadline: a holiday is skipped", designWorkingDue(fri6pm, 2, DESIGN_SCHEDULE, new Set(["2026-11-09"])).toISOString(), designIst("2026-11-10", 11).toISOString());
+  eq("design deadline: before opening time starts at 10:00", designWorkingDue(designIst("2026-11-04", 7), 3, DESIGN_SCHEDULE, new Set()).toISOString(), designIst("2026-11-04", 13).toISOString());
+  eq("design deadline: time waiting on the requester is added on", designWorkingDue(designIst("2026-11-04", 10), 1, DESIGN_SCHEDULE, new Set(), 3600).toISOString(), designIst("2026-11-04", 12).toISOString());
+  eq("design deadline: urgent gets half (at least 2 hours)", [designSla(24, "urgent"), designSla(3, "urgent"), designSla(24, "normal")], [12, 2, 24]);
+
+  // Steps, tabs, cut-off and versions
+  eq("design steps: where each status sits for the requester", (["pending_review", "assigned", "waiting_on_requester", "in_review", "delivered", "closed"] as const).map(designStep), [0, 1, 2, 3, 4, 4]);
+  eq("design My Requests tabs", (["pending_review", "in_progress", "in_review", "delivered", "superseded", "declined"] as const).map(designTab), ["pending", "in_progress", "in_review", "delivered", "closed", "closed"]);
+  eq("design cut-off: 12 hours before the event day starts (IST)", designCutoff({ eventDate: "2026-11-10", dueAt: null })?.toISOString(), designIst("2026-11-09", 12).toISOString());
+  eq("design cut-off: no event and a passed deadline = no cut-off", designCutoff({ eventDate: null, dueAt: new Date(Date.now() - 1000) }), null);
+  eq("design numbers: DF-0007, its versions, and back to the base", [designNumber(7), designVersion("DF-0007", 2), designBase("DF-0007-V3"), designVersion("DF-0007", 1)], ["DF-0007", "DF-0007-V2", "DF-0007", "DF-0007"]);
+  const due = new Date(Date.now() + 5 * 3_600_000);
+  eq("design revisions: past the free two = extra revision; under 12 h = last-minute", [designRevTags(["a"], 3, 2, null), designRevTags(["a", "Extra revision"], 4, 2, due)], [["a"], ["a", "Extra revision", "Last-Minute Change"]]);
+  eq("design due health", [designDueHealth(new Date(Date.now() - 1000).toISOString(), "assigned"), designDueHealth(due.toISOString(), "assigned"), designDueHealth(due.toISOString(), "delivered")], ["overdue", "soon", "done"]);
+
+  // The request form
+  const types = new Map(DESIGN_SEED.map((t) => [t.key, t]));
+  const base = { requirements: ["flyer"], details: { flyer: { size: "A4", channel: "Print", language: "Marathi" } }, brief: "Annual meeting flyer", deliveryDate: "2026-11-10" };
+  const r = designCheck(base, types, "2026-11-02");
+  eq("design form: a good flyer request passes with its answers", r.ok && r.value.details, { flyer: { size: "A4", channel: "Print", language: "Marathi" } });
+  eq("design form: a required question", designCheck({ ...base, details: { flyer: { channel: "Print" } } }, types, "2026-11-02"), { ok: false, error: "Size is required" });
+  eq("design form: a select answer must be on the list", designCheck({ ...base, details: { flyer: { size: "A3", channel: "Print" } } }, types, "2026-11-02"), { ok: false, error: "Size: please choose from the list" });
+  eq("design form: with several designs the error names the design", designCheck({ ...base, requirements: ["flyer", "banner"] }, types, "2026-11-02"), { ok: false, error: "Banner / standee – Size (width x height) is required" });
+  eq("design form: delivery must be tomorrow or later", designCheck({ ...base, deliveryDate: "2026-11-02" }, types, "2026-11-02"), { ok: false, error: "The delivery date must be tomorrow or later" });
+  eq("design form: an unknown design", designCheck({ ...base, requirements: ["poster"] }, types, "2026-11-02").ok, false);
+  eq("design form: too many files", designCheck({ ...base, fileIds: Array.from({ length: DESIGN_MAX_FILES + 1 }, (_, i) => `00000000-0000-4000-8000-00000000000${i}`) }, types, "2026-11-02").ok, false);
+  eq("design form: numbers are numbers", designCheck({ requirements: ["book"], details: { book: { pages: "48", content_ready: "Partly" } }, brief: "Directory", deliveryDate: "2026-11-20" }, types, "2026-11-02").ok, true);
+  eq("design links: https only, blanks ignored, at most five", [designLinks(["", "https://x.org/a"]), designLinks(["http://x.org"]).ok, designLinks(Array(6).fill("https://x.org")).ok], [{ ok: true, links: ["https://x.org/a"] }, false, false]);
+  eq("design title: the event and the designs", designTitle({ eventName: "AGM", brief: "x", requirements: ["flyer", "banner"] }, new Map([["flyer", "Flyer"], ["banner", "Banner"]])), "AGM – Flyer, Banner");
+
+  // Capacity and workload
+  const days = designDays("2026-11-02", 7, DESIGN_SCHEDULE, new Set(["2026-11-04"]));
+  eq("design working days: weekends and holidays skipped", days, ["2026-11-02", "2026-11-03", "2026-11-05", "2026-11-06"]);
+  const people = [{ id: "a", name: "Asha", dailyHours: 8, leaves: [] }, { id: "b", name: "Ravi", dailyHours: 8, leaves: [{ start: "2026-11-02", end: "2026-11-08" }] }, { id: "c", name: "Meera", dailyHours: 4, leaves: [] }];
+  const open = [{ id: "t1", number: "DF-1", title: "x", assigneeId: "a", dueDay: "2026-11-03", remainingHours: 10 }];
+  eq("design auto-assign: the most free capacity; someone on leave all week is skipped", designSuggest(people, open, days)?.id, "c");
+  const grid = designGrid([people[0]], [{ ...open[0] }, { id: "t2", number: "DF-2", title: "y", assigneeId: "a", dueDay: "2026-10-30", remainingHours: 3 }], days, "2026-11-02");
+  eq("design workload: work spread up to the deadline; late work lands today", [grid[0].cells[0].hours, grid[0].cells[1].hours, grid[0].cells[2].hours, grid[0].lateTickets], [8, 5, 0, 1]);
+  eq("design workload colours: under 6 free, 6 to 8 nearly full, over 8 overloaded, leave off", [designTone(4, 8), designTone(7, 8), designTone(9, 8), designTone(0, 0)], ["free", "full", "over", "off"]);
+
+  // Files and integrations
+  eq("design file names: path and odd characters removed, extension kept", [designSafeName("C:\\x\\poster (final)!.pdf"), designSafeName("a".repeat(130) + ".png").length, designSafeName(".hidden")], ["poster _final_.pdf", 120, "hidden"]);
+  eq("design file types: allowed by extension", [designMime("logo.CDR"), designMime("x.exe")], ["application/vnd.corel-draw", null]);
+  eq("design Slack: only Slack's own webhook addresses", [designSlack("https://hooks.slack.com/services/T1/B2/abc"), designSlack("https://evil.example/services/x")], [true, false]);
+  eq("design Figma: figma.com links embed, others do not", [!!designFigma("https://www.figma.com/design/AbC123/Poster"), designFigma("https://example.com/x")], [true, null]);
 }
 
 ssoTests.then(() => {
