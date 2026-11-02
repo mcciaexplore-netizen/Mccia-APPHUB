@@ -438,7 +438,7 @@ const ivrOpen = ivrRoutes.filter((f) => {
   if (IVR_SECRET_ROUTES[f]) return !IVR_SECRET_ROUTES[f].every((r) => r.test(src));
   return !/from "@\/lib\/ivr\/dal"/.test(src) || !/\bassert(User|Admin|SuperAdmin)\(\)/.test(src);
 });
-eq(`guards: every one of the ${ivrRoutes.length} IVR-CRM route files checks who is asking (the webhook and the cron: their secret)`, [ivrRoutes.length, ivrOpen], [10, []]);
+eq(`guards: every one of the ${ivrRoutes.length} IVR-CRM route files checks who is asking (the webhook and the cron: their secret)`, [ivrRoutes.length, ivrOpen], [11, []]);
 // An agent sees only their own: the agents' pages get the person back acting as an agent, and the rules that keep their lists to their own
 // members (owner_id) and calls (agent_user_id) stay in place.
 const ivrSrc = (f: string) => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8");

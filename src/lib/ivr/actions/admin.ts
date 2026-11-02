@@ -15,7 +15,7 @@ import { normalizePhone } from "@/lib/ivr/phone";
 import { providerFromCredentials } from "@/lib/ivr/smartflo";
 import type { SmartfloCredentials } from "@/lib/ivr/smartflo/live";
 import { saveAutoSyncConfig, saveMembershipLines } from "@/lib/ivr/settings";
-import { removeUnlinkedAgents, runSync, syncAgents } from "@/lib/ivr/smartflo/sync";
+import { linkSmartfloAgentForUser, removeUnlinkedAgents, runSync, syncAgents } from "@/lib/ivr/smartflo/sync";
 import type { ActionResult } from "./leads";
 
 const fail = (e: unknown): ActionResult => ({ ok: false, error: e instanceof Error ? e.message : "Something went wrong" });
@@ -130,17 +130,15 @@ export async function refreshAgents(): Promise<ActionResult> {
 }
 
 /** Add one Membership agent that is not linked to an IVR-CRM agent yet, found by phone, extension or exact name. Only that agent is stored. */
-export async function addMembershipAgent(query: string): Promise<ActionResult> {
+export async function addMembershipAgent(userId: string): Promise<ActionResult> {
   try {
     const me = await assertSuperAdmin();
-    const q = query.trim();
-    if (q.length < 3) return { ok: false, error: "Enter the agent's phone number, extension or full name." };
-    const r = await syncAgents({ match: q });
-    if (!r.added) return { ok: false, error: `No new Smartflo agent matches "${q}". It may already be added, or the number or name is different in Smartflo.` };
-    await audit(me.id, "smartflo.agent_add", undefined, { added: r.added });
+    if (!z.string().uuid().safeParse(userId).success) return { ok: false, error: "Pick a person from the list first." };
+    const r = await linkSmartfloAgentForUser(userId);
+    await audit(me.id, "smartflo.agent_add", r.agentId, { userId, how: r.how });
     revalidatePath("/ivr/admin/integrations");
     revalidatePath("/ivr/admin/agents");
-    return { ok: true, message: `Added ${r.added} agent. Link it to an IVR-CRM agent under Agents.` };
+    return { ok: true, message: `Added: Smartflo agent ${r.agentName} is now linked (matched by ${r.how}). Their calls will show as theirs.` };
   } catch (e) {
     return fail(e);
   }

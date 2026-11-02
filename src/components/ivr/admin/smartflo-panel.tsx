@@ -11,6 +11,7 @@ import {
   syncNow,
 } from "@/lib/ivr/actions/admin";
 import { Alert, Badge } from "@/components/ivr/ui";
+import { AgentPicker, type PickedAgent } from "./agent-picker";
 
 type Flash = { ok: boolean; text: string } | null;
 
@@ -47,7 +48,7 @@ export function SmartfloPanel({
   const [password, setPassword] = useState("");
   const [token, setToken] = useState("");
   const [copied, setCopied] = useState(false);
-  const [agentQuery, setAgentQuery] = useState("");
+  const [pickedAgent, setPickedAgent] = useState<PickedAgent | null>(null);
   const [auto, setAuto] = useState(autoSync);
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string; message?: string }>, after?: () => void) =>
@@ -216,20 +217,18 @@ export function SmartfloPanel({
         <h3 className="text-[0.95rem]">Membership agents</h3>
         <p className="text-[13px] text-muted">
           The Smartflo account is shared, so only Membership agents are kept: those that match an IVR-CRM agent, and any you add here. Other agents are
-          ignored and are not stored, and the daily sync does not re-read the agent list.
+          ignored and are not stored, and the daily sync does not re-read the agent list. To add someone, pick them below (people given IVR-CRM who
+          are not linked yet): their Smartflo agent is found by their phone, softphone extension, email or exact name, and linked to them.
         </p>
         <form
           className="flex flex-wrap items-end gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            run(() => addMembershipAgent(agentQuery), () => setAgentQuery(""));
+            if (pickedAgent) run(() => addMembershipAgent(pickedAgent.id), () => setPickedAgent(null));
           }}
         >
-          <label className="grid gap-1 ivr-label">
-            Add an agent (phone, extension or full name)
-            <input className="input w-72 font-normal text-ink" value={agentQuery} onChange={(e) => setAgentQuery(e.target.value)} />
-          </label>
-          <button className="btn btn-ghost" disabled={pending || (!connected && mode === "live") || agentQuery.trim().length < 3}>
+          <AgentPicker label="Add an agent" disabled={pending} picked={pickedAgent} onPick={setPickedAgent} />
+          <button className="btn btn-primary" disabled={pending || (!connected && mode === "live") || !pickedAgent}>
             Add agent
           </button>
           <button type="button" className="btn btn-ghost" disabled={pending || (!connected && mode === "live")} onClick={() => run(() => refreshAgents())}>

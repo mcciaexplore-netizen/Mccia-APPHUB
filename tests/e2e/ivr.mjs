@@ -99,13 +99,15 @@ const admin = await person("ZZI Admin", "zzi-admin@gmail.com");
 const adminOnly = await person("ZZI Admin Only", "zzi-adminonly@gmail.com");
 const appAdminNoAccess = await person("ZZI App Admin Without Access", "zzi-appadmin@gmail.com");
 const outsider = await person("ZZI Outsider", "zzi-outsider@gmail.com");
+// Has IVR-CRM and the phone of the mock Smartflo agent "Sneha Patil" (+919000000103): "Add an agent" should find and link that agent.
+const sneha = await person("ZZI Sneha Patil", "zzi-sneha@gmail.com");
 // The two applications, as a Support Admin would add them in Administrator → Applications, and who has each.
 const [dept] = await sql`insert into departments (kind, name, icon) values ('application', 'ZZI Dept', 'Phone') returning id`;
 const app = async (name, url, icon) => (await sql`insert into apps (department_id, name, url, icon) values (${dept.id}, ${name}, ${url}, ${icon}) returning id`)[0];
 const crmApp = await app("ZZI IVR-CRM", "/ivr", "Phone");
 const adminApp = await app("ZZI IVR-CRM Admin", "/ivr/admin", "ClipboardList");
 const grant = (u, a) => sql`insert into user_app_access (user_id, app_id) values (${u.id}, ${a.id}) on conflict do nothing`;
-for (const u of [agentA, agentB, admin]) await grant(u, crmApp);
+for (const u of [agentA, agentB, admin, sneha]) await grant(u, crmApp);
 await grant(admin, adminApp); await grant(adminOnly, adminApp);
 // The application decides, not the App Admin list: "ZZI Admin Only" is a plain member given IVR-CRM Admin and is NOT one of its App Admins;
 // "ZZI App Admin Without Access" is listed as an App Admin but was never given the application.
@@ -114,7 +116,8 @@ for (const u of [admin, appAdminNoAccess]) await sql`insert into app_admins (app
 // What Smartflo rings for each agent, and the test members and calls: Asha owns A1 and A2, Bala owns B1, one is unassigned. Bala also made
 // a call to Asha's member A1: Asha must not see it.
 const PHONE_A = "+919800000101", PHONE_B = "+919800000102";
-await sql`insert into ivr_agent_profiles (user_id, phone) values (${agentA.id}, ${PHONE_A}), (${agentB.id}, ${PHONE_B})`;
+await sql`insert into ivr_agent_profiles (user_id, phone) values (${agentA.id}, ${PHONE_A}), (${agentB.id}, ${PHONE_B}), (${sneha.id}, '+919000000103')`;
+const sfAgentBefore = (await sql`select id, mapped_user_id from ivr_smartflo_agents where id = 'mock-a3'`)[0] ?? null;
 const lead = async (name, phone, owner) => (await sql`insert into ivr_leads (name, phone, owner_id, source) values (${name}, ${phone}, ${owner?.id ?? null}, 'ZZI test') returning id, phone`)[0];
 const A1 = await lead("ZZI Member A1", "+919111100001", agentA);
 const A2 = await lead("ZZI Member A2", "+919111100002", agentA);
@@ -358,6 +361,49 @@ try {
   const tick = await api(A.page, "/api/ivr/sync/tick", "POST");
   check("heartbeat: an agent's tab may trigger the (throttled) sync", tick.status === 200, tick.status);
 
+  section("add an agent: typeahead of people with IVR-CRM");
+  const search = async (page, q) => api(page, `/api/ivr/agents/search?q=${encodeURIComponent(q)}`);
+  check("search: an agent may not use it (403)", (await search(A.page, "zzi")).status === 403);
+  const s1 = await search(M.page, "zzi agent");
+  check("search: an IVR admin finds people with IVR-CRM by name, with id, name, email and smartflo_agent_id", s1.status === 200 && s1.body?.map((r) => r.name).join("|") === "ZZI Agent Asha|ZZI Agent Bala"
+    && ["id", "name", "email", "smartflo_agent_id"].every((k) => k in (s1.body?.[0] ?? {})), JSON.stringify(s1.body));
+  const s2 = await search(M.page, "ZZI-AGENT-B@");
+  check("search: by email too, any case", s2.body?.length === 1 && s2.body[0].id === agentB.id, JSON.stringify(s2.body));
+  const s3 = await search(M.page, "zzi");
+  const s3names = (s3.body ?? []).map((r) => r.name);
+  check("search: nobody without IVR-CRM (the outsider, the admin who only has IVR-CRM Admin)", !s3names.includes("ZZI Outsider") && !s3names.includes("ZZI Admin Only") && s3names.includes("ZZI Sneha Patil"), s3names.join("|"));
+  check("search: at most 8, and names starting with the text come first", (await search(M.page, "a")).body?.length <= 8 && (await search(M.page, "zzi s")).body?.[0]?.name === "ZZI Sneha Patil");
+  check("search: an empty query, or % and _ (no wildcards), finds nobody", (await search(M.page, "")).body?.length === 0 && (await search(M.page, "%")).body?.length === 0 && (await search(M.page, "_")).body?.length === 0);
+  if (H) {
+    await go(H.page, "/ivr/admin/integrations");
+    const box = H.page.getByRole("combobox", { name: "Add an agent" });
+    const addBtn = H.page.getByRole("button", { name: "Add agent", exact: true });
+    check("picker: Add agent is off until someone is picked", await addBtn.isDisabled());
+    await box.fill("zzi");
+    const list = H.page.getByRole("listbox", { name: "People with IVR-CRM" });
+    await list.waitFor();
+    check("picker: typing shows suggestions with name and email", (await list.getByRole("option").count()) >= 3 && (await list.innerText()).includes("zzi-sneha@gmail.com"));
+    await box.press("Escape");
+    check("picker: Escape closes the list", (await list.count()) === 0);
+    await box.fill("zzi sne");
+    await list.waitFor();
+    check("picker: more letters narrow it to one person", (await list.getByRole("option").count()) === 1);
+    await box.press("ArrowDown"); await box.press("ArrowUp"); await box.press("Enter");
+    check("picker: Enter picks the highlighted person, the box shows their name, and Add agent turns on", (await box.inputValue()) === "ZZI Sneha Patil" && (await list.count()) === 0 && !(await addBtn.isDisabled()));
+    await addBtn.click();
+    const linked = await poll(async () => (await sql`select mapped_user_id from ivr_smartflo_agents where id = 'mock-a3'`)[0]?.mapped_user_id === sneha.id);
+    check("add: her Smartflo agent (found by her phone) is stored and linked to her", linked);
+    check("add: and recorded on her profile", (await sql`select smartflo_agent_id from ivr_agent_profiles where user_id = ${sneha.id}`)[0]?.smartflo_agent_id === "mock-a3");
+    check("add: the page says so", await poll(() => H.page.getByText(/Smartflo agent Sneha Patil is now linked \(matched by phone\)/).isVisible().catch(() => false)));
+    check("add: a linked person is no longer suggested", (await search(H.page, "zzi sne")).body?.length === 0);
+    await box.fill("zzi agent a");
+    await list.waitFor();
+    await list.getByRole("option", { name: /ZZI Agent Asha/ }).click();
+    await addBtn.click();
+    check("add: someone with no matching Smartflo agent gets a clear message, and nothing is linked", await poll(() => H.page.getByText(/No Smartflo agent matches ZZI Agent Asha/).isVisible().catch(() => false))
+      && (await sql`select count(*)::int n from ivr_smartflo_agents where mapped_user_id = ${agentA.id}`)[0].n === 0);
+  }
+
   section("import a calling list");
   const csv = ["Member Name,Mobile,Email,Organisation,Call Category,Agent Email", "ZZI Imported One,9111100011,one@example.com,ZZI Co,Membership,zzi-agent-a@gmail.com", "ZZI Imported Two,9111100012,,ZZI Co,Hall booking,"].join("\n") + "\n";
   const csvPath = path.join(os.tmpdir(), `zzi-import-${Date.now()}.csv`);
@@ -414,6 +460,9 @@ await browser.close();
 if (retryBefore === null) await sql`delete from ivr_settings where key = 'retry'`;
 else await sql`update ivr_settings set value = ${JSON.stringify(retryBefore)}::jsonb where key = 'retry'`;
 await removeTestData();
+// The mock Smartflo agent this test linked goes back to how it was (gone, or as it was stored).
+if (!sfAgentBefore) await sql`delete from ivr_smartflo_agents where id = 'mock-a3'`;
+else await sql`update ivr_smartflo_agents set mapped_user_id = ${sfAgentBefore.mapped_user_id} where id = 'mock-a3'`;
 check("cleanup: every other ivr_ member and call is exactly as before", (await snap()) === before);
 check("cleanup: every category that was there before is unchanged", await sameCategories());
 check("cleanup: no ZZI people or applications are left", (await sql`select count(*)::int n from users where email like 'zzi-%'`)[0].n === 0 && (await sql`select count(*)::int n from apps where name like 'ZZI%'`)[0].n === 0);

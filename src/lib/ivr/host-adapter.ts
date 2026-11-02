@@ -108,6 +108,30 @@ export async function isAgentNow(userId: string): Promise<boolean> {
   return !!r;
 }
 
+/** A hub user offered in "Add an agent": someone who has IVR-CRM. */
+export type AgentSuggestion = { id: string; name: string; email: string; smartflo_agent_id: string | null };
+
+/**
+ * "Add an agent" typeahead: people who have the IVR-CRM application, whose name or email contains `q` (any case), and who are not yet
+ * linked to a Smartflo agent. Names that start with `q` come first. At most `limit`.
+ */
+export async function searchUnlinkedAgents(q: string, limit = 8): Promise<AgentSuggestion[]> {
+  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const starts = `${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  return db
+    .select({ id: users.id, name: users.name, email: users.email, smartflo_agent_id: agentProfiles.smartfloAgentId })
+    .from(users)
+    .leftJoin(agentProfiles, eq(agentProfiles.userId, users.id))
+    .where(and(
+      isIvrAgent(users.id),
+      sql`(${users.name} ilike ${like} or ${users.email} ilike ${like})`,
+      sql`${agentProfiles.smartfloAgentId} is null`,
+      sql`not exists (select 1 from ivr_smartflo_agents s where s.mapped_user_id = ${users.id})`,
+    ))
+    .orderBy(sql`(${users.name} ilike ${starts}) desc`, asc(users.name))
+    .limit(limit);
+}
+
 /** Names of these hub users, by id. */
 export async function namesOf(ids: string[]): Promise<Map<string, string>> {
   if (!ids.length) return new Map();

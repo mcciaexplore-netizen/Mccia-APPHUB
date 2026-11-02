@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/ivr/db";
 import { callEvents, integrations, smartfloAgents } from "@/db/ivr-schema";
-import { listCallers, listIvrAgents, saveProfile } from "@/lib/ivr/host-adapter";
+import { isAgentNow, listCallers, listIvrAgents, personById, saveProfile } from "@/lib/ivr/host-adapter";
 import { env } from "@/lib/ivr/env";
 import { normalizePhone } from "@/lib/ivr/phone";
 import { getAutoSyncConfig, lineKey } from "@/lib/ivr/settings";
@@ -119,6 +119,51 @@ export async function syncAgents(opts: { match?: string } = {}): Promise<{ agent
     }
   }
   return { agents: allAgents.length, mapped, ignored, added };
+}
+
+/**
+ * "Add an agent" on Integrations: the Support Admin picks a hub user who has IVR-CRM, and this finds THAT person's agent in Smartflo
+ * (one request for the agent list), keeps it and links it to them. An agent counts as theirs when its phone is their phone, its extension
+ * is their softphone extension, or its login email is their email and no other Smartflo agent shares it; failing all of those, when its
+ * name is exactly their name. Nothing is guessed: no match, or more than one, is an error that says what to do.
+ */
+export async function linkSmartfloAgentForUser(userId: string): Promise<{ agentId: string; agentName: string; how: string }> {
+  if (!(await isAgentNow(userId))) throw new Error("That person does not have the IVR-CRM application, so they cannot be a Membership agent.");
+  const person = await personById(userId);
+  if (!person) throw new Error("That person was not found.");
+  const sf = await getSmartflo();
+  const found = await sf.listAgents();
+  const taken = new Map((await db.select({ id: smartfloAgents.id, mapped: smartfloAgents.mappedUserId }).from(smartfloAgents)).map((a) => [a.id, a.mapped]));
+  const free = found.filter((a) => !taken.get(a.id) || taken.get(a.id) === userId);
+  const digits = (n: string | null | undefined) => (n ?? "").replace(/\D/g, "");
+  const phone = normalizePhone(person.phone);
+  const ext = digits(person.softphoneExtension);
+  const email = person.email.toLowerCase();
+  const loginCount = new Map<string, number>();
+  for (const a of found) if (a.loginId) loginCount.set(a.loginId.toLowerCase(), (loginCount.get(a.loginId.toLowerCase()) ?? 0) + 1);
+  const why = (a: (typeof found)[number]) =>
+    phone && normalizePhone(a.number) === phone ? "phone"
+      : ext.length >= 3 && digits(a.extension) === ext ? "softphone extension"
+        : a.loginId && a.loginId.toLowerCase() === email && loginCount.get(email) === 1 ? "email" : null;
+  let hits = free.filter((a) => why(a)).map((a) => ({ a, how: why(a)! }));
+  if (!hits.length) hits = free.filter((a) => a.name.trim().toLowerCase() === person.name.trim().toLowerCase()).map((a) => ({ a, how: "name" }));
+  if (!hits.length) {
+    const linkedElsewhere = found.some((a) => taken.get(a.id) && taken.get(a.id) !== userId && phone && normalizePhone(a.number) === phone);
+    throw new Error(linkedElsewhere
+      ? `The Smartflo agent with ${person.name}'s phone is already linked to someone else. Change it under Agents.`
+      : `No Smartflo agent matches ${person.name} (by phone, softphone extension, email or exact name). Put their Smartflo phone or extension on the Agents page, then add them again.`);
+  }
+  if (hits.length > 1) throw new Error(`More than one Smartflo agent matches ${person.name} (${hits.map((h) => h.a.name).join(", ")}). Link the right one under Agents.`);
+  const { a, how } = hits[0];
+  const now = new Date();
+  await db
+    .insert(smartfloAgents)
+    .values({ id: a.id, name: a.name, number: a.number, extension: a.extension, email: a.loginId, mappedUserId: userId, updatedAt: now })
+    .onConflictDoUpdate({ target: smartfloAgents.id, set: { name: a.name, number: a.number, extension: a.extension, email: a.loginId, mappedUserId: userId, updatedAt: now } });
+  // One person, one Smartflo agent: any other agent linked to them is let go.
+  await db.update(smartfloAgents).set({ mappedUserId: null }).where(and(eq(smartfloAgents.mappedUserId, userId), sql`${smartfloAgents.id} <> ${a.id}`));
+  await saveProfile(userId, { smartfloAgentId: a.id });
+  return { agentId: a.id, agentName: a.name, how };
 }
 
 /** Drop stored agents that are not linked to an IVR-CRM agent (other departments' agents). Calls and members are untouched. */
