@@ -194,37 +194,6 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
               <input id="event-date" type="date" className="input" min={today} value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
             </label>
           </div>
-          <div className="flex flex-col gap-2 text-sm">
-            <span className="font-medium text-ink">Reference links</span>
-            <span className="-mt-1 text-xs ds-muted">Up to {MAX_REFERENCE_LINKS} web links (https://...).</span>
-            {links.map((l, i) => (
-              <div key={i} className="flex gap-2">
-                <input
-                  className="input flex-1"
-                  type="url"
-                  inputMode="url"
-                  placeholder="https://..."
-                  aria-label={`Reference link ${i + 1}`}
-                  value={l}
-                  onChange={(e) => setLinks((ls) => ls.map((x, j) => (j === i ? e.target.value : x)))}
-                />
-                <button
-                  type="button"
-                  className="btn btn-sm btn-ghost"
-                  aria-label={`Remove link ${i + 1}`}
-                  disabled={links.length === 1 && !l}
-                  onClick={() => setLinks((ls) => (ls.length === 1 ? [""] : ls.filter((_, j) => j !== i)))}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-            {links.length < MAX_REFERENCE_LINKS && (
-              <button type="button" className="btn btn-sm btn-ghost self-start" onClick={() => setLinks((ls) => [...ls, ""])}>
-                <Plus size={14} aria-hidden /> Add another link
-              </button>
-            )}
-          </div>
           <label className="flex flex-col gap-1 text-sm" htmlFor="department">
             <span className="font-medium text-ink">Department</span>
             <input id="department" className="input" list="ds-departments" maxLength={120} value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Choose or type your department" />
@@ -234,6 +203,56 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
               ))}
             </datalist>
           </label>
+        </div>
+      </Card>
+
+      <Card title="References">
+        <p className="-mt-1 mb-4 text-sm ds-muted">Add links or files for reference (logos, examples, inspiration, content)</p>
+        <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-2 text-sm">
+              <span className="font-semibold text-ink">Links <span className="font-normal ds-muted">(optional)</span></span>
+              <span className="-mt-1 text-xs ds-muted">Up to {MAX_REFERENCE_LINKS} web links (https://...).</span>
+              {links.map((l, i) => (
+                <div key={i} className="flex gap-2">
+                  <input
+                    className="input flex-1"
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://..."
+                    aria-label={`Reference link ${i + 1}`}
+                    value={l}
+                    onChange={(e) => setLinks((ls) => ls.map((x, j) => (j === i ? e.target.value : x)))}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    aria-label={`Remove link ${i + 1}`}
+                    disabled={links.length === 1 && !l}
+                    onClick={() => setLinks((ls) => (ls.length === 1 ? [""] : ls.filter((_, j) => j !== i)))}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+              {links.length < MAX_REFERENCE_LINKS && (
+                <button type="button" className="btn btn-sm btn-ghost self-start" onClick={() => setLinks((ls) => [...ls, ""])}>
+                  <Plus size={14} aria-hidden /> Add another link
+                </button>
+              )}
+            </div>
+          <div className="flex flex-col gap-2 text-sm">
+            <span className="font-semibold text-ink">Files <span className="font-normal ds-muted">(optional)</span></span>
+            <span className="-mt-1 text-xs ds-muted">(Or if you have any other design requirement please mention in a document)</span>
+            <FileDrop
+              purpose="attachment"
+              maxFiles={MAX_FILES}
+              maxMb={MAX_FILE_MB}
+              onChange={setFileIds}
+              onBusy={setUploading}
+              label="Drop files here or click to browse"
+              hint={`Share content for Design Creatives · Word, PDF, PowerPoint, Excel, images, text, RTF, ODT, Markdown · up to ${MAX_FILES} files, ${MAX_FILE_MB} MB each`}
+            />
+          </div>
         </div>
       </Card>
 
@@ -251,17 +270,6 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
         <p className="mt-2 text-xs ds-muted">Next day or sooner is Urgent, within 3 days High, within 10 days Normal, later Low.</p>
       </Card>
 
-      <Card title="Share content for Design Creatives">
-        <p className="-mt-1 mb-3 text-sm ds-muted">(Or if you have any other design requirement please mention in a document)</p>
-        <FileDrop
-          purpose="attachment"
-          maxFiles={MAX_FILES}
-          maxMb={MAX_FILE_MB}
-          onChange={setFileIds}
-          onBusy={setUploading}
-          hint={`Word, PDF, PowerPoint, Excel, images, text and other documents · up to ${MAX_FILES} files, ${MAX_FILE_MB} MB each`}
-        />
-      </Card>
 
       {error && (
         <p role="alert" className="alert alert-red text-sm">

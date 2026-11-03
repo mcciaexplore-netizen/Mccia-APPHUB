@@ -205,7 +205,9 @@ try {
   check("department is filled in from the hub profile", (await R.page.locator("#department").inputValue()) === "ZZD Marketing");
   const requestFormText = await mainText(R.page);
   check("Photo / video / reel is no longer offered (eleven kinds), even where its row is still switched on", !/Photo \/ video \/ reel/i.test(requestFormText) && (await R.page.locator('fieldset input[type="checkbox"]').count()) === 11, (await R.page.locator('fieldset input[type="checkbox"]').count()));
-  check("the files card is \"Share content for Design Creatives\", with its note", /Share content for Design Creatives/.test(requestFormText) && /\(Or if you have any other design requirement please mention in a document\)/.test(requestFormText));
+  const refs = R.page.locator("section", { has: R.page.getByRole("heading", { name: "References", exact: true }) });
+  const refsText = await refs.innerText().catch(() => "");
+  check("one References card holds both the links and the files, with its notes", /Add links or files for reference \(logos, examples, inspiration, content\)/.test(refsText) && /Links/.test(refsText) && /Files/.test(refsText) && /Share content for Design Creatives/.test(refsText) && /\(Or if you have any other design requirement please mention in a document\)/.test(refsText) && (await refs.getByPlaceholder("https://...").count()) === 1 && (await refs.locator('input[type="file"]').count()) === 1, refsText.slice(0, 200));
   check("reference links: https://... placeholder, a remove button, and Add another link", (await R.page.getByPlaceholder("https://...").count()) === 1 && (await R.page.getByRole("button", { name: "Remove link 1" }).count()) === 1 && (await R.page.getByRole("button", { name: /Add another link/ }).count()) === 1);
   for (let i = 0; i < 4; i++) await R.page.getByRole("button", { name: /Add another link/ }).click();
   check("up to five links, then no more Add another link", (await R.page.getByPlaceholder("https://...").count()) === 5 && !(await R.page.getByRole("button", { name: /Add another link/ }).count()));
@@ -449,6 +451,7 @@ try {
   await R2.page.getByText("Your request has been submitted").waitFor();
   const n2 = /DF-\d{4,}/.exec(await mainText(R2.page))?.[0];
   check("20 days out is Low priority", (await ticketByNumber(n2))?.priority === "low");
+  check("a request with no reference links and no files goes through (both optional)", JSON.stringify((await ticketByNumber(n2))?.reference_links) === "[]");
   await go(L.page, "/design/admin/pending");
   await L.page.locator("li, article, div.ds-card").filter({ hasText: n2 }).first().getByRole("button", { name: /^Decline$/ }).click();
   await L.page.getByRole("dialog").locator("textarea").fill("ZZD: the social team handles tweets.");
