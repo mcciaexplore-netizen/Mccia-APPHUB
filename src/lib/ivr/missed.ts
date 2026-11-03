@@ -2,6 +2,7 @@ import "server-only";
 import { sql, type SQL } from "drizzle-orm";
 import { db, rowsOf } from "@/lib/ivr/db";
 import type { Outcome } from "@/db/ivr-schema";
+import { membershipCall } from "./membership-scope";
 
 /** Missed inbound calls older than this are history, not a call-back list. */
 export const MISSED_DAYS = 30;
@@ -17,8 +18,11 @@ export type MissedSub = "open" | "done";
 const RESOLVED = sql`exists (select 1 from ivr_calls r where r.customer_number = c.customer_number and r.status = 'answered' and r.started_at > c.started_at)`;
 const IS_MISSED = sql`c.direction = 'inbound' and c.status in ('missed', 'unknown') and c.started_at >= now() - ${sql.raw(`interval '${MISSED_DAYS} days'`)}`;
 
-/** The agent's own calls: only the ones they handled themselves. No user means the whole team (the admin section). */
-const scopeOf = (userId?: string): SQL => (userId ? sql`c.agent_user_id = ${userId}::uuid` : sql`true`);
+/**
+ * The agent's own calls: only the ones they handled themselves. No user means the whole team (the admin section): Membership's calls only
+ * (see membership-scope.ts; an agent's own calls are Membership's already).
+ */
+const scopeOf = (userId?: string): SQL => (userId ? sql`c.agent_user_id = ${userId}::uuid` : membershipCall("c"));
 
 export async function missedCounts(userId?: string): Promise<{ open: number; done: number }> {
   const res = await db.execute(sql`

@@ -7,6 +7,7 @@ import { istDayStart, addDays } from "./time";
 import { missedCounts } from "./missed";
 import { cachedLiveCalls, getLiveCalls } from "./smartflo/sync";
 import { formatPhone, normalizePhone } from "./phone";
+import { membershipCall, membershipLead } from "./membership-scope";
 import type { SfLiveCall } from "./smartflo/types";
 
 /** A call in progress, for the dashboard's live list. */
@@ -68,6 +69,7 @@ async function getActiveCalls(userId: string | undefined, live: SfLiveCall[], mi
         (extract(epoch from c.started_at) * 1000)::bigint as at_ms
       from ivr_calls c left join ivr_leads l on l.id = c.lead_id
       where c.status = 'ongoing' and c.started_at >= now() - ${sql.raw(`interval '${ACTIVE_CALL_MAX_HOURS} hours'`)}
+        and ${membershipCall("c")}
         ${userId ? sql`and c.agent_user_id = ${userId}::uuid` : sql``}
       order by c.started_at desc
       limit 100`),
@@ -105,12 +107,13 @@ export async function getKpis(opts: { userId?: string; from: Date; to: Date; liv
         count(*) filter (where c.direction = 'outbound' and c.status = 'answered')::int as out_answered,
         coalesce(sum(c.answered_sec) filter (where c.status = 'answered'), 0)::int as talk
       from ivr_calls c left join ivr_leads l on l.id = c.lead_id
-      where c.started_at >= ${opts.from.toISOString()}::timestamptz and c.started_at < ${opts.to.toISOString()}::timestamptz ${scope}`),
+      where c.started_at >= ${opts.from.toISOString()}::timestamptz and c.started_at < ${opts.to.toISOString()}::timestamptz
+        and ${membershipCall("c")} ${scope}`),
     db
       .select({ n: count() })
       .from(leads)
-      .where(and(inArray(leads.stage, ["new", "attempted"]), opts.userId ? eq(leads.ownerId, opts.userId) : undefined)),
-    opts.userId ? Promise.resolve([{ n: 0 }]) : db.select({ n: count() }).from(leads).where(isNull(leads.ownerId)),
+      .where(and(inArray(leads.stage, ["new", "attempted"]), opts.userId ? eq(leads.ownerId, opts.userId) : undefined, membershipLead("ivr_leads"))),
+    opts.userId ? Promise.resolve([{ n: 0 }]) : db.select({ n: count() }).from(leads).where(and(isNull(leads.ownerId), membershipLead("ivr_leads"))),
     opts.live === false ? Promise.resolve(cachedLiveCalls()) : getLiveCalls(),
     opts.userId ? agentLines(opts.userId) : Promise.resolve(null),
     missedCounts(opts.userId),
@@ -143,7 +146,7 @@ export async function getStageCounts(userId?: string): Promise<StageCounts> {
   const rows = await db
     .select({ stage: leads.stage, n: count() })
     .from(leads)
-    .where(userId ? eq(leads.ownerId, userId) : undefined)
+    .where(and(userId ? eq(leads.ownerId, userId) : undefined, membershipLead("ivr_leads")))
     .groupBy(leads.stage);
   const g = (s: string) => rows.find((r) => r.stage === s)?.n ?? 0;
   return { new: g("new"), attempted: g("attempted"), connected: g("connected"), closed: g("closed") };
@@ -182,6 +185,7 @@ export async function getAgentTable(range: { from: Date; to: Date }): Promise<Ag
         count(*) filter (where c.direction = 'outbound' and c.status = 'answered')::int as out_answered
       from ivr_calls c left join ivr_leads l on l.id = c.lead_id
       where c.started_at >= ${range.from.toISOString()}::timestamptz and c.started_at < ${range.to.toISOString()}::timestamptz
+        and ${membershipCall("c")}
       group by 1`),
     db.execute(sql`
       select to_user_id::text as uid, count(distinct lead_id)::int as n from ivr_lead_assignments
@@ -190,7 +194,7 @@ export async function getAgentTable(range: { from: Date; to: Date }): Promise<Ag
     db
       .select({ uid: leads.ownerId, stage: leads.stage, n: count() })
       .from(leads)
-      .where(and(isNotNull(leads.ownerId), inArray(leads.ownerId, ids)))
+      .where(and(isNotNull(leads.ownerId), inArray(leads.ownerId, ids), membershipLead("ivr_leads")))
       .groupBy(leads.ownerId, leads.stage),
   ]);
   const cr = rowsOf<{ uid: string; outbound: number; inbound: number; answered: number; not_answered: number; talk: number; out_answered: number }>(callRows);

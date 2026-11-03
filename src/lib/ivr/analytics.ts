@@ -3,6 +3,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { db, rowsOf } from "@/lib/ivr/db";
 import { addDays, toIstDateString } from "./time";
 import { isIvrAgent } from "./host-adapter";
+import { membershipCall, membershipLead } from "./membership-scope";
 
 export type Direction = "inbound" | "outbound";
 
@@ -38,9 +39,9 @@ function scope(expr: SQL, ids?: string[]): SQL {
   return valid.length ? sql`and ${expr} in (${idList(valid)})` : sql``;
 }
 
-/** Date range, finished calls only, plus the agent, category and direction filters. Alias: calls c, leads l. */
+/** Date range, finished Membership calls only (membership-scope.ts), plus the agent, category and direction filters. Alias: calls c, leads l. */
 function callFilter(p: AnalyticsParams): SQL {
-  return sql`c.started_at >= ${ts(p.from)} and c.started_at < ${ts(p.to)} and c.status <> 'ongoing'
+  return sql`c.started_at >= ${ts(p.from)} and c.started_at < ${ts(p.to)} and c.status <> 'ongoing' and ${membershipCall("c")}
     ${scope(OWNER, p.userIds)}
     ${p.categoryId && UUID_RE.test(p.categoryId) ? sql`and c.category_id = ${p.categoryId}::uuid` : sql``}
     ${p.direction ? sql`and c.direction = ${p.direction}` : sql``}`;
@@ -330,7 +331,7 @@ export type StageCount = { stage: "new" | "attempted" | "connected" | "closed"; 
 export async function membersByStage(userIds?: string[], categoryId?: string): Promise<StageCount[]> {
   const res = await db.execute(sql`
     select l.stage::text as stage, count(*)::int as n from ivr_leads l
-    where true ${scope(sql`l.owner_id`, userIds)}
+    where ${membershipLead("l")} ${scope(sql`l.owner_id`, userIds)}
       ${categoryId && UUID_RE.test(categoryId) ? sql`and l.category_id = ${categoryId}::uuid` : sql``}
     group by 1`);
   const rows = rowsOf<{ stage: StageCount["stage"]; n: number }>(res);
@@ -347,10 +348,10 @@ export async function memberFunnel(p: AnalyticsParams): Promise<FunnelStep[]> {
   const res = await db.execute(sql`
     select count(*)::int as added,
       count(*) filter (where l.attempts > 0 or l.last_call_at is not null)::int as attempted,
-      count(*) filter (where exists (select 1 from ivr_calls c where c.lead_id = l.id and c.status = 'answered'))::int as connected,
+      count(*) filter (where exists (select 1 from ivr_calls c where c.lead_id = l.id and c.status = 'answered' and ${membershipCall("c")}))::int as connected,
       count(*) filter (where l.stage = 'closed')::int as closed
     from ivr_leads l
-    where l.created_at >= ${ts(p.from)} and l.created_at < ${ts(p.to)} ${scope(sql`l.owner_id`, p.userIds)}
+    where l.created_at >= ${ts(p.from)} and l.created_at < ${ts(p.to)} and ${membershipLead("l")} ${scope(sql`l.owner_id`, p.userIds)}
       ${p.categoryId && UUID_RE.test(p.categoryId) ? sql`and l.category_id = ${p.categoryId}::uuid` : sql``}`);
   const r = rowsOf<{ added: number; attempted: number; connected: number; closed: number }>(res)[0] ?? {
     added: 0,

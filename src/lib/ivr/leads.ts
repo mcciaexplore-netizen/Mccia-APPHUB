@@ -16,6 +16,7 @@ import type { SessionUser } from "./dal";
 import { isAdminRole } from "./dal";
 import { getRetryRule, type RetryRule } from "./settings";
 import { hubUsers as users, listIvrAgents } from "./host-adapter";
+import { membershipLead } from "./membership-scope";
 
 export type LeadListParams = {
   stage?: Stage;
@@ -106,7 +107,8 @@ async function withLastCalls<T extends { id: string }>(base: T[]): Promise<(T & 
 export async function listLeads(p: LeadListParams): Promise<{ rows: LeadRow[]; total: number }> {
   const pageSize = Math.min(p.pageSize ?? 25, 200);
   const page = Math.max(p.page ?? 1, 1);
-  const conds: (SQL | undefined)[] = [];
+  // Membership's members only (membership-scope.ts): members made from another department's call drop out.
+  const conds: (SQL | undefined)[] = [membershipLead("ivr_leads")];
   if (p.stage) conds.push(eq(leads.stage, p.stage));
   if (p.categoryId && UUID_RE.test(p.categoryId)) conds.push(eq(leads.categoryId, p.categoryId));
   if (p.unassigned) conds.push(isNull(leads.ownerId));
@@ -312,7 +314,7 @@ export async function listAgentWorkload() {
   const rows = await db
     .select({ ownerId: leads.ownerId, n: count() })
     .from(leads)
-    .where(inArray(leads.stage, ["new", "attempted"]))
+    .where(and(inArray(leads.stage, ["new", "attempted"]), membershipLead("ivr_leads")))
     .groupBy(leads.ownerId);
   return agents.map((a) => ({ id: a.id, name: a.name, open: rows.find((r) => r.ownerId === a.id)?.n ?? 0 }));
 }
