@@ -54,12 +54,12 @@ async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
   });
   return [
     { label: "Approval Forms", href: "/approvals", children: places },
-    { label: "My Pending Approvals", href: "/approvals/my-requests", ...(ownOpen > 0 ? { open: ownOpen } : { count: 0 }) },
-    { label: "Approved Forms", href: approvedHref, count: approvedCount },
+    { label: "My Submitted Requests", href: "/approvals/my-requests", ...(ownOpen > 0 ? { open: ownOpen } : { count: 0 }) },
+    { label: "My Approved Requests", href: approvedHref, count: approvedCount },
     ...(mineToo
       ? [
-          { label: "My Pending Approvals", href: "/approvals/my-pending-approvals", ...(myPending > 0 ? { waiting: myPending } : { count: 0 }) },
-          { label: "My Approvals", href: "/approvals/my-approvals", count: myDecided },
+          { label: "Pending My Approval", href: "/approvals/my-pending-approvals", ...(myPending > 0 ? { waiting: myPending } : { count: 0 }) },
+          { label: "My Approval History", href: "/approvals/my-approvals", count: myDecided },
         ]
       : []),
   ];
