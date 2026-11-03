@@ -220,7 +220,8 @@ export async function reviewByToken(token: string) {
     decidedAt: req.decidedAt?.toISOString() ?? null,
     comment: req.decisionComment,
     ticket: { number: t.number, title: t.title, requesterId: t.requesterId },
-    proof: { version: proof.version, note: proof.note, fileName: f?.fileName ?? null, mime: f?.mime ?? null },
+    // The designer's note on a proof is for the team; the requester sees only the design.
+    proof: { version: proof.version, fileName: f?.fileName ?? null, mime: f?.mime ?? null },
     file: f,
     fileAllowed: fileAllowed(req),
   };

@@ -231,6 +231,11 @@ try {
   check("a made-up tracking link is refused", /not valid/i.test(await mainText(anon.page)));
 
   section("Pending Review: accept and assign");
+  await go(D2.page, `/design/admin/tickets/${t1.id}`);
+  check("a member opening a pending ticket sees it waits for a lead, with no Accept or Decline", /Waiting for a design lead/.test(await mainText(D2.page)) && !(await D2.page.getByRole("button", { name: /Accept \+ Assign/ }).count()));
+  await go(L.page, `/design/admin/tickets/${t1.id}`);
+  check("a lead opening it gets Accept + Assign and Decline on the ticket page itself", (await L.page.getByRole("button", { name: /Accept \+ Assign/ }).count()) === 1 && (await L.page.getByRole("button", { name: /^Decline$/ }).count()) === 1);
+  check("the ticket page shows the five-step progress bar", (await L.page.getByLabel("Progress: Received").count()) === 1);
   await go(L.page, "/design/admin/pending");
   const card = L.page.locator("li, article, div.ds-card").filter({ hasText: number }).first();
   await card.getByRole("button", { name: /Accept \+ Assign/ }).click();
@@ -260,6 +265,7 @@ try {
   await go(D1.page, `/design/admin/tickets/${t1.id}`);
   await D1.page.getByRole("tab", { name: "Proofs & approval" }).click();
   check("the proof uploads", await upload(D1.page, "zzd-proof-v1.png"));
+  await D1.page.getByLabel("Note for this version (optional)").fill("ZZD internal note: used the old logo for now");
   await D1.page.getByRole("button", { name: "Upload and send for review" }).click();
   const reviewLink = await poll(async () => { const c = D1.page.locator("code").filter({ hasText: "/review/" }); return (await c.count()) ? (await c.first().innerText()).trim() : null; });
   check("the review link is shown to the designer", !!reviewLink && reviewLink.includes("/review/"), reviewLink);
@@ -269,10 +275,22 @@ try {
   const reviewPath = new URL(reviewLink).pathname;
   const token = reviewPath.split("/").pop();
   await go(anon.page, reviewPath);
+  check("the review page does not show the designer's note", !(await mainText(anon.page)).includes("internal note"));
   check("the review page opens without signing in", /Review your design/.test(await mainText(anon.page)) && (await mainText(anon.page)).includes(number));
   const img = await fetchIn(anon.page, `/api/design/public/review/${token}/file`);
   check("its design is served through a short signed link", img.status === 302 && !!img.location && /token=/.test(img.location), JSON.stringify(img));
   check("a made-up review file link is refused", (await fetchIn(anon.page, "/api/design/public/review/abcdefghijklmnopqrstuvwxyz0123/file")).status === 410);
+  await go(R.page, `/design/tickets/${t1.id}`);
+  const rt = await mainText(R.page);
+  check("the requester's own ticket page: number, progress, the design to review and the brief", rt.includes(number) && rt.includes("Design for your review") && (await R.page.getByLabel("Progress: In review").count()) === 1 && rt.includes("logo top left"));
+  check("it shows Approve and Request changes while in review", (await R.page.getByRole("button", { name: /^Approve$/ }).count()) === 1 && (await R.page.getByRole("button", { name: /Request changes/ }).count()) === 1);
+  check("and nothing about who works on it: no designer, notes or time", !rt.includes("ZZD Designer Dev") && !rt.includes("internal note") && !/time logged|subtask/i.test(rt));
+  await go(R.page, "/design/my-requests");
+  check("My Requests links to the request's page", (await R.page.getByRole("link", { name: "Open request →" }).count()) >= 1);
+  check("My Requests sends the browser nothing about who it is assigned to", !(await R.page.content()).includes("ZZD Designer Dev"));
+  check("another requester gets not found for it", (await go(R2.page, `/design/tickets/${t1.id}`))?.status() === 404);
+  await go(D2.page, `/design/admin/tickets/${t1.id}`);
+  check("the designer's ticket page shows where it stands (In review)", (await D2.page.getByLabel("Progress: In review").count()) === 1);
   await anon.page.getByRole("button", { name: /Request changes/ }).click();
   await anon.page.fill("#changes", "ZZD: make the date larger and add the venue map.");
   await anon.page.getByRole("button", { name: /^Submit$/ }).click();

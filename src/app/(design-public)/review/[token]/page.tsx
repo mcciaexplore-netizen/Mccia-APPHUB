@@ -45,7 +45,6 @@ export default async function ReviewPage({ params }: { params: Promise<{ token: 
             </a>
           </div>
         )}
-        {r.proof.note && <p className="border-t border-[var(--ds-line)] px-5 py-3 text-sm text-ink"><span className="ds-label mr-2">Note from the designer</span>{r.proof.note}</p>}
       </div>
 
       {r.status === "pending" ? (

@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, eq, ilike, or } from "drizzle-orm";
 import { db } from "./db";
-import { auditLogs, tickets, type TicketStatus } from "@/db/design-schema";
+import { auditLogs, tickets, type Ticket, type TicketStatus } from "@/db/design-schema";
 import { STATUS_LABEL, STEPS, stepOf } from "./rules";
 import { numberFromTrackingToken } from "./tokens";
 
@@ -25,11 +25,11 @@ export type Tracking = {
 
 const STATUS_STEP_TEXT: Record<string, number> = { [STATUS_LABEL.assigned]: 1, [STATUS_LABEL.in_progress]: 2, [STATUS_LABEL.in_review]: 3, [STATUS_LABEL.delivered]: 4, [STATUS_LABEL.closed]: 4 };
 
-export async function trackingByToken(token: string): Promise<Tracking | null> {
-  const number = numberFromTrackingToken(token);
-  if (!number) return null;
-  const [t] = await db.select().from(tickets).where(eq(tickets.number, number)).limit(1);
-  if (!t) return null;
+/**
+ * A request's five steps with when each was reached, and its history of status changes and decisions, newest first: what a requester may
+ * see. Never who did what (no designer names, no assignment details), notes, time or files.
+ */
+export async function progressOf(t: Ticket): Promise<{ currentStep: number; steps: { label: string; at: string | null }[]; history: { at: string; text: string }[] }> {
   const logs = await db.select().from(auditLogs).where(eq(auditLogs.ticketId, t.id)).orderBy(asc(auditLogs.createdAt));
   const reached: (string | null)[] = [t.createdAt.toISOString(), null, null, null, null];
   const mark = (i: number, at: Date) => {
@@ -40,7 +40,7 @@ export async function trackingByToken(token: string): Promise<Tracking | null> {
     const d = l.details as { status?: { to?: string }; assignee?: unknown; new_version?: string };
     const at = l.createdAt;
     if (l.action === "Accepted") {
-      history.push({ at: at.toISOString(), text: d.assignee ? "Accepted and assigned to a designer" : "Accepted by the design team" });
+      history.push({ at: at.toISOString(), text: "Accepted by the design team" });
       if (d.assignee) mark(1, at);
     } else if (l.action === "Updated" && d.status?.to) {
       history.push({ at: at.toISOString(), text: `Status changed to ${d.status.to}` });
@@ -64,6 +64,16 @@ export async function trackingByToken(token: string): Promise<Tracking | null> {
   // A step can only show a time once the request is at or past it.
   const steps = STEPS.map((label, i) => ({ label, at: i <= current ? reached[i] : null }));
 
+  return { currentStep: current, steps, history: history.reverse().slice(0, 20) };
+}
+
+export async function trackingByToken(token: string): Promise<Tracking | null> {
+  const number = numberFromTrackingToken(token);
+  if (!number) return null;
+  const [t] = await db.select().from(tickets).where(eq(tickets.number, number)).limit(1);
+  if (!t) return null;
+  const { currentStep: current, steps, history } = await progressOf(t);
+
   let newerVersion: string | null = null;
   if (t.status === "superseded") {
     const base = t.number.split("-V")[0];
@@ -84,6 +94,6 @@ export async function trackingByToken(token: string): Promise<Tracking | null> {
     dueAt: t.dueAt?.toISOString() ?? null,
     deliveredAt: t.deliveredAt?.toISOString() ?? null,
     newerVersion,
-    history: history.reverse().slice(0, 20),
+    history,
   };
 }

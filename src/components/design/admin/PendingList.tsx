@@ -18,9 +18,15 @@ import { Badge, Empty, PriorityBadge, formatDateTime, formatDay } from "../ui";
 
 export type PendingItem = TicketCard & { briefExcerpt: string };
 type Option = { id: string; name: string; openHours: number; capacityHours: number; designer: boolean; suggested: boolean };
-type Dialog = { kind: "accept" | "decline" | "ask"; ticket: PendingItem } | null;
+type Dialog = "accept" | "decline" | "ask" | null;
+/** What the actions need to know about the request. */
+type PendingTicket = Pick<TicketCard, "id" | "number" | "title">;
 
-export function PendingList({ items, limit }: { items: PendingItem[]; limit?: number }) {
+/**
+ * Accept + Assign, Decline and (optionally) Ask question for one request waiting in Pending Review, with their dialogs. Used by the queue
+ * and by the ticket page itself. Leads only (the server refuses anyone else).
+ */
+export function PendingActions({ ticket, ask = true }: { ticket: PendingTicket; ask?: boolean }) {
   const router = useRouter();
   const toast = useToast();
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -29,10 +35,8 @@ export function PendingList({ items, limit }: { items: PendingItem[]; limit?: nu
   const [text, setText] = useState("");
   const [busy, startBusy] = useTransition();
 
-  const shown = limit ? items.slice(0, limit) : items;
-
-  const open = (kind: "accept" | "decline" | "ask", ticket: PendingItem) => {
-    setDialog({ kind, ticket });
+  const open = (kind: "accept" | "decline" | "ask") => {
+    setDialog(kind);
     setText("");
     setChoice("auto");
     if (kind === "accept" && !options) {
@@ -46,13 +50,13 @@ export function PendingList({ items, limit }: { items: PendingItem[]; limit?: nu
   const submit = () =>
     startBusy(async () => {
       if (!dialog) return;
-      const t = dialog.ticket;
-      if (dialog.kind === "accept") {
+      const t = ticket;
+      if (dialog === "accept") {
         const r = await acceptAction(t.id, choice);
         if (!r.ok) return void toast.error(r.error);
         toast.success(r.data.assigned ? `${t.number} accepted and assigned` : `${t.number} accepted. Nobody was free to assign: it waits in New.`);
         setOptions(null);
-      } else if (dialog.kind === "decline") {
+      } else if (dialog === "decline") {
         const r = await declineAction(t.id, text);
         if (!r.ok) return void toast.error(r.error);
         toast.success(r.message ?? "Declined");
@@ -65,61 +69,29 @@ export function PendingList({ items, limit }: { items: PendingItem[]; limit?: nu
       router.refresh();
     });
 
-  if (!items.length) return <Empty title="No requests waiting">New design requests appear here for a lead to accept, decline or ask about.</Empty>;
-
   return (
     <>
-      <ul className="divide-y divide-[var(--ds-line)]">
-        {shown.map((t) => (
-          <li key={t.id} className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-start">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Link href={`/design/admin/tickets/${t.id}`} className="text-sm font-bold text-[var(--ds-navy)] hover:underline">
-                  {t.number}
-                </Link>
-                <PriorityBadge priority={t.priority} />
-                {t.designs.map((d) => (
-                  <Badge key={d} tone="blue">
-                    {d}
-                  </Badge>
-                ))}
-              </div>
-              <p className="mt-1 font-semibold text-ink">{t.title}</p>
-              <p className="mt-0.5 text-[0.82rem] ds-muted">
-                {t.requesterName ?? "Unknown requester"}
-                {t.department ? ` · ${t.department}` : ""} · needed by {t.deliveryDate ? formatDay(t.deliveryDate) : "–"} · asked {formatDateTime(t.createdAt)}
-              </p>
-              {t.briefExcerpt && <p className="mt-1.5 line-clamp-2 text-[0.84rem] text-ink">{t.briefExcerpt}</p>}
-            </div>
-            <div className="flex shrink-0 flex-wrap gap-2">
-              <button type="button" className="btn btn-sm ds-btn-navy" onClick={() => open("accept", t)}>
-                <Check size={14} /> Accept + Assign
-              </button>
-              <button type="button" className="btn btn-sm ds-btn-outline-red" onClick={() => open("decline", t)}>
-                <X size={14} /> Decline
-              </button>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => open("ask", t)}>
-                <HelpCircle size={14} /> Ask question
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-      {limit && items.length > limit && (
-        <div className="border-t border-[var(--ds-line)] px-5 py-3 text-sm">
-          <Link href="/design/admin/pending" className="font-semibold text-[var(--ds-navy)] hover:underline">
-            See all {items.length} waiting requests →
-          </Link>
-        </div>
-      )}
+      <div className="flex shrink-0 flex-wrap gap-2">
+        <button type="button" className="btn btn-sm ds-btn-navy" onClick={() => open("accept")}>
+          <Check size={14} /> Accept + Assign
+        </button>
+        <button type="button" className="btn btn-sm ds-btn-outline-red" onClick={() => open("decline")}>
+          <X size={14} /> Decline
+        </button>
+        {ask && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => open("ask")}>
+            <HelpCircle size={14} /> Ask question
+          </button>
+        )}
+      </div>
 
       {dialog && (
         <Modal
-          title={dialog.kind === "accept" ? `Accept ${dialog.ticket.number}` : dialog.kind === "decline" ? `Decline ${dialog.ticket.number}` : `Ask about ${dialog.ticket.number}`}
+          title={dialog === "accept" ? `Accept ${ticket.number}` : dialog === "decline" ? `Decline ${ticket.number}` : `Ask about ${ticket.number}`}
           onClose={() => setDialog(null)}
         >
-          <p className="mb-4 text-sm ds-muted">{dialog.ticket.title}</p>
-          {dialog.kind === "accept" ? (
+          <p className="mb-4 text-sm ds-muted">{ticket.title}</p>
+          {dialog === "accept" ? (
             <fieldset className="flex flex-col gap-2">
               <legend className="ds-label mb-2">Assign to</legend>
               <label className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 ${choice === "auto" ? "border-[var(--ds-navy)] bg-[var(--ds-navy-tint)]" : "border-[var(--ds-line)]"}`}>
@@ -135,7 +107,7 @@ export function PendingList({ items, limit }: { items: PendingItem[]; limit?: nu
                   <Loader2 size={14} className="animate-spin" /> Loading the team…
                 </p>
               ) : options.length === 0 ? (
-                <p className="px-1 py-2 text-sm ds-muted">Nobody has Design Team yet. Give designers the Design Team application in Administrator.</p>
+                <p className="px-1 py-2 text-sm ds-muted">Nobody has Design Team Admin yet. Give the creative team the Design Team Admin application in Administrator.</p>
               ) : (
                 options.map((o) => {
                   const pct = o.capacityHours ? Math.min(100, Math.round((o.openHours / o.capacityHours) * 100)) : 100;
@@ -164,8 +136,8 @@ export function PendingList({ items, limit }: { items: PendingItem[]; limit?: nu
             </fieldset>
           ) : (
             <label className="flex flex-col gap-1.5">
-              <span className="ds-label">{dialog.kind === "decline" ? "Reason (the requester is told)" : "Your question (emailed to the requester)"}</span>
-              <textarea className="input min-h-28" value={text} maxLength={dialog.kind === "decline" ? 500 : 1000} onChange={(e) => setText(e.target.value)} autoFocus />
+              <span className="ds-label">{dialog === "decline" ? "Reason (the requester is told)" : "Your question (emailed to the requester)"}</span>
+              <textarea className="input min-h-28" value={text} maxLength={dialog === "decline" ? 500 : 1000} onChange={(e) => setText(e.target.value)} autoFocus />
             </label>
           )}
           <div className="mt-6 flex justify-end gap-3">
@@ -174,15 +146,59 @@ export function PendingList({ items, limit }: { items: PendingItem[]; limit?: nu
             </button>
             <button
               type="button"
-              className={`btn btn-sm ${dialog.kind === "decline" ? "btn-danger" : "ds-btn-navy"}`}
-              disabled={busy || (dialog.kind !== "accept" && !text.trim())}
+              className={`btn btn-sm ${dialog === "decline" ? "btn-danger" : "ds-btn-navy"}`}
+              disabled={busy || (dialog !== "accept" && !text.trim())}
               onClick={submit}
             >
               {busy && <Loader2 size={14} className="animate-spin" />}
-              {dialog.kind === "accept" ? "Accept" : dialog.kind === "decline" ? "Decline request" : "Send question"}
+              {dialog === "accept" ? "Accept" : dialog === "decline" ? "Decline request" : "Send question"}
             </button>
           </div>
         </Modal>
+      )}
+    </>
+  );
+}
+
+export function PendingList({ items, limit }: { items: PendingItem[]; limit?: number }) {
+  const shown = limit ? items.slice(0, limit) : items;
+
+  if (!items.length) return <Empty title="No requests waiting">New design requests appear here for a lead to accept, decline or ask about.</Empty>;
+
+  return (
+    <>
+      <ul className="divide-y divide-[var(--ds-line)]">
+        {shown.map((t) => (
+          <li key={t.id} className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-start">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Link href={`/design/admin/tickets/${t.id}`} className="text-sm font-bold text-[var(--ds-navy)] hover:underline">
+                  {t.number}
+                </Link>
+                <PriorityBadge priority={t.priority} />
+                {t.designs.map((d) => (
+                  <Badge key={d} tone="blue">
+                    {d}
+                  </Badge>
+                ))}
+              </div>
+              <p className="mt-1 font-semibold text-ink">{t.title}</p>
+              <p className="mt-0.5 text-[0.82rem] ds-muted">
+                {t.requesterName ?? "Unknown requester"}
+                {t.department ? ` · ${t.department}` : ""} · needed by {t.deliveryDate ? formatDay(t.deliveryDate) : "–"} · asked {formatDateTime(t.createdAt)}
+              </p>
+              {t.briefExcerpt && <p className="mt-1.5 line-clamp-2 text-[0.84rem] text-ink">{t.briefExcerpt}</p>}
+            </div>
+            <PendingActions ticket={t} />
+          </li>
+        ))}
+      </ul>
+      {limit && items.length > limit && (
+        <div className="border-t border-[var(--ds-line)] px-5 py-3 text-sm">
+          <Link href="/design/admin/pending" className="font-semibold text-[var(--ds-navy)] hover:underline">
+            See all {items.length} waiting requests →
+          </Link>
+        </div>
       )}
     </>
   );

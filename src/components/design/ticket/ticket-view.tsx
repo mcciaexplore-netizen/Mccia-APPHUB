@@ -10,7 +10,8 @@ import type { Priority, TicketStatus } from "@/db/design-schema";
 import type { TicketDetail } from "@/lib/design/detail";
 import { askAction, deleteTicketAction, updateTicketAction } from "@/lib/design/actions/tickets";
 import { PRIORITIES, PRIORITY_LABEL, STATUS_LABEL } from "@/lib/design/rules";
-import { DueText, PriorityBadge, StatusBadge } from "../ui";
+import { DueText, PriorityBadge, StatusBadge, Steps } from "../ui";
+import { PendingActions } from "../admin/PendingList";
 import { fromIstInput, toIstInput, useAct } from "./use-act";
 import { OverviewTab } from "./overview-tab";
 import { ProofsTab } from "./proofs-tab";
@@ -101,7 +102,17 @@ export function TicketView({ d, viewer }: { d: TicketDetail; viewer: Viewer }) {
             <Lock size={15} /> This version is closed{t.status === "superseded" ? ": the requester asked for changes, which are on the newest version" : ""}. It can no longer be changed.
           </p>
         )}
-        {!accepted && <p className="mt-3 rounded-lg bg-[var(--ds-amber-tint)] px-3 py-2 text-sm text-[#92400e]">{t.status === "declined" ? `Declined${d.declineReason ? `: ${d.declineReason}` : ""}.` : "Waiting for a design lead to accept this request."}</p>}
+        {!accepted && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--ds-amber-tint)] px-3 py-2 text-sm text-[#92400e]">
+            <span>{t.status === "declined" ? `Declined${d.declineReason ? `: ${d.declineReason}` : ""}.` : viewer.lead ? "This request is waiting for you to accept or decline it." : "Waiting for a design lead to accept this request."}</span>
+            {t.status === "pending_review" && viewer.lead && <PendingActions ticket={t} ask={false} />}
+          </div>
+        )}
+        {t.status !== "declined" && (
+          <div className="mt-4">
+            <Steps status={t.status} />
+          </div>
+        )}
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="ds-label flex flex-col gap-1">
