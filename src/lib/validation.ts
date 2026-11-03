@@ -19,7 +19,8 @@ export const departmentInput = z.object({
 });
 
 export const appInput = z.object({
-  departmentId: uuid,
+  // Where it is listed. Not on the form: the department page sends its own; without one createApp uses "Other" and updateApp keeps it as is.
+  departmentId: uuid.optional(),
   name: z.string().trim().min(1, "Name is required").max(80),
   description: z.string().trim().max(140, "Keep the description to one line (140 chars)").nullish().transform((v) => v || null),
   url: httpsUrl,

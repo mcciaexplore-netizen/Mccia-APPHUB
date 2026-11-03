@@ -14,7 +14,7 @@ export const maxDuration = 60;
 
 export default async function Page() {
   const me = await requireArea("apps");
-  const [list, latest, access, deps, admins, staff, grants, people] = await Promise.all([
+  const [list, latest, access, admins, staff, grants, people] = await Promise.all([
     db.select({
       id: apps.id, name: apps.name, description: apps.description, url: apps.url, icon: apps.icon, status: apps.status, isActive: apps.isActive,
       department: departments.name, departmentActive: departments.isActive, departmentId: apps.departmentId,
@@ -23,7 +23,6 @@ export default async function Page() {
     db.selectDistinctOn([appChecks.appId], { appId: appChecks.appId, ok: appChecks.ok, detail: appChecks.detail, httpStatus: appChecks.httpStatus, durationMs: appChecks.durationMs, checkedAt: appChecks.checkedAt })
       .from(appChecks).orderBy(appChecks.appId, desc(appChecks.checkedAt)),
     db.select({ appId: userAppAccess.appId, n: count() }).from(userAppAccess).groupBy(userAppAccess.appId),
-    db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.kind, "application")).orderBy(asc(departments.sortOrder), asc(departments.name)),
     // For the Edit form's App Admins and App Staff: who is one, who has each application, and everyone who can be picked.
     appAdminsByApp(),
     appStaffByApp(),
@@ -38,7 +37,6 @@ export default async function Page() {
     <InventoryView
       people={people}
       canSetAdmins={isSuper(me)}
-      departments={deps}
       rows={list.filter((a) => !isApprovalsUrl(a.url)).map((a) => {
         const c = check.get(a.id);
         return {

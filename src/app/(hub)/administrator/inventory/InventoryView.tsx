@@ -32,8 +32,8 @@ function verification(r: Row): { label: string; cls: string } {
 }
 
 /** Every application the hub lists: what it is, where it points, who can open it, and the result of the last real check. */
-export function InventoryView({ rows, departments, people, canSetAdmins }: {
-  rows: Row[]; departments: { id: string; name: string }[];
+export function InventoryView({ rows, people, canSetAdmins }: {
+  rows: Row[];
   /** Everyone who can be picked as an App Admin, and whether this person may change App Admins (the Support Admin). */
   people: AdminPerson[]; canSetAdmins: boolean;
 }) {
@@ -132,17 +132,17 @@ export function InventoryView({ rows, departments, people, canSetAdmins }: {
       </table></div>
       {adding && (
         <Modal title="Add application" onClose={() => setAdding(false)}>
-          <AppForm departments={departments} initial={{ departmentId: departments[0]?.id }} submitLabel="Add application" pending={pending}
+          <AppForm submitLabel="Add application" pending={pending}
             onSubmit={(v) => start(async () => { const x = await createApp(v); if (x.ok) { toast.success("Application added"); setAdding(false); router.refresh(); } else toast.error(x.error); })} />
         </Modal>
       )}
       {edit && (
         <Modal title="Edit application" onClose={() => setEdit(null)}>
           {/* The department stays as it is, like the Edit on the department page. */}
-          <AppForm departments={[{ id: edit.departmentId, name: edit.department }]} submitLabel="Save" pending={pending}
+          <AppForm submitLabel="Save" pending={pending}
             admins={{ people, accessIds: edit.accessIds, selected: edit.adminIds, canEdit: canSetAdmins }}
             staff={{ people, accessIds: edit.accessIds, selected: edit.staffIds, canEdit: canSetAdmins }}
-            initial={{ departmentId: edit.departmentId, name: edit.name, description: edit.description ?? "", url: edit.url, icon: edit.icon, appToken: edit.appToken ?? "", isActive: edit.isActive, status: edit.status, ssoEnabled: edit.ssoEnabled, ssoSlug: edit.ssoSlug ?? "", ssoCallbackUrl: edit.ssoCallbackUrl ?? "" }}
+            initial={{ name: edit.name, description: edit.description ?? "", url: edit.url, icon: edit.icon, appToken: edit.appToken ?? "", isActive: edit.isActive, status: edit.status, ssoEnabled: edit.ssoEnabled, ssoSlug: edit.ssoSlug ?? "", ssoCallbackUrl: edit.ssoCallbackUrl ?? "" }}
             onSubmit={(v, adminIds, staffIds) => start(async () => {
               const x = await updateApp(edit.id, { ...v, departmentId: edit.departmentId });
               if (!x.ok) return toast.error(x.error);

@@ -1,8 +1,8 @@
 "use server";
 
-import { asc, count, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { appChecks, apps, userAppAccess, type AppStatus } from "@/db/schema";
+import { appChecks, apps, departments, userAppAccess, type AppStatus } from "@/db/schema";
 import { adminAction, UserError } from "@/lib/action";
 import { checkUrl } from "@/lib/app-checks";
 import { writeAudit } from "@/lib/audit";
@@ -58,11 +58,27 @@ const callbackForLog = (u: string | null) => {
   }
 };
 
+/**
+ * The "Other" application group: where an application added from Administrator → Applications (whose form no longer asks for a department)
+ * is listed. Made the first time it is needed, at the end of the list; it can be renamed or the application moved like any other.
+ */
+async function otherDepartmentId(): Promise<string> {
+  const find = () => db.select({ id: departments.id }).from(departments).where(and(eq(departments.kind, "application"), eq(departments.slug, "other"))).limit(1);
+  const [found] = await find();
+  if (found) return found.id;
+  const [last] = await db.select({ s: departments.sortOrder }).from(departments).where(eq(departments.kind, "application")).orderBy(desc(departments.sortOrder)).limit(1);
+  await db.insert(departments).values({ kind: "application", name: "Other", slug: "other", icon: "AppWindow", sortOrder: (last?.s ?? 0) + 10 }).onConflictDoNothing();
+  const [made] = await find();
+  if (!made) throw new UserError("Could not find or create the \"Other\" group. Add the application from its department under Departments.");
+  return made.id;
+}
+
 export async function createApp(input: unknown) {
   return adminAction("apps", async (admin) => {
-    const v = appInput.parse(input);
-    if (!isSuper(admin) && (v.ssoEnabled || v.ssoSlug || v.ssoCallbackUrl || v.appToken)) throw new UserError(SSO_ONLY_SUPPORT);
-    await assertSlugFree(v.ssoSlug);
+    const parsed = appInput.parse(input);
+    if (!isSuper(admin) && (parsed.ssoEnabled || parsed.ssoSlug || parsed.ssoCallbackUrl || parsed.appToken)) throw new UserError(SSO_ONLY_SUPPORT);
+    await assertSlugFree(parsed.ssoSlug);
+    const v = { ...parsed, departmentId: parsed.departmentId ?? (await otherDepartmentId()) };
     const [a] = await withSlugCheck(async () => db.insert(apps).values({ ...v, sortOrder: await nextOrder(v.departmentId) }).returning({ id: apps.id }));
     await writeAudit(admin, [{ action: "app.create", targetType: "app", targetId: a.id, targetLabel: v.name, details: { status: v.status ?? "active", visible: v.isActive ?? true, singleSignOn: v.ssoEnabled ?? false } }]);
   });
@@ -70,8 +86,9 @@ export async function createApp(input: unknown) {
 
 export async function updateApp(id: string, input: unknown) {
   return adminAction("apps", async (admin) => {
-    const v = appInput.parse(input);
+    const parsed = appInput.parse(input);
     const cur = await loadApp(id);
+    const v = { ...parsed, departmentId: parsed.departmentId ?? cur.departmentId };
     const ssoChanged =
       (v.ssoEnabled !== undefined && v.ssoEnabled !== cur.ssoEnabled) ||
       (v.ssoSlug !== undefined && v.ssoSlug !== cur.ssoSlug) ||

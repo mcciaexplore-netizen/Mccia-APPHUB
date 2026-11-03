@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { Department } from "@/db/schema";
 import { IconPicker } from "@/components/IconPicker";
 import { AppCard } from "@/components/AppCard";
 import { useToast } from "@/components/Toast";
@@ -47,21 +46,21 @@ export function DepartmentForm({ initial, submitLabel, onSubmit, pending }: {
 }
 
 export type AppVals = {
-  departmentId: string; name: string; description: string; url: string; icon: string; appToken: string; isActive: boolean; status: "active" | "testing" | "unavailable";
+  name: string; description: string; url: string; icon: string; appToken: string; isActive: boolean; status: "active" | "testing" | "unavailable";
   ssoEnabled: boolean; ssoSlug: string; ssoCallbackUrl: string;
 };
 
 /**
- * An application always belongs to one department. With a single department given, it is fixed and shown as text. `admins` (editing an
- * application in Administrator → Applications) adds the App Admins section, and `staff` the App Staff section below it; the picked
- * lists come back as onSubmit's second and third values.
+ * An application's details. Its department is not asked here: the page it is added from decides (a department's page puts it there;
+ * Administrator → Applications puts it under "Other", see createApp). `admins` (editing an application in Administrator → Applications)
+ * adds the App Admins section, and `staff` the App Staff section below it; the picked lists come back as onSubmit's second and third values.
  */
-export function AppForm({ departments, initial, submitLabel, onSubmit, pending, admins, staff }: {
-  departments: Pick<Department, "id" | "name">[]; initial?: Partial<AppVals>; submitLabel: string; pending: boolean; onSubmit: (v: AppVals, adminIds?: string[], staffIds?: string[]) => void;
+export function AppForm({ initial, submitLabel, onSubmit, pending, admins, staff }: {
+  initial?: Partial<AppVals>; submitLabel: string; pending: boolean; onSubmit: (v: AppVals, adminIds?: string[], staffIds?: string[]) => void;
   admins?: AppAdminsData; staff?: AppAdminsData;
 }) {
   const [v, setV] = useState<AppVals>({
-    departmentId: initial?.departmentId ?? departments[0]?.id ?? "", name: initial?.name ?? "",
+    name: initial?.name ?? "",
     description: initial?.description ?? "", url: initial?.url ?? "https://", icon: initial?.icon ?? DEFAULT_ICON, appToken: initial?.appToken ?? "", isActive: initial?.isActive ?? true, status: initial?.status ?? "active",
     ssoEnabled: initial?.ssoEnabled ?? false, ssoSlug: initial?.ssoSlug ?? "", ssoCallbackUrl: initial?.ssoCallbackUrl ?? "",
   });
@@ -81,15 +80,6 @@ export function AppForm({ departments, initial, submitLabel, onSubmit, pending, 
           <input className="input" type="text" inputMode="url" value={v.url} onChange={(e) => set("url", e.target.value)} required />
           {urlBad && <span className="mt-1 block text-xs text-brand-red">Must start with https:// (or be a path like /approvals)</span>}
         </Field>
-        {departments.length === 1 ? (
-          <p className="text-sm text-muted">Department: <b>{departments[0].name}</b></p>
-        ) : (
-          <Field label="Department (an app belongs to exactly one)">
-            <select className="input" value={v.departmentId} onChange={(e) => set("departmentId", e.target.value)} required>
-              {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-          </Field>
-        )}
         <Field label="Icon"><IconPicker value={v.icon} onChange={(i) => set("icon", i)} /></Field>
         <Field label="App token (optional, for future single sign-on)">
           <input className="input" value={v.appToken} onChange={(e) => set("appToken", e.target.value)} maxLength={500} autoComplete="off" />
@@ -123,7 +113,7 @@ export function AppForm({ departments, initial, submitLabel, onSubmit, pending, 
           <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={v.isActive} onChange={(e) => set("isActive", e.target.checked)} />
           <span className="text-sm"><b>Active</b><span className="block text-xs text-muted">Only active applications are shown in the hub. Untick to hide it without deleting.</span></span>
         </label>
-        <button className="btn btn-primary btn-sm" disabled={pending || departments.length === 0}>{submitLabel}</button>
+        <button className="btn btn-primary btn-sm" disabled={pending}>{submitLabel}</button>
       </form>
       <div className="hidden md:block">
         <p className="label-xs mb-1.5">Preview</p>

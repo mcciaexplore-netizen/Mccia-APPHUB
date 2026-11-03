@@ -16,7 +16,6 @@ export function DepartmentApps({ department, apps }: { department: { id: string;
   const confirm = useConfirm();
   const [showAdd, setShowAdd] = useState(false);
   const [edit, setEdit] = useState<AppRow | null>(null);
-  const dept = [department];
 
   return (
     <div className="space-y-6">
@@ -27,7 +26,7 @@ export function DepartmentApps({ department, apps }: { department: { id: string;
 
       {showAdd && (
         <div className="glass p-5 sm:p-6">
-          <AppForm departments={dept} initial={{ departmentId: department.id }} submitLabel="Add application" pending={pending}
+          <AppForm submitLabel="Add application" pending={pending}
             onSubmit={(v) => run(() => createApp({ ...v, departmentId: department.id }), "Application added", () => setShowAdd(false))} />
         </div>
       )}
@@ -64,8 +63,8 @@ export function DepartmentApps({ department, apps }: { department: { id: string;
 
       {edit && (
         <Modal title="Edit application" onClose={() => setEdit(null)}>
-          <AppForm departments={dept} submitLabel="Save" pending={pending}
-            initial={{ departmentId: department.id, name: edit.name, description: edit.description ?? "", url: edit.url, icon: edit.icon, appToken: edit.appToken ?? "", isActive: edit.isActive, status: edit.status, ssoEnabled: edit.ssoEnabled, ssoSlug: edit.ssoSlug ?? "", ssoCallbackUrl: edit.ssoCallbackUrl ?? "" }}
+          <AppForm submitLabel="Save" pending={pending}
+            initial={{ name: edit.name, description: edit.description ?? "", url: edit.url, icon: edit.icon, appToken: edit.appToken ?? "", isActive: edit.isActive, status: edit.status, ssoEnabled: edit.ssoEnabled, ssoSlug: edit.ssoSlug ?? "", ssoCallbackUrl: edit.ssoCallbackUrl ?? "" }}
             onSubmit={(v) => run(() => updateApp(edit.id, { ...v, departmentId: department.id }), "Application saved", () => setEdit(null))} />
         </Modal>
       )}
