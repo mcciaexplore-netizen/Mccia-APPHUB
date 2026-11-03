@@ -11,7 +11,7 @@ export default async function RequestPage() {
   const user = await requireRequester();
   const [types, departments] = await Promise.all([listTypes(), listDepartmentNames()]);
   return (
-    <div className="ds-request-page mx-auto max-w-[860px]">
+    <div className="ds-request-page">
       <PageHeader title="Request a Design" subtitle="Fill in the details and our design team will get back to you." />
       <RequestForm
         types={types.filter((t) => !RETIRED_TYPE_KEYS.includes(t.key)).map((t) => ({ key: t.key, name: t.name, questions: t.questions }))}

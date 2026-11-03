@@ -17,21 +17,6 @@ import { PriorityBadge } from "../ui";
 
 type FormType = { key: string; name: string; questions: DesignQuestion[] };
 
-/** An emoji for each kind of design on its tile; a kind a lead added later gets the palette. */
-const TYPE_EMOJI: Record<string, string> = {
-  flyer: "📄",
-  whatsapp: "💬",
-  instagram: "📸",
-  linkedin: "💼",
-  twitter: "🐦",
-  banner: "🪧",
-  backdrop: "🖥️",
-  book: "📚",
-  brochure2: "📋",
-  brochure4: "📑",
-  other: "✏️",
-};
-
 /** One of the form's sections: a white card with a navy title (the form's own look, a little roomier than the module's cards). */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -174,7 +159,7 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
       <Section title="What do you need?">
         <fieldset>
           <legend className="sr-only">Kinds of design</legend>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
             {types.map((t) => {
               const on = chosen.includes(t.key);
               return (
@@ -186,9 +171,6 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
                       : "border-[#e5e7eb] bg-white text-ink shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:border-[#9ca3af] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
                   }`}
                 >
-                  <span className="text-2xl leading-none" aria-hidden>
-                    {TYPE_EMOJI[t.key] ?? "🎨"}
-                  </span>
                   <span className="min-w-0 flex-1">{t.name}</span>
                   <input type="checkbox" className="ds-check" aria-label={t.name} checked={on} onChange={() => toggle(t.key)} />
                 </label>
@@ -278,30 +260,31 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
                 </button>
               )}
             </div>
-          <div className="flex flex-col gap-2 text-sm">
-            <span className="font-semibold text-ink">Files <span className="font-normal ds-muted">(optional)</span></span>
-            <FileDrop
-              purpose="attachment"
-              maxFiles={MAX_FILES}
-              maxMb={MAX_FILE_MB}
-              onChange={setFileIds}
-              onBusy={setUploading}
-              label="Drop files here or click to browse"
-              hint={`Share content for Design Creatives · Word, PDF, PowerPoint, Excel, images, text, RTF, ODT, Markdown · up to ${MAX_FILES} files, ${MAX_FILE_MB} MB each`}
-            />
-          </div>
-          <label className="flex flex-col gap-2 text-sm" htmlFor="content">
-            <span className="font-semibold text-ink">Share content for Design Creatives</span>
-            <span className="-mt-1 text-xs ds-muted">(Or if you have any other design requirement please mention in the document)</span>
+          <div className="flex flex-col gap-3 text-sm">
+            <div className="flex flex-col gap-1">
+              <label htmlFor="content" className="font-semibold text-ink">
+                Share content for Design Creatives <span className="font-normal ds-muted">(optional)</span>
+              </label>
+              <span className="text-xs ds-muted">(Or if you have any other design requirement please mention in the document)</span>
+            </div>
             <textarea
               id="content"
               className="input min-h-32"
               rows={5}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="Type your content here... (text for banner, social media post, event details, etc.)"
+              placeholder="Type your content, text for the design, event details, etc."
             />
-          </label>
+            <FileDrop
+              purpose="attachment"
+              maxFiles={MAX_FILES}
+              maxMb={MAX_FILE_MB}
+              onChange={setFileIds}
+              onBusy={setUploading}
+              label="Or upload a file (Word, PDF, PPT, Excel, images, etc.)"
+              hint={`Drag and drop or click to browse · up to ${MAX_FILES} files, ${MAX_FILE_MB} MB each`}
+            />
+          </div>
         </div>
       </Section>
 
