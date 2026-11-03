@@ -1,26 +1,28 @@
 import Link from "next/link";
 import { ActivityFeed } from "@/components/design/activity-feed";
+import { AcceptedList } from "@/components/design/admin/AcceptedList";
 import { PendingList } from "@/components/design/admin/PendingList";
 import { EmailSwitch } from "@/components/design/team/email-switch";
 import { Badge, Card, DueText, Empty, Kpi, PageHeader, PriorityBadge, StatusBadge } from "@/components/design/ui";
 import { listTickets } from "@/lib/design/tickets";
 import { emailEnabledFor } from "@/lib/design/team-queries";
 import { OPEN_STATUSES } from "@/lib/design/rules";
-import { pendingItems } from "@/lib/design/admin-queries";
+import { acceptedBy, pendingItems } from "@/lib/design/admin-queries";
 import { requireTeam } from "@/lib/design/dal";
 import { activity } from "@/lib/design/detail";
 import { openByDesigner, overview } from "@/lib/design/reports";
 
 /**
  * The creative team's dashboard: the four numbers that matter, the requests waiting for a lead (leads only: they accept and assign), the
- * person's own queue, what is happening now, who holds the open work (leads only), and where their emails go. A lead sees the whole
+ * requests this lead accepted and where each stands now (leads only), the person's own queue, what is happening now, who holds the open work (leads only), and where their emails go. A lead sees the whole
  * team's numbers and activity; a designer only those of the tickets assigned to them.
  */
 export default async function DesignAdminHome() {
   const u = await requireTeam();
-  const [o, pending, feed, byDesigner, queue, emailOn] = await Promise.all([
+  const [o, pending, accepted, feed, byDesigner, queue, emailOn] = await Promise.all([
     overview(u.lead ? undefined : u.id),
     u.lead ? pendingItems() : Promise.resolve([]),
+    u.lead ? acceptedBy(u.id) : Promise.resolve([]),
     activity(u.lead ? null : u.id),
     u.lead ? openByDesigner() : Promise.resolve([]),
     listTickets({ assigneeId: u.id, statuses: OPEN_STATUSES }),
@@ -52,6 +54,11 @@ export default async function DesignAdminHome() {
       >
         <PendingList items={pending} limit={5} />
       </Card>
+      )}
+      {u.lead && (
+        <Card title="Requests I accepted" pad={false}>
+          <AcceptedList items={accepted} />
+        </Card>
       )}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <Card title="My queue" pad={false}>

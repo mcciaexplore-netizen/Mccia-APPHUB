@@ -1,3 +1,4 @@
+import { CheckCircle2 } from "lucide-react";
 import type { AuditDto } from "@/lib/design/detail";
 import { Card, formatDateTime } from "../ui";
 
@@ -45,10 +46,18 @@ function detailLines(details: Record<string, unknown>): string[] {
     });
 }
 
-/** The ticket's history, newest first. */
+/** The ticket's history, newest first, with who accepted it from Pending Review shown above it all. */
 export function AuditLog({ items }: { items: AuditDto[] }) {
+  const accepted = items.find((a) => a.action === "Accepted");
   return (
     <Card title="History">
+      {accepted && (
+        <p className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-[var(--ds-green)] bg-[#ecfdf5] px-3 py-2 text-sm">
+          <CheckCircle2 size={16} className="shrink-0 text-[var(--ds-green-text)]" aria-hidden />
+          <strong className="text-ink">Accepted by {accepted.who}</strong>
+          <span className="ds-muted">· {formatDateTime(accepted.at)}</span>
+        </p>
+      )}
       {items.length === 0 ? (
         <p className="text-sm ds-muted">Nothing yet.</p>
       ) : (

@@ -275,6 +275,18 @@ try {
   const feedL = await L.page.evaluate(async () => (await (await fetch("/api/design/activity")).json()).items.map((i) => i.number));
   check("Dev's feed and the lead's include it", feed1.includes(number) && feedL.includes(number));
   check("a lead opens it", (await go(L.page, `/design/admin/tickets/${t1.id}`))?.status() === 200);
+  check("its history shows who accepted it, above the rest", /Accepted by ZZD Lead Lata/.test(await L.page.locator("section", { hasText: "History" }).last().innerText()));
+  await go(L.page, "/design/admin");
+  const accepted = L.page.locator("section", { has: L.page.getByRole("heading", { name: "Requests I accepted" }) });
+  const row = accepted.locator("tbody tr", { hasText: number });
+  check("the lead's dashboard lists it under Requests I accepted, with requester, designer and status", (await row.count()) === 1 && /ZZD Requester Riya/.test(await row.innerText()) && /ZZD Designer Dev/.test(await row.innerText()) && /Assigned/i.test(await row.innerText()), await row.innerText().catch(() => ""));
+  await accepted.getByRole("tab", { name: /^In Review/ }).click();
+  check("the In Review filter leaves it out (it is only assigned)", (await accepted.locator("tbody tr", { hasText: number }).count()) === 0);
+  await accepted.getByRole("tab", { name: /^In Progress/ }).click();
+  check("the In Progress filter shows it", (await accepted.locator("tbody tr", { hasText: number }).count()) === 1);
+  await accepted.locator("tbody tr", { hasText: number }).locator("td").nth(1).click();
+  check("clicking the row opens the ticket", await L.page.waitForURL(`**/design/admin/tickets/${t1.id}`, { timeout: 15000 }).then(() => true).catch(() => false), pathOf(L.page));
+  check("a designer has no Requests I accepted section", !/Requests I accepted/.test(await (await go(D1.page, "/design/admin"), mainText(D1.page))));
   await go(R2.page, "/design/my-requests");
   check("another requester does not see it in their requests", !(await mainText(R2.page)).includes(number));
   await go(R.page, `/design/admin/tickets/${t1.id}`);
