@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { Inbox } from "lucide-react";
 import type { Priority, TicketStatus } from "@/db/design-schema";
 import { PRIORITY_LABEL, STATUS_LABEL, STATUS_TONE, STEPS, dueHealth, stepOf, timeLeft } from "@/lib/design/rules";
@@ -91,10 +92,11 @@ export function Avatar({ name, size = 26 }: { name: string | null; size?: number
   );
 }
 
-export function Kpi({ label, value, tone, hint, live }: { label: string; value: ReactNode; tone?: "red" | "green" | "purple" | "navy"; hint?: string; live?: boolean }) {
+/** One of the dashboard's numbers. With `href` the whole card is a link (to the board, filtered to what the number counts). */
+export function Kpi({ label, value, tone, hint, live, href }: { label: string; value: ReactNode; tone?: "red" | "green" | "purple" | "navy"; hint?: string; live?: boolean; href?: string }) {
   const color = tone === "red" ? "var(--ds-red)" : tone === "green" ? "var(--ds-green-text)" : tone === "purple" ? "var(--ds-purple)" : "var(--ds-navy)";
-  return (
-    <div className="ds-card ds-card-hover flex flex-col gap-1 px-5 py-4">
+  const body = (
+    <>
       <span className="ds-label flex items-center gap-1.5">
         {live && <span className="ds-live" aria-hidden />}
         {label}
@@ -103,7 +105,15 @@ export function Kpi({ label, value, tone, hint, live }: { label: string; value: 
         {value}
       </span>
       {hint && <span className="text-[0.75rem] ds-muted">{hint}</span>}
-    </div>
+    </>
+  );
+  const cls = "ds-card ds-card-hover flex flex-col gap-1 px-5 py-4";
+  return href ? (
+    <Link href={href} className={`${cls} cursor-pointer hover:bg-[var(--ds-navy-tint)] hover:shadow-md focus-visible:outline-2 focus-visible:outline-[var(--ds-navy)]`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={cls}>{body}</div>
   );
 }
 

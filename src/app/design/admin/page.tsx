@@ -35,10 +35,10 @@ export default async function DesignAdminHome() {
     <div className="flex flex-col gap-6">
       <PageHeader title="Team overview" subtitle={`Hello ${u.name.split(" ")[0]}.${u.lead ? " Requests waiting for you come first." : " Your work at a glance."}`} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="Open tickets" value={o.open} />
-        <Kpi label="Overdue" value={o.overdue} tone={o.overdue ? "red" : undefined} />
-        <Kpi label="In review" value={o.inReview} tone="purple" hint={u.lead ? "Waiting on the requester" : undefined} />
-        <Kpi label="Delivered this week" value={o.deliveredThisWeek} tone="green" />
+        <Kpi label="Open tickets" value={o.open} href="/design/admin/board?filter=active" />
+        <Kpi label="Overdue" value={o.overdue} tone={o.overdue ? "red" : undefined} href="/design/admin/board?filter=overdue" />
+        <Kpi label="In review" value={o.inReview} tone="purple" hint={u.lead ? "Waiting on the requester" : undefined} href="/design/admin/board?filter=in_review" />
+        <Kpi label="Delivered this week" value={o.deliveredThisWeek} tone="green" href="/design/admin/board?filter=delivered" />
       </div>
       {u.lead && (
       <Card

@@ -8,6 +8,7 @@ import type { Priority, TicketStatus } from "@/db/design-schema";
 import type { TicketCard } from "@/lib/design/tickets";
 import type { ViewDto } from "@/lib/design/detail";
 import { BOARD_STATUSES, DEFAULT_WIP_LIMITS, PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, dueHealth, EXTRA_REVISION_TAG, LAST_MINUTE_TAG } from "@/lib/design/rules";
+import { BOARD_FILTERS, type BoardFilter } from "@/lib/design/board-filters";
 import { bulkAction, deleteViewAction, saveViewAction, updateTicketAction } from "@/lib/design/actions/tickets";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -20,7 +21,7 @@ import { Avatar, Badge, PriorityBadge, formatDateTime } from "../ui";
  * ticking cards opens a bar to move (and, for leads, assign or reprioritise) them together.
  */
 
-type Props = { tickets: TicketCard[]; scope: "mine" | "all"; lead: boolean; people: { id: string; name: string }[]; views: ViewDto[]; types: { key: string; name: string }[] };
+type Props = { tickets: TicketCard[]; scope: "mine" | "all"; lead: boolean; people: { id: string; name: string }[]; views: ViewDto[]; types: { key: string; name: string }[]; initialFilter?: BoardFilter };
 type Group = "status" | "assignee";
 type Filters = { search: string; assignee: string; type: string; priority: string; overdue: string };
 
@@ -44,7 +45,7 @@ const onStorage = (cb: () => void) => {
   return () => window.removeEventListener("storage", cb);
 };
 
-export function Board({ tickets, scope, lead, people, views, types }: Props) {
+export function Board({ tickets, scope, lead, people, views, types, initialFilter = "all" }: Props) {
   const router = useRouter();
   const toast = useToast();
   const confirm = useConfirm();
@@ -55,6 +56,7 @@ export function Board({ tickets, scope, lead, people, views, types }: Props) {
   const [chosen, setChosen] = useState<Group | null>(null);
   const group = chosen ?? saved;
   const [filters, setFilters] = useState<Filters>(EMPTY);
+  const [quick, setQuick] = useState<BoardFilter>(initialFilter);
   const [viewId, setViewId] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dragId, setDragId] = useState<string | null>(null);
@@ -90,9 +92,10 @@ export function Board({ tickets, scope, lead, people, views, types }: Props) {
         (!filters.assignee || (filters.assignee === UNASSIGNED ? !t.assigneeId : t.assigneeId === filters.assignee)) &&
         (!tName || t.designs.includes(tName)) &&
         (!filters.priority || t.priority === filters.priority) &&
-        (!filters.overdue || dueHealth(t.dueAt, t.status) === "overdue"),
+        (!filters.overdue || dueHealth(t.dueAt, t.status) === "overdue") &&
+        BOARD_FILTERS[quick].test(t),
     );
-  }, [cards, filters, typeName]);
+  }, [cards, filters, typeName, quick]);
 
   const columns = useMemo(() => {
     if (group === "status") return BOARD_STATUSES.map((s) => ({ key: s as string, label: STATUS_LABEL[s], limit: DEFAULT_WIP_LIMITS[s] }));
@@ -184,11 +187,18 @@ export function Board({ tickets, scope, lead, people, views, types }: Props) {
   const mineViews = views.filter((v) => v.mine);
   const sharedViews = views.filter((v) => !v.mine && v.isShared);
   const current = views.find((v) => v.id === viewId);
-  const filtered = Object.values(filters).some(Boolean);
+  const filtered = Object.values(filters).some(Boolean) || quick !== "all";
 
   return (
     <div className="flex flex-col gap-4">
       <div className="ds-card flex flex-col gap-3 p-4">
+        <div className="ds-tabs self-start" role="tablist" aria-label="Show tickets">
+          {(Object.keys(BOARD_FILTERS) as BoardFilter[]).map((f) => (
+            <button key={f} type="button" role="tab" aria-selected={quick === f} className="ds-tab" onClick={() => setQuick(f)} suppressHydrationWarning>
+              {BOARD_FILTERS[f].label} <span className="ds-muted tabular-nums">{cards.filter(BOARD_FILTERS[f].test).length}</span>
+            </button>
+          ))}
+        </div>
         <div className="flex flex-wrap items-end gap-3">
           <label className="relative min-w-[200px] flex-1">
             <span className="sr-only">Search tickets</span>
@@ -236,7 +246,14 @@ export function Board({ tickets, scope, lead, people, views, types }: Props) {
             Overdue only
           </label>
           {filtered && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => applyView("")}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                applyView("");
+                setQuick("all");
+              }}
+            >
               <X size={14} /> Clear
             </button>
           )}

@@ -299,6 +299,16 @@ try {
   check("the Unassigned filter leaves it out", (await active.locator("tr", { hasText: number }).count()) === 0);
   await active.getByRole("tab", { name: /^All/ }).click();
   check("its ticket number opens the ticket", await (async () => { await active.getByRole("link", { name: number, exact: true }).click(); return L.page.waitForURL(`**/design/admin/tickets/${t1.id}`, { timeout: 15000 }).then(() => true).catch(() => false); })());
+  await go(L.page, "/design/admin");
+  await L.page.locator("main a", { hasText: "Open tickets" }).click();
+  check("the Open tickets card opens the board on Open", await L.page.waitForURL("**/design/admin/board?filter=active", { timeout: 15000 }).then(() => true).catch(() => false) && (await L.page.getByRole("tab", { name: /^Open/, selected: true }).count()) === 1 && (await mainText(L.page)).includes(number), L.page.url());
+  await go(L.page, "/design/admin");
+  await L.page.locator("main a", { hasText: "Overdue" }).first().click();
+  check("the Overdue card opens the board on Overdue, which leaves out a ticket on time", await L.page.waitForURL("**/design/admin/board?filter=overdue", { timeout: 15000 }).then(() => true).catch(() => false) && (await L.page.getByRole("tab", { name: /^Overdue/, selected: true }).count()) === 1 && !(await L.page.locator(`a[href="/design/admin/tickets/${t1.id}"]`).count()));
+  await go(L.page, "/design/admin/board?filter=in_review");
+  check("?filter=in_review pre-selects In review", (await L.page.getByRole("tab", { name: /^In review/, selected: true }).count()) === 1);
+  await go(L.page, "/design/admin/board?filter=delivered");
+  check("?filter=delivered pre-selects Delivered this week", (await L.page.getByRole("tab", { name: /^Delivered this week/, selected: true }).count()) === 1);
   check("a designer has no All active requests section", !/All active requests/.test(await (await go(D1.page, "/design/admin"), mainText(D1.page))));
   check("a designer has no Requests I accepted section", !/Requests I accepted/.test(await (await go(D1.page, "/design/admin"), mainText(D1.page))));
   await go(R2.page, "/design/my-requests");
