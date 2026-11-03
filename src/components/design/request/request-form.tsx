@@ -196,27 +196,32 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
           </div>
           <div className="flex flex-col gap-2 text-sm">
             <span className="font-medium text-ink">Reference links</span>
+            <span className="-mt-1 text-xs ds-muted">Up to {MAX_REFERENCE_LINKS} web links (https://...).</span>
             {links.map((l, i) => (
               <div key={i} className="flex gap-2">
                 <input
                   className="input flex-1"
                   type="url"
                   inputMode="url"
-                  placeholder="https://"
+                  placeholder="https://..."
                   aria-label={`Reference link ${i + 1}`}
                   value={l}
                   onChange={(e) => setLinks((ls) => ls.map((x, j) => (j === i ? e.target.value : x)))}
                 />
-                {links.length > 1 && (
-                  <button type="button" className="btn btn-sm btn-ghost" aria-label={`Remove link ${i + 1}`} onClick={() => setLinks((ls) => ls.filter((_, j) => j !== i))}>
-                    <Trash2 size={14} />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  aria-label={`Remove link ${i + 1}`}
+                  disabled={links.length === 1 && !l}
+                  onClick={() => setLinks((ls) => (ls.length === 1 ? [""] : ls.filter((_, j) => j !== i)))}
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
             ))}
             {links.length < MAX_REFERENCE_LINKS && (
               <button type="button" className="btn btn-sm btn-ghost self-start" onClick={() => setLinks((ls) => [...ls, ""])}>
-                <Plus size={14} aria-hidden /> Add a link
+                <Plus size={14} aria-hidden /> Add another link
               </button>
             )}
           </div>
@@ -246,8 +251,16 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
         <p className="mt-2 text-xs ds-muted">Next day or sooner is Urgent, within 3 days High, within 10 days Normal, later Low.</p>
       </Card>
 
-      <Card title="Reference files">
-        <FileDrop purpose="attachment" maxFiles={MAX_FILES} maxMb={MAX_FILE_MB} onChange={setFileIds} onBusy={setUploading} />
+      <Card title="Share content for Design Creatives">
+        <p className="-mt-1 mb-3 text-sm ds-muted">(Or if you have any other design requirement please mention in a document)</p>
+        <FileDrop
+          purpose="attachment"
+          maxFiles={MAX_FILES}
+          maxMb={MAX_FILE_MB}
+          onChange={setFileIds}
+          onBusy={setUploading}
+          hint={`Word, PDF, PowerPoint, Excel, images, text and other documents · up to ${MAX_FILES} files, ${MAX_FILE_MB} MB each`}
+        />
       </Card>
 
       {error && (

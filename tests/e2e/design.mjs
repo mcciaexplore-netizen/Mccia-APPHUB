@@ -203,6 +203,15 @@ try {
   section("the request form");
   await go(R.page, "/design/request");
   check("department is filled in from the hub profile", (await R.page.locator("#department").inputValue()) === "ZZD Marketing");
+  const requestFormText = await mainText(R.page);
+  check("Photo / video / reel is no longer offered (eleven kinds), even where its row is still switched on", !/Photo \/ video \/ reel/i.test(requestFormText) && (await R.page.locator('fieldset input[type="checkbox"]').count()) === 11, (await R.page.locator('fieldset input[type="checkbox"]').count()));
+  check("the files card is \"Share content for Design Creatives\", with its note", /Share content for Design Creatives/.test(requestFormText) && /\(Or if you have any other design requirement please mention in a document\)/.test(requestFormText));
+  check("reference links: https://... placeholder, a remove button, and Add another link", (await R.page.getByPlaceholder("https://...").count()) === 1 && (await R.page.getByRole("button", { name: "Remove link 1" }).count()) === 1 && (await R.page.getByRole("button", { name: /Add another link/ }).count()) === 1);
+  for (let i = 0; i < 4; i++) await R.page.getByRole("button", { name: /Add another link/ }).click();
+  check("up to five links, then no more Add another link", (await R.page.getByPlaceholder("https://...").count()) === 5 && !(await R.page.getByRole("button", { name: /Add another link/ }).count()));
+  for (let i = 5; i > 1; i--) await R.page.getByRole("button", { name: `Remove link ${i}` }).click();
+  await R.page.getByPlaceholder("https://...").fill("http://example.org/brief");
+
   await R.page.getByLabel("Flyer", { exact: true }).check();
   await R.page.selectOption("#q-flyer-size", "A4");
   await R.page.selectOption("#q-flyer-channel", "Print");
@@ -232,6 +241,14 @@ try {
   check("the old all-requests address opens My Requests", pathOf(R.page) === "/design/my-requests");
   await go(R2.page, "/design/requests");
   check("where another requester sees only their own (not this one)", pathOf(R2.page) === "/design/my-requests" && !(await mainText(R2.page)).includes(number) && /You haven't submitted any requests yet/.test(await mainText(R2.page)));
+
+  check("an http:// reference link is accepted and kept", JSON.stringify((await ticketByNumber(number))?.reference_links) === JSON.stringify(["http://example.org/brief"]), JSON.stringify((await ticketByNumber(number))?.reference_links));
+  const mediaTicket = (await sql`insert into design_tickets (number, title, brief, design_type_id, requirements, details, status, requester_id, assignee_id, priority)
+    select 'DF-ZZD-3', 'ZZD old reel', 'x', id, '["media"]'::jsonb, '{"media": {"duration": "30 seconds"}}'::jsonb, 'closed', ${lead.id}, ${d1.id}, 'normal' from design_types where key = 'media' returning id`)[0];
+  if (mediaTicket) {
+    await go(D1.page, `/design/admin/tickets/${mediaTicket.id}`);
+    check("an older Photo / video / reel ticket still opens with its kind and answers", /Photo \/ video \/ reel/i.test(await mainText(D1.page)) && /30 seconds/.test(await mainText(D1.page)));
+  } else check("an older Photo / video / reel ticket still opens with its kind and answers", false, "no media type row");
 
   section("tracking link (no sign-in)");
   await go(anon.page, trackPath);

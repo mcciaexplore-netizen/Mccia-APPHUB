@@ -5,7 +5,7 @@
 --
 -- Safe to run more than once, and it changes no existing row:
 --   - only NEW tables and types, every one prefixed design_ (23 tables, 7 types). No hub table is touched.
---   - the twelve kinds of design the request form offers (Flyer, WhatsApp creative ...), the working week (Monday to Friday, 10:00 to
+--   - the eleven kinds of design the request form offers (Flyer, WhatsApp creative ...), the working week (Monday to Friday, 10:00 to
 --     19:00 IST) and the settings row; anything already there is left as it is.
 --   - everything is in one transaction.
 --   - the code running in production today never reads these tables, so it keeps working, and so does Instant Rollback.
@@ -390,7 +390,7 @@ CREATE INDEX IF NOT EXISTS "design_time_ticket_idx" ON "design_time_entries" USI
 
 CREATE INDEX IF NOT EXISTS "design_time_user_idx" ON "design_time_entries" USING btree ("user_id","started_at");
 
--- The twelve kinds of design on the request form, with their turnaround (hours), typical effort (hours) and questions.
+-- The eleven kinds of design on the request form, with their turnaround (hours), typical effort (hours) and questions.
 INSERT INTO "design_types" ("key", "name", "sla_hours", "effort_hours", "questions", "sort_order") VALUES
   ('flyer', 'Flyer', 24, 3, '[{"id": "size", "label": "Size", "type": "select", "options": ["A4", "A5", "Square", "Custom"], "required": true}, {"id": "custom_size", "label": "Custom size (if Custom)", "type": "text"}, {"id": "channel", "label": "Print or email?", "type": "select", "options": ["Email", "Print"], "required": true}, {"id": "language", "label": "Language", "type": "select", "options": ["English", "Hindi", "Marathi"]}]'::jsonb, 10),
   ('whatsapp', 'WhatsApp creative', 24, 2, '[{"id": "message", "label": "Message or call-to-action to show on it", "type": "text"}, {"id": "language", "label": "Language", "type": "select", "options": ["English", "Hindi", "Marathi"]}]'::jsonb, 20),
@@ -402,9 +402,12 @@ INSERT INTO "design_types" ("key", "name", "sla_hours", "effort_hours", "questio
   ('book', 'Book', 96, 16, '[{"id": "pages", "label": "Number of pages", "type": "number", "required": true}, {"id": "content_ready", "label": "Is the content ready?", "type": "select", "options": ["Yes, all of it", "Partly", "No"], "required": true}, {"id": "language", "label": "Language", "type": "select", "options": ["English", "Hindi", "Marathi"]}]'::jsonb, 80),
   ('brochure2', '2-page brochure', 72, 8, '[{"id": "copy", "label": "Copy", "type": "select", "options": ["Copy provided", "Needs writing"], "required": true}, {"id": "language", "label": "Language", "type": "select", "options": ["English", "Hindi", "Marathi"]}]'::jsonb, 90),
   ('brochure4', '4-page brochure', 96, 12, '[{"id": "copy", "label": "Copy", "type": "select", "options": ["Copy provided", "Needs writing"], "required": true}, {"id": "language", "label": "Language", "type": "select", "options": ["English", "Hindi", "Marathi"]}]'::jsonb, 100),
-  ('media', 'Photo / video / reel', 72, 8, '[{"id": "duration", "label": "Duration (if video or reel)", "type": "text"}, {"id": "platform", "label": "Platform", "type": "text"}, {"id": "shoot", "label": "Shoot date and location", "type": "text"}, {"id": "language", "label": "Language", "type": "select", "options": ["English", "Hindi", "Marathi"]}]'::jsonb, 110),
   ('other', 'Other', 48, 4, '[{"id": "describe", "label": "Describe the design you need", "type": "text", "required": true}, {"id": "language", "label": "Language", "type": "select", "options": ["English", "Hindi", "Marathi"]}]'::jsonb, 120)
 ON CONFLICT ("key") DO NOTHING;
+
+-- "Photo / video / reel" is no longer offered. Where an earlier run of this script added it, it is switched off (not deleted), so the
+-- tickets that asked for it keep their kind of design; the app also never offers it on the form.
+UPDATE "design_types" SET "is_active" = false WHERE "key" = 'media' AND "is_active";
 
 -- The working week: Monday (0) to Friday, 10:00 to 19:00 IST; Saturday and Sunday off.
 INSERT INTO "design_working_schedule" ("day_of_week", "is_working", "start_hour", "end_hour") VALUES
@@ -421,7 +424,7 @@ WHERE NOT EXISTS (SELECT 1 FROM drizzle.__drizzle_migrations WHERE hash = 'e439e
 
 COMMIT;
 
--- Afterwards this should return 23, 12 and 7:
+-- Afterwards this should return 23, 11 and 7:
 -- SELECT (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE 'design\_%') AS design_tables,
---        (SELECT count(*) FROM design_types) AS design_types,
+--        (SELECT count(*) FROM design_types WHERE is_active AND key <> 'media') AS design_types,
 --        (SELECT count(*) FROM design_working_schedule) AS schedule_days;

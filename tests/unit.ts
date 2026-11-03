@@ -65,7 +65,7 @@ import {
   isSlackWebhook as designSlack, figmaEmbedUrl as designFigma, priorityFor as designPriority, requesterTabOf as designTab, revisionTags as designRevTags, slaHoursFor as designSla,
   stepOf as designStep, versionNumber as designVersion, workingDue as designWorkingDue,
 } from "../src/lib/design/rules";
-import { MAX_FILES as DESIGN_MAX_FILES, SEED_TYPES as DESIGN_SEED, checkRequest as designCheck, cleanLinks as designLinks, ticketTitle as designTitle } from "../src/lib/design/form";
+import { MAX_FILES as DESIGN_MAX_FILES, RETIRED_TYPE_KEYS as DESIGN_RETIRED, SEED_TYPES as DESIGN_SEED, checkRequest as designCheck, cleanLinks as designLinks, ticketTitle as designTitle } from "../src/lib/design/form";
 import { loadTone as designTone, suggestAssignee as designSuggest, workingDays as designDays, workloadGrid as designGrid } from "../src/lib/design/capacity";
 import { mimeFor as designMime, safeFileName as designSafeName } from "../src/lib/design/file-types";
 
@@ -1077,7 +1077,8 @@ const ssoTests = (async () => {
   eq("design form: an unknown design", designCheck({ ...base, requirements: ["poster"] }, types, "2026-11-02").ok, false);
   eq("design form: too many files", designCheck({ ...base, fileIds: Array.from({ length: DESIGN_MAX_FILES + 1 }, (_, i) => `00000000-0000-4000-8000-00000000000${i}`) }, types, "2026-11-02").ok, false);
   eq("design form: numbers are numbers", designCheck({ requirements: ["book"], details: { book: { pages: "48", content_ready: "Partly" } }, brief: "Directory", deliveryDate: "2026-11-20" }, types, "2026-11-02").ok, true);
-  eq("design links: https only, blanks ignored, at most five", [designLinks(["", "https://x.org/a"]), designLinks(["http://x.org"]).ok, designLinks(Array(6).fill("https://x.org")).ok], [{ ok: true, links: ["https://x.org/a"] }, false, false]);
+  eq("design links: web links only (http or https), blanks ignored, at most five", [designLinks(["", "https://x.org/a"]), designLinks(["http://x.org"]).ok, designLinks(["ftp://x.org"]).ok, designLinks(["x.org"]).ok, designLinks(Array(6).fill("https://x.org")).ok], [{ ok: true, links: ["https://x.org/a"] }, true, false, false, false]);
+  eq("design types: eleven on the form, Photo / video / reel retired", [DESIGN_SEED.length, DESIGN_SEED.some((t) => t.key === "media"), DESIGN_RETIRED.includes("media")], [11, false, true]);
   eq("design title: the event and the designs", designTitle({ eventName: "AGM", brief: "x", requirements: ["flyer", "banner"] }, new Map([["flyer", "Flyer"], ["banner", "Banner"]])), "AGM – Flyer, Banner");
 
   // Capacity and workload

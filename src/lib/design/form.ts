@@ -1,5 +1,5 @@
 /**
- * The design request form: the twelve kinds of design and the questions each asks, the limits, and the checks on what is sent. Pure, so
+ * The design request form: the eleven kinds of design and the questions each asks, the limits, and the checks on what is sent. Pure, so
  * the form page, the server and the unit tests share it. The kinds are seeded into design_types (scripts/apply-0037-design.sql); a lead
  * can rename them, change their turnaround or switch them off, and add new ones (which ask only the language question).
  */
@@ -24,7 +24,13 @@ export const LANGUAGE_QUESTION = q("language", "Language", "select", ["English",
 
 export type SeedType = { key: string; name: string; slaHours: number; effortHours: number; questions: DesignQuestion[] };
 
-/** The form's twelve choices, in the order shown. */
+/**
+ * Kinds of design no longer offered on the request form: "Photo / video / reel" (media). Old tickets of that kind keep showing as before;
+ * only new requests cannot choose it, even where the row is still switched on in an older database.
+ */
+export const RETIRED_TYPE_KEYS: readonly string[] = ["media"];
+
+/** The form's eleven choices, in the order shown. */
 export const SEED_TYPES: SeedType[] = [
   { key: "flyer", name: "Flyer", slaHours: 24, effortHours: 3, questions: [
     q("size", "Size", "select", ["A4", "A5", "Square", "Custom"], true),
@@ -62,12 +68,6 @@ export const SEED_TYPES: SeedType[] = [
   ] },
   { key: "brochure2", name: "2-page brochure", slaHours: 72, effortHours: 8, questions: [q("copy", "Copy", "select", ["Copy provided", "Needs writing"], true), LANGUAGE_QUESTION] },
   { key: "brochure4", name: "4-page brochure", slaHours: 96, effortHours: 12, questions: [q("copy", "Copy", "select", ["Copy provided", "Needs writing"], true), LANGUAGE_QUESTION] },
-  { key: "media", name: "Photo / video / reel", slaHours: 72, effortHours: 8, questions: [
-    q("duration", "Duration (if video or reel)"),
-    q("platform", "Platform"),
-    q("shoot", "Shoot date and location"),
-    LANGUAGE_QUESTION,
-  ] },
   { key: "other", name: "Other", slaHours: 48, effortHours: 4, questions: [q("describe", "Describe the design you need", "text", undefined, true), LANGUAGE_QUESTION] },
 ];
 
@@ -122,7 +122,7 @@ export type CleanRequest = {
   fileIds: string[];
 };
 
-/** Up to five https:// links; blank rows are ignored. */
+/** Up to five web links (http:// or https://); blank rows are ignored. */
 export function cleanLinks(links: string[]): { ok: true; links: string[] } | { ok: false; error: string } {
   const out = links.map((l) => l.trim()).filter(Boolean);
   if (out.length > MAX_REFERENCE_LINKS) return { ok: false, error: `Reference links: add at most ${MAX_REFERENCE_LINKS}` };
@@ -131,11 +131,11 @@ export function cleanLinks(links: string[]): { ok: true; links: string[] } | { o
     let ok = false;
     try {
       const u = new URL(l);
-      ok = u.protocol === "https:" && !!u.hostname && !/\s/.test(l);
+      ok = (u.protocol === "https:" || u.protocol === "http:") && !!u.hostname && !/\s/.test(l);
     } catch {
       ok = false;
     }
-    if (!ok) return { ok: false, error: `Reference links: ${l.slice(0, 60)} must be a full https:// link` };
+    if (!ok) return { ok: false, error: `Reference links: ${l.slice(0, 60)} must be a full web link, starting with https://` };
   }
   return { ok: true, links: out };
 }

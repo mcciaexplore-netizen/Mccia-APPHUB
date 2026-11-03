@@ -23,7 +23,7 @@ import {
 import { audit } from "./audit";
 import { DesignError, type SessionUser } from "./dal";
 import { claimFiles, deleteFiles, releaseFiles } from "./files";
-import { answerLines, checkRequest, ticketTitle, type RequestInput } from "./form";
+import { RETIRED_TYPE_KEYS, answerLines, checkRequest, ticketTitle, type RequestInput } from "./form";
 import { formTypes, getHolidays, getSchedule, getSettings, nextTicketSeq, typeNames, workingDeadline } from "./config";
 import { isAssignable, listDesigners, peopleByIds } from "./host-adapter";
 import * as notice from "./notify";
@@ -162,7 +162,7 @@ const assertOpen = (t: Ticket) => {
 
 /** The request form: one ticket for every design chosen, waiting in Pending Review for a lead. Files are claimed first, all or none. */
 export async function createRequest(u: SessionUser, input: RequestInput): Promise<{ id: string; number: string; trackingUrl: string }> {
-  const types = await formTypes();
+  const types = new Map([...(await formTypes())].filter(([k]) => !RETIRED_TYPE_KEYS.includes(k)));
   const checked = checkRequest(input, types);
   if (!checked.ok) throw new DesignError(checked.error);
   const r = checked.value;
