@@ -1041,8 +1041,8 @@ const ssoTests = (async () => {
     NON_HEAD.map((r) => [roles(r, false, true, true), roles(r, false, true, false, true)]), NON_HEAD.map(() => [["design_member", "design_lead"], ["design_member"]]));
   eq("design roles: the Support Admin holds all four", roles("head_admin", false, false), ["design_requester", "design_member", "design_lead", "design_super_admin"]);
   eq("design menus: requesters get the request pages only", [designNavFor("requester", ["design_requester"]).map((i) => i.href), designNavFor("admin", ["design_requester"]).length], [["/design/request", "/design/my-requests", "/design/requests", "/design/campaigns"], 0]);
-  eq("design menus: a member sees the board, library and calendar, not the leads' pages", designNavFor("admin", ["design_member"]).map((i) => i.label), ["Dashboard", "Board", "Library", "Calendar"]);
-  eq("design menus: a lead also gets Pending Review, Workload, Reports and Settings", designNavFor("admin", ["design_member", "design_lead"]).map((i) => i.label), ["Dashboard", "Pending Review", "Board", "Library", "Calendar", "Workload", "Reports", "Settings"]);
+  eq("design menus: a member sees the board, library and calendar, not the leads' pages", designNavFor("admin", ["design_member"]).map((i) => i.label), ["Dashboard", "Board", "All Tickets", "Library", "Calendar"]);
+  eq("design menus: a lead also gets Pending Review, Workload, Reports and Settings", designNavFor("admin", ["design_member", "design_lead"]).map((i) => i.label), ["Dashboard", "Pending Review", "Board", "All Tickets", "Library", "Calendar", "Workload", "Reports", "Settings"]);
   eq("design apps: the two URLs, and nothing else matches", ["/design", "/design/", "/design/admin", "/design/request", "/designs"].map((u) => [new RegExp(DESIGN_TEAM_URL_PATTERN).test(u), new RegExp(DESIGN_ADMIN_URL_PATTERN).test(u)]), [[true, false], [true, false], [false, true], [false, false], [false, false]]);
   eq("design leads: a lead or the Support Admin", [designIsLead(["design_lead"]), designIsLead(["design_super_admin"]), designIsLead(["design_member"])], [true, true, false]);
 

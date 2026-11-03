@@ -94,6 +94,9 @@ export async function isAssignable(userId: string): Promise<boolean> {
   return (await listAssignable()).some((p) => p.id === userId);
 }
 
+/** For searching tickets by who asked: the ids of hub users whose name matches an ILIKE pattern, as a subquery. */
+export const peopleNamedLike = (pattern: string) => sql`select ${users.id} from ${users} where ${users.name} ilike ${pattern}`;
+
 /** These hub users (active or not), by id. */
 export async function peopleByIds(ids: (string | null | undefined)[]): Promise<Map<string, Person>> {
   const want = [...new Set(ids.filter((x): x is string => !!x))];

@@ -188,12 +188,12 @@ try {
   await go(O.page, "/design/admin"); check("and so does Design Admin", pathOf(O.page) === "/", pathOf(O.page));
   await go(U.page, "/design/admin"); check("given Design Admin but neither App Admin nor App Staff: sent to the hub", pathOf(U.page) === "/", pathOf(U.page));
   await go(D1.page, "/design/admin"); check("App Staff of Design Admin (a designer) opens it", pathOf(D1.page) === "/design/admin");
-  check("a member's menu: dashboard, board, library, calendar", (await navLabels(D1.page, "Design Admin")) === "Dashboard|Board|Library|Calendar", await navLabels(D1.page, "Design Admin"));
+  check("a member's menu: dashboard, board, library, calendar", (await navLabels(D1.page, "Design Admin")) === "Dashboard|Board|All Tickets|Library|Calendar", await navLabels(D1.page, "Design Admin"));
   for (const p of ["/design/admin/pending", "/design/admin/workload", "/design/admin/reports", "/design/admin/settings"]) {
     await go(D1.page, p); check(`a member is sent back from ${p}`, pathOf(D1.page) === "/design/admin", pathOf(D1.page));
   }
   await go(L.page, "/design/admin");
-  check("a lead opens Design Admin, with its menu", pathOf(L.page) === "/design/admin" && (await navLabels(L.page, "Design Admin")) === "Dashboard|Pending Review|Board|Library|Calendar|Workload|Reports|Settings", await navLabels(L.page, "Design Admin"));
+  check("a lead opens Design Admin, with its menu", pathOf(L.page) === "/design/admin" && (await navLabels(L.page, "Design Admin")) === "Dashboard|Pending Review|Board|All Tickets|Library|Calendar|Workload|Reports|Settings", await navLabels(L.page, "Design Admin"));
   await go(L.page, "/design/admin/settings");
   check("a lead (not the Support Admin) does not see Integrations", !(await L.page.getByRole("tab", { name: /Integrations/ }).count()) && !/Delete all past data/.test(await mainText(L.page)));
   const anon = await fresh();
@@ -301,10 +301,26 @@ try {
   check("its ticket number opens the ticket", await (async () => { await active.getByRole("link", { name: number, exact: true }).click(); return L.page.waitForURL(`**/design/admin/tickets/${t1.id}`, { timeout: 15000 }).then(() => true).catch(() => false); })());
   await go(L.page, "/design/admin");
   await L.page.locator("main a", { hasText: "Open tickets" }).click();
-  check("the Open tickets card opens the board on Open", await L.page.waitForURL("**/design/admin/board?filter=active", { timeout: 15000 }).then(() => true).catch(() => false) && (await L.page.getByRole("tab", { name: /^Open/, selected: true }).count()) === 1 && (await mainText(L.page)).includes(number), L.page.url());
-  await go(L.page, "/design/admin");
-  await L.page.locator("main a", { hasText: "Overdue" }).first().click();
-  check("the Overdue card opens the board on Overdue, which leaves out a ticket on time", await L.page.waitForURL("**/design/admin/board?filter=overdue", { timeout: 15000 }).then(() => true).catch(() => false) && (await L.page.getByRole("tab", { name: /^Overdue/, selected: true }).count()) === 1 && !(await L.page.locator(`a[href="/design/admin/tickets/${t1.id}"]`).count()));
+  check("the Open tickets card opens All Tickets on Active, listing it", await L.page.waitForURL("**/design/admin/tickets?filter=active", { timeout: 15000 }).then(() => true).catch(() => false) && (await L.page.getByRole("tab", { name: /^Active/, selected: true }).count()) === 1 && (await mainText(L.page)).includes(number), L.page.url());
+  for (const [card, f] of [["Overdue", "overdue"], ["In review", "in_review"], ["Delivered this week", "delivered"]]) {
+    await go(L.page, "/design/admin");
+    await L.page.locator("main a", { hasText: card }).first().click();
+    check(`the ${card} card opens All Tickets with ?filter=${f}`, await L.page.waitForURL(`**/design/admin/tickets?filter=${f}`, { timeout: 15000 }).then(() => true).catch(() => false), L.page.url());
+  }
+  check("Overdue leaves out a ticket on time", !(await L.page.goto(BASE + "/design/admin/tickets?filter=overdue"), await L.page.locator(`a[href="/design/admin/tickets/${t1.id}"]`).count()));
+  await go(L.page, `/design/admin/tickets?q=${number}`);
+  const listRow = L.page.locator("tbody tr", { hasText: number });
+  check("All Tickets: search by number finds it, with requester, designer, priority and status", (await listRow.count()) === 1 && /ZZD Requester Riya/.test(await listRow.innerText()) && /ZZD Designer Dev/.test(await listRow.innerText()) && /Assigned/i.test(await listRow.innerText()) && /Showing 1–1 of 1 ticket/.test(await mainText(L.page)), await listRow.innerText().catch(() => ""));
+  await go(L.page, `/design/admin/tickets?q=Riya&designer=unassigned`);
+  check("search by requester, filtered to Not assigned, leaves it out", !(await L.page.locator("tbody tr", { hasText: number }).count()));
+  await go(L.page, `/design/admin/tickets?q=${number}`);
+  await L.page.locator("tbody tr", { hasText: number }).locator("td").nth(2).click();
+  check("clicking a row opens the ticket", await L.page.waitForURL(`**/design/admin/tickets/${t1.id}`, { timeout: 15000 }).then(() => true).catch(() => false));
+  await go(L.page, "/design/admin/tickets?sort=number&dir=asc");
+  check("a column header sorts (Ticket # ascending is marked)", /ticket #/i.test(await L.page.locator(`th[aria-sort="ascending"]`).innerText()));
+  await go(D2.page, `/design/admin/tickets?q=${number}`);
+  check("a designer's list (My tickets) leaves out a ticket not assigned to them", /My tickets/.test(await mainText(D2.page)) && !(await D2.page.locator("tbody tr", { hasText: number }).count()) && !(await D2.page.getByRole("tab", { name: /Pending Review/ }).count()));
+  await go(D1.page, "/design/admin/tickets"); check("and the assigned designer's list has it", (await D1.page.locator("tbody tr", { hasText: number }).count()) === 1);
   await go(L.page, "/design/admin/board?filter=in_review");
   check("?filter=in_review pre-selects In review", (await L.page.getByRole("tab", { name: /^In review/, selected: true }).count()) === 1);
   await go(L.page, "/design/admin/board?filter=delivered");
@@ -452,7 +468,7 @@ try {
   const SYSTEM_FOLDERS = ["00000000-0000-4000-8000-0000000d0001", "00000000-0000-4000-8000-0000000d0002", "00000000-0000-4000-8000-0000000d0003"];
   await go(L.page, "/design/admin/library");
   const lib = await mainText(L.page);
-  check("on a library page the sidebar shows its sections nested under Library", (await navLabels(L.page, "Design Admin")) === "Dashboard|Pending Review|Board|Library|Brand Assets|Templates|Past Designs|All Files|Calendar|Workload|Reports|Settings" && (await L.page.locator('nav[aria-label="Design Admin"] ul[aria-label="Library sections"] a').count()) === 4, await navLabels(L.page, "Design Admin"));
+  check("on a library page the sidebar shows its sections nested under Library", (await navLabels(L.page, "Design Admin")) === "Dashboard|Pending Review|Board|All Tickets|Library|Brand Assets|Templates|Past Designs|All Files|Calendar|Workload|Reports|Settings" && (await L.page.locator('nav[aria-label="Design Admin"] ul[aria-label="Library sections"] a').count()) === 4, await navLabels(L.page, "Design Admin"));
   await L.page.locator('nav[aria-label="Design Admin"]').getByRole("link", { name: "Templates" }).click();
   check("a section is marked as the current page, and Library is not", await poll(async () => (await L.page.locator('nav[aria-label="Design Admin"] a[aria-current="page"]').allInnerTexts()).map((t) => t.trim()).join("|") === "Templates"));
   check("opening the library sets up its sections and starting folders", ["Brand Assets", "Logos", "Brand Colors", "Fonts", "Icons", "Letterheads", "Templates", "Social Media Templates", "Event Templates", "Presentations", "Past Designs"].every((n) => lib.includes(n)), lib.slice(0, 300));

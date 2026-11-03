@@ -69,6 +69,7 @@ export const DESIGN_NAV: Record<DesignSection, { title: string; items: DesignNav
       { label: "Dashboard", href: "/design/admin" },
       { label: "Pending Review", href: "/design/admin/pending", leadOnly: true, badge: "pending" },
       { label: "Board", href: "/design/admin/board" },
+      { label: "All Tickets", href: "/design/admin/tickets" },
       {
         label: "Library",
         href: "/design/admin/library",
