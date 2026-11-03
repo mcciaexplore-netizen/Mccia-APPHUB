@@ -7,8 +7,8 @@ import { formatDateTime } from "./ui";
 
 /**
  * What just happened: new requests, stage moves, reviews sent and decided. Refreshes every 15 seconds while the tab is open (and at once
- * when it comes back), and marks what arrived since the page was opened. `scope="mine"` is the designer's own tickets; "all" (leads) every
- * ticket. The server enforces the scope either way.
+ * when it comes back), and marks what arrived since the page was opened. `scope="mine"` is the person's own tickets; "all" every ticket
+ * (the creative team sees them all).
  */
 export function ActivityFeed({ scope, initial, title = "Live activity" }: { scope: "mine" | "all"; initial: ActivityDto[]; title?: string }) {
   const [items, setItems] = useState(initial);
@@ -50,7 +50,7 @@ export function ActivityFeed({ scope, initial, title = "Live activity" }: { scop
             <li key={i.id} className="flex items-start gap-3 px-5 py-2.5 text-sm">
               {!seen.has(i.id) && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[var(--ds-green)]" aria-label="New" />}
               <span className="min-w-0 flex-1">
-                <Link href={`/design/tickets/${i.ticketId}`} className="font-semibold text-[var(--ds-navy)] hover:underline">
+                <Link href={`/design/admin/tickets/${i.ticketId}`} className="font-semibold text-[var(--ds-navy)] hover:underline">
                   {i.number}
                 </Link>{" "}
                 <span className="text-ink">{i.text}</span>

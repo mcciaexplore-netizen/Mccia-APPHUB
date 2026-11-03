@@ -14,8 +14,7 @@ import { useConfirm } from "@/components/ConfirmDialog";
 import { Avatar, Badge, PriorityBadge, formatDateTime } from "../ui";
 
 /**
- * The kanban board, for both sections: /design/board (scope "mine": the designer's own tickets, the server sends nothing else) and
- * /design/admin/board (scope "all"). Columns are the seven stages, or one per person. Cards drag between columns (a native drag, no
+ * The creative team's kanban board (/design/admin/board): every ticket (scope "all"; "mine" is kept for a board of one person's tickets). Columns are the seven stages, or one per person. Cards drag between columns (a native drag, no
  * library): moving a stage changes the status, moving between people re-assigns (leads only). The move shows at once and is undone with a
  * message if the server refuses it (for example In review without a review link out). Search, filters and saved views narrow the cards;
  * ticking cards opens a bar to move (and, for leads, assign or reprioritise) them together.
@@ -401,7 +400,7 @@ export function Board({ tickets, scope, lead, people, views, types }: Props) {
                     setDragId(null);
                     setOverCol(null);
                   }}
-                  onOpen={() => router.push(`/design/tickets/${t.id}`)}
+                  onOpen={() => router.push(`/design/admin/tickets/${t.id}`)}
                   showAssignee={group === "status"}
                 />
               ))}
@@ -463,7 +462,7 @@ function TicketCardView({
           onChange={onToggle}
         />
         <div className="min-w-0 flex-1">
-          <Link href={`/design/tickets/${t.id}`} draggable={false} onClick={(e) => e.stopPropagation()} className="text-xs font-bold text-[var(--ds-navy)] hover:underline">
+          <Link href={`/design/admin/tickets/${t.id}`} draggable={false} onClick={(e) => e.stopPropagation()} className="text-xs font-bold text-[var(--ds-navy)] hover:underline">
             {t.number}
           </Link>
           <p className="mt-0.5 line-clamp-2 text-[0.85rem] font-semibold leading-snug text-ink">{t.title}</p>

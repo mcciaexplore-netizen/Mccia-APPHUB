@@ -6,7 +6,7 @@ import { ticketDetail, type TicketDetail } from "@/lib/design/detail";
 
 export const metadata = { title: "Ticket · Design Team" };
 
-/** One ticket, for a lead (any ticket) or the designer it is assigned to; anyone else gets "not found". */
+/** One ticket, for anyone in the creative team; anyone else is sent away by the layout. */
 export default async function TicketPage({ params }: { params: Promise<{ id: string }> }) {
   const u = await requireTeam();
   const { id } = await params;

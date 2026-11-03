@@ -1,6 +1,7 @@
 /**
  * End-to-end test of the DesignDesk module in a real browser: who may open its sections (the request pages for every hub user, Design Team at
- * /design, Design Team Admin at /design/admin, Integrations for the Support Admin only); that a designer sees ONLY tickets assigned to them;
+ * /design for the people who ask for designs, Design Team Admin at /design/admin for the creative team, whose App Admins are the leads,
+ * Integrations for the Support Admin only); that requesters see only their own requests while the creative team sees every one;
  * the whole life of a request: the form with a file → Pending Review → accept and assign → a proof sent for review → changes asked on the
  * public review link (a new version DF-xxxx-V2) → the next proof approved from My Requests → source files → the scheduled close; the tracking
  * link; the admin pages and exports; and that nothing works without the right sign-in or link. Run against a site with DESIGN_ENABLED=true,
@@ -99,13 +100,19 @@ const requester = await person("ZZD Requester Riya", "zzd-requester@gmail.com");
 const d1 = await person("ZZD Designer Dev", "zzd-designer1@gmail.com");
 const d2 = await person("ZZD Designer Disha", "zzd-designer2@gmail.com");
 const lead = await person("ZZD Lead Lata", "zzd-lead@gmail.com");
+const requester2 = await person("ZZD Requester Two", "zzd-requester2@gmail.com");
 const outsider = await person("ZZD Outsider Om", "zzd-outsider@gmail.com");
 const [dept] = await sql`insert into departments (kind, name, icon) values ('application', 'ZZD Design', 'Palette') returning id`;
 const app = async (name, url) => (await sql`insert into apps (department_id, name, url, icon) values (${dept.id}, ${name}, ${url}, 'Palette') returning id`)[0];
 const teamApp = await app("ZZD Design Team", "/design");
 const adminApp = await app("ZZD Design Team Admin", "/design/admin");
 const grant = (u, a) => sql`insert into user_app_access (user_id, app_id) values (${u.id}, ${a.id}) on conflict do nothing`;
-await grant(d1, teamApp); await grant(d2, teamApp); await grant(lead, adminApp);
+// Design Team is for the people who ask for designs; Design Team Admin is the creative team, whose App Admins are the leads.
+await grant(requester, teamApp); await grant(requester2, teamApp);
+await grant(d1, adminApp); await grant(d2, adminApp); await grant(lead, adminApp);
+await sql`insert into app_admins (app_id, user_id) values (${adminApp.id}, ${lead.id})`;
+// An App Admin of Design Team Admin who was never given it is not a lead.
+await sql`insert into app_admins (app_id, user_id) values (${adminApp.id}, ${outsider.id})`;
 // Dev has lots of room; Disha is on leave all week, so auto-assign would never pick her.
 await sql`insert into design_leaves (user_id, start_date, end_date, note) values (${d2.id}, ${istDay(-1)}, ${istDay(14)}, 'ZZD leave')`;
 
@@ -142,7 +149,7 @@ if (process.env.E2E_DESIGN_OFF === "yes") {
   try {
     section("module switched off");
     const { page } = await signedIn("zzd-lead@gmail.com");
-    for (const p of ["/design", "/design/request", "/design/my-requests", "/design/board", "/design/admin", "/design/admin/settings", "/review/abcdefghijklmnopqrstuvwxyz", "/track/DF-0001.abc"]) {
+    for (const p of ["/design", "/design/request", "/design/my-requests", "/design/admin/board", "/design/admin", "/design/admin/settings", "/review/abcdefghijklmnopqrstuvwxyz", "/track/DF-0001.abc"]) {
       check(`off: ${p} is a 404`, (await go(page, p))?.status() === 404);
     }
     for (const p of ["/api/design/activity", "/api/design/reports/export", "/api/design/files/00000000-0000-4000-8000-000000000000"]) check(`off: GET ${p} is a 404`, (await fetchIn(page, p)).status === 404);
@@ -161,18 +168,23 @@ try {
   const D1 = await signedIn("zzd-designer1@gmail.com");
   const D2 = await signedIn("zzd-designer2@gmail.com");
   const L = await signedIn("zzd-lead@gmail.com");
+  const R2 = await signedIn("zzd-requester2@gmail.com");
   const O = await signedIn("zzd-outsider@gmail.com");
   const H = process.env.HEAD_ADMIN_EMAIL && process.env.HEAD_ADMIN_PASSWORD ? await signedIn(process.env.HEAD_ADMIN_EMAIL, process.env.HEAD_ADMIN_PASSWORD) : null;
 
   section("who may open which section");
-  check("any hub user opens the request form", (await go(O.page, "/design/request"))?.status() === 200 && /Request a Design/.test(await mainText(O.page)));
-  check("the request menu for someone with neither application", (await navLabels(O.page, "Design Requests")) === "Request a design|My requests|All requests|Campaigns", await navLabels(O.page, "Design Requests"));
-  await go(O.page, "/design"); check("without Design Team, /design goes to the request form", pathOf(O.page) === "/design/request", pathOf(O.page));
-  await go(O.page, "/design/admin"); check("without Design Team Admin, /design/admin goes to the request form", pathOf(O.page) === "/design/request", pathOf(O.page));
-  await go(D1.page, "/design/admin"); check("a designer is sent from the admin section to their own", pathOf(D1.page) === "/design", pathOf(D1.page));
-  check("Design Team menu", (await navLabels(D1.page, "Design Team")) === "My Dashboard|Board|Library|Calendar|My Requests", await navLabels(D1.page, "Design Team"));
+  check("Design Team opens the request form", (await go(R.page, "/design"))?.status() === 200 && pathOf(R.page) === "/design/request" && /Request a Design/.test(await mainText(R.page)));
+  check("the requester's menu: the request pages only", (await navLabels(R.page, "Design Team")) === "Request a design|My requests|All requests|Campaigns", await navLabels(R.page, "Design Team"));
+  await go(R.page, "/design/admin"); check("a requester is kept out of Design Team Admin", pathOf(R.page) === "/design/request", pathOf(R.page));
+  await go(O.page, "/design/request"); check("without either application (even as an App Admin of it), the request pages send you to the hub", pathOf(O.page) === "/", pathOf(O.page));
+  await go(O.page, "/design/admin"); check("and so does Design Team Admin", pathOf(O.page) === "/", pathOf(O.page));
+  await go(D1.page, "/design/admin"); check("the creative team opens Design Team Admin", pathOf(D1.page) === "/design/admin");
+  check("a member's menu: dashboard, board, library, calendar", (await navLabels(D1.page, "Design Team Admin")) === "Dashboard|Board|Library|Calendar", await navLabels(D1.page, "Design Team Admin"));
+  for (const p of ["/design/admin/pending", "/design/admin/workload", "/design/admin/reports", "/design/admin/settings"]) {
+    await go(D1.page, p); check(`a member is sent back from ${p}`, pathOf(D1.page) === "/design/admin", pathOf(D1.page));
+  }
   await go(L.page, "/design/admin");
-  check("a lead opens Design Team Admin, with its menu", pathOf(L.page) === "/design/admin" && (await navLabels(L.page, "Design Team Admin")) === "Dashboard|Pending Review|Board|Workload|Reports|Settings", await navLabels(L.page, "Design Team Admin"));
+  check("a lead opens Design Team Admin, with its menu", pathOf(L.page) === "/design/admin" && (await navLabels(L.page, "Design Team Admin")) === "Dashboard|Pending Review|Board|Library|Calendar|Workload|Reports|Settings", await navLabels(L.page, "Design Team Admin"));
   await go(L.page, "/design/admin/settings");
   check("a lead (not the Support Admin) does not see Integrations", !(await L.page.getByRole("tab", { name: /Integrations/ }).count()) && !/Delete all past data/.test(await mainText(L.page)));
   const anon = await fresh();
@@ -226,25 +238,26 @@ try {
   await L.page.getByRole("button", { name: /^Accept$/ }).click();
   t1 = await poll(async () => { const t = await ticketByNumber(number); return t.status === "assigned" ? t : null; });
   check("accepted and assigned to the designer chosen", t1?.assignee_id === d1.id);
-  check("the designer is told", await poll(async () => (await sql`select count(*)::int n from hub_notifications where user_id = ${d1.id} and link = ${"/design/tickets/" + t1.id}`)[0].n >= 1));
+  check("the designer is told", await poll(async () => (await sql`select count(*)::int n from hub_notifications where user_id = ${d1.id} and link = ${"/design/admin/tickets/" + t1.id}`)[0].n >= 1));
   await go(R.page, "/design/requests");
   check("now it is on the all-requests board", (await mainText(R.page)).includes(number));
 
-  section("a designer sees only their own tickets");
-  await go(D1.page, "/design");
-  check("Dev's dashboard lists it", (await mainText(D1.page)).includes(number));
-  await go(D2.page, "/design");
-  check("Disha's dashboard does not", !(await mainText(D2.page)).includes(number));
-  await go(D2.page, "/design/board");
-  check("nor her board", !(await mainText(D2.page)).includes(number));
-  check("and its page is not found for her", (await go(D2.page, `/design/tickets/${t1.id}`))?.status() === 404);
-  const feed2 = await D2.page.evaluate(async () => (await (await fetch("/api/design/activity?scope=all")).json()).items.map((i) => i.number));
-  check("her activity feed (even asking for everything) leaves it out", !feed2.includes(number));
-  await go(R.page, `/design/tickets/${t1.id}`);
-  check("the requester cannot open the team's ticket page", pathOf(R.page) !== `/design/tickets/${t1.id}`, pathOf(R.page));
+  section("the creative team sees every request; requesters only their own");
+  await go(D1.page, "/design/admin");
+  check("Dev's dashboard lists it in his queue", (await mainText(D1.page)).includes(number));
+  await go(D2.page, "/design/admin/board");
+  check("Disha (not assigned) sees it on the board too", (await mainText(D2.page)).includes(number));
+  check("and can open its page", (await go(D2.page, `/design/admin/tickets/${t1.id}`))?.status() === 200 && pathOf(D2.page) === `/design/admin/tickets/${t1.id}`);
+  check("but cannot change who it is assigned to (no assignee picker for a member)", !(await D2.page.locator("main select").filter({ hasText: "Not assigned" }).count()));
+  const feed2 = await D2.page.evaluate(async () => (await (await fetch("/api/design/activity")).json()).items.map((i) => i.number));
+  check("the activity feed shows the team everything", feed2.includes(number));
+  await go(R2.page, "/design/my-requests");
+  check("another requester does not see it in their requests", !(await mainText(R2.page)).includes(number));
+  await go(R.page, `/design/admin/tickets/${t1.id}`);
+  check("the requester cannot open the team's ticket page", pathOf(R.page) !== `/design/admin/tickets/${t1.id}`, pathOf(R.page));
 
   section("proof → review link → changes asked (no sign-in)");
-  await go(D1.page, `/design/tickets/${t1.id}`);
+  await go(D1.page, `/design/admin/tickets/${t1.id}`);
   await D1.page.getByRole("tab", { name: "Proofs & approval" }).click();
   check("the proof uploads", await upload(D1.page, "zzd-proof-v1.png"));
   await D1.page.getByRole("button", { name: "Upload and send for review" }).click();
@@ -274,7 +287,7 @@ try {
   check("the designer is told about the changes", await poll(async () => (await sql`select count(*)::int n from hub_notifications where user_id = ${d1.id} and title like ${"%asked for changes on " + number + "%"}`)[0].n === 1));
 
   section("version 2 approved from My Requests");
-  await go(D1.page, `/design/tickets/${v2.id}`);
+  await go(D1.page, `/design/admin/tickets/${v2.id}`);
   await D1.page.getByRole("tab", { name: "Proofs & approval" }).click();
   check("the second proof uploads", await upload(D1.page, "zzd-proof-v2.png"));
   await D1.page.getByRole("button", { name: "Upload and send for review" }).click();
@@ -289,7 +302,7 @@ try {
   await go(R.page, "/design/my-requests?tab=delivered");
   const dl = await R.page.getByRole("link", { name: /Download designs/ }).getAttribute("href");
   check("Download designs gives the requester their approved file", !!dl && (await fetchIn(R.page, dl)).status === 302);
-  check("someone else cannot download it", (await fetchIn(O.page, dl)).status === 404);
+  check("another requester cannot download it", (await fetchIn(R2.page, dl)).status === 404);
 
   section("source files");
   await go(R.page, "/design/my-requests?tab=delivered");
@@ -307,11 +320,11 @@ try {
   await R.page.getByRole("button", { name: /Request source files/ }).click();
   const cdr = await poll(async () => (await sql`select * from design_cdr_requests where ticket_id = ${v2.id}`)[0]);
   check("the requester asks for the source files", cdr?.status === "requested");
-  await go(L.page, `/design/tickets/${v2.id}?tab=source`);
+  await go(L.page, `/design/admin/tickets/${v2.id}?tab=source`);
   await L.page.getByRole("tab", { name: "Source files" }).click();
   await L.page.getByRole("button", { name: /^Approve$/ }).click();
   check("a lead approves", await poll(async () => (await sql`select status from design_cdr_requests where id = ${cdr.id}`)[0].status === "approved"));
-  await go(D1.page, `/design/tickets/${v2.id}`);
+  await go(D1.page, `/design/admin/tickets/${v2.id}`);
   await D1.page.getByRole("tab", { name: "Source files" }).click();
   check("the designer uploads the source file", await upload(D1.page, "zzd-source.cdr", Buffer.from("CDR test content"), "application/octet-stream"));
   await D1.page.getByRole("button", { name: /Upload/ }).last().click();
@@ -322,19 +335,19 @@ try {
 
   section("decline, and an unanswered review");
   // A second request, declined with a reason.
-  await go(O.page, "/design/request");
-  await O.page.getByLabel("Twitter / X post", { exact: true }).check();
-  await O.page.fill("#brief", "ZZD tweet for the trade fair.");
-  await O.page.fill("#delivery", istDay(20));
-  await O.page.getByRole("button", { name: /Submit request/ }).click();
-  await O.page.getByText("Your request has been submitted").waitFor();
-  const n2 = /DF-\d{4,}/.exec(await mainText(O.page))?.[0];
+  await go(R2.page, "/design/request");
+  await R2.page.getByLabel("Twitter / X post", { exact: true }).check();
+  await R2.page.fill("#brief", "ZZD tweet for the trade fair.");
+  await R2.page.fill("#delivery", istDay(20));
+  await R2.page.getByRole("button", { name: /Submit request/ }).click();
+  await R2.page.getByText("Your request has been submitted").waitFor();
+  const n2 = /DF-\d{4,}/.exec(await mainText(R2.page))?.[0];
   check("20 days out is Low priority", (await ticketByNumber(n2))?.priority === "low");
   await go(L.page, "/design/admin/pending");
   await L.page.locator("li, article, div.ds-card").filter({ hasText: n2 }).first().getByRole("button", { name: /^Decline$/ }).click();
   await L.page.getByRole("dialog").locator("textarea").fill("ZZD: the social team handles tweets.");
   await L.page.getByRole("button", { name: "Decline request" }).click();
-  check("declined, with the reason kept and the requester told", await poll(async () => { const t = await ticketByNumber(n2); return t.status === "declined" && /social team/.test(t.decline_reason ?? ""); }) && await poll(async () => (await sql`select count(*)::int n from hub_notifications where user_id = ${outsider.id} and title like ${"Request declined: " + n2}`)[0].n === 1));
+  check("declined, with the reason kept and the requester told", await poll(async () => { const t = await ticketByNumber(n2); return t.status === "declined" && /social team/.test(t.decline_reason ?? ""); }) && await poll(async () => (await sql`select count(*)::int n from hub_notifications where user_id = ${requester2.id} and title like ${"Request declined: " + n2}`)[0].n === 1));
   // An In-review ticket whose link expired: the jobs close it without approval.
   const t3 = (await sql`insert into design_tickets (number, title, brief, design_type_id, requirements, status, requester_id, assignee_id, priority)
     select 'DF-ZZD-1', 'ZZD expired review', 'x', id, '["flyer"]'::jsonb, 'in_review', ${requester.id}, ${d1.id}, 'normal' from design_types where key = 'flyer' returning id`)[0];
@@ -356,20 +369,20 @@ try {
   const csv = await fetchIn(L.page, `/api/design/reports/export?from=${istDay(-7)}&to=${istDay(0)}&format=csv`);
   const pdf = await fetchIn(L.page, `/api/design/reports/export?from=${istDay(-7)}&to=${istDay(0)}&format=pdf`);
   check("CSV and PDF exports", csv.status === 200 && csv.type.includes("text/csv") && pdf.status === 200 && pdf.type.includes("application/pdf"), `${csv.status} ${pdf.status}`);
-  check("a designer cannot export reports", (await fetchIn(D1.page, `/api/design/reports/export?format=csv`)).status === 403);
+  check("a member (not a lead) cannot export reports", (await fetchIn(D1.page, `/api/design/reports/export?format=csv`)).status === 403);
   if (H) {
     await go(H.page, "/design/admin/settings");
     check("the Support Admin sees Integrations", (await H.page.getByRole("tab", { name: /Integrations/ }).count()) + (await H.page.getByRole("link", { name: /Integrations/ }).count()) > 0);
   }
 
   section("campaigns");
-  await go(O.page, "/design/campaigns");
-  check("everyone can add posts; only leads add campaigns", (await O.page.getByRole("button", { name: /Add post/ }).count()) === 1 && (await O.page.getByRole("button", { name: /Add campaign/ }).count()) === 0);
+  await go(R2.page, "/design/campaigns");
+  check("requesters can add posts; only leads add campaigns", (await R2.page.getByRole("button", { name: /Add post/ }).count()) === 1 && (await R2.page.getByRole("button", { name: /Add campaign/ }).count()) === 0);
   await go(L.page, "/design/campaigns");
   check("a lead can add a campaign", (await L.page.getByRole("button", { name: /Add campaign/ }).count()) === 1);
 
   section("other pages open without errors");
-  for (const [who, p] of [[D1, "/design/calendar"], [D1, "/design/library"], [D1, "/design/board"], [D1, "/design/my-requests"], [L, "/design/admin/settings?tab=types"], [L, `/design/tickets/${v2.id}?tab=annotate`]]) {
+  for (const [who, p] of [[D1, "/design/admin/calendar"], [D1, "/design/admin/library"], [D1, "/design/admin/board"], [D1, "/design/my-requests"], [L, "/design/admin/settings?tab=types"], [L, `/design/admin/tickets/${v2.id}?tab=annotate`]]) {
     check(`${p} opens`, (await go(who.page, p))?.status() === 200);
   }
   check("no page threw an error in the browser", pageErrors.length === 0, pageErrors.join(" | "));

@@ -1,25 +1,40 @@
 import Link from "next/link";
 import { ActivityFeed } from "@/components/design/activity-feed";
 import { PendingList } from "@/components/design/admin/PendingList";
-import { Card, Kpi, PageHeader } from "@/components/design/ui";
+import { EmailSwitch } from "@/components/design/team/email-switch";
+import { Badge, Card, DueText, Empty, Kpi, PageHeader, PriorityBadge, StatusBadge } from "@/components/design/ui";
+import { listTickets } from "@/lib/design/tickets";
+import { emailEnabledFor } from "@/lib/design/team-queries";
+import { OPEN_STATUSES } from "@/lib/design/rules";
 import { pendingItems } from "@/lib/design/admin-queries";
-import { requireLead } from "@/lib/design/dal";
+import { requireTeam } from "@/lib/design/dal";
 import { activity } from "@/lib/design/detail";
 import { openByDesigner, overview } from "@/lib/design/reports";
 
-/** Team overview: the four numbers that matter, the requests waiting for a lead, what is happening now, and who holds the open work. */
+/**
+ * The creative team's dashboard: the four numbers that matter, the requests waiting for a lead (leads only: they accept and assign), the
+ * person's own queue, what is happening now, who holds the open work, and where their emails go.
+ */
 export default async function DesignAdminHome() {
-  const u = await requireLead();
-  const [o, pending, feed, byDesigner] = await Promise.all([overview(), pendingItems(), activity(null), openByDesigner()]);
+  const u = await requireTeam();
+  const [o, pending, feed, byDesigner, queue, emailOn] = await Promise.all([
+    overview(),
+    u.lead ? pendingItems() : Promise.resolve([]),
+    activity(null),
+    openByDesigner(),
+    listTickets({ assigneeId: u.id, statuses: OPEN_STATUSES }),
+    emailEnabledFor(u.id),
+  ]);
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Team overview" subtitle={`Hello ${u.name.split(" ")[0]}. Requests waiting for you come first.`} />
+      <PageHeader title="Team overview" subtitle={`Hello ${u.name.split(" ")[0]}.${u.lead ? " Requests waiting for you come first." : " Your work and the team's, at a glance."}`} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Open tickets" value={o.open} />
         <Kpi label="Overdue" value={o.overdue} tone={o.overdue ? "red" : undefined} />
         <Kpi label="In review" value={o.inReview} tone="purple" />
         <Kpi label="Delivered this week" value={o.deliveredThisWeek} tone="green" />
       </div>
+      {u.lead && (
       <Card
         pad={false}
         title={
@@ -36,6 +51,43 @@ export default async function DesignAdminHome() {
       >
         <PendingList items={pending} limit={5} />
       </Card>
+      )}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <Card title="My queue" pad={false}>
+          {queue.length === 0 ? (
+            <Empty title="Nothing in your queue">New work appears here as soon as a lead assigns it to you.</Empty>
+          ) : (
+            <ul className="divide-y divide-[var(--ds-line)]">
+              {queue.map((t) => (
+                <li key={t.id}>
+                  <Link href={`/design/admin/tickets/${t.id}`} className="flex flex-col gap-1.5 px-5 py-3.5 hover:bg-[#fafafa] sm:flex-row sm:items-center sm:gap-4">
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-bold text-[var(--ds-navy)]">{t.number}</span>
+                        <StatusBadge status={t.status} />
+                        <PriorityBadge priority={t.priority} />
+                      </span>
+                      <span className="mt-0.5 block truncate text-sm font-semibold text-ink">{t.title}</span>
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        {t.designs.map((d) => (
+                          <Badge key={d}>{d}</Badge>
+                        ))}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xs sm:text-right">
+                      <span className="ds-label block">Due</span>
+                      <DueText dueAt={t.dueAt} status={t.status} />
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card title="Email">
+          <EmailSwitch email={u.email} enabled={emailOn} />
+        </Card>
+      </div>
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <ActivityFeed scope="all" initial={feed} />
         <Card title="Open work by designer" pad={false}>
@@ -61,11 +113,13 @@ export default async function DesignAdminHome() {
               </tbody>
             </table>
           )}
-          <div className="border-t border-[var(--ds-line)] px-5 py-3 text-sm">
-            <Link href="/design/admin/workload" className="font-semibold text-[var(--ds-navy)] hover:underline">
-              See the workload by day →
-            </Link>
-          </div>
+          {u.lead && (
+            <div className="border-t border-[var(--ds-line)] px-5 py-3 text-sm">
+              <Link href="/design/admin/workload" className="font-semibold text-[var(--ds-navy)] hover:underline">
+                See the workload by day →
+              </Link>
+            </div>
+          )}
         </Card>
       </div>
     </div>

@@ -132,13 +132,13 @@ export async function getTicket(id: string): Promise<Ticket | null> {
   return t ?? null;
 }
 
-/** Whether this person may work on the ticket in /design: a lead may open any; a member only those assigned to them. */
-export const canWork = (u: SessionUser, t: Pick<Ticket, "assigneeId">) => u.lead || (u.member && t.assigneeId === u.id);
+/** Whether this person may work on the ticket: anyone in the creative team (Design Team Admin) may open and work on every ticket. */
+export const canWork = (u: SessionUser) => u.member;
 
 /** The ticket for team pages and actions, or a 404-style error (so ids cannot be probed). */
 export async function ticketForTeam(u: SessionUser, id: string): Promise<Ticket> {
   const t = await getTicket(id);
-  if (!t || !canWork(u, t)) throw new DesignError("That ticket was not found.");
+  if (!t || !canWork(u)) throw new DesignError("That ticket was not found.");
   return t;
 }
 
@@ -303,7 +303,7 @@ export async function askQuestion(u: SessionUser, id: string, text: string): Pro
   const q = text.trim();
   if (!q) throw new DesignError("Write the question.");
   const t = await getTicket(id);
-  if (!t || (!u.lead && t.assigneeId !== u.id)) throw new DesignError("That request was not found.");
+  if (!t || !u.member) throw new DesignError("That request was not found.");
   await audit(id, u.id, "Question asked", { question: q.slice(0, 1000) });
   await notice.question(t, q.slice(0, 1000), u.name);
 }

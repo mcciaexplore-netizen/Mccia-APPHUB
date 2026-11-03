@@ -32,7 +32,7 @@ export function MonthGrid({ month, tickets }: { month: string; tickets: TicketCa
   const chip = (t: TicketCard) => {
     const h = HEALTH[dueHealth(t.dueAt, t.status)];
     return (
-      <Link key={t.id} href={`/design/tickets/${t.id}`} className="block truncate rounded px-1.5 py-0.5 text-[0.7rem] font-semibold text-white hover:opacity-90" style={{ background: h.bg }} title={`${t.number} ${t.title} · ${h.label}`}>
+      <Link key={t.id} href={`/design/admin/tickets/${t.id}`} className="block truncate rounded px-1.5 py-0.5 text-[0.7rem] font-semibold text-white hover:opacity-90" style={{ background: h.bg }} title={`${t.number} ${t.title} · ${h.label}`}>
         {t.number} {t.title}
       </Link>
     );

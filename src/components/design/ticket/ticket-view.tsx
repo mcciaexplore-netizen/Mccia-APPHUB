@@ -74,7 +74,7 @@ export function TicketView({ d, viewer }: { d: TicketDetail; viewer: Viewer }) {
                       {v.number}
                     </span>
                   ) : (
-                    <Link key={v.id} href={`/design/tickets/${v.id}`} className="ds-badge ds-tone-neutral hover:underline">
+                    <Link key={v.id} href={`/design/admin/tickets/${v.id}`} className="ds-badge ds-tone-neutral hover:underline">
                       {v.number}
                     </Link>
                   ),

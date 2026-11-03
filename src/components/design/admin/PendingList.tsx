@@ -74,7 +74,7 @@ export function PendingList({ items, limit }: { items: PendingItem[]; limit?: nu
           <li key={t.id} className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-start">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <Link href={`/design/tickets/${t.id}`} className="text-sm font-bold text-[var(--ds-navy)] hover:underline">
+                <Link href={`/design/admin/tickets/${t.id}`} className="text-sm font-bold text-[var(--ds-navy)] hover:underline">
                   {t.number}
                 </Link>
                 <PriorityBadge priority={t.priority} />

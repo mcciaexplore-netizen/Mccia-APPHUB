@@ -73,7 +73,7 @@ export default async function WorkloadPage() {
                               <ul className="flex flex-col gap-1.5">
                                 {c.tickets.map((t) => (
                                   <li key={t.id} className="flex items-start justify-between gap-2 text-xs">
-                                    <Link href={`/design/tickets/${t.id}`} className="min-w-0 flex-1 hover:underline">
+                                    <Link href={`/design/admin/tickets/${t.id}`} className="min-w-0 flex-1 hover:underline">
                                       <span className="font-bold text-[var(--ds-navy)]">{t.number}</span> <span className="line-clamp-2">{t.title}</span>
                                     </Link>
                                     <span className="shrink-0 font-semibold tabular-nums">{t.hours}h</span>

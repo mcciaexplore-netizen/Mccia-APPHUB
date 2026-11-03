@@ -10,7 +10,7 @@ const team = <T>(fn: (u: Awaited<ReturnType<typeof assertTeam>>) => Promise<T>, 
   run(async () => {
     const u = await assertTeam();
     const r = await fn(u);
-    revalidatePath("/design/library");
+    revalidatePath("/design/admin/library");
     return r;
   }, message);
 

@@ -142,7 +142,7 @@ const activityText = (action: string, d: Record<string, unknown>, who: string): 
 
 const FEED_ACTIONS = ["Created", "Updated", "Requester approved", "Requester asked for changes", "Sent for review", "Accepted", "Declined", "Client changes added", "Auto-closed", "Uploaded proof"];
 
-/** The newest events: for one designer only their own tickets (`mine`), for leads every ticket. */
+/** The newest events: every ticket, or only one designer's (`mine`). */
 export async function activity(mine: string | null, limit = 30): Promise<ActivityDto[]> {
   const rows = await db
     .select({ a: auditLogs, number: tickets.number, title: tickets.title, assigneeId: tickets.assigneeId })
@@ -193,7 +193,7 @@ export async function canOpenFile(u: SessionUser, fileId: string): Promise<boole
   const viaTicket = async (ticketIds: string[], requesterToo: boolean) => {
     if (!ticketIds.length) return false;
     const ts = await db.select().from(tickets).where(inArray(tickets.id, ticketIds));
-    return ts.some((t: Ticket) => canWork(u, t) || (requesterToo && t.requesterId === u.id));
+    return ts.some((t: Ticket) => canWork(u) || (requesterToo && t.requesterId === u.id));
   };
   const [att, proof, cdr] = await Promise.all([
     db.select({ ticketId: attachments.ticketId }).from(attachments).where(eq(attachments.fileId, fileId)),
@@ -203,7 +203,7 @@ export async function canOpenFile(u: SessionUser, fileId: string): Promise<boole
   if (await viaTicket(att.map((a) => a.ticketId), true)) return true;
   if (await viaTicket(proof.map((p) => p.ticketId), true)) return true;
   if (await viaTicket(cdr.map((c) => c.ticketId), false)) return true;
-  if ((u.member || u.lead) && (await isLibraryFile(fileId))) return true;
+  if (u.member && (await isLibraryFile(fileId))) return true;
   return isPostImage(fileId);
 }
 

@@ -29,7 +29,7 @@ export function LibraryView({ folders, folderId, q, items }: { folders: FolderDt
       .flatMap((f) => [
         <li key={f.id}>
           <Link
-            href={`/design/library?folder=${f.id}`}
+            href={`/design/admin/library?folder=${f.id}`}
             aria-current={f.id === folderId ? "page" : undefined}
             className={`flex items-center gap-2 rounded-lg py-1.5 pr-2 text-sm ${f.id === folderId ? "bg-[var(--ds-navy-tint)] font-semibold text-[var(--ds-navy)]" : "text-ink hover:bg-[var(--ds-grey-tint)]"}`}
             style={{ paddingLeft: `${0.5 + depth * 0.9}rem` }}
@@ -64,7 +64,7 @@ export function LibraryView({ folders, folderId, q, items }: { folders: FolderDt
             const p = new URLSearchParams();
             if (folderId) p.set("folder", folderId);
             if (search.trim()) p.set("q", search.trim());
-            router.push(`/design/library${p.size ? `?${p}` : ""}`);
+            router.push(`/design/admin/library${p.size ? `?${p}` : ""}`);
           }}
         >
           <label className="relative flex-1">
@@ -95,7 +95,7 @@ export function LibraryView({ folders, folderId, q, items }: { folders: FolderDt
                 onClick={async () => {
                   if (!(await confirm({ title: `Delete ${current.name}?`, message: "The folder, its subfolders and their items are removed from the library.", confirmLabel: "Delete", danger: true }))) return;
                   const r = await act(() => deleteFolderAction(current.id));
-                  if (r.ok) router.push("/design/library");
+                  if (r.ok) router.push("/design/admin/library");
                 }}
               >
                 <Trash2 size={14} /> Delete
@@ -129,7 +129,7 @@ export function LibraryView({ folders, folderId, q, items }: { folders: FolderDt
               const r = folderModal.id ? await act(() => renameFolderAction(folderModal.id!, folderModal.name)) : await act(() => createFolderAction(folderModal.name, folderModal.parentId));
               if (r.ok) {
                 setFolderModal(null);
-                if (!folderModal.id && typeof r.data === "string") router.push(`/design/library?folder=${r.data}`);
+                if (!folderModal.id && typeof r.data === "string") router.push(`/design/admin/library?folder=${r.data}`);
               }
             }}
           >

@@ -3,21 +3,22 @@ import { notFound, redirect } from "next/navigation";
 import { logError } from "@/lib/log-error";
 import { designEnabled } from "./flags";
 import { needsOwnPassword, resolveAccess, type DesignUser } from "./host-adapter";
-import { isLead, isMember } from "./design.manifest";
+import { isLead, isMember, isRequester } from "./design.manifest";
 
 /**
  * Role protection for DesignDesk. Pages use require*(), which redirect; server actions and route handlers use assert*(), which throw an
  * HttpError. Off (DESIGN_ENABLED unset) looks like a page that does not exist; not signed in goes to the hub's sign-in; signed in without
  * the role goes back to where they belong.
- *   requester: any signed-in hub user (the request pages)
- *   team:      Design Team (design_member), or a lead (who may open any ticket page; their own lists still show only their own tickets)
- *   admin:     Design Team Admin (design_lead) or the Support Admin
+ *   requester: Design Team (design_requester), or anyone in the creative team (the request pages)
+ *   team:      the creative team: Design Team Admin (design_member), its App Admins (design_lead) and the Support Admin
+ *   admin:     the leads only (accept/decline, assign, priority, workload, reports, settings)
  *   super:     the Support Admin only
  */
 
-export type SessionUser = DesignUser & { lead: boolean; member: boolean; superAdmin: boolean };
+export type SessionUser = DesignUser & { requester: boolean; lead: boolean; member: boolean; superAdmin: boolean };
 
-const withFlags = (u: DesignUser): SessionUser => ({ ...u, lead: isLead(u.roles), member: isMember(u.roles), superAdmin: u.roles.includes("design_super_admin") });
+/** `member` is everyone in the creative team (leads included); `lead` the App Admins of Design Team Admin and the Support Admin. */
+const withFlags = (u: DesignUser): SessionUser => ({ ...u, requester: isRequester(u.roles), lead: isLead(u.roles), member: isMember(u.roles), superAdmin: u.roles.includes("design_super_admin") });
 
 type Section = "requester" | "team" | "admin" | "super";
 
@@ -27,8 +28,8 @@ async function page(section: Section): Promise<SessionUser> {
   if (a.status === "anonymous") redirect("/login");
   if (await needsOwnPassword()) redirect("/change-password");
   const u = withFlags(a.user);
-  const allowed = section === "requester" || (section === "team" ? u.member || u.lead : section === "admin" ? u.lead : u.superAdmin);
-  if (!allowed) redirect(section === "super" && u.lead ? "/design/admin" : section === "admin" && u.member ? "/design" : "/design/request");
+  const allowed = section === "requester" ? u.requester : section === "team" ? u.member : section === "admin" ? u.lead : u.superAdmin;
+  if (!allowed) redirect(u.member ? "/design/admin" : u.requester ? "/design/request" : "/");
   return u;
 }
 
@@ -52,8 +53,9 @@ async function assert(section: Section): Promise<SessionUser> {
   if (a.status === "anonymous") throw new HttpError(401, "Please sign in again.");
   if (await needsOwnPassword()) throw new HttpError(403, "Choose your own password first: you are still using the temporary one.");
   const u = withFlags(a.user);
-  if (section === "team" && !(u.member || u.lead)) throw new HttpError(403, "You do not have Design Team.");
-  if (section === "admin" && !u.lead) throw new HttpError(403, "Design leads only.");
+  if (section === "requester" && !u.requester) throw new HttpError(403, "You do not have Design Team.");
+  if (section === "team" && !u.member) throw new HttpError(403, "You do not have Design Team Admin.");
+  if (section === "admin" && !u.lead) throw new HttpError(403, "Design leads (App Admins of Design Team Admin) only.");
   if (section === "super" && !u.superAdmin) throw new HttpError(403, "The Support Admin only.");
   return u;
 }

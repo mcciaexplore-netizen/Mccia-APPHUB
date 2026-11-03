@@ -1,16 +1,16 @@
 import { HubShell } from "@/components/HubShell";
 import { MobileMenu } from "@/components/MobileMenu";
 import { DesignSidebar } from "@/components/design/shell/DesignSidebar";
-import { requireLead } from "@/lib/design/dal";
+import { requireTeam } from "@/lib/design/dal";
 import { pendingCount } from "@/lib/design/tickets";
 import { noticeUnread } from "@/lib/notice-feed";
 
 export const metadata = { title: "Design Team Admin · MCCIA App Hub" };
 
-/** Design Team Admin inside the hub's frame, with its sidebar (Pending Review shows how many requests are waiting). */
+/** Design Team Admin (the creative team) inside the hub's frame, with its sidebar (for leads, Pending Review shows how many requests are waiting). */
 export default async function Layout({ children }: { children: React.ReactNode }) {
-  const user = await requireLead();
-  const [unread, pending] = await Promise.all([noticeUnread(user.id), pendingCount()]);
+  const user = await requireTeam();
+  const [unread, pending] = await Promise.all([noticeUnread(user.id), user.lead ? pendingCount() : Promise.resolve(0)]);
   return (
     <HubShell user={{ name: user.name, role: user.hubRole }} unread={unread}>
       <div className="ds-root flex flex-col gap-6 lg:flex-row lg:items-start">

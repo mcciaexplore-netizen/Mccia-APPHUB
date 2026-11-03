@@ -25,7 +25,7 @@ export type SlackEvent = keyof typeof SLACK_EVENTS;
 
 type T = Pick<Ticket, "id" | "number" | "title">;
 const ref = (t: T) => `${t.number} — ${t.title}`;
-const teamLink = (t: T) => `/design/tickets/${t.id}`;
+const teamLink = (t: T) => `/design/admin/tickets/${t.id}`;
 export const trackingUrl = (number: string) => `${siteUrl()}/track/${trackingToken(number)}`;
 export const reviewUrl = (token: string) => `${siteUrl()}/review/${token}`;
 
