@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/design/ui";
 import { requireTeam } from "@/lib/design/dal";
 import { listFolders, listItems } from "@/lib/design/library";
 
-export const metadata = { title: "Library · Design Team Admin" };
+export const metadata = { title: "Library · Design Admin" };
 
 /** The team's shared folders of logos, brand assets, templates and finished designs, with versions. */
 export default async function LibraryPage({ searchParams }: { searchParams: Promise<{ folder?: string; q?: string }> }) {

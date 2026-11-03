@@ -107,7 +107,7 @@ export function PendingActions({ ticket, ask = true }: { ticket: PendingTicket; 
                   <Loader2 size={14} className="animate-spin" /> Loading the team…
                 </p>
               ) : options.length === 0 ? (
-                <p className="px-1 py-2 text-sm ds-muted">Nobody has Design Team Admin yet. Give the creative team the Design Team Admin application in Administrator.</p>
+                <p className="px-1 py-2 text-sm ds-muted">Nobody has Design Admin yet. Give the creative team the Design Admin application in Administrator.</p>
               ) : (
                 options.map((o) => {
                   const pct = o.capacityHours ? Math.min(100, Math.round((o.openHours / o.capacityHours) * 100)) : 100;

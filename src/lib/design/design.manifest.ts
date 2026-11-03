@@ -3,17 +3,17 @@
  * so the client sidebars and the unit tests can import it too.
  *
  * The module shows in the hub as two applications, each an ordinary row in Administrator → Applications with its own access grants:
- *   Design Team         URL /design         office staff who ASK the creative team for designs: the request form, their own
+ *   Design Team Forms   URL /design         office staff who ASK the creative team for designs: the request form, their own
  *                                           requests (track, approve proofs, download finals), the board of accepted requests, campaigns
- *   Design Team Admin   URL /design/admin   the CREATIVE TEAM who fulfil requests: every ticket, the board, proofs, files, library,
+ *   Design Admin        URL /design/admin   the CREATIVE TEAM who fulfil requests: every ticket, the board, proofs, files, library,
  *                                           calendar; its App Admins also accept or decline requests, assign, set priority, see
  *                                           workload and reports and change settings
  * The review and tracking links (/review/<token>, /track/<token>) work without signing in.
  *
  * Roles:
- *   design_requester    anyone given the Design Team application
- *   design_member       anyone given the Design Team Admin application
- *   design_lead         an App Admin of the Design Team Admin application (who also holds it)
+ *   design_requester    anyone given the Design Team Forms application
+ *   design_member       anyone given the Design Admin application
+ *   design_lead         an App Admin of the Design Admin application (who also holds it)
  *   design_super_admin  the Support Admin (head_admin) only: also Integrations (email test, Slack) and "Delete all past data"
  * The Support Admin holds all four.
  *
@@ -52,7 +52,7 @@ export type DesignNavItem = { label: string; href: string; leadOnly?: boolean; s
 
 export const DESIGN_NAV: Record<DesignSection, { title: string; items: DesignNavItem[] }> = {
   requester: {
-    title: "Design Team",
+    title: "Design Team Forms",
     items: [
       { label: "Request a design", href: "/design/request" },
       { label: "My requests", href: "/design/my-requests" },
@@ -61,7 +61,7 @@ export const DESIGN_NAV: Record<DesignSection, { title: string; items: DesignNav
     ],
   },
   admin: {
-    title: "Design Team Admin",
+    title: "Design Admin",
     items: [
       { label: "Dashboard", href: "/design/admin" },
       { label: "Pending Review", href: "/design/admin/pending", leadOnly: true, badge: "pending" },

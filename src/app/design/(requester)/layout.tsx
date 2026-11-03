@@ -6,7 +6,7 @@ import { noticeUnread } from "@/lib/notice-feed";
 
 export const metadata = { title: "Design Requests · MCCIA App Hub" };
 
-/** The request pages: Design Team (the people who ask for designs), and the creative team too. */
+/** The request pages: Design Team Forms (the people who ask for designs), and the creative team too. */
 export default async function Layout({ children }: { children: React.ReactNode }) {
   const user = await requireRequester();
   const unread = await noticeUnread(user.id);

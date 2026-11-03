@@ -26,8 +26,8 @@ const appHolders = (pattern: string) => sql`select ua.user_id from user_app_acce
   where a.is_active and d.is_active and a.status <> 'unavailable' and a.url ~ ${pattern} and u.is_active and u.status = 'approved'`;
 
 /**
- * One query: whether the person has been given Design Team (URL /design) and Design Team Admin (URL /design/admin), and whether they are
- * one of Design Team Admin's App Admins (the leads).
+ * One query: whether the person has been given Design Team Forms (URL /design) and Design Admin (URL /design/admin), and whether they are
+ * one of Design Admin's App Admins (the leads).
  */
 async function standing(userId: string): Promise<{ teamAccess: boolean; adminAccess: boolean; adminAppAdmin: boolean }> {
   const res = await db.execute(sql`
@@ -61,12 +61,12 @@ export const resolveAccess = cache(async (): Promise<Access> => {
 /** Whether the person is still on the temporary password they were emailed. */
 export const needsOwnPassword = async () => !!(await hostCurrentUser())?.mustChangePassword;
 
-/** Everyone given Design Team Admin (the creative team, who work on requests), by name. */
+/** Everyone given Design Admin (the creative team, who work on requests), by name. */
 export async function listDesigners(): Promise<Person[]> {
   return db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(sql`${users.id} in (${appHolders(DESIGN_ADMIN_URL_PATTERN)})`).orderBy(asc(users.name));
 }
 
-/** The App Admins of Design Team Admin who also hold it (the leads), by name. With none, the Support Admins stand in, so nothing goes unnoticed. */
+/** The App Admins of Design Admin who also hold it (the leads), by name. With none, the Support Admins stand in, so nothing goes unnoticed. */
 export async function listLeads(): Promise<Person[]> {
   const leads = await db
     .select({ id: users.id, name: users.name, email: users.email })
@@ -77,7 +77,7 @@ export async function listLeads(): Promise<Person[]> {
   return db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(and(eq(users.role, "head_admin"), eq(users.isActive, true), eq(users.status, "approved")));
 }
 
-/** Who a ticket may be given to: the creative team (leads hold Design Team Admin too). */
+/** Who a ticket may be given to: the creative team (leads hold Design Admin too). */
 export async function listAssignable(): Promise<Person[]> {
   const [d, l] = await Promise.all([listDesigners(), listLeads()]);
   const byId = new Map([...d, ...l].map((p) => [p.id, p]));

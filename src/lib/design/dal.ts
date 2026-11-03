@@ -9,15 +9,15 @@ import { isLead, isMember, isRequester } from "./design.manifest";
  * Role protection for DesignDesk. Pages use require*(), which redirect; server actions and route handlers use assert*(), which throw an
  * HttpError. Off (DESIGN_ENABLED unset) looks like a page that does not exist; not signed in goes to the hub's sign-in; signed in without
  * the role goes back to where they belong.
- *   requester: Design Team (design_requester), or anyone in the creative team (the request pages)
- *   team:      the creative team: Design Team Admin (design_member), its App Admins (design_lead) and the Support Admin
+ *   requester: Design Team Forms (design_requester), or anyone in the creative team (the request pages)
+ *   team:      the creative team: Design Admin (design_member), its App Admins (design_lead) and the Support Admin
  *   admin:     the leads only (accept/decline, assign, priority, workload, reports, settings)
  *   super:     the Support Admin only
  */
 
 export type SessionUser = DesignUser & { requester: boolean; lead: boolean; member: boolean; superAdmin: boolean };
 
-/** `member` is everyone in the creative team (leads included); `lead` the App Admins of Design Team Admin and the Support Admin. */
+/** `member` is everyone in the creative team (leads included); `lead` the App Admins of Design Admin and the Support Admin. */
 const withFlags = (u: DesignUser): SessionUser => ({ ...u, requester: isRequester(u.roles), lead: isLead(u.roles), member: isMember(u.roles), superAdmin: u.roles.includes("design_super_admin") });
 
 type Section = "requester" | "team" | "admin" | "super";
@@ -53,9 +53,9 @@ async function assert(section: Section): Promise<SessionUser> {
   if (a.status === "anonymous") throw new HttpError(401, "Please sign in again.");
   if (await needsOwnPassword()) throw new HttpError(403, "Choose your own password first: you are still using the temporary one.");
   const u = withFlags(a.user);
-  if (section === "requester" && !u.requester) throw new HttpError(403, "You do not have Design Team.");
-  if (section === "team" && !u.member) throw new HttpError(403, "You do not have Design Team Admin.");
-  if (section === "admin" && !u.lead) throw new HttpError(403, "Design leads (App Admins of Design Team Admin) only.");
+  if (section === "requester" && !u.requester) throw new HttpError(403, "You do not have Design Team Forms.");
+  if (section === "team" && !u.member) throw new HttpError(403, "You do not have Design Admin.");
+  if (section === "admin" && !u.lead) throw new HttpError(403, "Design leads (App Admins of Design Admin) only.");
   if (section === "super" && !u.superAdmin) throw new HttpError(403, "The Support Admin only.");
   return u;
 }

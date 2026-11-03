@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { assertTeam, run, type ActionResult } from "../dal";
 import { addVersion, createFolder, createItem, deleteFolder, deleteItem, renameFolder, updateItem, type ItemInput } from "../library";
 
-/** The library, for everyone on the design team (Design Team or Design Team Admin). */
+/** The library, for everyone on the design team (Design Team Forms or Design Admin). */
 
 const team = <T>(fn: (u: Awaited<ReturnType<typeof assertTeam>>) => Promise<T>, message?: string) =>
   run(async () => {

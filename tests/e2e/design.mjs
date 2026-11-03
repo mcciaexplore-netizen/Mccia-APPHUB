@@ -1,6 +1,6 @@
 /**
- * End-to-end test of the DesignDesk module in a real browser: who may open its sections (the request pages for every hub user, Design Team at
- * /design for the people who ask for designs, Design Team Admin at /design/admin for the creative team, whose App Admins are the leads,
+ * End-to-end test of the DesignDesk module in a real browser: who may open its sections (the request pages for every hub user, Design Team Forms at
+ * /design for the people who ask for designs, Design Admin at /design/admin for the creative team, whose App Admins are the leads,
  * Integrations for the Support Admin only); that requesters see only their own requests while the creative team sees every one;
  * the whole life of a request: the form with a file → Pending Review → accept and assign → a proof sent for review → changes asked on the
  * public review link (a new version DF-xxxx-V2) → the next proof approved from My Requests → source files → the scheduled close; the tracking
@@ -104,14 +104,14 @@ const requester2 = await person("ZZD Requester Two", "zzd-requester2@gmail.com")
 const outsider = await person("ZZD Outsider Om", "zzd-outsider@gmail.com");
 const [dept] = await sql`insert into departments (kind, name, icon) values ('application', 'ZZD Design', 'Palette') returning id`;
 const app = async (name, url) => (await sql`insert into apps (department_id, name, url, icon) values (${dept.id}, ${name}, ${url}, 'Palette') returning id`)[0];
-const teamApp = await app("ZZD Design Team", "/design");
-const adminApp = await app("ZZD Design Team Admin", "/design/admin");
+const teamApp = await app("ZZD Design Team Forms", "/design");
+const adminApp = await app("ZZD Design Admin", "/design/admin");
 const grant = (u, a) => sql`insert into user_app_access (user_id, app_id) values (${u.id}, ${a.id}) on conflict do nothing`;
-// Design Team is for the people who ask for designs; Design Team Admin is the creative team, whose App Admins are the leads.
+// Design Team Forms is for the people who ask for designs; Design Admin is the creative team, whose App Admins are the leads.
 await grant(requester, teamApp); await grant(requester2, teamApp);
 await grant(d1, adminApp); await grant(d2, adminApp); await grant(lead, adminApp);
 await sql`insert into app_admins (app_id, user_id) values (${adminApp.id}, ${lead.id})`;
-// An App Admin of Design Team Admin who was never given it is not a lead.
+// An App Admin of Design Admin who was never given it is not a lead.
 await sql`insert into app_admins (app_id, user_id) values (${adminApp.id}, ${outsider.id})`;
 // Dev has lots of room; Disha is on leave all week, so auto-assign would never pick her.
 await sql`insert into design_leaves (user_id, start_date, end_date, note) values (${d2.id}, ${istDay(-1)}, ${istDay(14)}, 'ZZD leave')`;
@@ -173,18 +173,18 @@ try {
   const H = process.env.HEAD_ADMIN_EMAIL && process.env.HEAD_ADMIN_PASSWORD ? await signedIn(process.env.HEAD_ADMIN_EMAIL, process.env.HEAD_ADMIN_PASSWORD) : null;
 
   section("who may open which section");
-  check("Design Team opens the request form", (await go(R.page, "/design"))?.status() === 200 && pathOf(R.page) === "/design/request" && /Request a Design/.test(await mainText(R.page)));
-  check("the requester's menu: the request pages only", (await navLabels(R.page, "Design Team")) === "Request a design|My requests|All requests|Campaigns", await navLabels(R.page, "Design Team"));
-  await go(R.page, "/design/admin"); check("a requester is kept out of Design Team Admin", pathOf(R.page) === "/design/request", pathOf(R.page));
+  check("Design Team Forms opens the request form", (await go(R.page, "/design"))?.status() === 200 && pathOf(R.page) === "/design/request" && /Request a Design/.test(await mainText(R.page)));
+  check("the requester's menu: the request pages only", (await navLabels(R.page, "Design Team Forms")) === "Request a design|My requests|All requests|Campaigns", await navLabels(R.page, "Design Team Forms"));
+  await go(R.page, "/design/admin"); check("a requester is kept out of Design Admin", pathOf(R.page) === "/design/request", pathOf(R.page));
   await go(O.page, "/design/request"); check("without either application (even as an App Admin of it), the request pages send you to the hub", pathOf(O.page) === "/", pathOf(O.page));
-  await go(O.page, "/design/admin"); check("and so does Design Team Admin", pathOf(O.page) === "/", pathOf(O.page));
-  await go(D1.page, "/design/admin"); check("the creative team opens Design Team Admin", pathOf(D1.page) === "/design/admin");
-  check("a member's menu: dashboard, board, library, calendar", (await navLabels(D1.page, "Design Team Admin")) === "Dashboard|Board|Library|Calendar", await navLabels(D1.page, "Design Team Admin"));
+  await go(O.page, "/design/admin"); check("and so does Design Admin", pathOf(O.page) === "/", pathOf(O.page));
+  await go(D1.page, "/design/admin"); check("the creative team opens Design Admin", pathOf(D1.page) === "/design/admin");
+  check("a member's menu: dashboard, board, library, calendar", (await navLabels(D1.page, "Design Admin")) === "Dashboard|Board|Library|Calendar", await navLabels(D1.page, "Design Admin"));
   for (const p of ["/design/admin/pending", "/design/admin/workload", "/design/admin/reports", "/design/admin/settings"]) {
     await go(D1.page, p); check(`a member is sent back from ${p}`, pathOf(D1.page) === "/design/admin", pathOf(D1.page));
   }
   await go(L.page, "/design/admin");
-  check("a lead opens Design Team Admin, with its menu", pathOf(L.page) === "/design/admin" && (await navLabels(L.page, "Design Team Admin")) === "Dashboard|Pending Review|Board|Library|Calendar|Workload|Reports|Settings", await navLabels(L.page, "Design Team Admin"));
+  check("a lead opens Design Admin, with its menu", pathOf(L.page) === "/design/admin" && (await navLabels(L.page, "Design Admin")) === "Dashboard|Pending Review|Board|Library|Calendar|Workload|Reports|Settings", await navLabels(L.page, "Design Admin"));
   await go(L.page, "/design/admin/settings");
   check("a lead (not the Support Admin) does not see Integrations", !(await L.page.getByRole("tab", { name: /Integrations/ }).count()) && !/Delete all past data/.test(await mainText(L.page)));
   const anon = await fresh();

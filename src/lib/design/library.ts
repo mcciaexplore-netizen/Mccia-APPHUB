@@ -7,7 +7,7 @@ import { claimFiles, filesByIds } from "./files";
 import { peopleByIds } from "./host-adapter";
 
 /**
- * The design library: the team's shared folders of logos, brand assets, templates and finished designs. Everyone with Design Team or Design
+ * The design library: the team's shared folders of logos, brand assets, templates and finished designs. Everyone with Design Team Forms or Design
  * Team Admin can see, add, edit, replace (as a new version) and delete; requesters cannot see it. An item is one asset with its versions
  * (the newest is the current file). Deleting hides the folder or item; its files stay until "Delete all past data".
  */

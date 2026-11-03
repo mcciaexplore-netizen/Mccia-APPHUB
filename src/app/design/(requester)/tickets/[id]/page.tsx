@@ -8,7 +8,7 @@ import { requesterTicket } from "@/lib/design/requester-queries";
 import { isImage } from "@/lib/design/file-types";
 import { timeLeft, FINISHED_STATUSES } from "@/lib/design/rules";
 
-export const metadata = { title: "My request · Design Team" };
+export const metadata = { title: "My request · Design Team Forms" };
 
 /** The address that opens a stored file (the server checks who may, then redirects to a 60-second link). */
 const fileHref = (fileId: string, inline = false) => `/api/design/files/${fileId}${inline ? "?inline=1" : ""}`;

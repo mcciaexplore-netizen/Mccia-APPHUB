@@ -6,7 +6,7 @@ import { requireTeam } from "@/lib/design/dal";
 import { listTickets } from "@/lib/design/tickets";
 import { FINISHED_STATUSES, addDays, istDate } from "@/lib/design/rules";
 
-export const metadata = { title: "Calendar · Design Team Admin" };
+export const metadata = { title: "Calendar · Design Admin" };
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 

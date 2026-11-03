@@ -4,7 +4,7 @@ import { TicketView } from "@/components/design/ticket/ticket-view";
 import { DesignError, requireTeam } from "@/lib/design/dal";
 import { ticketDetail, type TicketDetail } from "@/lib/design/detail";
 
-export const metadata = { title: "Ticket · Design Team" };
+export const metadata = { title: "Ticket · Design Admin" };
 
 /** One ticket, for anyone in the creative team; anyone else is sent away by the layout. */
 export default async function TicketPage({ params }: { params: Promise<{ id: string }> }) {

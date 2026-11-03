@@ -28,7 +28,7 @@ export default async function WorkloadPage() {
       </div>
       {rows.length === 0 ? (
         <Card>
-          <Empty title="No designers yet">Give people the Design Team application in Administrator → Applications and they appear here.</Empty>
+          <Empty title="No designers yet">Give the creative team the Design Admin application in Administrator → Applications and they appear here.</Empty>
         </Card>
       ) : (
         <div className="ds-card overflow-x-auto">
