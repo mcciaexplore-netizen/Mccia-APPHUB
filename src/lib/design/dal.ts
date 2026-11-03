@@ -10,7 +10,7 @@ import { isLead, isMember, isRequester } from "./design.manifest";
  * HttpError. Off (DESIGN_ENABLED unset) looks like a page that does not exist; not signed in goes to the hub's sign-in; signed in without
  * the role goes back to where they belong.
  *   requester: Design Team Forms (design_requester), or anyone in the creative team (the request pages)
- *   team:      the creative team: Design Admin (design_member), its App Admins (design_lead) and the Support Admin
+ *   team:      the creative team: Design Admin's App Staff (design_member), its App Admins (design_lead) and the Support Admin
  *   admin:     the leads only (accept/decline, assign, priority, workload, reports, settings)
  *   super:     the Support Admin only
  */
@@ -54,7 +54,7 @@ async function assert(section: Section): Promise<SessionUser> {
   if (await needsOwnPassword()) throw new HttpError(403, "Choose your own password first: you are still using the temporary one.");
   const u = withFlags(a.user);
   if (section === "requester" && !u.requester) throw new HttpError(403, "You do not have Design Team Forms.");
-  if (section === "team" && !u.member) throw new HttpError(403, "You do not have Design Admin.");
+  if (section === "team" && !u.member) throw new HttpError(403, "Design Admin is for its App Staff and App Admins only.");
   if (section === "admin" && !u.lead) throw new HttpError(403, "Design leads (App Admins of Design Admin) only.");
   if (section === "super" && !u.superAdmin) throw new HttpError(403, "The Support Admin only.");
   return u;

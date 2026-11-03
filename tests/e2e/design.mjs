@@ -102,14 +102,17 @@ const d2 = await person("ZZD Designer Disha", "zzd-designer2@gmail.com");
 const lead = await person("ZZD Lead Lata", "zzd-lead@gmail.com");
 const requester2 = await person("ZZD Requester Two", "zzd-requester2@gmail.com");
 const outsider = await person("ZZD Outsider Om", "zzd-outsider@gmail.com");
+const unlisted = await person("ZZD Unlisted Uma", "zzd-unlisted@gmail.com");
 const [dept] = await sql`insert into departments (kind, name, icon) values ('application', 'ZZD Design', 'Palette') returning id`;
 const app = async (name, url) => (await sql`insert into apps (department_id, name, url, icon) values (${dept.id}, ${name}, ${url}, 'Palette') returning id`)[0];
 const teamApp = await app("ZZD Design Team Forms", "/design");
 const adminApp = await app("ZZD Design Admin", "/design/admin");
 const grant = (u, a) => sql`insert into user_app_access (user_id, app_id) values (${u.id}, ${a.id}) on conflict do nothing`;
-// Design Team Forms is for the people who ask for designs; Design Admin is the creative team, whose App Admins are the leads.
+// Design Team Forms is for the people who ask for designs; Design Admin is the creative team: its App Staff are the designers, its App
+// Admins the leads. Someone given Design Admin who is on neither list cannot open it.
 await grant(requester, teamApp); await grant(requester2, teamApp);
-await grant(d1, adminApp); await grant(d2, adminApp); await grant(lead, adminApp);
+await grant(d1, adminApp); await grant(d2, adminApp); await grant(lead, adminApp); await grant(unlisted, adminApp);
+await sql`insert into app_staff (app_id, user_id) values (${adminApp.id}, ${d1.id}), (${adminApp.id}, ${d2.id})`;
 await sql`insert into app_admins (app_id, user_id) values (${adminApp.id}, ${lead.id})`;
 // An App Admin of Design Admin who was never given it is not a lead.
 await sql`insert into app_admins (app_id, user_id) values (${adminApp.id}, ${outsider.id})`;
@@ -170,6 +173,7 @@ try {
   const L = await signedIn("zzd-lead@gmail.com");
   const R2 = await signedIn("zzd-requester2@gmail.com");
   const O = await signedIn("zzd-outsider@gmail.com");
+  const U = await signedIn("zzd-unlisted@gmail.com");
   const H = process.env.HEAD_ADMIN_EMAIL && process.env.HEAD_ADMIN_PASSWORD ? await signedIn(process.env.HEAD_ADMIN_EMAIL, process.env.HEAD_ADMIN_PASSWORD) : null;
 
   section("who may open which section");
@@ -178,7 +182,8 @@ try {
   await go(R.page, "/design/admin"); check("a requester is kept out of Design Admin", pathOf(R.page) === "/design/request", pathOf(R.page));
   await go(O.page, "/design/request"); check("without either application (even as an App Admin of it), the request pages send you to the hub", pathOf(O.page) === "/", pathOf(O.page));
   await go(O.page, "/design/admin"); check("and so does Design Admin", pathOf(O.page) === "/", pathOf(O.page));
-  await go(D1.page, "/design/admin"); check("the creative team opens Design Admin", pathOf(D1.page) === "/design/admin");
+  await go(U.page, "/design/admin"); check("given Design Admin but neither App Admin nor App Staff: sent to the hub", pathOf(U.page) === "/", pathOf(U.page));
+  await go(D1.page, "/design/admin"); check("App Staff of Design Admin (a designer) opens it", pathOf(D1.page) === "/design/admin");
   check("a member's menu: dashboard, board, library, calendar", (await navLabels(D1.page, "Design Admin")) === "Dashboard|Board|Library|Calendar", await navLabels(D1.page, "Design Admin"));
   for (const p of ["/design/admin/pending", "/design/admin/workload", "/design/admin/reports", "/design/admin/settings"]) {
     await go(D1.page, p); check(`a member is sent back from ${p}`, pathOf(D1.page) === "/design/admin", pathOf(D1.page));

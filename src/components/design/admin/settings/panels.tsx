@@ -340,7 +340,7 @@ export function TeamPanel({ team }: { team: TeamRow[] }) {
     <Card title="Team capacity and leave" pad={false}>
       <p className="px-5 pt-4 text-sm ds-muted">Hours a day each designer can design, and their leave. Used by the workload grid and auto-assignment.</p>
       {team.length === 0 ? (
-        <p className="px-5 py-6 text-sm ds-muted">Nobody has Design Admin yet. Give designers the Design Admin application in Administrator → Applications.</p>
+        <p className="px-5 py-6 text-sm ds-muted">No designers yet. Give designers the Design Admin application and add them to its App Staff in Administrator → Applications.</p>
       ) : (
         <ul className="divide-y divide-[var(--ds-line)]">
           {team.map((m) => (

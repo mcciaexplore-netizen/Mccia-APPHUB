@@ -12,8 +12,10 @@
  *
  * Roles:
  *   design_requester    anyone given the Design Team Forms application
- *   design_member       anyone given the Design Admin application
+ *   design_member       an App Staff member of the Design Admin application (who also holds it): the designers
  *   design_lead         an App Admin of the Design Admin application (who also holds it)
+ * Both lists are kept on the application's Edit form in Administrator → Applications. Someone given Design Admin who is on neither list
+ * cannot open it.
  *   design_super_admin  the Support Admin (head_admin) only: also Integrations (email test, Slack) and "Delete all past data"
  * The Support Admin holds all four.
  *
@@ -34,11 +36,11 @@ export const SECTION_ROLES: Record<DesignSection, readonly DesignRole[]> = {
 };
 
 /** A person's roles from what the hub says about them (see the header). */
-export function designRolesFor(input: { hubRole: string; teamAccess: boolean; adminAccess: boolean; adminAppAdmin: boolean }): DesignRole[] {
+export function designRolesFor(input: { hubRole: string; teamAccess: boolean; adminAccess: boolean; adminAppAdmin: boolean; adminAppStaff: boolean }): DesignRole[] {
   const head = input.hubRole === "head_admin";
   const roles: DesignRole[] = [];
   if (head || input.teamAccess) roles.push("design_requester");
-  if (head || input.adminAccess) roles.push("design_member");
+  if (head || (input.adminAccess && (input.adminAppStaff || input.adminAppAdmin))) roles.push("design_member");
   if (head || (input.adminAccess && input.adminAppAdmin)) roles.push("design_lead");
   if (head) roles.push("design_super_admin");
   return roles;

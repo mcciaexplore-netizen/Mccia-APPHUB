@@ -27,20 +27,22 @@ const appHolders = (pattern: string) => sql`select ua.user_id from user_app_acce
 
 /**
  * One query: whether the person has been given Design Team Forms (URL /design) and Design Admin (URL /design/admin), and whether they are
- * one of Design Admin's App Admins (the leads).
+ * one of Design Admin's App Admins (the leads) or App Staff (the designers).
  */
-async function standing(userId: string): Promise<{ teamAccess: boolean; adminAccess: boolean; adminAppAdmin: boolean }> {
+async function standing(userId: string): Promise<{ teamAccess: boolean; adminAccess: boolean; adminAppAdmin: boolean; adminAppStaff: boolean }> {
   const res = await db.execute(sql`
     select coalesce(bool_or(a.url ~ ${DESIGN_TEAM_URL_PATTERN} and ua.user_id is not null), false) as team_access,
       coalesce(bool_or(a.url ~ ${DESIGN_ADMIN_URL_PATTERN} and ua.user_id is not null), false) as admin_access,
-      coalesce(bool_or(a.url ~ ${DESIGN_ADMIN_URL_PATTERN} and aa.user_id is not null), false) as admin_app_admin
+      coalesce(bool_or(a.url ~ ${DESIGN_ADMIN_URL_PATTERN} and aa.user_id is not null), false) as admin_app_admin,
+      coalesce(bool_or(a.url ~ ${DESIGN_ADMIN_URL_PATTERN} and st.user_id is not null), false) as admin_app_staff
     from apps a
     join departments d on d.id = a.department_id
     left join user_app_access ua on ua.app_id = a.id and ua.user_id = ${userId}
     left join app_admins aa on aa.app_id = a.id and aa.user_id = ${userId}
+    left join app_staff st on st.app_id = a.id and st.user_id = ${userId}
     where a.is_active and d.is_active and a.status <> 'unavailable' and (a.url ~ ${DESIGN_TEAM_URL_PATTERN} or a.url ~ ${DESIGN_ADMIN_URL_PATTERN})`);
-  const r = rowsOf<{ team_access: boolean; admin_access: boolean; admin_app_admin: boolean }>(res)[0];
-  return { teamAccess: !!r?.team_access, adminAccess: !!r?.admin_access, adminAppAdmin: !!r?.admin_app_admin };
+  const r = rowsOf<{ team_access: boolean; admin_access: boolean; admin_app_admin: boolean; admin_app_staff: boolean }>(res)[0];
+  return { teamAccess: !!r?.team_access, adminAccess: !!r?.admin_access, adminAppAdmin: !!r?.admin_app_admin, adminAppStaff: !!r?.admin_app_staff };
 }
 
 async function departmentName(id: string | null): Promise<string | null> {
@@ -54,16 +56,20 @@ export const resolveAccess = cache(async (): Promise<Access> => {
   const host = await hostCurrentUser();
   if (!host) return { status: "anonymous" };
   const [s, department] = await Promise.all([standing(host.id), departmentName(host.homeDepartmentId)]);
-  const roles = designRolesFor({ hubRole: host.role, teamAccess: s.teamAccess, adminAccess: s.adminAccess, adminAppAdmin: s.adminAppAdmin });
+  const roles = designRolesFor({ hubRole: host.role, teamAccess: s.teamAccess, adminAccess: s.adminAccess, adminAppAdmin: s.adminAppAdmin, adminAppStaff: s.adminAppStaff });
   return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles, hubRole: host.role, department } };
 });
 
 /** Whether the person is still on the temporary password they were emailed. */
 export const needsOwnPassword = async () => !!(await hostCurrentUser())?.mustChangePassword;
 
-/** Everyone given Design Admin (the creative team, who work on requests), by name. */
+/** The designers: Design Admin's App Staff who also hold it, by name. */
 export async function listDesigners(): Promise<Person[]> {
-  return db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(sql`${users.id} in (${appHolders(DESIGN_ADMIN_URL_PATTERN)})`).orderBy(asc(users.name));
+  return db
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(sql`${users.id} in (${appHolders(DESIGN_ADMIN_URL_PATTERN)}) and ${users.id} in (select st.user_id from app_staff st join apps a on a.id = st.app_id where a.url ~ ${DESIGN_ADMIN_URL_PATTERN})`)
+    .orderBy(asc(users.name));
 }
 
 /** The App Admins of Design Admin who also hold it (the leads), by name. With none, the Support Admins stand in, so nothing goes unnoticed. */

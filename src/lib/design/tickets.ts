@@ -132,7 +132,7 @@ export async function getTicket(id: string): Promise<Ticket | null> {
   return t ?? null;
 }
 
-/** Whether this person may work on the ticket: anyone in the creative team (Design Admin) may open and work on every ticket. */
+/** Whether this person may work on the ticket: anyone in the creative team (Design Admin's App Staff and App Admins) may open and work on every ticket. */
 export const canWork = (u: SessionUser) => u.member;
 
 /** The ticket for team pages and actions, or a 404-style error (so ids cannot be probed). */

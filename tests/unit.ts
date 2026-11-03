@@ -1032,12 +1032,13 @@ const ssoTests = (async () => {
 
 {
   // DesignDesk: roles and menus
-  const roles = (hubRole: string, teamAccess: boolean, adminAccess: boolean, adminAppAdmin = false) => designRolesFor({ hubRole, teamAccess, adminAccess, adminAppAdmin });
-  eq("design roles: Design Team Forms makes a requester; Design Admin a member of the creative team", [roles("member", true, false), roles("member", false, true), roles("admin", false, false)], [["design_requester"], ["design_member"], []]);
+  const roles = (hubRole: string, teamAccess: boolean, adminAccess: boolean, adminAppAdmin = false, adminAppStaff = !adminAppAdmin) => designRolesFor({ hubRole, teamAccess, adminAccess, adminAppAdmin, adminAppStaff });
+  eq("design roles: Design Team Forms makes a requester; Design Admin + App Staff a designer", [roles("member", true, false), roles("member", false, true), roles("admin", false, false)], [["design_requester"], ["design_member"], []]);
+  eq("design roles: given Design Admin but neither App Admin nor App Staff: no role; App Staff without the app: none either", [roles("member", false, true, false, false), roles("member", true, true, false, false), roles("member", false, false, false, true)], [[], ["design_requester"], []]);
   eq("design roles: an App Admin of Design Admin (who holds it) is a lead; App Admin without the app is not", [roles("member", false, true, true), roles("member", false, false, true)], [["design_member", "design_lead"], []]);
   const NON_HEAD = ["member", "dept_lead", "admin", "super_admin", "hr_admin", "expense_admin"];
-  eq("design roles: the hub role makes no difference: Design Admin + App Admin = lead, without App Admin = member, for every hub role but the Support Admin",
-    NON_HEAD.map((r) => [roles(r, false, true, true), roles(r, false, true, false)]), NON_HEAD.map(() => [["design_member", "design_lead"], ["design_member"]]));
+  eq("design roles: the hub role makes no difference: Design Admin + App Admin = lead, + App Staff = member, for every hub role but the Support Admin",
+    NON_HEAD.map((r) => [roles(r, false, true, true), roles(r, false, true, false, true)]), NON_HEAD.map(() => [["design_member", "design_lead"], ["design_member"]]));
   eq("design roles: the Support Admin holds all four", roles("head_admin", false, false), ["design_requester", "design_member", "design_lead", "design_super_admin"]);
   eq("design menus: requesters get the request pages only", [designNavFor("requester", ["design_requester"]).map((i) => i.href), designNavFor("admin", ["design_requester"]).length], [["/design/request", "/design/my-requests", "/design/requests", "/design/campaigns"], 0]);
   eq("design menus: a member sees the board, library and calendar, not the leads' pages", designNavFor("admin", ["design_member"]).map((i) => i.label), ["Dashboard", "Board", "Library", "Calendar"]);
