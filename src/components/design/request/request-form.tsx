@@ -47,6 +47,7 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
   const [chosen, setChosen] = useState<string[]>([]);
   const [answers, setAnswers] = useState<Answers>({});
   const [brief, setBrief] = useState("");
+  const [content, setContent] = useState("");
   const [eventName, setEventName] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [links, setLinks] = useState<string[]>([""]);
@@ -68,6 +69,7 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
     setChosen([]);
     setAnswers({});
     setBrief("");
+    setContent("");
     setEventName("");
     setEventDate("");
     setLinks([""]);
@@ -89,6 +91,7 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
         requirements: chosen,
         details: Object.fromEntries(chosen.map((k) => [k, answers[k] ?? {}])),
         brief,
+        content,
         eventName,
         eventDate,
         department,
@@ -242,7 +245,6 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
             </div>
           <div className="flex flex-col gap-2 text-sm">
             <span className="font-semibold text-ink">Files <span className="font-normal ds-muted">(optional)</span></span>
-            <span className="-mt-1 text-xs ds-muted">(Or if you have any other design requirement please mention in a document)</span>
             <FileDrop
               purpose="attachment"
               maxFiles={MAX_FILES}
@@ -253,6 +255,18 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
               hint={`Share content for Design Creatives · Word, PDF, PowerPoint, Excel, images, text, RTF, ODT, Markdown · up to ${MAX_FILES} files, ${MAX_FILE_MB} MB each`}
             />
           </div>
+          <label className="flex flex-col gap-2 text-sm" htmlFor="content">
+            <span className="font-semibold text-ink">Share content for Design Creatives</span>
+            <span className="-mt-1 text-xs ds-muted">(Or if you have any other design requirement please mention in the document)</span>
+            <textarea
+              id="content"
+              className="input min-h-32"
+              rows={5}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="Type your content here... (text for banner, social media post, event details, etc.)"
+            />
+          </label>
         </div>
       </Card>
 

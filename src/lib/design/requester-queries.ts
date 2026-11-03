@@ -3,6 +3,7 @@ import { requesterProofs } from "./approvals";
 import { cdrFor, type CdrDto } from "./cdr";
 import type { SessionUser } from "./dal";
 import { filesByIds } from "./files";
+import { contentOf } from "./form";
 import { progressOf } from "./public";
 import { getTicket, listTickets, ticketForRequester, toCards, type TicketCard } from "./tickets";
 
@@ -54,6 +55,7 @@ export async function myRequests(userId: string): Promise<MyRequest[]> {
 
 export type RequesterTicket = MyRequest & {
   brief: string;
+  content: string;
   eventName: string | null;
   /** The proof to show: the one waiting for review, else the approved one. */
   proof: { fileId: string; version: number; mime: string; fileName: string; approved: boolean } | null;
@@ -70,6 +72,7 @@ export async function requesterTicket(u: SessionUser, id: string): Promise<Reque
   return {
     ...r,
     brief: t.brief,
+    content: contentOf(t.details),
     eventName: t.eventName,
     proof: shown && f ? { fileId: f.id, version: shown.version, mime: f.mime, fileName: f.fileName, approved: !r.pending } : null,
     steps: progress.steps,

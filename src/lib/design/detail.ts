@@ -6,7 +6,7 @@ import { DesignError, type SessionUser } from "./dal";
 import { filesByIds } from "./files";
 import { formTypes, typeNames } from "./config";
 import { listAssignable, peopleByIds } from "./host-adapter";
-import { answerLines } from "./form";
+import { answerLines, contentOf } from "./form";
 import { proofsFor, type ProofDto } from "./approvals";
 import { cdrFor, type CdrDto } from "./cdr";
 import { runningTimer, timeFor, type TimeDto } from "./time";
@@ -22,6 +22,8 @@ export type PinDto = { id: string; proofVersionId: string; xPct: number; yPct: n
 export type TicketDetail = {
   card: TicketCard;
   brief: string;
+  /** What the requester typed to go on the design (the request form's content box); empty when they wrote none. */
+  content: string;
   eventName: string | null;
   referenceLinks: string[];
   answers: { design: string; lines: string[] }[];
@@ -74,6 +76,7 @@ export async function ticketDetail(u: SessionUser, id: string): Promise<TicketDe
   return {
     card,
     brief: t.brief,
+    content: contentOf(t.details),
     eventName: t.eventName,
     referenceLinks: t.referenceLinks,
     answers: answerLines(t.requirements, t.details, allTypes),

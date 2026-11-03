@@ -207,7 +207,7 @@ try {
   check("Photo / video / reel is no longer offered (eleven kinds), even where its row is still switched on", !/Photo \/ video \/ reel/i.test(requestFormText) && (await R.page.locator('fieldset input[type="checkbox"]').count()) === 11, (await R.page.locator('fieldset input[type="checkbox"]').count()));
   const refs = R.page.locator("section", { has: R.page.getByRole("heading", { name: "References", exact: true }) });
   const refsText = await refs.innerText().catch(() => "");
-  check("one References card holds both the links and the files, with its notes", /Add links or files for reference \(logos, examples, inspiration, content\)/.test(refsText) && /Links/.test(refsText) && /Files/.test(refsText) && /Share content for Design Creatives/.test(refsText) && /\(Or if you have any other design requirement please mention in a document\)/.test(refsText) && (await refs.getByPlaceholder("https://...").count()) === 1 && (await refs.locator('input[type="file"]').count()) === 1, refsText.slice(0, 200));
+  check("one References card holds both the links and the files, with its notes", /Add links or files for reference \(logos, examples, inspiration, content\)/.test(refsText) && /Links/.test(refsText) && /Files/.test(refsText) && /Share content for Design Creatives/.test(refsText) && /\(Or if you have any other design requirement please mention in the document\)/.test(refsText) && (await refs.locator("#content").count()) === 1 && (await refs.getByPlaceholder("https://...").count()) === 1 && (await refs.locator('input[type="file"]').count()) === 1, refsText.slice(0, 200));
   check("reference links: https://... placeholder, a remove button, and Add another link", (await R.page.getByPlaceholder("https://...").count()) === 1 && (await R.page.getByRole("button", { name: "Remove link 1" }).count()) === 1 && (await R.page.getByRole("button", { name: /Add another link/ }).count()) === 1);
   for (let i = 0; i < 4; i++) await R.page.getByRole("button", { name: /Add another link/ }).click();
   check("up to five links, then no more Add another link", (await R.page.getByPlaceholder("https://...").count()) === 5 && !(await R.page.getByRole("button", { name: /Add another link/ }).count()));
@@ -220,6 +220,7 @@ try {
   await R.page.selectOption("#q-flyer-language", "Marathi");
   await R.page.fill("#brief", "ZZD annual meeting flyer: logo top left, date and venue large.");
   await R.page.fill("#event-name", "ZZD AGM");
+  await R.page.fill("#content", "ZZD Annual General Meeting\n12 November, 5 pm, MCCIA Hall");
   await R.page.fill("#delivery", istDay(5));
   check("priority shows itself from the date (5 days: Normal)", await poll(async () => /Normal/.test(await R.page.locator("main").innerText())));
   check("a reference file uploads straight to storage", await upload(R.page, "zzd-logo.png"));
@@ -231,7 +232,7 @@ try {
   check("success screen: the ticket number and the tracking link", !!number && !!trackPath, formText.slice(0, 160));
   let t1 = await ticketByNumber(number);
   check("the request waits in Pending Review, Normal priority, due 18:00 IST on the day asked", t1?.status === "pending_review" && t1.priority === "normal" && t1.department === "ZZD Marketing" && new Date(t1.due_at).toISOString() === new Date(`${istDay(5)}T12:30:00Z`).toISOString());
-  check("the answers are kept per design", JSON.stringify(t1.details) === JSON.stringify({ flyer: { size: "A4", channel: "Print", language: "Marathi" } }), JSON.stringify(t1.details));
+  check("the answers are kept per design", JSON.stringify(t1.details.flyer) === JSON.stringify({ size: "A4", channel: "Print", language: "Marathi" }), JSON.stringify(t1.details));
   const att = await sql`select f.storage_key, f.size from design_attachments a join design_files f on f.id = a.file_id where a.ticket_id = ${t1.id}`;
   check("the file is attached, its size checked in storage", att.length === 1 && att[0].size === PNG.length);
   if (STUB) check("the file really is in the storage bucket", (await (await fetch(`${STUB}/_stub/count`)).json()).keys.some((k) => k.endsWith(att[0].storage_key)));
@@ -244,6 +245,7 @@ try {
   await go(R2.page, "/design/requests");
   check("where another requester sees only their own (not this one)", pathOf(R2.page) === "/design/my-requests" && !(await mainText(R2.page)).includes(number) && /You haven't submitted any requests yet/.test(await mainText(R2.page)));
 
+  check("the content typed for the design is kept with the request", (await ticketByNumber(number))?.details?.__content?.text === "ZZD Annual General Meeting\n12 November, 5 pm, MCCIA Hall", JSON.stringify((await ticketByNumber(number))?.details));
   check("an http:// reference link is accepted and kept", JSON.stringify((await ticketByNumber(number))?.reference_links) === JSON.stringify(["http://example.org/brief"]), JSON.stringify((await ticketByNumber(number))?.reference_links));
   const mediaTicket = (await sql`insert into design_tickets (number, title, brief, design_type_id, requirements, details, status, requester_id, assignee_id, priority)
     select 'DF-ZZD-3', 'ZZD old reel', 'x', id, '["media"]'::jsonb, '{"media": {"duration": "30 seconds"}}'::jsonb, 'closed', ${lead.id}, ${d1.id}, 'normal' from design_types where key = 'media' returning id`)[0];
@@ -298,6 +300,7 @@ try {
   const feedL = await L.page.evaluate(async () => (await (await fetch("/api/design/activity")).json()).items.map((i) => i.number));
   check("Dev's feed and the lead's include it", feed1.includes(number) && feedL.includes(number));
   check("a lead opens it", (await go(L.page, `/design/admin/tickets/${t1.id}`))?.status() === 200);
+  check("the ticket page shows the requester's content for the design", /Content for the design/i.test(await mainText(L.page)) && (await mainText(L.page)).includes("12 November, 5 pm, MCCIA Hall"));
   check("its history shows who accepted it, above the rest", /Accepted by ZZD Lead Lata/.test(await L.page.locator("section", { hasText: "History" }).last().innerText()));
   await go(L.page, "/design/admin");
   const accepted = L.page.locator("section", { has: L.page.getByRole("heading", { name: "Requests I accepted" }) });
@@ -375,6 +378,7 @@ try {
   check("the requester's own ticket page: number, progress, the design to review and the brief", rt.includes(number) && rt.includes("Design for your review") && (await R.page.getByLabel("Progress: In review").count()) === 1 && rt.includes("logo top left"));
   check("it shows Approve and Request changes while in review", (await R.page.getByRole("button", { name: /^Approve$/ }).count()) === 1 && (await R.page.getByRole("button", { name: /Request changes/ }).count()) === 1);
   check("and nothing about who works on it: no designer, notes or time", !rt.includes("ZZD Designer Dev") && !rt.includes("internal note") && !/time logged|subtask/i.test(rt));
+  check("the requester's own request page shows their content", rt.includes("12 November, 5 pm, MCCIA Hall"));
   await go(R.page, "/design/my-requests");
   check("My Requests links to the request's page", (await R.page.getByRole("link", { name: "Open request →" }).count()) >= 1);
   check("My Requests sends the browser nothing about who it is assigned to", !(await R.page.content()).includes("ZZD Designer Dev"));

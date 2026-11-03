@@ -12,6 +12,15 @@ export const MAX_FILE_MB = 10;
 export const MAX_CDR_MB = 50;
 export const MAX_REFERENCE_LINKS = 5;
 export const MAX_ANSWER_LENGTH = 200;
+/** The content box ("Share content for Design Creatives") has no limit on the form; this only stops a runaway paste. */
+export const MAX_CONTENT_LENGTH = 50_000;
+
+/**
+ * The content the requester typed to go on the design (banner text, a post's caption, event details) is kept in the ticket's details
+ * under this key, beside the answers for each design (which are keyed by kind of design, so they can never clash with it).
+ */
+export const CONTENT_KEY = "__content";
+export const contentOf = (details: Record<string, Record<string, string | number>> | null | undefined): string => String(details?.[CONTENT_KEY]?.text ?? "");
 
 const q = (id: string, label: string, type: DesignQuestion["type"] = "text", options?: string[], required = false): DesignQuestion => ({
   id,
@@ -106,6 +115,7 @@ export const requestInput = z.object({
   department: z.string().trim().max(120, "The department name is too long").default(""),
   deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose the date you need it by"),
   referenceLinks: z.array(z.string().trim()).max(20).default([]),
+  content: z.string().max(MAX_CONTENT_LENGTH, "The content is too long: put it in a document and attach it instead").default(""),
   fileIds: z.array(z.string().uuid()).max(MAX_FILES, `Attach at most ${MAX_FILES} files`).default([]),
 });
 export type RequestInput = z.input<typeof requestInput>;
@@ -157,6 +167,8 @@ export function checkRequest(input: RequestInput, types: Map<string, FormType>, 
     if (!res.ok) return res;
     details[r] = res.answers;
   }
+  const content = v.content.replace(/\r\n/g, "\n").trim();
+  if (content) details[CONTENT_KEY] = { text: content };
   const links = cleanLinks(v.referenceLinks);
   if (!links.ok) return links;
   return {

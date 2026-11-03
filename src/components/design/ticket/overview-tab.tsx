@@ -39,6 +39,12 @@ export function OverviewTab({ d, viewer, editable }: { d: TicketDetail; viewer: 
       <div className="flex flex-col gap-5">
         <Card title="Brief">
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">{d.brief}</p>
+          {d.content && (
+            <div className="mt-4 rounded-lg border border-[var(--ds-line)] bg-[#fafafa] px-3 py-2 text-sm">
+              <span className="ds-label block">Content for the design</span>
+              <span className="whitespace-pre-wrap text-ink">{d.content}</span>
+            </div>
+          )}
           {d.reasonForChange && (
             <div className="mt-4 rounded-lg border border-[rgba(217,119,6,0.25)] bg-[var(--ds-amber-tint)] px-3 py-2 text-sm">
               <span className="ds-label block">Changes asked for (version {t.versionNumber})</span>

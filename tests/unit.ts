@@ -65,7 +65,7 @@ import {
   isSlackWebhook as designSlack, figmaEmbedUrl as designFigma, priorityFor as designPriority, requesterTabOf as designTab, revisionTags as designRevTags, slaHoursFor as designSla,
   stepOf as designStep, versionNumber as designVersion, workingDue as designWorkingDue,
 } from "../src/lib/design/rules";
-import { MAX_FILES as DESIGN_MAX_FILES, RETIRED_TYPE_KEYS as DESIGN_RETIRED, SEED_TYPES as DESIGN_SEED, checkRequest as designCheck, cleanLinks as designLinks, ticketTitle as designTitle } from "../src/lib/design/form";
+import { MAX_FILES as DESIGN_MAX_FILES, RETIRED_TYPE_KEYS as DESIGN_RETIRED, contentOf as designContentOf, SEED_TYPES as DESIGN_SEED, checkRequest as designCheck, cleanLinks as designLinks, ticketTitle as designTitle } from "../src/lib/design/form";
 import { loadTone as designTone, suggestAssignee as designSuggest, workingDays as designDays, workloadGrid as designGrid } from "../src/lib/design/capacity";
 import { mimeFor as designMime, safeFileName as designSafeName } from "../src/lib/design/file-types";
 
@@ -1070,6 +1070,8 @@ const ssoTests = (async () => {
   const base = { requirements: ["flyer"], details: { flyer: { size: "A4", channel: "Print", language: "Marathi" } }, brief: "Annual meeting flyer", deliveryDate: "2026-11-10" };
   const r = designCheck(base, types, "2026-11-02");
   eq("design form: a good flyer request passes with its answers", r.ok && r.value.details, { flyer: { size: "A4", channel: "Print", language: "Marathi" } });
+  const withContent = designCheck({ ...base, content: "  Annual General Meeting\r\n12 Nov, 5 pm, MCCIA Hall  " }, types, "2026-11-02");
+  eq("design form: the content box is kept (trimmed) beside the answers, and read back; none is not stored", [withContent.ok && designContentOf(withContent.value.details), withContent.ok && withContent.value.details.flyer, r.ok && "__content" in r.value.details], ["Annual General Meeting\n12 Nov, 5 pm, MCCIA Hall", { size: "A4", channel: "Print", language: "Marathi" }, false]);
   eq("design form: a required question", designCheck({ ...base, details: { flyer: { channel: "Print" } } }, types, "2026-11-02"), { ok: false, error: "Size is required" });
   eq("design form: a select answer must be on the list", designCheck({ ...base, details: { flyer: { size: "A3", channel: "Print" } } }, types, "2026-11-02"), { ok: false, error: "Size: please choose from the list" });
   eq("design form: with several designs the error names the design", designCheck({ ...base, requirements: ["flyer", "banner"] }, types, "2026-11-02"), { ok: false, error: "Banner / standee – Size (width x height) is required" });

@@ -111,6 +111,12 @@ export default async function RequesterTicketPage({ params }: { params: Promise<
             </p>
           )}
           <p className="whitespace-pre-wrap text-sm text-ink">{r.brief}</p>
+          {r.content && (
+            <div className="mt-4 rounded-lg border border-[var(--ds-line)] bg-[#fafafa] px-3 py-2 text-sm">
+              <span className="ds-label block">Your content for the design</span>
+              <span className="whitespace-pre-wrap text-ink">{r.content}</span>
+            </div>
+          )}
         </Card>
         <Card title="Activity">
           <ol className="flex flex-col gap-3">
