@@ -681,20 +681,40 @@ try {
     await S.page.locator("input[name=dropoff]").press("ArrowDown"); await S.page.locator("input[name=dropoff]").press("ArrowDown"); await S.page.locator("input[name=dropoff]").press("Enter");
     check("the arrow keys and Enter pick an office too (the second: Hadapsar)", (await S.page.inputValue("input[name=dropoff]")).startsWith("MCCIA Hadapsar Office") && new URL(S.page.url()).pathname === "/cabs");
 
-    // Address search without Geoapify: Nominatim, only on Enter, kept to the Pune area (answered here by a stand-in).
+    // Address search: the hub's own search (/api/cabs/places: Photon, Pune first) as the person types; Enter searches harder. Answered here by
+    // a stand-in in the browser, so the test never depends on the outside services.
     const sctx = S.page.context();
-    const asked = [];
-    await sctx.route("https://nominatim.openstreetmap.org/search**", (rt) => { asked.push(rt.request().url()); return rt.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ display_name: "ZZC Shaniwar Wada, Pune", lat: "18.5195", lon: "73.8553" }]) }); });
+    const hub = [];
+    const nomi = [];
+    let hubDown = false;
+    await sctx.route("**/api/cabs/places?**", (rt) => {
+      hub.push(rt.request().url());
+      if (hubDown) return rt.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "down" }) });
+      return rt.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, places: [{ name: "ZZC Shaniwar Wada", area: "Shaniwar Peth, Pune", kind: "Attraction", lat: 18.5195, lng: 73.8553 }] }) });
+    });
+    await sctx.route("https://nominatim.openstreetmap.org/search**", (rt) => { nomi.push(rt.request().url()); return rt.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ display_name: "ZZC Nominatim Wada, Pune", lat: "18.5195", lon: "73.8553" }]) }); });
     await go(S.page, "/cabs");
-    await S.page.fill("input[name=pickup]", "Shaniwar Wada");
-    await S.page.waitForTimeout(800);
-    check("address search: nothing is sent to Nominatim while typing", asked.length === 0);
+    await S.page.locator("input[name=pickup]").pressSequentially("Shaniwar Wada", { delay: 20 });
+    const hubOption = S.page.getByRole("option", { name: /ZZC Shaniwar Wada/ });
+    check("address search: suggestions as you type, from the hub's search (nothing sent to Nominatim)", await hubOption.waitFor({ timeout: 10000 }).then(() => true).catch(() => false) && nomi.length === 0 && hub.some((u) => new URL(u).searchParams.get("q") === "Shaniwar Wada" && !new URL(u).searchParams.get("more")), hub.join(" "));
+    check("…each as its name over its kind and area", /Attraction · Shaniwar Peth, Pune/.test(await hubOption.innerText()));
     await S.page.locator("input[name=pickup]").press("Enter");
-    await S.page.getByRole("option", { name: /ZZC Shaniwar Wada/ }).click();
-    const q = asked[0] ? new URL(asked[0]).searchParams : null;
-    check("…Enter searches Nominatim in India, bounded to the Pune area, and does not send the booking form", asked.length === 1 && q?.get("q") === "Shaniwar Wada" && q.get("countrycodes") === "in"
-      && q.get("viewbox") === "72.6,17.8,74.8,19.5" && q.get("bounded") === "1" && new URL(S.page.url()).pathname === "/cabs", asked.join(" "));
-    check("…and choosing the result keeps its coordinates", (await S.page.inputValue("input[name=pickup]")) === "ZZC Shaniwar Wada, Pune" && (await S.page.locator('[data-located="pickup"]').count()) === 1);
+    check("…Enter searches harder (more=1) and does not send the booking form", await poll(async () => hub.some((u) => new URL(u).searchParams.get("more") === "1"), 8000) && new URL(S.page.url()).pathname === "/cabs");
+    await hubOption.click();
+    check("…and choosing the result keeps its coordinates", (await S.page.inputValue("input[name=pickup]")) === "ZZC Shaniwar Wada, Shaniwar Peth, Pune" && (await S.page.locator('[data-located="pickup"]').count()) === 1);
+    // When the hub's search cannot answer (and there is no Geoapify key): Nominatim from the browser, only on Enter, kept to Pune.
+    hubDown = true;
+    await go(S.page, "/cabs");
+    await S.page.locator("input[name=pickup]").pressSequentially("Shaniwar Wada", { delay: 20 });
+    await S.page.waitForTimeout(800);
+    check("hub search down: nothing is sent to Nominatim while typing", nomi.length === 0);
+    await S.page.locator("input[name=pickup]").press("Enter");
+    await S.page.getByRole("option", { name: /ZZC Nominatim Wada/ }).click();
+    const q = nomi[0] ? new URL(nomi[0]).searchParams : null;
+    check("…Enter searches Nominatim in India, bounded to Pune and Pimpri-Chinchwad, and does not send the booking form", nomi.length === 1 && q?.get("q") === "Shaniwar Wada" && q.get("countrycodes") === "in"
+      && q.get("viewbox") === "73.7,18.35,74.05,18.7" && q.get("bounded") === "1" && new URL(S.page.url()).pathname === "/cabs", nomi.join(" "));
+    check("…and choosing the result keeps its coordinates", (await S.page.inputValue("input[name=pickup]")) === "ZZC Nominatim Wada, Pune" && (await S.page.locator('[data-located="pickup"]').count()) === 1);
+    await sctx.unroute("**/api/cabs/places?**");
     await sctx.unroute("https://nominatim.openstreetmap.org/search**");
 
     // GPS failures, each with its own message.

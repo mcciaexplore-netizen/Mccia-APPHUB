@@ -2,15 +2,16 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Building2, LocateFixed, MapPin } from "lucide-react";
-import { GEOAPIFY_KEY, geoapifySuggest, gpsErrorMessage, nominatimSearch, reverseGeocode, type Found } from "./geo";
+import { GEOAPIFY_KEY, geoapifySuggest, gpsErrorMessage, hubSearch, nominatimSearch, reverseGeocode, type Found } from "./geo";
 import { officeText, officesFor, type Office } from "./offices";
 
 export type Place = { text: string; lat: number | null; lng: number | null };
 
 /**
- * An address box with suggestions. With Geoapify (NEXT_PUBLIC_GEOAPIFY_API_KEY), they come as the person types (after 3 letters, 300 ms after
- * typing stops). Without the key, or once Geoapify fails, it searches OpenStreetMap's Nominatim when the person presses Enter (its rules
- * forbid searching on every keystroke). Choosing a suggestion keeps its coordinates; typing again drops them, so text and coordinates never
+ * An address box with suggestions, as the person types (after 3 letters, 300 ms after typing stops): from the hub's own address search
+ * (Photon, Pune and Pimpri-Chinchwad first; see src/lib/cabs/places.ts), each as its name over its kind and area. Enter searches harder
+ * (Nominatim too). If the hub's search cannot answer, Geoapify takes over (with NEXT_PUBLIC_GEOAPIFY_API_KEY), and failing that the box
+ * searches OpenStreetMap's Nominatim from the browser when the person presses Enter (its rules forbid searching on every keystroke). Choosing a suggestion keeps its coordinates; typing again drops them, so text and coordinates never
  * disagree. `locate` adds "Use my location" (high-accuracy GPS, turned into an address). `bare`: no label or border, for a row inside the
  * booking form's location card (the label is then only read out to screen readers).
  *
@@ -26,8 +27,10 @@ export function AddressInput({ name, label, value, onChange, placeholder, locate
   const [active, setActive] = useState(-1);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
-  // Geoapify could not be used (no key, or it failed): search Nominatim on Enter instead.
-  const [fallback, setFallback] = useState(!GEOAPIFY_KEY);
+  // Which search answers as the person types: the hub's, then Geoapify (with its key) if that fails, then none.
+  const [provider, setProvider] = useState<"hub" | "geoapify" | "none">("hub");
+  // Neither could be used: search Nominatim from the browser on Enter instead.
+  const fallback = provider === "none";
   const [searching, setSearching] = useState(false);
   const typed = useRef(false);
   // Whether the list may show: on focus and while typing; not once something has been chosen, nor after Escape or leaving the box.
@@ -39,25 +42,27 @@ export function AddressInput({ name, label, value, onChange, placeholder, locate
     const ctl = new AbortController();
     const t = setTimeout(async () => {
       try {
-        const found = await geoapifySuggest(q, ctl.signal);
+        const found = provider === "hub" ? await hubSearch(q, false, ctl.signal) : await geoapifySuggest(q, ctl.signal);
         setItems(found); setOpen(true); setActive(-1);
+        setNote(found.length ? "" : provider === "hub" ? "No match nearby yet. Keep typing, or press Enter to search harder." : "");
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
-          // Geoapify is down or refused the key: Nominatim (on Enter) from now on. Said in the console, with the reason but never the key.
-          console.warn(`[cabs] Geoapify address suggestions failed (${(e as Error).message}); searching OpenStreetMap on Enter instead.`);
-          setFallback(true);
+          // The search is down (or Geoapify refused its key): the next one along. Said in the console, with the reason but never a key.
+          console.warn(`[cabs] ${provider === "hub" ? "Address" : "Geoapify address"} suggestions failed (${(e as Error).message}); trying the next search.`);
+          setProvider(provider === "hub" && GEOAPIFY_KEY ? "geoapify" : "none");
         }
       }
     }, 300);
     return () => { clearTimeout(t); ctl.abort(); };
-  }, [value.text, value.lat, fallback]);
+  }, [value.text, value.lat, fallback, provider]);
 
+  // Enter: a thorough search (the hub's, with Nominatim too), or Nominatim from the browser when the hub's search is not answering.
   const search = async () => {
     const q = value.text.trim();
     if (q.length < 3) { setNote("Type at least 3 letters, then press Enter to search."); return; }
     setSearching(true); setNote("");
     try {
-      const found = await nominatimSearch(q);
+      const found = provider === "hub" ? await hubSearch(q, true).catch(() => nominatimSearch(q)) : await nominatimSearch(q);
       setItems(found); setOpen(true); setActive(-1);
       if (!found.length) setNote("No address found near Pune. Check the spelling, or keep what you typed.");
     } catch { setNote("Address search is not available right now. You can keep what you typed."); }
@@ -92,8 +97,8 @@ export function AddressInput({ name, label, value, onChange, placeholder, locate
 
   const key = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && options.length && active >= 0) { e.preventDefault(); pick(active); return; }
-    // Without Geoapify, Enter searches (and never sends the booking form by accident).
-    if (fallback && e.key === "Enter") { e.preventDefault(); void search(); return; }
+    // Enter searches harder (and never sends the booking form by accident); Geoapify has nothing more to give.
+    if (provider !== "geoapify" && e.key === "Enter") { e.preventDefault(); void search(); return; }
     if (!options.length) return;
     if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => (a + 1) % options.length); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => (a <= 0 ? options.length - 1 : a - 1)); }
@@ -133,7 +138,8 @@ export function AddressInput({ name, label, value, onChange, placeholder, locate
             return (
               <div key={`${f.lat},${f.lng},${j}`} id={`${listId}-${i}`} role="option" aria-selected={i === active} aria-label={f.text}>
                 <button type="button" tabIndex={-1} className={optionClass(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(f)}>
-                  <MapPin size={14} className="mt-0.5 shrink-0 text-subtle" aria-hidden />{f.text}
+                  <MapPin size={14} className="mt-0.5 shrink-0 text-subtle" aria-hidden />
+                  {f.main ? <span className="min-w-0"><span className="block font-semibold text-ink">{f.main}</span>{f.secondary && <span className="block truncate text-xs text-muted">{f.secondary}</span>}</span> : f.text}
                 </button>
               </div>
             );

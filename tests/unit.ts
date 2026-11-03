@@ -458,7 +458,7 @@ const cabUnwrapped = cabRoutes.flatMap((f) => {
   return handlers.filter(([, , rest]) => !imported || !wrapped.test(rest)).map(([, method]) => `${f}:${method}`);
 });
 eq(`guards: every handler in the ${cabRoutes.length} Cab Booking route files goes through the Cabs guard's route() with its roles (the 4 driver sign-in routes: publicRoute())`,
-  [cabRoutes.length, cabUnwrapped, CAB_PUBLIC.filter((f) => cabRoutes.includes(f)).length], [37, [], 4]);
+  [cabRoutes.length, cabUnwrapped, CAB_PUBLIC.filter((f) => cabRoutes.includes(f)).length], [38, [], 4]);
 // IVR-CRM: every route asks the module's own checks (src/lib/ivr/dal.ts: assertUser, assertAdmin, assertSuperAdmin), which also answer 404
 // while the module is off. The two that nobody signs in to check a secret instead: Smartflo's webhook (the secret in its address, compared
 // in constant time, 404 while off) and the sync cron (CRON_SECRET, refusing everyone when it is not set).
