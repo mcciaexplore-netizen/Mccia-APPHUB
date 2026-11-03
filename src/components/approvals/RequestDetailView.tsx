@@ -41,6 +41,23 @@ function Files({ items }: { items: AttachmentRow[] }) {
   );
 }
 
+/**
+ * One line of the printed approval chain: "Recommended by: Satavisha Natu (HR Admin) — 02-Nov-2026". The last step approves, the ones before
+ * it recommend; a step not yet decided says it is waiting. Steps that were not needed are left out.
+ */
+function chainLine(s: StepRow, last: boolean): string | null {
+  const role = `${s.approverName} (${s.stepLabel})`;
+  const action = last ? "Approved by" : "Recommended by";
+  switch (s.status) {
+    case "approved": return `${action}: ${role} — ${formatDate(s.decidedAt)}`;
+    case "rejected": return `Rejected by: ${role} — ${formatDate(s.decidedAt)}`;
+    case "returned": return `Returned for corrections by: ${role} — ${formatDate(s.decidedAt)}`;
+    case "pending": return `${action}: ${role} — Waiting for decision`;
+    case "waiting": return `${action}: ${role} — Pending`;
+    default: return null;
+  }
+}
+
 /** What the printed page says about the status: decided on a day, or the last thing that happened to it. */
 function statusDate(d: RequestDetail): string {
   if (d.decidedAt) return `on ${formatDateTime(d.decidedAt)}`;
@@ -49,7 +66,7 @@ function statusDate(d: RequestDetail): string {
 
 /**
  * Everything about one request, read only, with the approver's controls when it is waiting for them. Print (window.print) puts it on paper:
- * the print-only heading and footer below appear there, and the controls (.apr-no-print) and the page around it are left out (approvals.css).
+ * the print-only heading, approval chain and footer below appear there, and the controls (.apr-no-print) and the page around it are left out (approvals.css).
  */
 export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDetail; submitter: { name: string; department: string | null }; viewerName: string }) {
   const e = d.expenditure;
@@ -120,7 +137,12 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
         <div className="max-w-2xl"><Files items={d.attachments} /></div>
       </section>
 
-      <section aria-labelledby="req-steps">
+      <section className="apr-print-only apr-print-chain">
+        <h2>Approval</h2>
+        <ul>{d.steps.map((s) => { const line = chainLine(s, s.stepNo === d.steps.length); return line && <li key={s.stepNo}>{line}</li>; })}</ul>
+      </section>
+
+      <section aria-labelledby="req-steps" className="apr-no-print">
         <h2 id="req-steps" className="mb-3">Approval</h2>
         <ul className="max-w-2xl space-y-2">
           {d.steps.map((s) => (
@@ -141,7 +163,7 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
         )}
       </section>
 
-      <section aria-labelledby="req-timeline">
+      <section aria-labelledby="req-timeline" className="apr-no-print">
         <h2 id="req-timeline" className="mb-3">Timeline</h2>
         <Timeline events={d.events} />
       </section>
