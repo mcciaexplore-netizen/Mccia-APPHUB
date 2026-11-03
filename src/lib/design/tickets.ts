@@ -28,7 +28,7 @@ import { formTypes, getHolidays, getSchedule, getSettings, nextTicketSeq, typeNa
 import { isAssignable, listDesigners, peopleByIds } from "./host-adapter";
 import * as notice from "./notify";
 import { remainingHours, suggestAssignee, workingDays, HORIZON_DAYS, type CapDesigner, type CapTicket } from "./capacity";
-import { ACTIVE_STATUSES, FINISHED_STATUSES, OFF_BOARD_STATUSES, PRIORITIES, deliveryDueAt, formatTicketNumber, istDate, priorityFor, STATUS_LABEL } from "./rules";
+import { ACTIVE_STATUSES, FINISHED_STATUSES, PRIORITIES, deliveryDueAt, formatTicketNumber, istDate, priorityFor, STATUS_LABEL } from "./rules";
 
 /**
  * Tickets: making them from the request form, who may see and change them, the Pending Review decisions, moving them along, and the small
@@ -516,17 +516,6 @@ export async function deleteTicket(u: SessionUser, id: string): Promise<void> {
 export async function pendingCount(): Promise<number> {
   const [r] = await db.select({ n: sql<number>`count(*)::int` }).from(tickets).where(eq(tickets.status, "pending_review"));
   return r?.n ?? 0;
-}
-
-/** All accepted requests, for everyone in the hub (/design/requests): what a tracking link shows, nothing more. */
-export async function allRequests(): Promise<TicketCard[]> {
-  const rows = await db
-    .select()
-    .from(tickets)
-    .where(and(notInArray(tickets.status, [...OFF_BOARD_STATUSES, "superseded"] as TicketStatus[]), sql`(${tickets.status} not in ('delivered','closed','closed_without_approval') or coalesce(${tickets.deliveredAt}, ${tickets.updatedAt}) > now() - interval '90 days')`))
-    .orderBy(desc(tickets.createdAt))
-    .limit(500);
-  return toCards(rows);
 }
 
 /** A ticket's versions, oldest first (DF-0001, DF-0001-V2 ...). */

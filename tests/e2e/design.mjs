@@ -182,7 +182,7 @@ try {
 
   section("who may open which section");
   check("Design Team Forms opens the request form", (await go(R.page, "/design"))?.status() === 200 && pathOf(R.page) === "/design/request" && /Request a Design/.test(await mainText(R.page)));
-  check("the requester's menu: the request pages only", (await navLabels(R.page, "Design Team Forms")) === "Request a design|My requests|All requests|Campaigns", await navLabels(R.page, "Design Team Forms"));
+  check("the requester's menu: the request pages only", (await navLabels(R.page, "Design Team Forms")) === "Request a design|My requests|Campaigns", await navLabels(R.page, "Design Team Forms"));
   await go(R.page, "/design/admin"); check("a requester is kept out of Design Admin", pathOf(R.page) === "/design/request", pathOf(R.page));
   await go(O.page, "/design/request"); check("without either application (even as an App Admin of it), the request pages send you to the hub", pathOf(O.page) === "/", pathOf(O.page));
   await go(O.page, "/design/admin"); check("and so does Design Admin", pathOf(O.page) === "/", pathOf(O.page));
@@ -229,7 +229,9 @@ try {
   await go(R.page, "/design/my-requests");
   check("My Requests lists it as pending", /Waiting for a design lead|Pending review/i.test(await mainText(R.page)) && (await mainText(R.page)).includes(number));
   await go(R.page, "/design/requests");
-  check("the all-requests board leaves out requests not yet accepted", !(await mainText(R.page)).includes(number));
+  check("the old all-requests address opens My Requests", pathOf(R.page) === "/design/my-requests");
+  await go(R2.page, "/design/requests");
+  check("where another requester sees only their own (not this one)", pathOf(R2.page) === "/design/my-requests" && !(await mainText(R2.page)).includes(number) && /You haven't submitted any requests yet/.test(await mainText(R2.page)));
 
   section("tracking link (no sign-in)");
   await go(anon.page, trackPath);
@@ -252,8 +254,6 @@ try {
   t1 = await poll(async () => { const t = await ticketByNumber(number); return t.status === "assigned" ? t : null; });
   check("accepted and assigned to the designer chosen", t1?.assignee_id === d1.id);
   check("the designer is told", await poll(async () => (await sql`select count(*)::int n from hub_notifications where user_id = ${d1.id} and link = ${"/design/admin/tickets/" + t1.id}`)[0].n >= 1));
-  await go(R.page, "/design/requests");
-  check("now it is on the all-requests board", (await mainText(R.page)).includes(number));
 
   section("leads see every ticket; a designer only the ones assigned to them; requesters only their own");
   await go(D1.page, "/design/admin");

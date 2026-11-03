@@ -33,14 +33,11 @@ export default async function MyRequestsPage({ searchParams }: { searchParams: P
       </nav>
       {shown.length === 0 ? (
         <div className="ds-card">
-          <Empty title={all.length ? "Nothing here" : "No requests yet"}>
+          <Empty title={all.length ? "Nothing here" : "You haven't submitted any requests yet."}>
             {all.length ? "No request is at this stage." : (
-              <>
-                <Link href="/design/request" className="font-semibold text-[var(--ds-navy)] hover:underline">
-                  Request a design
-                </Link>{" "}
-                and it will appear here.
-              </>
+              <Link href="/design/request" className="font-semibold text-[var(--ds-navy)] hover:underline">
+                Submit your first request →
+              </Link>
             )}
           </Empty>
         </div>

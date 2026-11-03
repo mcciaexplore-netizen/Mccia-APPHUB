@@ -4,7 +4,7 @@
  *
  * The module shows in the hub as two applications, each an ordinary row in Administrator → Applications with its own access grants:
  *   Design Team Forms   URL /design         office staff who ASK the creative team for designs: the request form, their own
- *                                           requests (track, approve proofs, download finals), the board of accepted requests, campaigns
+ *                                           requests (track, approve proofs, download finals), campaigns
  *   Design Admin        URL /design/admin   the CREATIVE TEAM who fulfil requests: every ticket, the board, proofs, files, library,
  *                                           calendar; its App Admins also accept or decline requests, assign, set priority, see
  *                                           workload and reports and change settings
@@ -19,7 +19,7 @@
  *   design_super_admin  the Support Admin (head_admin) only: also Integrations (email test, Slack) and "Delete all past data"
  * The Support Admin holds all four.
  *
- * Data: a requester sees only the requests they made (and the list of accepted requests: titles and progress). The creative team sees
+ * Data: a requester sees only the requests they made (/design/requests, the old list of everyone's, now opens My Requests). The creative team sees
  * every request.
  */
 
@@ -59,7 +59,6 @@ export const DESIGN_NAV: Record<DesignSection, { title: string; items: DesignNav
     items: [
       { label: "Request a design", href: "/design/request" },
       { label: "My requests", href: "/design/my-requests" },
-      { label: "All requests", href: "/design/requests" },
       { label: "Campaigns", href: "/design/campaigns" },
     ],
   },
