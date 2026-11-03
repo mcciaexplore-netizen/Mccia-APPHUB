@@ -132,13 +132,18 @@ export async function getTicket(id: string): Promise<Ticket | null> {
   return t ?? null;
 }
 
-/** Whether this person may work on the ticket: anyone in the creative team (Design Admin's App Staff and App Admins) may open and work on every ticket. */
-export const canWork = (u: SessionUser) => u.member;
+/**
+ * Which tickets the creative team sees: a lead (and the Support Admin) every ticket; a designer only the tickets assigned to them, never
+ * an unassigned one. Every team page, action, file link and feed asks one of these two.
+ */
+export const canWork = (u: SessionUser, t: Pick<Ticket, "assigneeId">) => u.member && (u.lead || (!!t.assigneeId && t.assigneeId === u.id));
+/** A ticket list's filter, narrowed to what this person may see (see canWork). */
+export const teamFilter = (u: SessionUser, f: TicketFilter = {}): TicketFilter => (u.lead ? f : { ...f, assigneeId: u.id, unassigned: false });
 
 /** The ticket for team pages and actions, or a 404-style error (so ids cannot be probed). */
 export async function ticketForTeam(u: SessionUser, id: string): Promise<Ticket> {
   const t = await getTicket(id);
-  if (!t || !canWork(u)) throw new DesignError("That ticket was not found.");
+  if (!t || !canWork(u, t)) throw new DesignError("That ticket was not found.");
   return t;
 }
 
@@ -303,7 +308,7 @@ export async function askQuestion(u: SessionUser, id: string, text: string): Pro
   const q = text.trim();
   if (!q) throw new DesignError("Write the question.");
   const t = await getTicket(id);
-  if (!t || !u.member) throw new DesignError("That request was not found.");
+  if (!t || !canWork(u, t)) throw new DesignError("That request was not found.");
   await audit(id, u.id, "Question asked", { question: q.slice(0, 1000) });
   await notice.question(t, q.slice(0, 1000), u.name);
 }

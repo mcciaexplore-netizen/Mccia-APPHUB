@@ -7,7 +7,7 @@ import { DesignError, type SessionUser } from "./dal";
 import { claimFiles, fileById, fileLink } from "./files";
 import { peopleByIds } from "./host-adapter";
 import * as notice from "./notify";
-import { getTicket, ticketForRequester, ticketForTeam } from "./tickets";
+import { canWork, getTicket, ticketForRequester, ticketForTeam } from "./tickets";
 import { FINISHED_STATUSES } from "./rules";
 
 /**
@@ -93,7 +93,7 @@ export async function uploadCdr(u: SessionUser, requestId: string, fileId: strin
 export async function cdrDownloadLink(u: SessionUser, requestId: string): Promise<string> {
   const [r] = await db.select().from(cdrRequests).where(eq(cdrRequests.id, requestId)).limit(1);
   const t = r ? await getTicket(r.ticketId) : null;
-  if (!r || !t || !(t.requesterId === u.id || u.member)) throw new DesignError("That file was not found.");
+  if (!r || !t || !(t.requesterId === u.id || canWork(u, t))) throw new DesignError("That file was not found.");
   if (r.status !== "uploaded" || !r.fileId) throw new DesignError("The source file is not ready yet.");
   const f = await fileById(r.fileId);
   if (!f) throw new DesignError("That file is no longer stored.");

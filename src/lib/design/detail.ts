@@ -193,7 +193,7 @@ export async function canOpenFile(u: SessionUser, fileId: string): Promise<boole
   const viaTicket = async (ticketIds: string[], requesterToo: boolean) => {
     if (!ticketIds.length) return false;
     const ts = await db.select().from(tickets).where(inArray(tickets.id, ticketIds));
-    return ts.some((t: Ticket) => canWork(u) || (requesterToo && t.requesterId === u.id));
+    return ts.some((t: Ticket) => canWork(u, t) || (requesterToo && t.requesterId === u.id));
   };
   const [att, proof, cdr] = await Promise.all([
     db.select({ ticketId: attachments.ticketId }).from(attachments).where(eq(attachments.fileId, fileId)),

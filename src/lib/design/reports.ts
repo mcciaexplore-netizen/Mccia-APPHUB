@@ -1,5 +1,5 @@
 import "server-only";
-import { and, gte, inArray, lt, notInArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, notInArray, sql } from "drizzle-orm";
 import { db } from "./db";
 import { designTypes, tickets, timeEntries, type TicketStatus } from "@/db/design-schema";
 import { peopleByIds } from "./host-adapter";
@@ -15,7 +15,8 @@ import { addDays, istDate, istMoment, OPEN_STATUSES, STATUS_LABEL, weekdayOf } f
 
 export type Overview = { open: number; overdue: number; inReview: number; deliveredThisWeek: number; pending: number };
 
-export async function overview(): Promise<Overview> {
+/** The dashboard's numbers: the whole team's, or (with `assigneeId`) one designer's own tickets. */
+export async function overview(assigneeId?: string): Promise<Overview> {
   const today = istDate();
   const monday = addDays(today, -weekdayOf(today));
   const [r] = await db
@@ -26,7 +27,8 @@ export async function overview(): Promise<Overview> {
       delivered: sql<number>`count(*) filter (where ${tickets.deliveredAt} >= ${istMoment(monday)})::int`,
       pending: sql<number>`count(*) filter (where ${tickets.status} = 'pending_review')::int`,
     })
-    .from(tickets);
+    .from(tickets)
+    .where(assigneeId ? eq(tickets.assigneeId, assigneeId) : undefined);
   return { open: r.open, overdue: r.overdue, inReview: r.inReview, deliveredThisWeek: r.delivered, pending: r.pending };
 }
 

@@ -3,21 +3,21 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { MonthGrid } from "@/components/design/calendar/month-grid";
 import { PageHeader } from "@/components/design/ui";
 import { requireTeam } from "@/lib/design/dal";
-import { listTickets } from "@/lib/design/tickets";
+import { listTickets, teamFilter } from "@/lib/design/tickets";
 import { FINISHED_STATUSES, addDays, istDate } from "@/lib/design/rules";
 
 export const metadata = { title: "Calendar · Design Admin" };
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-/** Every ticket (or, with ?mine=1, the person's own) on its deadline day, a month at a time. */
+/** Tickets on their deadline day, a month at a time: a lead every ticket (or, with ?mine=1, their own), a designer only their own. */
 export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ month?: string; done?: string; mine?: string }> }) {
   const u = await requireTeam();
   const sp = await searchParams;
   const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month ?? "") ? sp.month! : istDate().slice(0, 7);
   const showDone = sp.done === "1";
-  const mine = sp.mine === "1";
-  const all = await listTickets({ assigneeId: mine ? u.id : undefined, excludeStatuses: ["pending_review", "declined", "superseded"] });
+  const mine = sp.mine === "1" || !u.lead;
+  const all = await listTickets(teamFilter(u, { assigneeId: mine ? u.id : undefined, excludeStatuses: ["pending_review", "declined", "superseded"] }));
   const tickets = showDone ? all : all.filter((t) => !FINISHED_STATUSES.includes(t.status));
   const prev = addDays(`${month}-01`, -1).slice(0, 7);
   const next = addDays(`${month}-01`, 32).slice(0, 7);
@@ -43,9 +43,11 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
           </Link>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href={href(month, showDone, !mine)} className="btn btn-ghost btn-sm" aria-pressed={mine}>
-            {mine ? "Show everyone's" : "Mine only"}
-          </Link>
+          {u.lead && (
+            <Link href={href(month, showDone, !mine)} className="btn btn-ghost btn-sm" aria-pressed={mine}>
+              {mine ? "Show everyone's" : "Mine only"}
+            </Link>
+          )}
           <Link href={href(month, !showDone)} className="btn btn-ghost btn-sm" aria-pressed={showDone}>
             {showDone ? "Hide delivered" : "Show delivered"}
           </Link>

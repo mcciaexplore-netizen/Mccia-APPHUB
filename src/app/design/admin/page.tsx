@@ -13,21 +13,22 @@ import { openByDesigner, overview } from "@/lib/design/reports";
 
 /**
  * The creative team's dashboard: the four numbers that matter, the requests waiting for a lead (leads only: they accept and assign), the
- * person's own queue, what is happening now, who holds the open work, and where their emails go.
+ * person's own queue, what is happening now, who holds the open work (leads only), and where their emails go. A lead sees the whole
+ * team's numbers and activity; a designer only those of the tickets assigned to them.
  */
 export default async function DesignAdminHome() {
   const u = await requireTeam();
   const [o, pending, feed, byDesigner, queue, emailOn] = await Promise.all([
-    overview(),
+    overview(u.lead ? undefined : u.id),
     u.lead ? pendingItems() : Promise.resolve([]),
-    activity(null),
-    openByDesigner(),
+    activity(u.lead ? null : u.id),
+    u.lead ? openByDesigner() : Promise.resolve([]),
     listTickets({ assigneeId: u.id, statuses: OPEN_STATUSES }),
     emailEnabledFor(u.id),
   ]);
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Team overview" subtitle={`Hello ${u.name.split(" ")[0]}.${u.lead ? " Requests waiting for you come first." : " Your work and the team's, at a glance."}`} />
+      <PageHeader title="Team overview" subtitle={`Hello ${u.name.split(" ")[0]}.${u.lead ? " Requests waiting for you come first." : " Your work at a glance."}`} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Open tickets" value={o.open} />
         <Kpi label="Overdue" value={o.overdue} tone={o.overdue ? "red" : undefined} />
@@ -89,7 +90,8 @@ export default async function DesignAdminHome() {
         </Card>
       </div>
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <ActivityFeed scope="all" initial={feed} />
+        <ActivityFeed scope={u.lead ? "all" : "mine"} initial={feed} />
+        {u.lead && (
         <Card title="Open work by designer" pad={false}>
           {byDesigner.length === 0 ? (
             <p className="px-5 py-6 text-sm ds-muted">No open work is assigned.</p>
@@ -113,14 +115,13 @@ export default async function DesignAdminHome() {
               </tbody>
             </table>
           )}
-          {u.lead && (
-            <div className="border-t border-[var(--ds-line)] px-5 py-3 text-sm">
-              <Link href="/design/admin/workload" className="font-semibold text-[var(--ds-navy)] hover:underline">
-                See the workload by day →
-              </Link>
-            </div>
-          )}
+          <div className="border-t border-[var(--ds-line)] px-5 py-3 text-sm">
+            <Link href="/design/admin/workload" className="font-semibold text-[var(--ds-navy)] hover:underline">
+              See the workload by day →
+            </Link>
+          </div>
         </Card>
+        )}
       </div>
     </div>
   );

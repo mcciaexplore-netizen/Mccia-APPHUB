@@ -236,8 +236,7 @@ try {
   check("a made-up tracking link is refused", /not valid/i.test(await mainText(anon.page)));
 
   section("Pending Review: accept and assign");
-  await go(D2.page, `/design/admin/tickets/${t1.id}`);
-  check("a member opening a pending ticket sees it waits for a lead, with no Accept or Decline", /Waiting for a design lead/.test(await mainText(D2.page)) && !(await D2.page.getByRole("button", { name: /Accept \+ Assign/ }).count()));
+  check("a designer cannot open a pending ticket (it is assigned to nobody): not found", (await go(D2.page, `/design/admin/tickets/${t1.id}`))?.status() === 404);
   await go(L.page, `/design/admin/tickets/${t1.id}`);
   check("a lead opening it gets Accept + Assign and Decline on the ticket page itself", (await L.page.getByRole("button", { name: /Accept \+ Assign/ }).count()) === 1 && (await L.page.getByRole("button", { name: /^Decline$/ }).count()) === 1);
   check("the ticket page shows the five-step progress bar", (await L.page.getByLabel("Progress: Received").count()) === 1);
@@ -252,15 +251,30 @@ try {
   await go(R.page, "/design/requests");
   check("now it is on the all-requests board", (await mainText(R.page)).includes(number));
 
-  section("the creative team sees every request; requesters only their own");
+  section("leads see every ticket; a designer only the ones assigned to them; requesters only their own");
   await go(D1.page, "/design/admin");
   check("Dev's dashboard lists it in his queue", (await mainText(D1.page)).includes(number));
+  const kpi = async (page) => Number((await page.locator("main").getByText("Open tickets", { exact: true }).first().locator("xpath=..").innerText()).match(/\d+/)?.[0] ?? -1);
+  const openAll = (await sql`select count(*)::int n from design_tickets where status in ('new','assigned','in_progress','waiting_on_requester','in_review')`)[0].n;
+  check("a designer's Open tickets counts only their own (Dev: 1)", (await kpi(D1.page)) === 1, await kpi(D1.page));
+  check("and the team-wide table of open work by designer is for leads only", !/Open work by designer/.test(await mainText(D1.page)));
+  await go(L.page, "/design/admin");
+  check("a lead's Open tickets counts the whole team", (await kpi(L.page)) === openAll, `${await kpi(L.page)} vs ${openAll}`);
+  await go(D1.page, "/design/admin/board");
+  check("Dev's board shows his ticket", (await mainText(D1.page)).includes(number));
   await go(D2.page, "/design/admin/board");
-  check("Disha (not assigned) sees it on the board too", (await mainText(D2.page)).includes(number));
-  check("and can open its page", (await go(D2.page, `/design/admin/tickets/${t1.id}`))?.status() === 200 && pathOf(D2.page) === `/design/admin/tickets/${t1.id}`);
-  check("but cannot change who it is assigned to (no assignee picker for a member)", !(await D2.page.locator("main select").filter({ hasText: "Not assigned" }).count()));
-  const feed2 = await D2.page.evaluate(async () => (await (await fetch("/api/design/activity")).json()).items.map((i) => i.number));
-  check("the activity feed shows the team everything", feed2.includes(number));
+  check("Disha (not assigned) does not see it on her board", !(await mainText(D2.page)).includes(number));
+  check("and gets not found for its page", (await go(D2.page, `/design/admin/tickets/${t1.id}`))?.status() === 404);
+  await go(D2.page, `/design/admin/calendar?mine=0&done=1&month=${istDay(0).slice(0, 7)}`);
+  check("nor on her calendar", !(await mainText(D2.page)).includes(number) && !(await D2.page.getByRole("link", { name: "Show everyone's" }).count()));
+  const [att1] = await sql`select file_id from design_attachments where ticket_id = ${t1.id}`;
+  check("nor can she open its files", (await fetchIn(D2.page, `/api/design/files/${att1.file_id}`)).status === 404);
+  const feed2 = await D2.page.evaluate(async () => (await (await fetch("/api/design/activity?scope=all")).json()).items.map((i) => i.number));
+  check("the activity feed leaves it out for her, even when asked for everything", !feed2.includes(number));
+  const feed1 = await D1.page.evaluate(async () => (await (await fetch("/api/design/activity?scope=all")).json()).items.map((i) => i.number));
+  const feedL = await L.page.evaluate(async () => (await (await fetch("/api/design/activity")).json()).items.map((i) => i.number));
+  check("Dev's feed and the lead's include it", feed1.includes(number) && feedL.includes(number));
+  check("a lead opens it", (await go(L.page, `/design/admin/tickets/${t1.id}`))?.status() === 200);
   await go(R2.page, "/design/my-requests");
   check("another requester does not see it in their requests", !(await mainText(R2.page)).includes(number));
   await go(R.page, `/design/admin/tickets/${t1.id}`);
@@ -294,8 +308,8 @@ try {
   check("My Requests links to the request's page", (await R.page.getByRole("link", { name: "Open request →" }).count()) >= 1);
   check("My Requests sends the browser nothing about who it is assigned to", !(await R.page.content()).includes("ZZD Designer Dev"));
   check("another requester gets not found for it", (await go(R2.page, `/design/tickets/${t1.id}`))?.status() === 404);
-  await go(D2.page, `/design/admin/tickets/${t1.id}`);
-  check("the designer's ticket page shows where it stands (In review)", (await D2.page.getByLabel("Progress: In review").count()) === 1);
+  await go(D1.page, `/design/admin/tickets/${t1.id}`);
+  check("the designer's ticket page shows where it stands (In review)", (await D1.page.getByLabel("Progress: In review").count()) === 1);
   await anon.page.getByRole("button", { name: /Request changes/ }).click();
   await anon.page.fill("#changes", "ZZD: make the date larger and add the venue map.");
   await anon.page.getByRole("button", { name: /^Submit$/ }).click();
