@@ -86,6 +86,17 @@ export async function objectSize(storageKey: string): Promise<number | null> {
   return hit ? Number(hit.metadata?.size ?? 0) : null;
 }
 
+/** Copies an object inside the bucket (for a library file used as a proof, or a delivered design kept in Past Designs). */
+export async function copyObject(fromKey: string, toKey: string): Promise<void> {
+  const c = need();
+  const res = await call(`${c.base}/object/copy`, {
+    method: "POST",
+    headers: headers(c.key, { "content-type": "application/json" }),
+    body: JSON.stringify({ bucketId: c.bucket, sourceKey: fromKey, destinationKey: toKey }),
+  });
+  if (!res.ok) throw new StorageError(res.status === 404 || res.status === 400 ? "That file is no longer in storage." : `File storage could not copy the file (${res.status}).`);
+}
+
 /** Removes objects. Missing ones are fine. Never throws: a file left behind is only wasted space. */
 export async function removeObjects(storageKeys: string[]): Promise<void> {
   const c = config();

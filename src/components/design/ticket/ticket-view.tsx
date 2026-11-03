@@ -192,7 +192,7 @@ export function TicketView({ d, viewer }: { d: TicketDetail; viewer: Viewer }) {
 
       <div role="tabpanel">
         {tab === "overview" && <OverviewTab d={d} viewer={viewer} editable={editable} />}
-        {tab === "proofs" && <ProofsTab d={d} editable={editable} />}
+        {tab === "proofs" && <ProofsTab d={d} editable={editable} lead={viewer.lead} />}
         {tab === "source" && <SourceTab d={d} viewer={viewer} />}
         {tab === "figma" && <FigmaTab d={d} editable={editable} />}
         {tab === "annotate" && <AnnotateTab d={d} viewer={viewer} />}

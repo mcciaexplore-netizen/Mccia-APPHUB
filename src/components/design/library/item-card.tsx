@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Download, FileText, History, Pencil, Trash2, Upload } from "lucide-react";
+import { CheckCircle2, Download, FileText, History, Pencil, Trash2, Upload } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
-import type { LibraryItemDto } from "@/lib/design/library";
+import type { FolderDto, LibraryItemDto } from "@/lib/design/library";
 import { deleteItemAction } from "@/lib/design/actions/library";
 import { formatBytes, isImage } from "@/lib/design/file-types";
 import { istDate } from "@/lib/design/rules";
@@ -13,8 +13,11 @@ import { Badge, formatDateTime, formatDay } from "../ui";
 import { fileHref } from "../upload";
 import { ItemForm, VersionForm } from "./item-form";
 
-/** One library item: preview, details, the current file, and its versions, edit, replace and delete. */
-export function ItemCard({ item, folderName, showFolder }: { item: LibraryItemDto; folderName: string | null; showFolder: boolean }) {
+/**
+ * One library item: preview, name, size, when and by whom its current file was uploaded, tags, approved final, the download and its
+ * versions; for leads also edit, replace (a new version) and delete. `folderName` shows where it lives when the list spans folders.
+ */
+export function ItemCard({ item, lead, folders, folderName }: { item: LibraryItemDto; lead: boolean; folders: FolderDto[]; folderName: string | null }) {
   const confirm = useConfirm();
   const { act, pending } = useAct();
   const [mode, setMode] = useState<"edit" | "version" | "history" | null>(null);
@@ -36,10 +39,19 @@ export function ItemCard({ item, folderName, showFolder }: { item: LibraryItemDt
           <h3 className="min-w-0 flex-1 truncate text-sm font-bold text-ink" title={item.name}>
             {item.name}
           </h3>
-          {item.isApprovedFinal && <Badge tone="green">Approved final</Badge>}
+          {item.isApprovedFinal && (
+            <Badge tone="green">
+              <CheckCircle2 size={12} className="mr-0.5 inline" aria-hidden /> Approved final
+            </Badge>
+          )}
           {cur && <Badge tone="blue">V{cur.version}</Badge>}
         </div>
-        {showFolder && folderName && <p className="text-xs ds-muted">in {folderName}</p>}
+        {folderName && <p className="text-xs ds-muted">in {folderName}</p>}
+        {cur && (
+          <p className="text-xs ds-muted" suppressHydrationWarning>
+            {formatBytes(cur.size)} · {formatDateTime(cur.at)} · {cur.by ?? "Unknown"}
+          </p>
+        )}
         {item.tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {item.tags.map((t) => (
@@ -55,29 +67,40 @@ export function ItemCard({ item, folderName, showFolder }: { item: LibraryItemDt
           </a>
         )}
         <div className="flex flex-wrap gap-1 border-t border-[var(--ds-line)] pt-2">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("version")}>
-            <Upload size={13} /> Replace
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("history")} aria-label={`Versions of ${item.name}`}>
-            <History size={13} /> {item.versions.length}
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("edit")} aria-label={`Edit ${item.name}`}>
-            <Pencil size={13} />
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm text-[var(--ds-red)]"
-            aria-label={`Delete ${item.name}`}
-            disabled={pending}
-            onClick={async () => {
-              if (await confirm({ title: `Delete ${item.name}?`, message: "It is removed from the library, with its versions.", confirmLabel: "Delete", danger: true })) act(() => deleteItemAction(item.id));
-            }}
-          >
-            <Trash2 size={13} />
-          </button>
+          {cur && (
+            <a href={fileHref(cur.fileId)} className="btn btn-ghost btn-sm" aria-label={`Download ${item.name}`}>
+              <Download size={13} /> Download
+            </a>
+          )}
+          {item.versions.length > 1 && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("history")} aria-label={`Versions of ${item.name}`}>
+              <History size={13} /> {item.versions.length} versions
+            </button>
+          )}
+          {lead && (
+            <>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("version")}>
+                <Upload size={13} /> Replace
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("edit")} aria-label={`Edit ${item.name}`}>
+                <Pencil size={13} />
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm text-[var(--ds-red)]"
+                aria-label={`Delete ${item.name}`}
+                disabled={pending}
+                onClick={async () => {
+                  if (await confirm({ title: `Delete ${item.name}?`, message: "It is removed from the library, with its versions.", confirmLabel: "Delete", danger: true })) act(() => deleteItemAction(item.id));
+                }}
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
         </div>
       </div>
-      {mode === "edit" && <ItemForm folderId={item.folderId} item={item} onClose={() => setMode(null)} />}
+      {mode === "edit" && <ItemForm folders={folders} folderId={item.folderId} item={item} onClose={() => setMode(null)} />}
       {mode === "version" && <VersionForm item={item} onClose={() => setMode(null)} />}
       {mode === "history" && (
         <Modal title={`Versions of ${item.name}`} onClose={() => setMode(null)}>

@@ -77,6 +77,10 @@ const removeTestData = async () => {
     await sql`delete from design_saved_views where user_id = any(${people})`;
     await sql`delete from design_profiles where user_id = any(${people})`;
     await sql`delete from design_leaves where user_id = any(${people})`;
+    const libItems = (await sql`select id from design_library_items where created_by = any(${people})`).map((r) => r.id);
+    if (libItems.length) await sql`delete from design_library_versions where item_id = any(${libItems})`;
+    await sql`delete from design_library_items where created_by = any(${people})`;
+    await sql`delete from design_folders where created_by = any(${people})`;
     await sql`delete from design_files where uploaded_by = any(${people})`;
     await sql`delete from hub_notifications where user_id = any(${people})`;
     await sql`delete from activity_log where user_id = any(${people})`;
@@ -184,12 +188,12 @@ try {
   await go(O.page, "/design/admin"); check("and so does Design Admin", pathOf(O.page) === "/", pathOf(O.page));
   await go(U.page, "/design/admin"); check("given Design Admin but neither App Admin nor App Staff: sent to the hub", pathOf(U.page) === "/", pathOf(U.page));
   await go(D1.page, "/design/admin"); check("App Staff of Design Admin (a designer) opens it", pathOf(D1.page) === "/design/admin");
-  check("a member's menu: dashboard, board, library, calendar", (await navLabels(D1.page, "Design Admin")) === "Dashboard|Board|Library|Calendar", await navLabels(D1.page, "Design Admin"));
+  check("a member's menu: dashboard, board, library, calendar", (await navLabels(D1.page, "Design Admin")) === "Dashboard|Board|Library|Brand Assets|Templates|Past Designs|All Files|Calendar", await navLabels(D1.page, "Design Admin"));
   for (const p of ["/design/admin/pending", "/design/admin/workload", "/design/admin/reports", "/design/admin/settings"]) {
     await go(D1.page, p); check(`a member is sent back from ${p}`, pathOf(D1.page) === "/design/admin", pathOf(D1.page));
   }
   await go(L.page, "/design/admin");
-  check("a lead opens Design Admin, with its menu", pathOf(L.page) === "/design/admin" && (await navLabels(L.page, "Design Admin")) === "Dashboard|Pending Review|Board|Library|Calendar|Workload|Reports|Settings", await navLabels(L.page, "Design Admin"));
+  check("a lead opens Design Admin, with its menu", pathOf(L.page) === "/design/admin" && (await navLabels(L.page, "Design Admin")) === "Dashboard|Pending Review|Board|Library|Brand Assets|Templates|Past Designs|All Files|Calendar|Workload|Reports|Settings", await navLabels(L.page, "Design Admin"));
   await go(L.page, "/design/admin/settings");
   check("a lead (not the Support Admin) does not see Integrations", !(await L.page.getByRole("tab", { name: /Integrations/ }).count()) && !/Delete all past data/.test(await mainText(L.page)));
   const anon = await fresh();
@@ -423,6 +427,57 @@ try {
     await go(H.page, "/design/admin/settings");
     check("the Support Admin sees Integrations", (await H.page.getByRole("tab", { name: /Integrations/ }).count()) + (await H.page.getByRole("link", { name: /Integrations/ }).count()) > 0);
   }
+
+  section("library");
+  const SYSTEM_FOLDERS = ["00000000-0000-4000-8000-0000000d0001", "00000000-0000-4000-8000-0000000d0002", "00000000-0000-4000-8000-0000000d0003"];
+  await go(L.page, "/design/admin/library");
+  const lib = await mainText(L.page);
+  check("opening the library sets up its sections and starting folders", ["Brand Assets", "Logos", "Brand Colors", "Fonts", "Icons", "Letterheads", "Templates", "Social Media Templates", "Event Templates", "Presentations", "Past Designs"].every((n) => lib.includes(n)), lib.slice(0, 300));
+  await Promise.all([go(D1.page, "/design/admin/library"), go(L.page, "/design/admin/library")]);
+  check("opening it again (twice at once) makes no second copy", (await sql`select count(*)::int n from design_folders where id::text like '00000000-0000-4000-8000-0000000d%'`)[0].n === 11 && (await sql`select count(*)::int n from design_folders where name = 'Logos' and not is_deleted`)[0].n === 1);
+  check("a designer sees the library but cannot upload or make folders", !(await D1.page.getByRole("button", { name: /Upload to library/ }).count()) && !(await D1.page.getByRole("button", { name: /New folder/ }).count()));
+  await go(R.page, "/design/admin/library"); check("a requester has no library", pathOf(R.page) === "/design/request", pathOf(R.page));
+  await L.page.getByRole("button", { name: /Upload to library/ }).click();
+  const dlg = L.page.getByRole("dialog");
+  await upload(L.page, "zzd-logo.png");
+  await dlg.getByLabel("Folder").selectOption({ label: "Brand Assets / Logos" });
+  await dlg.getByLabel("Name", { exact: true }).fill("ZZD MCCIA logo");
+  await dlg.getByLabel(/Tags/).fill("zzdlogo, blue");
+  await dlg.getByLabel("Approved final").check();
+  await dlg.getByLabel(/Usage rights/).fill("ZZD: internal use only");
+  await dlg.getByRole("button", { name: "Upload", exact: true }).click();
+  const libItem = await poll(async () => (await sql`select * from design_library_items where name = 'ZZD MCCIA logo' and not is_deleted`)[0]);
+  check("a lead uploads into Logos, with tags, approved final and usage rights", libItem?.folder_id === "00000000-0000-4000-8000-0000000d0101" && libItem.is_approved_final && JSON.stringify(libItem.tags) === JSON.stringify(["zzdlogo", "blue"]) && /internal/.test(libItem.usage_rights_note ?? ""), JSON.stringify(libItem));
+  await go(L.page, "/design/admin/library?section=brand");
+  check("Brand Assets shows the Logos folder with its file count, and the file", /Logos\s*1 file/.test(await mainText(L.page)) && (await mainText(L.page)).includes("ZZD MCCIA logo"));
+  await go(L.page, "/design/admin/library?q=zzdlogo"); check("search finds it by tag", (await mainText(L.page)).includes("ZZD MCCIA logo"));
+  await go(L.page, "/design/admin/library?section=all&kind=pdf"); check("the PDF filter leaves it out", !(await mainText(L.page)).includes("ZZD MCCIA logo"));
+  await go(L.page, "/design/admin/library?section=all&kind=image&approved=1"); check("images, approved finals only: it is there", (await mainText(L.page)).includes("ZZD MCCIA logo"));
+  await go(D1.page, "/design/admin/library?q=zzdlogo");
+  const logoCard = D1.page.locator("li", { hasText: "ZZD MCCIA logo" }).first();
+  check("a designer sees it with its size, uploader and an Approved final badge, but no Replace or Delete", /ZZD Lead Lata/.test(await logoCard.innerText()) && /Approved final/i.test(await logoCard.innerText()) && !(await logoCard.getByRole("button", { name: /Replace/ }).count()) && !(await logoCard.getByRole("button", { name: /Delete/ }).count()));
+  const [libVer] = await sql`select file_id from design_library_versions where item_id = ${libItem.id}`;
+  check("and can download it", [302, 303, 307].includes((await fetchIn(D1.page, `/api/design/files/${libVer.file_id}`)).status));
+  check("a requester cannot download a library file", (await fetchIn(R.page, `/api/design/files/${libVer.file_id}`)).status === 404);
+  // Pick from library: a designer's own ticket, in progress.
+  const t4 = (await sql`insert into design_tickets (number, title, brief, design_type_id, requirements, status, requester_id, assignee_id, priority)
+    select 'DF-ZZD-2', 'ZZD pick from library', 'x', id, '["flyer"]'::jsonb, 'in_progress', ${requester.id}, ${d1.id}, 'normal' from design_types where key = 'flyer' returning id`)[0];
+  await go(D1.page, `/design/admin/tickets/${t4.id}`);
+  await D1.page.getByRole("tab", { name: /Proofs/ }).click();
+  await D1.page.getByRole("button", { name: /Pick from library/ }).click();
+  await D1.page.getByRole("dialog").getByRole("button", { name: /ZZD MCCIA logo/ }).click();
+  await D1.page.getByLabel(/Send for review now/).uncheck();
+  await D1.page.getByRole("button", { name: /^Upload$/ }).click();
+  const pickedProof = await poll(async () => (await sql`select p.version, f.id, f.storage_key, f.purpose from design_proof_versions p join design_files f on f.id = p.file_id where p.ticket_id = ${t4.id}`)[0]);
+  check("a designer uses a library file as the proof: version 1, a copy of its own (not the library's file)", pickedProof?.version === 1 && pickedProof.id !== libVer.file_id && pickedProof.purpose === "proof", JSON.stringify(pickedProof));
+  // Past Designs: the delivered version 2 of the first request.
+  await go(L.page, `/design/admin/tickets/${v2.id}`);
+  await L.page.getByRole("tab", { name: /Proofs/ }).click();
+  await L.page.getByRole("button", { name: /Add to Past Designs/ }).click();
+  const past = await poll(async () => (await sql`select * from design_library_items where ticket_id = ${v2.id} and not is_deleted`)[0]);
+  check("a lead keeps the delivered design in Past Designs, as an approved final", past?.folder_id === SYSTEM_FOLDERS[2] && past.is_approved_final, JSON.stringify(past));
+  await go(L.page, "/design/admin/library?section=past"); check("it shows in Past Designs", (await mainText(L.page)).includes(`${number}-V2`));
+  await go(D1.page, `/design/admin/tickets/${t4.id}`); await D1.page.getByRole("tab", { name: /Proofs/ }).click(); check("a designer gets no Add to Past Designs button", !(await D1.page.getByRole("button", { name: /Add to Past Designs/ }).count()));
 
   section("campaigns");
   await go(R2.page, "/design/campaigns");

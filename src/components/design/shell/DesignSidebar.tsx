@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { HubBackLink } from "@/components/BackLink";
 import { useSlidingIndicator } from "@/components/SlidingIndicator";
 import { DESIGN_NAV, navFor, type DesignRole, type DesignSection } from "@/lib/design/design.manifest";
@@ -14,11 +14,15 @@ const row = (active: boolean) =>
 /** One DesignDesk section's sidebar (the same shape as IVR-CRM's and Cab Booking's): back to the hub, the section's name, its pages. */
 export function DesignSidebar({ section, roles, pending = 0 }: { section: DesignSection; roles: DesignRole[]; pending?: number }) {
   const pathname = usePathname();
+  const sectionParam = useSearchParams().get("section");
   const { navRef, indicator } = useSlidingIndicator();
   const items = navFor(section, roles);
   const home = DESIGN_NAV[section].items[0].href;
   const matches = (href: string) => pathname === href || (href !== home && pathname.startsWith(`${href}/`));
-  const active = (href: string) => matches(href) && !items.some((o) => o.href.length > href.length && matches(o.href));
+  // A line with sub-lines is the current page only when none of them is (a sub-line is its page plus ?section=).
+  const childActive = (href: string) => { const u = new URL(href, "http://x"); return pathname === u.pathname && sectionParam === u.searchParams.get("section"); };
+  const active = (href: string) =>
+    matches(href) && !items.some((o) => o.href.length > href.length && matches(o.href)) && !items.find((o) => o.href === href)?.children?.some((c) => childActive(c.href));
   return (
     <nav ref={navRef} aria-label={DESIGN_NAV[section].title} className="relative rounded-[12px] border border-gray-200 bg-white py-3">
       {indicator}
@@ -35,6 +39,17 @@ export function DesignSidebar({ section, roles, pending = 0 }: { section: Design
                 </span>
               )}
             </Link>
+            {i.children && (
+              <ul>
+                {i.children.map((c) => (
+                  <li key={c.href}>
+                    <Link href={c.href} aria-current={childActive(c.href) ? "page" : undefined} className={`${row(childActive(c.href))} min-h-8 pl-8 text-[0.82rem] font-medium`}>
+                      <span className="flex-1 py-1.5">{c.label}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
           </li>
         ))}
       </ul>

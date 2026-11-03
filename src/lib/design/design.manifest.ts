@@ -50,7 +50,8 @@ export const isLead = (roles: readonly DesignRole[]) => roles.includes("design_l
 export const isMember = (roles: readonly DesignRole[]) => roles.includes("design_member") || isLead(roles);
 export const isRequester = (roles: readonly DesignRole[]) => SECTION_ROLES.requester.some((r) => roles.includes(r));
 
-export type DesignNavItem = { label: string; href: string; leadOnly?: boolean; superOnly?: boolean; badge?: "pending" };
+/** A sidebar line; `children` are lines shown under it (the library's sections), told apart by their `?section=`. */
+export type DesignNavItem = { label: string; href: string; leadOnly?: boolean; superOnly?: boolean; badge?: "pending"; children?: { label: string; href: string }[] };
 
 export const DESIGN_NAV: Record<DesignSection, { title: string; items: DesignNavItem[] }> = {
   requester: {
@@ -68,7 +69,16 @@ export const DESIGN_NAV: Record<DesignSection, { title: string; items: DesignNav
       { label: "Dashboard", href: "/design/admin" },
       { label: "Pending Review", href: "/design/admin/pending", leadOnly: true, badge: "pending" },
       { label: "Board", href: "/design/admin/board" },
-      { label: "Library", href: "/design/admin/library" },
+      {
+        label: "Library",
+        href: "/design/admin/library",
+        children: [
+          { label: "Brand Assets", href: "/design/admin/library?section=brand" },
+          { label: "Templates", href: "/design/admin/library?section=templates" },
+          { label: "Past Designs", href: "/design/admin/library?section=past" },
+          { label: "All Files", href: "/design/admin/library?section=all" },
+        ],
+      },
       { label: "Calendar", href: "/design/admin/calendar" },
       { label: "Workload", href: "/design/admin/workload", leadOnly: true },
       { label: "Reports", href: "/design/admin/reports", leadOnly: true },

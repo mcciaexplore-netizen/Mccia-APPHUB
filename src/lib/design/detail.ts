@@ -11,7 +11,7 @@ import { proofsFor, type ProofDto } from "./approvals";
 import { cdrFor, type CdrDto } from "./cdr";
 import { runningTimer, timeFor, type TimeDto } from "./time";
 import { canWork, ticketForTeam, toCards, versionChain, type TicketCard } from "./tickets";
-import { isLibraryFile } from "./library";
+import { inPastDesigns, isLibraryFile } from "./library";
 import { isPostImage } from "./campaigns";
 import { changeCutoff } from "./rules";
 
@@ -44,12 +44,14 @@ export type TicketDetail = {
   audit: AuditDto[];
   versions: { id: string; number: string; status: string; versionNumber: number }[];
   assignable: { id: string; name: string }[];
+  /** Whether a lead has kept this ticket's design in the library's Past Designs. */
+  inPastDesigns: boolean;
 };
 
 export async function ticketDetail(u: SessionUser, id: string): Promise<TicketDetail> {
   const t = await ticketForTeam(u, id);
   const [card] = await toCards([t]);
-  const [types, subs, atts, proofs, cdr, time, running, pins, logs, versions, assignable] = await Promise.all([
+  const [types, subs, atts, proofs, cdr, time, running, pins, logs, versions, assignable, kept] = await Promise.all([
     formTypes(),
     db.select().from(subtasks).where(eq(subtasks.ticketId, id)).orderBy(asc(subtasks.createdAt)),
     db.select().from(attachments).where(eq(attachments.ticketId, id)).orderBy(asc(attachments.createdAt)),
@@ -61,6 +63,7 @@ export async function ticketDetail(u: SessionUser, id: string): Promise<TicketDe
     db.select().from(auditLogs).where(eq(auditLogs.ticketId, id)).orderBy(desc(auditLogs.createdAt)).limit(200),
     versionChain(t),
     u.lead ? listAssignable() : Promise.resolve([]),
+    inPastDesigns(id),
   ]);
   const fs = await filesByIds(atts.map((a) => a.fileId));
   const people = await peopleByIds([t.requesterId, ...atts.map((a) => a.uploadedBy), ...pins.map((p) => p.authorId), ...logs.map((l) => l.userId)]);
@@ -98,6 +101,7 @@ export async function ticketDetail(u: SessionUser, id: string): Promise<TicketDe
     audit: logs.map((l) => ({ id: l.id, at: l.createdAt.toISOString(), who: l.actorLabel ?? (l.userId ? (people.get(l.userId)?.name ?? "Former user") : "System"), action: l.action, details: l.details })),
     versions,
     assignable: assignable.map((p) => ({ id: p.id, name: p.name })),
+    inPastDesigns: kept,
   };
 }
 

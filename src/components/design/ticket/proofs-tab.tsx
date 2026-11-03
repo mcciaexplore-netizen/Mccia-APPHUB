@@ -1,24 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Download, FileText, Send, Undo2 } from "lucide-react";
+import { Archive, Copy, Download, FileText, Library, Send, Undo2, X } from "lucide-react";
 import { zipSync } from "fflate";
 import { useToast } from "@/components/Toast";
 import type { TicketDetail } from "@/lib/design/detail";
 import { addProofAction, revokeReviewAction, sendForReviewAction } from "@/lib/design/actions/tickets";
+import { addPastDesignAction, proofFromLibraryAction } from "@/lib/design/actions/library";
 import { MAX_FILE_MB } from "@/lib/design/form";
 import { formatBytes, isImage } from "@/lib/design/file-types";
-import { APPROVAL_LABEL } from "@/lib/design/rules";
+import { APPROVAL_LABEL, FINISHED_STATUSES } from "@/lib/design/rules";
 import { Badge, Card, Empty, formatDateTime } from "../ui";
 import { FileDrop } from "../file-drop";
 import { fileHref } from "../upload";
 import { useAct } from "./use-act";
 import { ProofCompare } from "./proof-compare";
+import { LibraryPicker, type PickedFile } from "./library-picker";
 
 const APPROVAL_TONE = { pending: "purple", approved: "green", changes_requested: "amber", revoked: "neutral", expired: "neutral" } as const;
 
-/** Tab 2: upload a proof (V1, V2 ...) and send it to the requester; each version with its review links; compare; download all. */
-export function ProofsTab({ d, editable }: { d: TicketDetail; editable: boolean }) {
+/**
+ * Tab 2: upload a proof (V1, V2 ...), or pick one from the library, and send it to the requester; each version with its review links;
+ * compare; download all. A lead keeps a delivered design in the library's Past Designs.
+ */
+export function ProofsTab({ d, editable, lead }: { d: TicketDetail; editable: boolean; lead: boolean }) {
   const { act, pending } = useAct();
   const toast = useToast();
   const [fileId, setFileId] = useState<string | null>(null);
@@ -28,6 +33,8 @@ export function ProofsTab({ d, editable }: { d: TicketDetail; editable: boolean 
   const [dropKey, setDropKey] = useState(0);
   const [sent, setSent] = useState<{ link: string; emailedTo: string | null; version?: number } | null>(null);
   const [zipping, setZipping] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<PickedFile | null>(null);
   const images = d.proofs.filter((p) => isImage(p.file.mime));
 
   const copy = async (text: string) => {
@@ -67,7 +74,24 @@ export function ProofsTab({ d, editable }: { d: TicketDetail; editable: boolean 
     <div className="flex flex-col gap-5">
       {editable && (
         <Card title="Upload a proof">
-          <FileDrop key={dropKey} purpose="proof" maxFiles={1} maxMb={MAX_FILE_MB} multiple={false} onChange={(ids) => setFileId(ids[0] ?? null)} onBusy={setBusy} label="Drop the design here or click to browse" hint={`Version ${(d.proofs[0]?.version ?? 0) + 1} · one file, up to ${MAX_FILE_MB} MB`} />
+          {picked ? (
+            <p className="flex items-center gap-2 rounded-lg border border-[var(--ds-navy-line)] bg-[var(--ds-navy-tint)] px-3 py-2 text-sm">
+              <Library size={15} className="shrink-0 text-[var(--ds-navy)]" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">
+                From the library: <strong>{picked.name}</strong> (version {(d.proofs[0]?.version ?? 0) + 1})
+              </span>
+              <button type="button" className="btn btn-ghost btn-sm" aria-label="Use an upload instead" onClick={() => setPicked(null)}>
+                <X size={14} />
+              </button>
+            </p>
+          ) : (
+            <>
+              <FileDrop key={dropKey} purpose="proof" maxFiles={1} maxMb={MAX_FILE_MB} multiple={false} onChange={(ids) => setFileId(ids[0] ?? null)} onBusy={setBusy} label="Drop the design here or click to browse" hint={`Version ${(d.proofs[0]?.version ?? 0) + 1} · one file, up to ${MAX_FILE_MB} MB`} />
+              <button type="button" className="btn btn-ghost btn-sm mt-2" onClick={() => setPicking(true)}>
+                <Library size={14} /> Pick from library
+              </button>
+            </>
+          )}
           <label className="ds-label mt-3 flex flex-col gap-1">
             Note for this version (optional)
             <textarea className="input min-h-16" value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} />
@@ -79,10 +103,11 @@ export function ProofsTab({ d, editable }: { d: TicketDetail; editable: boolean 
           <button
             type="button"
             className="btn btn-sm ds-btn-navy mt-4"
-            disabled={!fileId || busy || pending}
+            disabled={(!picked && !fileId) || busy || pending}
             onClick={async () => {
-              const r = await act(() => addProofAction(d.card.id, fileId!, note, send));
+              const r = await act(() => (picked ? proofFromLibraryAction(d.card.id, picked.fileId, note, send) : addProofAction(d.card.id, fileId!, note, send)));
               if (r.ok) {
+                setPicked(null);
                 toast.success(`Version ${r.data.version} uploaded${r.data.link ? " and sent for review" : ""}`);
                 if (r.data.link) setSent({ link: r.data.link, emailedTo: r.data.emailedTo, version: r.data.version });
                 setFileId(null);
@@ -94,6 +119,16 @@ export function ProofsTab({ d, editable }: { d: TicketDetail; editable: boolean 
             {send ? "Upload and send for review" : "Upload"}
           </button>
         </Card>
+      )}
+
+      {picking && (
+        <LibraryPicker
+          onClose={() => setPicking(false)}
+          onPick={(f) => {
+            setPicked(f);
+            setPicking(false);
+          }}
+        />
       )}
 
       {sent && (
@@ -112,9 +147,20 @@ export function ProofsTab({ d, editable }: { d: TicketDetail; editable: boolean 
         title="Versions"
         actions={
           d.proofs.length > 0 && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={downloadAll} disabled={zipping}>
-              <Download size={14} /> {zipping ? "Preparing…" : "Download all as ZIP"}
-            </button>
+            <span className="flex flex-wrap gap-2">
+              {lead && FINISHED_STATUSES.includes(d.card.status) && (
+                d.inPastDesigns ? (
+                  <Badge tone="green">In Past Designs</Badge>
+                ) : (
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={pending} onClick={() => act(() => addPastDesignAction(d.card.id))}>
+                    <Archive size={14} /> Add to Past Designs
+                  </button>
+                )
+              )}
+              <button type="button" className="btn btn-ghost btn-sm" onClick={downloadAll} disabled={zipping}>
+                <Download size={14} /> {zipping ? "Preparing…" : "Download all as ZIP"}
+              </button>
+            </span>
           )
         }
       >

@@ -48,6 +48,15 @@ export function safeFileName(name: string): string {
 
 export const isImage = (mime: string) => mime.startsWith("image/") && mime !== "image/vnd.adobe.photoshop";
 
+/** The library's file-type filter: pictures, PDFs, and vector or source artwork (SVG, AI, EPS, CorelDRAW). */
+export type FileKind = "image" | "pdf" | "vector" | "other";
+export function fileKind(mime: string): FileKind {
+  if (mime === "image/svg+xml" || mime === "application/postscript" || mime === "application/vnd.corel-draw") return "vector";
+  if (mime === "application/pdf") return "pdf";
+  if (isImage(mime)) return "image";
+  return "other";
+}
+
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1048576) return `${(n / 1024).toFixed(0)} KB`;

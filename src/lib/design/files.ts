@@ -5,7 +5,7 @@ import { db } from "./db";
 import { files, type FilePurpose } from "@/db/design-schema";
 import { DesignError } from "./dal";
 import { uploadLimit } from "./form";
-import { objectSize, removeObjects, signedDownloadUrl, signedUploadUrl } from "./storage";
+import { copyObject, objectSize, removeObjects, signedDownloadUrl, signedUploadUrl } from "./storage";
 import { mimeFor, safeFileName } from "./file-types";
 
 /**
@@ -58,6 +58,20 @@ export async function claimFiles(userId: string, ids: string[], purpose: FilePur
     throw new DesignError("A file was used somewhere else at the same moment. Please attach it again.");
   }
   return rows.map((r) => ({ id: r.id, fileName: r.fileName, mime: r.mime, size: r.size, storageKey: r.storageKey }));
+}
+
+/**
+ * A copy of a stored file, as a new unused file of this person's for another use (a library file picked as a proof, a delivered design
+ * kept in the library). It is claimed like an upload; if nothing claims it, the scheduled clean-up removes it. Copies, not shared rows,
+ * so deleting a ticket (which removes its proof files) never takes a library file with it, or the other way round.
+ */
+export async function copyFile(userId: string, fileId: string, purpose: FilePurpose): Promise<string> {
+  const src = await fileById(fileId);
+  if (!src) throw new DesignError("That file is no longer stored.");
+  const storageKey = `${purpose}/${new Date().toISOString().slice(0, 7)}/${randomUUID()}/${src.fileName}`;
+  await copyObject(src.storageKey, storageKey);
+  const [row] = await db.insert(files).values({ storageKey, fileName: src.fileName, mime: src.mime, size: src.size, purpose, uploadedBy: userId }).returning({ id: files.id });
+  return row.id;
 }
 
 /** Gives claimed files back, when what claimed them could not be saved. */
