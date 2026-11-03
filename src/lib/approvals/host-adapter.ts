@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { users } from "@/db/schema";
+import { departments, users } from "@/db/schema";
 import { aprUserRoles } from "@/db/approvals-schema";
 import { adminUnlocked, getCurrentUser as hostCurrentUser } from "@/lib/permissions";
 import { ALL_ROLES, type ApprovalsRole } from "./approvals.manifest";
@@ -74,6 +74,16 @@ export async function getDirectoryUsers(ids: string[]): Promise<DirectoryUser[]>
     .from(users)
     .where(inArray(users.id, [...new Set(ids)]));
   return rows.map((u) => ({ id: u.id, name: u.name, email: u.email, headAdmin: u.role === "head_admin", active: u.active }));
+}
+
+/** Who submitted a request, for its printed page: their name and the department they belong to in the hub (null when none is set). */
+export async function submitterOf(userId: string): Promise<{ name: string; department: string | null } | null> {
+  const [row] = await db
+    .select({ name: users.name, department: departments.name })
+    .from(users)
+    .leftJoin(departments, eq(departments.id, users.homeDepartmentId))
+    .where(eq(users.id, userId));
+  return row ?? null;
 }
 
 export const hasRole = (user: Pick<ApprovalsUser, "roles"> | null | undefined, role: ApprovalsRole) => !!user && user.roles.includes(role);

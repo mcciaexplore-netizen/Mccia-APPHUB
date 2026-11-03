@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/approvals/PageHeader";
 import { RequestDetailView } from "@/components/approvals/RequestDetailView";
 import { requirePage } from "@/lib/approvals/guard";
+import { submitterOf } from "@/lib/approvals/host-adapter";
 import { getRequestDetail } from "@/lib/approvals/request-queries";
 import { recordViewed } from "@/lib/approvals/requests";
 import { idSchema } from "@/lib/approvals/validation";
@@ -15,18 +16,18 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const detail = await getRequestDetail(id, user);
   if (!detail) notFound();
   // Noting that the approver opened it is a courtesy to the timeline: a failure here must never stop the page.
-  const [, sp] = await Promise.all([recordViewed(id, user).catch(() => {}), searchParams]);
+  const [, sp, submitter] = await Promise.all([recordViewed(id, user).catch(() => {}), searchParams, submitterOf(detail.requesterUserId)]);
   // Right after submitting, the person who raised it sees a confirmation that stays on the page (a toast would be gone in seconds).
   const justSubmitted = sp.submitted === "1" && detail.requesterUserId === user.id;
   return (
     <div className="page-enter">
-      <PageHeader title="Request" />
+      <div className="apr-no-print"><PageHeader title="Request" /></div>
       {justSubmitted && (
-        <div role="status" className="mb-6 rounded-md border border-line bg-green-tint px-4 py-3 text-sm text-ink">
+        <div role="status" className="apr-no-print mb-6 rounded-md border border-line bg-green-tint px-4 py-3 text-sm text-ink">
           <b>Request submitted: {detail.requestNo}.</b> Keep this number. When it is approved or rejected you will get a notification on the bell above, and it opens this page.
         </div>
       )}
-      <RequestDetailView d={detail} />
+      <RequestDetailView d={detail} submitter={submitter ?? { name: detail.requesterName, department: null }} viewerName={user.name} />
     </div>
   );
 }

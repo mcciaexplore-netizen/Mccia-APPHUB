@@ -1,7 +1,9 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Download, Paperclip } from "lucide-react";
 import { StatusPill } from "@/components/approvals/shared-ui";
 import { DecisionPanel, WithdrawButton } from "@/components/approvals/DecisionPanel";
+import { PrintButton, PrintedOn } from "@/components/approvals/PrintRequest";
 import { Timeline } from "@/components/approvals/Timeline";
 import { TYPE_LABEL } from "@/lib/approvals/calc";
 import { formatDate, formatDateTime, formatINR, isoToDisplay } from "@/lib/approvals/format";
@@ -31,26 +33,50 @@ function Files({ items }: { items: AttachmentRow[] }) {
             <span className="block truncate font-bold" title={a.fileName}>{a.fileName}</span>
             <span className="block text-xs text-[var(--z-muted)]">{SLOT_LABEL[a.slot] ?? a.slot} · {size(a.size)}</span>
           </span>
-          <a className="btn btn-ghost btn-sm" href={`/api/approvals/files/${a.id}`} target="_blank" rel="noopener noreferrer">Open</a>
-          <a className="btn btn-ghost btn-sm" href={`/api/approvals/files/${a.id}?download=1`} aria-label={`Download ${a.fileName}`}><Download size={14} /></a>
+          <a className="btn btn-ghost btn-sm apr-no-print" href={`/api/approvals/files/${a.id}`} target="_blank" rel="noopener noreferrer">Open</a>
+          <a className="btn btn-ghost btn-sm apr-no-print" href={`/api/approvals/files/${a.id}?download=1`} aria-label={`Download ${a.fileName}`}><Download size={14} /></a>
         </li>
       ))}
     </ul>
   );
 }
 
-/** Everything about one request, read only, with the approver's controls when it is waiting for them. */
-export function RequestDetailView({ d }: { d: RequestDetail }) {
+/** What the printed page says about the status: decided on a day, or the last thing that happened to it. */
+function statusDate(d: RequestDetail): string {
+  if (d.decidedAt) return `on ${formatDateTime(d.decidedAt)}`;
+  return `since ${formatDateTime(d.events.at(-1)?.createdAt ?? d.requestedAt)}`;
+}
+
+/**
+ * Everything about one request, read only, with the approver's controls when it is waiting for them. Print (window.print) puts it on paper:
+ * the print-only heading and footer below appear there, and the controls (.apr-no-print) and the page around it are left out (approvals.css).
+ */
+export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDetail; submitter: { name: string; department: string | null }; viewerName: string }) {
   const e = d.expenditure;
   const name = d.hr ? `${d.hr.firstName} ${d.hr.lastName}` : d.requesterName;
+  const status = <StatusPill status={d.status} currentStepNo={d.steps.find((s) => s.status === "pending")?.stepNo} />;
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="apr-printable space-y-8">
+      <div className="apr-print-only apr-print-head">
+        <Image src="/mccia-logo.png" alt="MCCIA" width={134} height={36} loading="eager" className="h-10 w-auto" />
+        <h1>{d.requestNo ?? "Request"} · {TYPE_LABEL[d.type]}{(d.hr?.categoryName ?? e?.categoryName) ? ` — ${d.hr?.categoryName ?? e?.categoryName}` : ""}</h1>
+        <dl className="zdl">
+          <Item label="Submitted by">{submitter.name}</Item>
+          <Item label="Department">{submitter.department}</Item>
+          <Item label="Submitted on">{formatDateTime(d.requestedAt)}</Item>
+          <Item label="Status"><>{status} {statusDate(d)}</></Item>
+        </dl>
+      </div>
+
+      <div className="apr-no-print flex flex-wrap items-center gap-3">
         <h2 className="!text-xl">{d.requestNo ?? "Request"}</h2>
         <span className="text-[var(--z-muted)]">{TYPE_LABEL[d.type]}</span>
-        <StatusPill status={d.status} currentStepNo={d.steps.find((s) => s.status === "pending")?.stepNo} />
-        {d.can.withdraw && <span className="ml-auto"><WithdrawButton id={d.id} /></span>}
+        {status}
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          <PrintButton />
+          {d.can.withdraw && <WithdrawButton id={d.id} />}
+        </span>
       </div>
 
       {d.status === "returned" && (
@@ -58,14 +84,14 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
           <p><b>Returned for corrections{d.returned ? ` by ${d.returned.byName}` : ""}.</b></p>
           {d.returned?.comment && <p className="whitespace-pre-wrap">&ldquo;{d.returned.comment}&rdquo;</p>}
           {d.can.edit ? (
-            <p><Link href={`/approvals/requests/${d.id}/edit`} className="btn btn-primary btn-sm">Edit and resubmit</Link></p>
+            <p className="apr-no-print"><Link href={`/approvals/requests/${d.id}/edit`} className="btn btn-primary btn-sm">Edit and resubmit</Link></p>
           ) : (
             <p>Waiting for {d.requesterName} to correct it. It goes back to {d.returned?.byName ?? "the same approver"} when they do.</p>
           )}
         </div>
       )}
 
-      {d.can.decide && <DecisionPanel id={d.id} mode={d.can.mode} />}
+      {d.can.decide && <div className="apr-no-print"><DecisionPanel id={d.id} mode={d.can.mode} /></div>}
 
       <section aria-labelledby="req-details">
         <h2 id="req-details" className="mb-3">Request</h2>
@@ -119,6 +145,8 @@ export function RequestDetailView({ d }: { d: RequestDetail }) {
         <h2 id="req-timeline" className="mb-3">Timeline</h2>
         <Timeline events={d.events} />
       </section>
+
+      <footer className="apr-print-only apr-print-foot"><PrintedOn by={viewerName} /></footer>
     </div>
   );
 }
