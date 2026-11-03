@@ -8,7 +8,7 @@ import { submitRequest } from "@/lib/design/actions/requests";
 import { MAX_FILES, MAX_FILE_MB, MAX_REFERENCE_LINKS } from "@/lib/design/form";
 import { priorityFor } from "@/lib/design/rules";
 import { FileDrop } from "../file-drop";
-import { Card, PriorityBadge } from "../ui";
+import { PriorityBadge } from "../ui";
 
 /**
  * The request form, in four cards: what is needed (each ticked design opens its own questions), the brief and event, when it is needed
@@ -16,6 +16,31 @@ import { Card, PriorityBadge } from "../ui";
  */
 
 type FormType = { key: string; name: string; questions: DesignQuestion[] };
+
+/** An emoji for each kind of design on its tile; a kind a lead added later gets the palette. */
+const TYPE_EMOJI: Record<string, string> = {
+  flyer: "📄",
+  whatsapp: "💬",
+  instagram: "📸",
+  linkedin: "💼",
+  twitter: "🐦",
+  banner: "🪧",
+  backdrop: "🖥️",
+  book: "📚",
+  brochure2: "📋",
+  brochure4: "📑",
+  other: "✏️",
+};
+
+/** One of the form's sections: a white card with a navy title (the form's own look, a little roomier than the module's cards). */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-[#e5e7eb] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.08)] sm:p-7">
+      <h2 className="mb-5 text-[1.05rem] font-bold text-[#003F8A]">{title}</h2>
+      {children}
+    </section>
+  );
+}
 type Answers = Record<string, Record<string, string>>;
 
 const required = <span className="text-[var(--ds-red)]" aria-hidden> *</span>;
@@ -145,17 +170,27 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
   const priority = delivery && delivery >= minDelivery ? priorityFor(delivery, today) : null;
 
   return (
-    <form key={formKey} onSubmit={submit} className="flex flex-col gap-5" noValidate={false}>
-      <Card title="What do you need?">
+    <form key={formKey} onSubmit={submit} className="flex flex-col gap-6" noValidate={false}>
+      <Section title="What do you need?">
         <fieldset>
           <legend className="sr-only">Kinds of design</legend>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {types.map((t) => {
               const on = chosen.includes(t.key);
               return (
-                <label key={t.key} className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${on ? "border-[var(--ds-navy)] bg-[var(--ds-navy-tint)] text-[var(--ds-navy)]" : "border-[var(--ds-line)] bg-white text-ink hover:border-[var(--ds-navy-line)]"}`}>
-                  <input type="checkbox" className="h-4 w-4 accent-[#003F8A]" checked={on} onChange={() => toggle(t.key)} />
-                  {t.name}
+                <label
+                  key={t.key}
+                  className={`relative flex cursor-pointer items-center gap-3 rounded-xl border p-4 text-sm font-semibold transition duration-150 ${
+                    on
+                      ? "scale-[1.02] border-[#003F8A] bg-[#E8F0FE] text-[#003F8A] shadow-[0_4px_12px_rgba(0,63,138,0.15)]"
+                      : "border-[#e5e7eb] bg-white text-ink shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:border-[#9ca3af] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
+                  }`}
+                >
+                  <span className="text-2xl leading-none" aria-hidden>
+                    {TYPE_EMOJI[t.key] ?? "🎨"}
+                  </span>
+                  <span className="min-w-0 flex-1">{t.name}</span>
+                  <input type="checkbox" className="ds-check" aria-label={t.name} checked={on} onChange={() => toggle(t.key)} />
                 </label>
               );
             })}
@@ -179,9 +214,9 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
             })}
           </div>
         )}
-      </Card>
+      </Section>
 
-      <Card title="Request details">
+      <Section title="Request details">
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1 text-sm" htmlFor="brief">
             <span className="font-medium text-ink">Title / brief{required}</span>
@@ -207,9 +242,9 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
             </datalist>
           </label>
         </div>
-      </Card>
+      </Section>
 
-      <Card title="References">
+      <Section title="References">
         <p className="-mt-1 mb-4 text-sm ds-muted">Add links or files for reference (logos, examples, inspiration, content)</p>
         <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-2 text-sm">
@@ -268,9 +303,9 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
             />
           </label>
         </div>
-      </Card>
+      </Section>
 
-      <Card title="When do you need it?">
+      <Section title="When do you need it?">
         <div className="flex flex-wrap items-end gap-4">
           <label className="flex flex-col gap-1 text-sm" htmlFor="delivery">
             <span className="font-medium text-ink">Delivery date{required}</span>
@@ -282,7 +317,7 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
           </div>
         </div>
         <p className="mt-2 text-xs ds-muted">Next day or sooner is Urgent, within 3 days High, within 10 days Normal, later Low.</p>
-      </Card>
+      </Section>
 
 
       {error && (
@@ -290,7 +325,7 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
           {error}
         </p>
       )}
-      <button type="submit" className="btn ds-btn-navy w-full justify-center py-3 text-base" disabled={pending || uploading}>
+      <button type="submit" className="btn ds-btn-navy h-14 w-full justify-center rounded-xl text-base font-bold" disabled={pending || uploading}>
         {uploading ? "Waiting for files to upload…" : pending ? "Submitting…" : "Submit request →"}
       </button>
     </form>
