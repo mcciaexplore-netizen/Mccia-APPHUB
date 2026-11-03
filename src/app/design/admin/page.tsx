@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ActivityFeed } from "@/components/design/activity-feed";
 import { AcceptedList } from "@/components/design/admin/AcceptedList";
+import { ActiveRequests } from "@/components/design/admin/ActiveRequests";
 import { PendingList } from "@/components/design/admin/PendingList";
 import { EmailSwitch } from "@/components/design/team/email-switch";
 import { Badge, Card, DueText, Empty, Kpi, PageHeader, PriorityBadge, StatusBadge } from "@/components/design/ui";
@@ -13,15 +14,17 @@ import { activity } from "@/lib/design/detail";
 import { openByDesigner, overview } from "@/lib/design/reports";
 
 /**
- * The creative team's dashboard: the four numbers that matter, the requests waiting for a lead (leads only: they accept and assign), the
- * requests this lead accepted and where each stands now (leads only), the person's own queue, what is happening now, who holds the open work (leads only), and where their emails go. A lead sees the whole
+ * The creative team's dashboard: the four numbers that matter, every request waiting for a lead (leads only: they accept and assign),
+ * every accepted request still open grouped by designer with quick filters (leads only), the requests this lead accepted and where each
+ * stands now (leads only), the person's own queue, what is happening now, who holds the open work (leads only), and where their emails go. A lead sees the whole
  * team's numbers and activity; a designer only those of the tickets assigned to them.
  */
 export default async function DesignAdminHome() {
   const u = await requireTeam();
-  const [o, pending, accepted, feed, byDesigner, queue, emailOn] = await Promise.all([
+  const [o, pending, active, accepted, feed, byDesigner, queue, emailOn] = await Promise.all([
     overview(u.lead ? undefined : u.id),
     u.lead ? pendingItems() : Promise.resolve([]),
+    u.lead ? listTickets({ statuses: OPEN_STATUSES }) : Promise.resolve([]),
     u.lead ? acceptedBy(u.id) : Promise.resolve([]),
     activity(u.lead ? null : u.id),
     u.lead ? openByDesigner() : Promise.resolve([]),
@@ -34,7 +37,7 @@ export default async function DesignAdminHome() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Open tickets" value={o.open} />
         <Kpi label="Overdue" value={o.overdue} tone={o.overdue ? "red" : undefined} />
-        <Kpi label="In review" value={o.inReview} tone="purple" />
+        <Kpi label="In review" value={o.inReview} tone="purple" hint={u.lead ? "Waiting on the requester" : undefined} />
         <Kpi label="Delivered this week" value={o.deliveredThisWeek} tone="green" />
       </div>
       {u.lead && (
@@ -52,8 +55,13 @@ export default async function DesignAdminHome() {
           </Link>
         }
       >
-        <PendingList items={pending} limit={5} />
+        <PendingList items={pending} />
       </Card>
+      )}
+      {u.lead && (
+        <Card title="All active requests" pad={false}>
+          <ActiveRequests tickets={active} />
+        </Card>
       )}
       {u.lead && (
         <Card title="Requests I accepted" pad={false}>

@@ -290,6 +290,16 @@ try {
   check("the In Progress filter shows it", (await accepted.locator("tbody tr", { hasText: number }).count()) === 1);
   await accepted.locator("tbody tr", { hasText: number }).locator("td").nth(1).click();
   check("clicking the row opens the ticket", await L.page.waitForURL(`**/design/admin/tickets/${t1.id}`, { timeout: 15000 }).then(() => true).catch(() => false), pathOf(L.page));
+  await go(L.page, "/design/admin");
+  const active = L.page.locator("section", { has: L.page.getByRole("heading", { name: "All active requests" }) });
+  const devGroup = active.locator("tbody", { hasText: "Designer: ZZD Designer Dev" });
+  const activeRow = devGroup.locator("tr", { hasText: number });
+  check("the lead's All active requests lists it under its designer, with requester, status and health", (await activeRow.count()) === 1 && /ZZD Requester Riya/.test(await activeRow.innerText()) && /Assigned/i.test(await activeRow.innerText()) && /On track|Due soon/.test(await activeRow.innerText()), await activeRow.innerText().catch(() => ""));
+  await active.getByRole("tab", { name: /^Unassigned/ }).click();
+  check("the Unassigned filter leaves it out", (await active.locator("tr", { hasText: number }).count()) === 0);
+  await active.getByRole("tab", { name: /^All/ }).click();
+  check("its ticket number opens the ticket", await (async () => { await active.getByRole("link", { name: number, exact: true }).click(); return L.page.waitForURL(`**/design/admin/tickets/${t1.id}`, { timeout: 15000 }).then(() => true).catch(() => false); })());
+  check("a designer has no All active requests section", !/All active requests/.test(await (await go(D1.page, "/design/admin"), mainText(D1.page))));
   check("a designer has no Requests I accepted section", !/Requests I accepted/.test(await (await go(D1.page, "/design/admin"), mainText(D1.page))));
   await go(R2.page, "/design/my-requests");
   check("another requester does not see it in their requests", !(await mainText(R2.page)).includes(number));
