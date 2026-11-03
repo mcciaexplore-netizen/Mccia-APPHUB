@@ -39,15 +39,23 @@ export function DesignSidebar({ section, roles, pending = 0 }: { section: Design
                 </span>
               )}
             </Link>
-            {i.children && (
-              <ul>
-                {i.children.map((c) => (
-                  <li key={c.href}>
-                    <Link href={c.href} aria-current={childActive(c.href) ? "page" : undefined} className={`${row(childActive(c.href))} min-h-8 pl-8 text-[0.82rem] font-medium`}>
-                      <span className="flex-1 py-1.5">{c.label}</span>
-                    </Link>
-                  </li>
-                ))}
+            {/* The sub-lines (the library's sections) show only while on that page, nested under it with a guide line. */}
+            {i.children && matches(i.href) && (
+              <ul aria-label={`${i.label} sections`} className="mb-1 ml-6 border-l border-gray-200">
+                {i.children.map((c) => {
+                  const on = childActive(c.href);
+                  return (
+                    <li key={c.href}>
+                      <Link
+                        href={c.href}
+                        aria-current={on ? "page" : undefined}
+                        className={`-ml-px flex min-h-8 items-center border-l-2 pl-4 pr-3 text-[0.82rem] transition-colors ${on ? "border-[#003F8A] font-semibold text-[#003F8A]" : "border-transparent font-medium text-subtle hover:border-gray-300 hover:text-ink"}`}
+                      >
+                        <span className="flex-1 py-1.5">{c.label}</span>
+                      </Link>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </li>

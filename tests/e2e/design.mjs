@@ -188,12 +188,12 @@ try {
   await go(O.page, "/design/admin"); check("and so does Design Admin", pathOf(O.page) === "/", pathOf(O.page));
   await go(U.page, "/design/admin"); check("given Design Admin but neither App Admin nor App Staff: sent to the hub", pathOf(U.page) === "/", pathOf(U.page));
   await go(D1.page, "/design/admin"); check("App Staff of Design Admin (a designer) opens it", pathOf(D1.page) === "/design/admin");
-  check("a member's menu: dashboard, board, library, calendar", (await navLabels(D1.page, "Design Admin")) === "Dashboard|Board|Library|Brand Assets|Templates|Past Designs|All Files|Calendar", await navLabels(D1.page, "Design Admin"));
+  check("a member's menu: dashboard, board, library, calendar", (await navLabels(D1.page, "Design Admin")) === "Dashboard|Board|Library|Calendar", await navLabels(D1.page, "Design Admin"));
   for (const p of ["/design/admin/pending", "/design/admin/workload", "/design/admin/reports", "/design/admin/settings"]) {
     await go(D1.page, p); check(`a member is sent back from ${p}`, pathOf(D1.page) === "/design/admin", pathOf(D1.page));
   }
   await go(L.page, "/design/admin");
-  check("a lead opens Design Admin, with its menu", pathOf(L.page) === "/design/admin" && (await navLabels(L.page, "Design Admin")) === "Dashboard|Pending Review|Board|Library|Brand Assets|Templates|Past Designs|All Files|Calendar|Workload|Reports|Settings", await navLabels(L.page, "Design Admin"));
+  check("a lead opens Design Admin, with its menu", pathOf(L.page) === "/design/admin" && (await navLabels(L.page, "Design Admin")) === "Dashboard|Pending Review|Board|Library|Calendar|Workload|Reports|Settings", await navLabels(L.page, "Design Admin"));
   await go(L.page, "/design/admin/settings");
   check("a lead (not the Support Admin) does not see Integrations", !(await L.page.getByRole("tab", { name: /Integrations/ }).count()) && !/Delete all past data/.test(await mainText(L.page)));
   const anon = await fresh();
@@ -442,6 +442,9 @@ try {
   const SYSTEM_FOLDERS = ["00000000-0000-4000-8000-0000000d0001", "00000000-0000-4000-8000-0000000d0002", "00000000-0000-4000-8000-0000000d0003"];
   await go(L.page, "/design/admin/library");
   const lib = await mainText(L.page);
+  check("on a library page the sidebar shows its sections nested under Library", (await navLabels(L.page, "Design Admin")) === "Dashboard|Pending Review|Board|Library|Brand Assets|Templates|Past Designs|All Files|Calendar|Workload|Reports|Settings" && (await L.page.locator('nav[aria-label="Design Admin"] ul[aria-label="Library sections"] a').count()) === 4, await navLabels(L.page, "Design Admin"));
+  await L.page.locator('nav[aria-label="Design Admin"]').getByRole("link", { name: "Templates" }).click();
+  check("a section is marked as the current page, and Library is not", await poll(async () => (await L.page.locator('nav[aria-label="Design Admin"] a[aria-current="page"]').allInnerTexts()).map((t) => t.trim()).join("|") === "Templates"));
   check("opening the library sets up its sections and starting folders", ["Brand Assets", "Logos", "Brand Colors", "Fonts", "Icons", "Letterheads", "Templates", "Social Media Templates", "Event Templates", "Presentations", "Past Designs"].every((n) => lib.includes(n)), lib.slice(0, 300));
   await Promise.all([go(D1.page, "/design/admin/library"), go(L.page, "/design/admin/library")]);
   check("opening it again (twice at once) makes no second copy", (await sql`select count(*)::int n from design_folders where id::text like '00000000-0000-4000-8000-0000000d%'`)[0].n === 11 && (await sql`select count(*)::int n from design_folders where name = 'Logos' and not is_deleted`)[0].n === 1);
