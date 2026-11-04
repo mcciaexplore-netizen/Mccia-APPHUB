@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { CheckCircle2, Plus, Trash2 } from "lucide-react";
+import { BarChart3, Bot, Code2, Globe, Plus, Sparkles, Trash2, Zap, type LucideIcon } from "lucide-react";
 import { submitRequest } from "@/lib/aistudio/actions/requests";
 import { MAX_FILES, MAX_FILE_MB, MAX_LINKS, REQUEST_TYPES, TYPE_HINT, TYPE_LABEL } from "@/lib/aistudio/aistudio.manifest";
 import type { RequestType } from "@/db/aistudio-schema";
@@ -17,6 +17,16 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     </section>
   );
 }
+
+/** Each kind of request's icon on its tile. */
+const TYPE_ICON: Record<RequestType, LucideIcon> = {
+  app_development: Code2,
+  automation: Zap,
+  chatbot: Bot,
+  data_analysis: BarChart3,
+  website_tool: Globe,
+  other: Sparkles,
+};
 
 const required = <span className="text-[var(--ai-red)]"> *</span>;
 
@@ -54,7 +64,7 @@ export function RequestForm({ departments, defaultDepartment }: { departments: s
   if (done)
     return (
       <div className="ai-card flex flex-col items-center gap-4 px-6 py-10 text-center">
-        <CheckCircle2 size={48} className="text-[var(--ai-green)]" aria-hidden />
+        <Sparkles size={48} className="text-[#003F8A]" aria-hidden />
         <div>
           <p className="text-sm ai-muted">Request</p>
           <p className="text-3xl font-extrabold text-[var(--ai-navy)]">{done.number}</p>
@@ -93,18 +103,20 @@ export function RequestForm({ departments, defaultDepartment }: { departments: s
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {REQUEST_TYPES.map((t) => {
               const on = type === t;
+              const Icon = TYPE_ICON[t];
               return (
                 <label
                   key={t}
                   className={`relative flex cursor-pointer items-start gap-3 rounded-xl border p-4 text-sm transition duration-150 ${
-                    on ? "border-[#003F8A] bg-[#E8F0FE] shadow-[0_4px_12px_rgba(0,63,138,0.15)]" : "border-[#e5e7eb] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:border-[#9ca3af] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
+                    on ? "border-[#003F8A] bg-[#003F8A] shadow-[0_4px_12px_rgba(0,63,138,0.25)]" : "border-[#e5e7eb] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:border-[#9ca3af] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
                   }`}
                 >
+                  <Icon size={22} className={`mt-0.5 shrink-0 ${on ? "text-white" : "text-[#003F8A]"}`} aria-hidden />
                   <span className="min-w-0 flex-1">
-                    <span className={`block font-semibold ${on ? "text-[#003F8A]" : "text-ink"}`}>{TYPE_LABEL[t]}</span>
-                    <span className="mt-0.5 block text-xs ai-muted">{TYPE_HINT[t]}</span>
+                    <span className={`block font-semibold ${on ? "text-white" : "text-ink"}`}>{TYPE_LABEL[t]}</span>
+                    <span className={`mt-0.5 block text-xs ${on ? "text-white/80" : "ai-muted"}`}>{TYPE_HINT[t]}</span>
                   </span>
-                  <input type="radio" name="requestType" value={t} className="ai-check mt-0.5" aria-label={TYPE_LABEL[t]} checked={on} onChange={() => setType(t)} />
+                  <input type="radio" name="requestType" value={t} className={`ai-check mt-0.5 ${on ? "ai-check-light" : ""}`} aria-label={TYPE_LABEL[t]} checked={on} onChange={() => setType(t)} />
                 </label>
               );
             })}
@@ -195,7 +207,15 @@ export function RequestForm({ departments, defaultDepartment }: { departments: s
         </p>
       )}
       <button type="submit" className="btn ai-btn-navy h-14 w-full justify-center rounded-xl text-base font-bold" disabled={pending || uploading}>
-        {uploading ? "Waiting for files to upload…" : pending ? "Submitting…" : "Submit request →"}
+        {uploading ? (
+          "Waiting for files to upload…"
+        ) : pending ? (
+          "Submitting…"
+        ) : (
+          <>
+            <Sparkles size={18} aria-hidden /> Submit request →
+          </>
+        )}
       </button>
     </form>
   );

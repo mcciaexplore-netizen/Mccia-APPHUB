@@ -1,3 +1,4 @@
+import { Sparkles } from "lucide-react";
 import { RequestForm } from "@/components/aistudio/request/request-form";
 import { PageHeader } from "@/components/aistudio/ui";
 import { requireRequester } from "@/lib/aistudio/dal";
@@ -11,7 +12,14 @@ export default async function RequestPage() {
   const departments = await listDepartmentNames();
   return (
     <div className="ai-request-page">
-      <PageHeader title="Request from AI Studio" subtitle="Tell us what you need and we'll get back to you." />
+      <PageHeader
+        title={
+          <span className="inline-flex items-center gap-2.5">
+            <Sparkles className="size-[0.9em] shrink-0 text-[#003F8A]" aria-hidden />
+            Request from AI Studio
+          </span>
+        }
+        subtitle="Tell us what you need and we'll get back to you." />
       <RequestForm departments={departments} defaultDepartment={user.department ?? ""} />
     </div>
   );

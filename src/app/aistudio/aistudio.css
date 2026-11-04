@@ -33,6 +33,7 @@
 /* The request form's type tiles: the real radio button, drawn as a round navy checkmark. */
 .ai-check { appearance: none; flex-shrink: 0; width: 1.25rem; height: 1.25rem; border-radius: 9999px; border: 2px solid #cbd5e1; background: #fff; cursor: pointer; transition: background-color 0.15s, border-color 0.15s; }
 .ai-check:checked { border-color: #003f8a; background: #003f8a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 10.5l3.2 3.2L15 7'/%3E%3C/svg%3E") center / 80% no-repeat; }
+.ai-check.ai-check-light:checked { border-color: #fff; }
 .ai-check:focus-visible { outline: 2px solid #003f8a; outline-offset: 2px; }
 
 .ai-root { --c-primary: var(--ai-navy); --grad-primary: linear-gradient(135deg, var(--ai-navy) 0%, var(--ai-navy-2) 100%); --c-border-hover: var(--ai-navy-line); --c-blue-tint: var(--ai-navy-tint); --c-blue-tint-border: var(--ai-navy-line); }
