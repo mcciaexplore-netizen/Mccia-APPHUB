@@ -267,6 +267,13 @@
       "when": 1793618652091,
       "tag": "0037_design",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793776936865,
+      "tag": "0038_aistudio",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,91 @@
+/*
+ * AI Studio's own look on the hub's base (src/app/globals.css): navy #003F8A with green #10B981, white 12px cards on a light grey page.
+ * Everything here is prefixed ai- (or scoped under .ai-root) so nothing can change a hub page: the stylesheet stays loaded once someone has
+ * opened /aistudio. Buttons and inputs use the hub's own classes (btn, input), recoloured inside .ai-root.
+ */
+:root {
+  --ai-navy: #003f8a;
+  --ai-navy-2: #0056b3;
+  --ai-navy-tint: rgba(0, 63, 138, 0.07);
+  --ai-navy-line: rgba(0, 63, 138, 0.16);
+  --ai-green: #10b981;
+  --ai-green-text: #059669;
+  --ai-green-tint: rgba(16, 185, 129, 0.09);
+  --ai-amber: #d97706;
+  --ai-amber-tint: rgba(217, 119, 6, 0.1);
+  --ai-red: #dc2626;
+  --ai-red-tint: rgba(220, 38, 38, 0.08);
+  --ai-purple: #7c3aed;
+  --ai-purple-tint: rgba(124, 58, 237, 0.09);
+  --ai-grey: #64748b;
+  --ai-grey-tint: #f1f5f9;
+  --ai-page: #f5f5f5;
+  --ai-line: #e5e7eb;
+  --ai-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 14px rgba(15, 23, 42, 0.05);
+  --ai-shadow-hover: 0 6px 22px rgba(15, 23, 42, 0.1);
+}
+
+/* The page behind AI Studio is light grey; the hub frame around other pages is untouched. */
+.min-h-screen:has(.ai-root) { background: var(--ai-page); }
+/* The request form's page is a touch cooler grey. */
+.min-h-screen:has(.ai-request-page) { background: #f5f7fa; }
+
+/* The request form's type tiles: the real radio button, drawn as a round navy checkmark. */
+.ai-check { appearance: none; flex-shrink: 0; width: 1.25rem; height: 1.25rem; border-radius: 9999px; border: 2px solid #cbd5e1; background: #fff; cursor: pointer; transition: background-color 0.15s, border-color 0.15s; }
+.ai-check:checked { border-color: #003f8a; background: #003f8a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 10.5l3.2 3.2L15 7'/%3E%3C/svg%3E") center / 80% no-repeat; }
+.ai-check:focus-visible { outline: 2px solid #003f8a; outline-offset: 2px; }
+
+.ai-root { --c-primary: var(--ai-navy); --grad-primary: linear-gradient(135deg, var(--ai-navy) 0%, var(--ai-navy-2) 100%); --c-border-hover: var(--ai-navy-line); --c-blue-tint: var(--ai-navy-tint); --c-blue-tint-border: var(--ai-navy-line); }
+.ai-root .text-primary { color: var(--ai-navy); }
+
+.ai-card { background: #fff; border: 1px solid var(--ai-line); border-radius: 12px; box-shadow: var(--ai-shadow); }
+.ai-card-hover { transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease; }
+.ai-card-hover:hover { box-shadow: var(--ai-shadow-hover); border-color: var(--ai-navy-line); transform: translateY(-1px); }
+.ai-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ai-grey); }
+.ai-muted { color: var(--ai-grey); }
+
+/* Badges: a tone sets the colour */
+.ai-badge { display: inline-flex; align-items: center; gap: 0.3rem; border-radius: 99px; padding: 0.15rem 0.6rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; border: 1px solid transparent; line-height: 1.5; }
+.ai-tone-neutral { background: var(--ai-grey-tint); color: #475569; border-color: #e2e8f0; }
+.ai-tone-blue { background: var(--ai-navy-tint); color: var(--ai-navy); border-color: var(--ai-navy-line); }
+.ai-tone-amber { background: var(--ai-amber-tint); color: #b45309; border-color: rgba(217, 119, 6, 0.22); }
+.ai-tone-purple { background: var(--ai-purple-tint); color: var(--ai-purple); border-color: rgba(124, 58, 237, 0.2); }
+.ai-tone-green { background: var(--ai-green-tint); color: var(--ai-green-text); border-color: rgba(16, 185, 129, 0.22); }
+.ai-tone-red { background: var(--ai-red-tint); color: var(--ai-red); border-color: rgba(220, 38, 38, 0.2); }
+.ai-tone-orange { background: rgba(234, 88, 12, 0.09); color: #c2410c; border-color: rgba(234, 88, 12, 0.22); }
+
+/* Buttons in AI Studio's colours */
+.ai-btn-navy { background: var(--ai-navy); color: #fff; border: 1px solid var(--ai-navy); }
+.ai-btn-navy:hover:not(:disabled) { background: #00336f; }
+.ai-btn-green { background: var(--ai-green); color: #fff; border: 1px solid var(--ai-green); }
+.ai-btn-green:hover:not(:disabled) { background: #0e9f6e; }
+.ai-btn-outline-red { background: #fff; color: var(--ai-red); border: 1px solid rgba(220, 38, 38, 0.45); }
+.ai-btn-outline-red:hover:not(:disabled) { background: var(--ai-red-tint); }
+.ai-root .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* The five progress steps */
+.ai-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.35rem; }
+.ai-step-bar { height: 6px; border-radius: 99px; background: #e5e7eb; }
+.ai-step-bar[data-on="true"] { background: var(--ai-navy); }
+.ai-step-bar[data-done="true"] { background: var(--ai-green); }
+.ai-step-text { margin-top: 0.3rem; font-size: 0.68rem; color: var(--ai-grey); line-height: 1.25; }
+.ai-step-text[data-on="true"] { color: var(--ai-navy); font-weight: 700; }
+
+/* Avatar */
+.ai-avatar { display: inline-grid; place-items: center; border-radius: 99px; background: var(--ai-navy); color: #fff; font-weight: 700; flex-shrink: 0; }
+
+/* Drop zone */
+.ai-drop { border: 2px dashed #cbd5e1; border-radius: 12px; background: #fafafa; transition: border-color 0.15s ease, background 0.15s ease; }
+.ai-drop[data-over="true"] { border-color: var(--ai-navy); background: var(--ai-navy-tint); }
+
+/* Tabs */
+.ai-tabs { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; background: #fff; border: 1px solid var(--ai-line); border-radius: 10px; padding: 0.25rem; }
+.ai-tab { padding: 0.4rem 0.85rem; border-radius: 7px; font-size: 0.82rem; font-weight: 600; color: var(--ai-grey); }
+.ai-tab[aria-selected="true"], .ai-tab[aria-current="page"] { background: var(--ai-navy); color: #fff; }
+.ai-tab:not([aria-selected="true"]):not([aria-current="page"]):hover { background: var(--ai-grey-tint); color: #0f172a; }
+
+/* Live dot */
+@keyframes ai-pulse { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); } 70% { box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+.ai-live { width: 8px; height: 8px; border-radius: 99px; background: var(--ai-green); animation: ai-pulse 1.8s infinite; }
+@media (prefers-reduced-motion: reduce) { .ai-live { animation: none; } .ai-card-hover:hover { transform: none; } }
+

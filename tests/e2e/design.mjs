@@ -247,6 +247,8 @@ try {
 
   check("the content typed for the design is kept with the request", (await ticketByNumber(number))?.details?.__content?.text === "ZZD Annual General Meeting\n12 November, 5 pm, MCCIA Hall", JSON.stringify((await ticketByNumber(number))?.details));
   check("an http:// reference link is accepted and kept", JSON.stringify((await ticketByNumber(number))?.reference_links) === JSON.stringify(["http://example.org/brief"]), JSON.stringify((await ticketByNumber(number))?.reference_links));
+  // The retired kind is only in databases set up before it was retired: add it (switched off) when this one has none.
+  await sql`insert into design_types (key, name, sla_hours, effort_hours, questions, is_active, sort_order) values ('media', 'Photo / video / reel', 72, 8, '[{"id": "duration", "label": "Duration (if video or reel)", "type": "text"}]'::jsonb, false, 110) on conflict (key) do nothing`;
   const mediaTicket = (await sql`insert into design_tickets (number, title, brief, design_type_id, requirements, details, status, requester_id, assignee_id, priority)
     select 'DF-ZZD-3', 'ZZD old reel', 'x', id, '["media"]'::jsonb, '{"media": {"duration": "30 seconds"}}'::jsonb, 'closed', ${lead.id}, ${d1.id}, 'normal' from design_types where key = 'media' returning id`)[0];
   if (mediaTicket) {

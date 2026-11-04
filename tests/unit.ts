@@ -68,6 +68,9 @@ import {
 import { MAX_FILES as DESIGN_MAX_FILES, RETIRED_TYPE_KEYS as DESIGN_RETIRED, contentOf as designContentOf, SEED_TYPES as DESIGN_SEED, checkRequest as designCheck, cleanLinks as designLinks, ticketTitle as designTitle } from "../src/lib/design/form";
 import { loadTone as designTone, suggestAssignee as designSuggest, workingDays as designDays, workloadGrid as designGrid } from "../src/lib/design/capacity";
 import { mimeFor as designMime, safeFileName as designSafeName } from "../src/lib/design/file-types";
+import { aiRolesFor, navFor as aiNavFor, canMove as aiCanMove, checkRequest as aiCheck, formatRequestNumber as aiNumber, stepOf as aiStepOf, uploadLimit as aiUploadLimit, AISTUDIO_ADMIN_URL_PATTERN, AISTUDIO_USER_URL_PATTERN } from "../src/lib/aistudio/aistudio.manifest";
+import { mimeFor as aiMime, safeFileName as aiSafeName } from "../src/lib/aistudio/file-types";
+import { readListQuery as aiReadList, listHref as aiListHref } from "../src/lib/aistudio/list-query";
 
 let ok = 0, bad = 0;
 const eq = (name: string, got: unknown, want: unknown) => {
@@ -408,7 +411,7 @@ eq("guards: the reviewed list holds only actions that really exist", [...SELF_CH
 // the Inventory module's and the Cab Booking module's routes go through their own route() wrappers, which do it centrally (checked just below).
 const appDir = new URL("../src/app/", import.meta.url);
 const allRouteFiles = (readdirSync(appDir, { recursive: true }) as string[]).filter((f) => /(^|\/)route\.ts$/.test(f));
-const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory|api\/cabs|cabs|api\/ivr|ivr|api\/design|design)\//.test(f) && f !== "api/cron/ivr-sync/route.ts");
+const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory|api\/cabs|cabs|api\/ivr|ivr|api\/design|design|api\/aistudio|aistudio)\//.test(f) && f !== "api/cron/ivr-sync/route.ts");
 // A Vercel Cron route has no sign-in: it must check CRON_SECRET instead. The only route open to anyone on purpose is the ping, which
 // touches nothing and answers only "ok" and the time (the proxy lets exactly /api/ping through).
 const PUBLIC_ROUTES = ["api/ping/route.ts"];
@@ -430,6 +433,20 @@ for (const file of readdirSync(designActionsDir).filter((f) => f.endsWith(".ts")
   }
 }
 eq(`guards: every one of the ${designActionCount} DesignDesk server actions checks who is asking`, designUnguarded, []);
+// Every AI Studio server action and route proves who is asking through its guard (assertRequester / Team / Lead / SuperAdmin).
+const aiActionsDir = new URL("../src/lib/aistudio/actions/", import.meta.url);
+const aiUnguarded: string[] = [];
+let aiActionCount = 0;
+for (const file of readdirSync(aiActionsDir).filter((f) => f.endsWith(".ts"))) {
+  const src = readFileSync(new URL(file, aiActionsDir), "utf8");
+  for (const part of src.split(/^export async function /m).slice(1)) {
+    aiActionCount++;
+    if (!/\bassert(Requester|Team|Lead|SuperAdmin)\(/.test(part)) aiUnguarded.push(`${file}:${/^(\w+)/.exec(part)?.[1] ?? "?"}`);
+  }
+}
+eq(`guards: every one of the ${aiActionCount} AI Studio server actions checks who is asking`, aiUnguarded, []);
+const aiRoutes = allRouteFiles.filter((f) => f.startsWith("api/aistudio/"));
+eq(`guards: every one of the ${aiRoutes.length} AI Studio route files checks who is asking`, aiRoutes.filter((f) => !/\bassert(Requester|Team|Lead|SuperAdmin)\(/.test(readFileSync(new URL(f, appDir), "utf8"))), []);
 // DesignDesk's routes check who is asking through its own guard (src/lib/design/dal.ts); the review link's file checks the link's token.
 const designRoutes = allRouteFiles.filter((f) => f.startsWith("api/design/"));
 const DESIGN_TOKEN_ROUTES = ["api/design/public/review/[token]/file/route.ts"];
@@ -1098,6 +1115,35 @@ const ssoTests = (async () => {
   eq("design file types: allowed by extension", [designMime("logo.CDR"), designMime("x.exe")], ["application/vnd.corel-draw", null]);
   eq("design Slack: only Slack's own webhook addresses", [designSlack("https://hooks.slack.com/services/T1/B2/abc"), designSlack("https://evil.example/services/x")], [true, false]);
   eq("design Figma: figma.com links embed, others do not", [!!designFigma("https://www.figma.com/design/AbC123/Poster"), designFigma("https://example.com/x")], [true, null]);
+}
+
+{
+  // AI Studio: roles and menus
+  const roles = (hubRole: string, userAccess: boolean, adminAccess: boolean, adminAppAdmin = false, adminAppStaff = false) => aiRolesFor({ hubRole, userAccess, adminAccess, adminAppAdmin, adminAppStaff });
+  eq("aistudio roles: AI Studio makes a requester; AI Studio Admin + App Staff a member; + App Admin a lead", [roles("member", true, false), roles("member", false, true, false, true), roles("member", false, true, true)], [["aistudio_requester"], ["aistudio_member"], ["aistudio_member", "aistudio_lead"]]);
+  eq("aistudio roles: AI Studio Admin on neither list, or App Admin/Staff without the app: no team role", [roles("member", false, true), roles("admin", false, false, true, true)], [[], []]);
+  eq("aistudio roles: the hub role makes no difference except the Support Admin, who holds all four", [roles("super_admin", false, true, false, true), roles("head_admin", false, false)], [["aistudio_member"], ["aistudio_requester", "aistudio_member", "aistudio_lead", "aistudio_super_admin"]]);
+  eq("aistudio menus: requester pages; the team's (Settings for leads only); nothing for others", [aiNavFor("requester", ["aistudio_requester"]).map((i) => i.label), aiNavFor("admin", ["aistudio_member"]).map((i) => i.label), aiNavFor("admin", ["aistudio_member", "aistudio_lead"]).map((i) => i.label), aiNavFor("admin", ["aistudio_requester"]).length], [["New request", "My requests"], ["Dashboard", "Pending Review", "All Requests"], ["Dashboard", "Pending Review", "All Requests", "Settings"], 0]);
+  eq("aistudio apps: the two URLs, and nothing else matches", ["/aistudio", "/aistudio/", "/aistudio/admin", "/aistudio/request", "/aistudios"].map((u) => [new RegExp(AISTUDIO_USER_URL_PATTERN).test(u), new RegExp(AISTUDIO_ADMIN_URL_PATTERN).test(u)]), [[true, false], [true, false], [false, true], [false, false], [false, false]]);
+  // Numbering and steps
+  eq("aistudio numbers: AS- and at least four digits", [aiNumber(1), aiNumber(42), aiNumber(9999), aiNumber(12345), aiNumber(0)], ["AS-0001", "AS-0042", "AS-9999", "AS-12345", "AS-0001"]);
+  eq("aistudio steps: Submitted, Accepted, In Progress, Review/Testing, Delivered (closed stays delivered)", (["pending_review", "accepted", "in_progress", "review_testing", "delivered", "closed"] as const).map(aiStepOf), [0, 1, 2, 3, 4, 4]);
+  // Who may move a request where
+  eq("aistudio moves: nobody moves a pending or declined request (accept/decline only), or back to pending", [aiCanMove("lead", "pending_review", "accepted"), aiCanMove("lead", "declined", "accepted"), aiCanMove("lead", "in_progress", "pending_review")], [false, false, false]);
+  eq("aistudio moves: a member works along Accepted ↔ Delivered but cannot close or decline", [aiCanMove("member", "accepted", "in_progress"), aiCanMove("member", "review_testing", "in_progress"), aiCanMove("member", "review_testing", "delivered"), aiCanMove("member", "delivered", "closed"), aiCanMove("member", "in_progress", "declined")], [true, true, true, false, false]);
+  eq("aistudio moves: a lead closes and reopens, but never declines once accepted", [aiCanMove("lead", "delivered", "closed"), aiCanMove("lead", "closed", "in_progress"), aiCanMove("lead", "accepted", "declined")], [true, true, false]);
+  // The request form
+  const good = { requestType: "automation", title: "  Weekly   report  ", description: "Pull the membership numbers every Monday and email them.", department: "Membership", referenceLinks: ["", "https://example.org/a"], content: " notes ", fileIds: [] };
+  const okReq = aiCheck(good);
+  eq("aistudio form: a good request passes, tidied (one-line title, blank links dropped, content trimmed)", okReq.ok && [okReq.value.title, okReq.value.referenceLinks, okReq.value.content, okReq.value.requestType], ["Weekly report", ["https://example.org/a"], "notes", "automation"]);
+  eq("aistudio form: type, name and description are required", [aiCheck({ ...good, requestType: "magic" }), aiCheck({ ...good, title: "x" }), aiCheck({ ...good, description: "short" })].map((r) => !r.ok && r.error), ["Choose what you need", "Give the project a name", "Describe what you need (a sentence or two at least)"]);
+  eq("aistudio form: links must be web links, at most five; files at most five, by id", [aiCheck({ ...good, referenceLinks: ["ftp://x.org"] }).ok, aiCheck({ ...good, referenceLinks: Array(6).fill("https://x.org") }).ok, aiCheck({ ...good, fileIds: ["nope"] }).ok, aiCheck({ ...good, fileIds: Array(6).fill(0).map((_, i) => `00000000-0000-4000-8000-00000000000${i}`) }).ok], [false, false, false, false]);
+  // Files
+  eq("aistudio files: attachments 10 MB, deliverables 50 MB", [aiUploadLimit("attachment"), aiUploadLimit("deliverable")], [10 * 1024 * 1024, 50 * 1024 * 1024]);
+  eq("aistudio files: every type accepted (unknown ones as a plain download), names made safe", [aiMime("a.pdf"), aiMime("app.apk"), aiMime("data.parquet"), aiSafeName("C:\\x\\my report!.docx")], ["application/pdf", "application/vnd.android.package-archive", "application/octet-stream", "my report_.docx"]);
+  // All Requests' address
+  const lq = aiReadList({ view: "list", filter: "in_progress", sort: "deadline", q: "AS-0", page: "2", type: "nonsense" });
+  eq("aistudio list: read from the address (unknown values fall back), written back the same", [lq.view, lq.tab, lq.sort, lq.dir, lq.type, lq.page, aiListHref(lq), aiListHref(aiReadList({}))], ["list", "in_progress", "deadline", "asc", "", 2, "/aistudio/admin/requests?view=list&filter=in_progress&q=AS-0&sort=deadline&dir=asc&page=2", "/aistudio/admin/requests"]);
 }
 
 ssoTests.then(() => {
