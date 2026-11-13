@@ -1,0 +1,122 @@
+/*
+ * ERU's own look on the hub's base (src/app/globals.css): deep teal-navy #0F4C75 with white 12px cards on a light grey page, and the
+ * document editor's Word-like page. Everything here is prefixed eru- (or scoped under .eru-root) so nothing can change a hub page: the
+ * stylesheet stays loaded once someone has opened /eru. Buttons and inputs use the hub's own classes (btn, input), recoloured inside .eru-root.
+ */
+:root {
+  --eru-navy: #0f4c75;
+  --eru-navy-2: #1b6ca8;
+  --eru-navy-tint: rgba(15, 76, 117, 0.07);
+  --eru-navy-line: rgba(15, 76, 117, 0.18);
+  --eru-green: #16a34a;
+  --eru-green-tint: rgba(22, 163, 74, 0.09);
+  --eru-red: #dc2626;
+  --eru-red-tint: rgba(220, 38, 38, 0.08);
+  --eru-amber: #d97706;
+  --eru-amber-tint: rgba(217, 119, 6, 0.1);
+  --eru-purple: #7c3aed;
+  --eru-purple-tint: rgba(124, 58, 237, 0.09);
+  --eru-grey: #64748b;
+  --eru-grey-tint: #f1f5f9;
+  --eru-page: #f4f6f8;
+  --eru-line: #e5e7eb;
+  --eru-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 14px rgba(15, 23, 42, 0.05);
+  --eru-shadow-hover: 0 6px 22px rgba(15, 23, 42, 0.1);
+}
+
+.min-h-screen:has(.eru-root) { background: var(--eru-page); }
+.eru-root { --c-primary: var(--eru-navy); --grad-primary: linear-gradient(135deg, var(--eru-navy) 0%, var(--eru-navy-2) 100%); --c-border-hover: var(--eru-navy-line); --c-blue-tint: var(--eru-navy-tint); --c-blue-tint-border: var(--eru-navy-line); }
+.eru-root .text-primary { color: var(--eru-navy); }
+.eru-root .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.eru-card { background: #fff; border: 1px solid var(--eru-line); border-radius: 12px; box-shadow: var(--eru-shadow); }
+.eru-card-hover { transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease; }
+.eru-card-hover:hover { box-shadow: var(--eru-shadow-hover); border-color: var(--eru-navy-line); transform: translateY(-1px); }
+.eru-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--eru-grey); }
+.eru-muted { color: var(--eru-grey); }
+
+/* Domain cards: a coloured bar on the left, set per card with --eru-accent */
+.eru-domain { position: relative; overflow: hidden; }
+.eru-domain::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--eru-accent, var(--eru-navy)); }
+
+/* Badges */
+.eru-badge { display: inline-flex; align-items: center; gap: 0.3rem; border-radius: 99px; padding: 0.15rem 0.6rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; border: 1px solid transparent; line-height: 1.5; }
+.eru-tone-neutral { background: var(--eru-grey-tint); color: #475569; border-color: #e2e8f0; }
+.eru-tone-blue { background: var(--eru-navy-tint); color: var(--eru-navy); border-color: var(--eru-navy-line); }
+.eru-tone-amber { background: var(--eru-amber-tint); color: #b45309; border-color: rgba(217, 119, 6, 0.22); }
+.eru-tone-purple { background: var(--eru-purple-tint); color: var(--eru-purple); border-color: rgba(124, 58, 237, 0.2); }
+.eru-tone-green { background: var(--eru-green-tint); color: #15803d; border-color: rgba(22, 163, 74, 0.22); }
+.eru-tone-red { background: var(--eru-red-tint); color: var(--eru-red); border-color: rgba(220, 38, 38, 0.2); }
+.eru-tone-orange { background: rgba(234, 88, 12, 0.09); color: #c2410c; border-color: rgba(234, 88, 12, 0.22); }
+
+.eru-btn-navy { background: var(--eru-navy); color: #fff; border: 1px solid var(--eru-navy); }
+.eru-btn-navy:hover:not(:disabled) { background: #0b3a5a; }
+.eru-btn-green { background: var(--eru-green); color: #fff; border: 1px solid var(--eru-green); }
+.eru-btn-green:hover:not(:disabled) { background: #15803d; }
+.eru-btn-red { background: #fff; color: var(--eru-red); border: 1px solid rgba(220, 38, 38, 0.45); }
+.eru-btn-red:hover:not(:disabled) { background: var(--eru-red-tint); }
+
+/* Avatars: initials in a circle; a stack overlaps a little */
+.eru-avatar { display: inline-grid; place-items: center; border-radius: 99px; background: var(--eru-navy); color: #fff; font-weight: 700; flex-shrink: 0; border: 2px solid #fff; }
+.eru-avatars { display: inline-flex; }
+.eru-avatars > * + * { margin-left: -6px; }
+
+/* Tabs */
+.eru-tabs { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; background: #fff; border: 1px solid var(--eru-line); border-radius: 10px; padding: 0.25rem; }
+.eru-tab { padding: 0.4rem 0.85rem; border-radius: 7px; font-size: 0.82rem; font-weight: 600; color: var(--eru-grey); }
+.eru-tab[aria-selected="true"] { background: var(--eru-navy); color: #fff; }
+.eru-tab:not([aria-selected="true"]):hover { background: var(--eru-grey-tint); color: #0f172a; }
+
+/* Drop zone */
+.eru-drop { border: 2px dashed #cbd5e1; border-radius: 12px; background: #fafafa; transition: border-color 0.15s ease, background 0.15s ease; }
+.eru-drop[data-over="true"] { border-color: var(--eru-navy); background: var(--eru-navy-tint); }
+
+/* ── The document editor ──────────────────────────────────────────────── */
+
+.eru-editor-bar { position: sticky; top: 4rem; z-index: 20; background: #fff; border: 1px solid var(--eru-line); border-radius: 12px; box-shadow: var(--eru-shadow); }
+.eru-tool { display: inline-grid; place-items: center; min-width: 2rem; height: 2rem; padding: 0 0.35rem; border-radius: 6px; color: #334155; font-size: 0.8rem; font-weight: 600; border: 1px solid transparent; }
+.eru-tool:hover:not(:disabled) { background: var(--eru-grey-tint); }
+.eru-tool[aria-pressed="true"] { background: var(--eru-navy-tint); color: var(--eru-navy); border-color: var(--eru-navy-line); }
+.eru-tool:disabled { opacity: 0.4; cursor: not-allowed; }
+.eru-tool-sep { width: 1px; height: 1.4rem; background: var(--eru-line); margin: 0 0.2rem; }
+.eru-tool-select { height: 2rem; border: 1px solid var(--eru-line); border-radius: 6px; font-size: 0.8rem; padding: 0 0.4rem; background: #fff; color: #334155; }
+.eru-swatch { position: relative; }
+.eru-swatch input[type="color"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+
+/* The page: white, A4 wide (210mm), shadowed like Word, centred */
+.eru-desk { background: #e9edf2; border-radius: 12px; padding: 2rem 1rem 4rem; }
+.eru-paper { position: relative; background: #fff; width: 100%; max-width: 210mm; min-height: 297mm; margin: 0 auto; padding: 25mm 22mm; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12), 0 10px 30px rgba(15, 23, 42, 0.12); }
+@media (max-width: 640px) { .eru-paper { padding: 1.25rem; min-height: 60vh; } .eru-desk { padding: 0.75rem 0 2rem; } }
+
+.eru-prose { color: #111827; font-family: Calibri, Carlito, "Segoe UI", Arial, sans-serif; font-size: 11pt; line-height: 1.6; outline: none; min-height: 200mm; }
+.eru-prose:focus { outline: none; }
+.eru-prose > * + * { margin-top: 0.6em; }
+.eru-prose h1 { font-size: 1.9em; font-weight: 700; line-height: 1.25; margin-top: 1em; }
+.eru-prose h2 { font-size: 1.45em; font-weight: 700; line-height: 1.3; margin-top: 0.9em; }
+.eru-prose h3 { font-size: 1.2em; font-weight: 700; line-height: 1.35; margin-top: 0.8em; }
+.eru-prose ul { list-style: disc; padding-left: 1.6em; }
+.eru-prose ol { list-style: decimal; padding-left: 1.6em; }
+.eru-prose li > p { margin: 0.15em 0; }
+.eru-prose blockquote { border-left: 3px solid #cbd5e1; padding-left: 1em; color: #475569; font-style: italic; }
+.eru-prose pre { background: #f1f5f9; border-radius: 6px; padding: 0.75em 1em; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85em; white-space: pre-wrap; }
+.eru-prose code { background: #f1f5f9; border-radius: 4px; padding: 0.1em 0.3em; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; }
+.eru-prose pre code { background: none; padding: 0; }
+.eru-prose a { color: #1d4ed8; text-decoration: underline; }
+.eru-prose hr { border: none; border-top: 1px solid #cbd5e1; margin: 1.2em 0; }
+.eru-prose mark { border-radius: 2px; padding: 0 1px; }
+.eru-prose p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: #9ca3af; float: left; height: 0; pointer-events: none; }
+
+/* Tracked changes: insertions green underlined, deletions red struck through */
+.eru-prose ins.eru-ins { color: #15803d; background: rgba(22, 163, 74, 0.08); text-decoration: underline; text-decoration-color: #16a34a; text-underline-offset: 2px; }
+.eru-prose del.eru-del { color: #b91c1c; background: rgba(220, 38, 38, 0.06); text-decoration: line-through; text-decoration-color: #dc2626; }
+.eru-prose [data-change-id].eru-change-active { outline: 2px solid rgba(15, 76, 117, 0.35); border-radius: 2px; }
+
+/* Comments: unresolved text yellow, the one being looked at stronger */
+.eru-prose .eru-comment-open { background: rgba(250, 204, 21, 0.35); border-bottom: 2px solid #eab308; cursor: pointer; }
+.eru-prose .eru-comment-active { background: rgba(250, 204, 21, 0.7); }
+
+.eru-side { width: 20rem; flex-shrink: 0; }
+.eru-comment-card { transition: box-shadow 0.15s ease, border-color 0.15s ease; }
+.eru-comment-card[data-active="true"] { border-color: #eab308; box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.25); }
+
+@media (prefers-reduced-motion: reduce) { .eru-card-hover:hover { transform: none; } }

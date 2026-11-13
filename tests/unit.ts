@@ -71,6 +71,16 @@ import { mimeFor as designMime, safeFileName as designSafeName } from "../src/li
 import { aiRolesFor, navFor as aiNavFor, canMove as aiCanMove, checkRequest as aiCheck, formatRequestNumber as aiNumber, stepOf as aiStepOf, uploadLimit as aiUploadLimit, AISTUDIO_ADMIN_URL_PATTERN, AISTUDIO_USER_URL_PATTERN } from "../src/lib/aistudio/aistudio.manifest";
 import { mimeFor as aiMime, safeFileName as aiSafeName } from "../src/lib/aistudio/file-types";
 import { readListQuery as aiReadList, listHref as aiListHref } from "../src/lib/aistudio/list-query";
+import { createHash } from "node:crypto";
+import { EditorState, Plugin, TextSelection } from "@tiptap/pm/state";
+import { history as pmHistory, undo as pmUndo } from "@tiptap/pm/history";
+import { unzipSync, strFromU8 } from "fflate";
+import { DEFAULT_DOMAINS as ERU_DOMAINS, ERU_ADMIN_URL_PATTERN, ERU_USER_URL_PATTERN, can as eruCan, checkProject as eruCheck, cleanDocumentTitle as eruTitle, cleanTags as eruTags, eruRolesFor, formatProjectNumber as eruNumber, initials as eruInitials, navFor as eruNavFor } from "../src/lib/eru/eru.manifest";
+import { eruSchema } from "../src/lib/eru/editor/extensions";
+import { collectChanges as eruChanges, decidedDoc as eruDecided, trackTransactions as eruTrack } from "../src/lib/eru/editor/track-changes";
+import { commentAnchors as eruAnchors } from "../src/lib/eru/editor/comments";
+import { exportDocx as eruExport, halfPoints as eruHalfPoints, hexColor as eruHex } from "../src/lib/eru/docx-export";
+import { mimeFor as eruMime, safeFileName as eruSafeName } from "../src/lib/eru/file-types";
 
 let ok = 0, bad = 0;
 const eq = (name: string, got: unknown, want: unknown) => {
@@ -411,7 +421,7 @@ eq("guards: the reviewed list holds only actions that really exist", [...SELF_CH
 // the Inventory module's and the Cab Booking module's routes go through their own route() wrappers, which do it centrally (checked just below).
 const appDir = new URL("../src/app/", import.meta.url);
 const allRouteFiles = (readdirSync(appDir, { recursive: true }) as string[]).filter((f) => /(^|\/)route\.ts$/.test(f));
-const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory|api\/cabs|cabs|api\/ivr|ivr|api\/design|design|api\/aistudio|aistudio)\//.test(f) && f !== "api/cron/ivr-sync/route.ts");
+const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory|api\/cabs|cabs|api\/ivr|ivr|api\/design|design|api\/aistudio|aistudio|api\/eru|eru)\//.test(f) && f !== "api/cron/ivr-sync/route.ts");
 // A Vercel Cron route has no sign-in: it must check CRON_SECRET instead. The only route open to anyone on purpose is the ping, which
 // touches nothing and answers only "ok" and the time (the proxy lets exactly /api/ping through).
 const PUBLIC_ROUTES = ["api/ping/route.ts"];
@@ -447,6 +457,19 @@ for (const file of readdirSync(aiActionsDir).filter((f) => f.endsWith(".ts"))) {
 eq(`guards: every one of the ${aiActionCount} AI Studio server actions checks who is asking`, aiUnguarded, []);
 const aiRoutes = allRouteFiles.filter((f) => f.startsWith("api/aistudio/"));
 eq(`guards: every one of the ${aiRoutes.length} AI Studio route files checks who is asking`, aiRoutes.filter((f) => !/\bassert(Requester|Team|Lead|SuperAdmin)\(/.test(readFileSync(new URL(f, appDir), "utf8"))), []);
+// Every ERU server action and route proves who is asking through its guard (assertMember / Admin / SuperAdmin) in its own body.
+const eruActionsDir = new URL("../src/lib/eru/actions/", import.meta.url);
+const eruUnguarded: string[] = [];
+let eruActionCount = 0;
+for (const file of readdirSync(eruActionsDir).filter((f) => f.endsWith(".ts"))) {
+  for (const part of readFileSync(new URL(file, eruActionsDir), "utf8").split(/^export async function /m).slice(1)) {
+    eruActionCount++;
+    if (!/\bassert(Member|Admin|SuperAdmin)\(/.test(part)) eruUnguarded.push(`${file}:${/^(\w+)/.exec(part)?.[1] ?? "?"}`);
+  }
+}
+eq(`guards: every one of the ${eruActionCount} ERU server actions checks who is asking`, eruUnguarded, []);
+const eruRoutes = allRouteFiles.filter((f) => f.startsWith("api/eru/"));
+eq(`guards: every one of the ${eruRoutes.length} ERU route files checks who is asking`, eruRoutes.filter((f) => !/\bassert(Member|Admin|SuperAdmin)\(/.test(readFileSync(new URL(f, appDir), "utf8"))), []);
 // DesignDesk's routes check who is asking through its own guard (src/lib/design/dal.ts); the review link's file checks the link's token.
 const designRoutes = allRouteFiles.filter((f) => f.startsWith("api/design/"));
 const DESIGN_TOKEN_ROUTES = ["api/design/public/review/[token]/file/route.ts"];
@@ -1146,11 +1169,176 @@ const ssoTests = (async () => {
   eq("aistudio list: read from the address (unknown values fall back), written back the same", [lq.view, lq.tab, lq.sort, lq.dir, lq.type, lq.page, aiListHref(lq), aiListHref(aiReadList({}))], ["list", "in_progress", "deadline", "asc", "", 2, "/aistudio/admin/requests?view=list&filter=in_progress&q=AS-0&sort=deadline&dir=asc&page=2", "/aistudio/admin/requests"]);
 }
 
-ssoTests.then(() => {
+{
+  // ERU: the five domains the migration seeds, and the hand-run production script matching it exactly
+  const migration = readFileSync(new URL("../drizzle/0039_eru.sql", import.meta.url), "utf8");
+  const script = readFileSync(new URL("../scripts/apply-0039-eru.sql", import.meta.url), "utf8");
+  const seeded = [...migration.matchAll(/\('(\w+)', '([^']+)', '[^']*', '(\w+)', '([\w-]+)', (\d+)\)/g)].map((m) => ({ key: m[1], name: m[2], color: m[3], icon: m[4], order: Number(m[5]) }));
+  eq("eru seed: exactly the five domains, in order, with their names, colours and icons", seeded, ERU_DOMAINS.map((d, i) => ({ key: d.key, name: d.name, color: d.color, icon: d.icon, order: i + 1 })));
+  eq("eru seed: blue, green, purple, orange, grey as asked", seeded.map((d) => d.color), ["blue", "green", "purple", "orange", "gray"]);
+  eq("eru seed: re-running never duplicates (ON CONFLICT on the key), and the settings row is made once", [/ON CONFLICT \("key"\) DO NOTHING/.test(migration), /INSERT INTO "eru_settings" \("id"\) VALUES \(1\) ON CONFLICT/.test(migration)], [true, true]);
+  const hash = createHash("sha256").update(migration).digest("hex");
+  eq("eru script: records the migration's real hash, so drizzle-kit never runs it twice", [script.includes(`'${hash}'`), (script.match(new RegExp(hash, "g")) ?? []).length >= 3], [true, true]);
+  eq("eru script: the same five domains as the migration, every CREATE guarded, all in one transaction", [
+    ERU_DOMAINS.every((d) => script.includes(`('${d.key}', '${d.name}'`)),
+    (script.match(/^CREATE (TABLE|INDEX|SEQUENCE) (?!IF NOT EXISTS)/gm) ?? []).length,
+    /^BEGIN;$/m.test(script) && /^COMMIT;$/m.test(script),
+    (script.match(/eru_\w+/g) ?? []).every((t) => t.startsWith("eru_")) && !/\b(DROP|ALTER) TABLE "?(?!eru_)\w+/.test(script.replace(/^--.*$/gm, "")),
+  ], [true, 0, true, true]);
+
+  // Project numbers
+  eq("eru numbers: ERU- and at least four digits", [eruNumber(1), eruNumber(42), eruNumber(9999), eruNumber(12345), eruNumber(0)], ["ERU-0001", "ERU-0042", "ERU-9999", "ERU-12345", "ERU-0001"]);
+  eq("eru numbers: the migration makes a sequence for them (two projects at once never share a number)", /CREATE SEQUENCE "public"\."eru_project_seq"/.test(migration), true);
+
+  // Roles: App Staff of ERU → member, App Admins → admin, the Support Admin → all three
+  const roles = (hubRole: string, access: boolean, appAdmin = false, appStaff = false) => eruRolesFor({ hubRole, access, appAdmin, appStaff });
+  eq("eru roles: ERU + App Staff is a member; ERU + App Admin an admin (and a member)", [roles("member", true, false, true), roles("member", true, true), roles("admin", true, true, true)], [["eru_member"], ["eru_member", "eru_admin"], ["eru_member", "eru_admin"]]);
+  eq("eru roles: given ERU but on neither list, or on a list without ERU: nothing", [roles("member", true), roles("member", false, true, true)], [[], []]);
+  eq("eru roles: other hub roles make no difference; the Support Admin holds all three", [roles("super_admin", false), roles("head_admin", false)], [[], ["eru_member", "eru_admin", "eru_super_admin"]]);
+  eq("eru menus: the workspace for members (ERU Admin link for admins only); ERU Admin for admins only", [eruNavFor("workspace", ["eru_member"]).map((i) => i.label), eruNavFor("workspace", ["eru_member", "eru_admin"]).map((i) => i.label), eruNavFor("admin", ["eru_member"]).length, eruNavFor("admin", ["eru_member", "eru_admin"]).map((i) => i.label)], [["Domains", "My projects"], ["Domains", "My projects", "ERU Admin"], 0, ["Dashboard", "All Projects", "Members", "Settings", "ERU Workspace"]]);
+  eq("eru apps: the two URLs, and nothing else matches", ["/eru", "/eru/", "/eru/admin", "/eru/admin/", "/eru/projects", "/erux", "/aistudio"].map((u) => [new RegExp(ERU_USER_URL_PATTERN).test(u), new RegExp(ERU_ADMIN_URL_PATTERN).test(u)]), [[true, false], [true, false], [false, true], [false, true], [false, false], [false, false], [false, false]]);
+  const M = ["eru_member"] as const, A = ["eru_member", "eru_admin"] as const, S = ["eru_member", "eru_admin", "eru_super_admin"] as const;
+  eq("eru rights: members create projects, write documents and switch tracking ON; not manage, review, switch it off, or members", [eruCan.createProject(M), eruCan.editDocument(M), eruCan.setTrackChanges(M, true), eruCan.manageProject(M), eruCan.reviewChanges(M), eruCan.setTrackChanges(M, false), eruCan.manageMembers(M), eruCan.deleteProject(M)], [true, true, true, false, false, false, false, false]);
+  eq("eru rights: admins manage, review, switch tracking off and manage members; only the Support Admin deletes all data", [eruCan.manageProject(A), eruCan.reviewChanges(A), eruCan.setTrackChanges(A, false), eruCan.manageMembers(A), eruCan.deleteAllData(A), eruCan.deleteAllData(S)], [true, true, true, true, false, true]);
+
+  // The project form
+  const dom = "00000000-0000-4000-8000-000000000001";
+  const okP = eruCheck({ title: "  Credit   survey ", domainId: dom, tags: ["MSME", "msme", " credit ", ""], referenceLinks: ["https://rbi.org.in/x", "", "https://rbi.org.in/x"], dueDate: "2026-12-31" });
+  eq("eru project form: a good project passes, tidied (one-line title, tags deduplicated, links deduplicated, defaults)", okP.ok && [okP.value.title, okP.value.tags, okP.value.referenceLinks, okP.value.priority, okP.value.status, okP.value.dueDate], ["Credit survey", ["MSME", "credit"], ["https://rbi.org.in/x"], "normal", "active", "2026-12-31"]);
+  eq("eru project form: title, domain, priority, status, date and links are checked", [eruCheck({ title: "x", domainId: dom }), eruCheck({ title: "Good title", domainId: "nope" }), eruCheck({ title: "Good title", domainId: dom, priority: "asap" }), eruCheck({ title: "Good title", domainId: dom, status: "done" }), eruCheck({ title: "Good title", domainId: dom, dueDate: "31/12/2026" }), eruCheck({ title: "Good title", domainId: dom, referenceLinks: ["javascript:alert(1)"] })].map((r) => r.ok), [false, false, false, false, false, false]);
+  eq("eru tags: at most ten, 40 characters each", [eruTags(Array.from({ length: 15 }, (_, i) => `t${i}`)).length, eruTags(["x".repeat(60)])[0].length], [10, 40]);
+  eq("eru documents: a title is one line of at most 200 characters, never empty", [eruTitle("  My \n paper "), eruTitle(""), eruTitle("a".repeat(300)).length], ["My paper", "Untitled document", 200]);
+  eq("eru avatars: initials of the first and last names", [eruInitials("Asha Rao"), eruInitials("Vikram Singh Rathore"), eruInitials("  "), eruInitials("mona")], ["AR", "VR", "?", "M"]);
+  eq("eru files: every type accepted, names made safe", [eruMime("data.csv"), eruMime("model.sav"), eruMime("x.weird"), eruSafeName("C:\\x\\Q3 report (final)!.docx")], ["text/csv", "application/octet-stream", "application/octet-stream", "Q3 report _final_.docx"]);
+}
+
+{
+  // ERU: the document schema and track changes, on a real editor state (no browser needed)
+  const schema = eruSchema();
+  const me = { id: "u-asha", name: "Asha" };
+  const other = { id: "u-ravi", name: "Ravi" };
+  let n = 0;
+  const makeState = (who: { id: string; name: string }, docJson: unknown) =>
+    EditorState.create({ doc: schema.nodeFromJSON(docJson), plugins: [pmHistory(), new Plugin({ appendTransaction: (trs, o, s) => eruTrack(trs, o, s, who, () => `c${++n}`, () => "2026-11-13T10:00:00.000Z") })] });
+  const twoParas = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }, { type: "paragraph", content: [{ type: "text", text: "Second" }] }] };
+  const show = (st: EditorState) => {
+    const parts: string[] = [];
+    st.doc.descendants((nd) => {
+      if (nd.isText) {
+        const m = nd.marks.map((x) => (x.type.name === "eruInsertion" ? `+${x.attrs.userName}` : x.type.name === "eruDeletion" ? `-${x.attrs.userName}` : "")).join("");
+        parts.push(m ? `[${m}:${nd.text}]` : nd.text!);
+      } else if (nd.isBlock) parts.push("¶");
+    });
+    return parts.join("");
+  };
+  let st = makeState(me, twoParas);
+  const apply = (f: (s: EditorState) => import("@tiptap/pm/state").Transaction) => (st = st.apply(f(st)));
+  apply((s) => s.tr.setSelection(TextSelection.create(s.doc, 6)));
+  apply((s) => s.tr.insertText(" b"));
+  apply((s) => s.tr.insertText("ig"));
+  eq("eru track: typing is marked as the typist's insertion, one change for a run of typing", [show(st), eruChanges(st.doc).map((c) => [c.type, c.text, c.userName, c.at])], ["¶Hello[+Asha: big] world¶Second", [["insertion", " big", "Asha", "2026-11-13T10:00:00.000Z"]]]);
+  apply((s) => s.tr.delete(s.selection.from - 1, s.selection.from));
+  eq("eru track: deleting your own pending insertion really removes it", show(st), "¶Hello[+Asha: bi] world¶Second");
+  const endWorld = st.doc.child(0).nodeSize - 1;
+  apply((s) => s.tr.setSelection(TextSelection.create(s.doc, endWorld)));
+  apply((s) => s.tr.delete(s.selection.from - 1, s.selection.from));
+  apply((s) => s.tr.delete(s.selection.from - 1, s.selection.from));
+  eq("eru track: Backspace keeps the text, struck through, and the caret steps over it (two presses, one change)", [show(st), st.selection.from, eruChanges(st.doc).filter((c) => c.type === "deletion").map((c) => c.text)], ["¶Hello[+Asha: bi] wor[-Asha:ld]¶Second", endWorld - 2, ["ld"]]);
+  apply((s) => s.tr.setSelection(TextSelection.create(s.doc, 1, 4)));
+  apply((s) => s.tr.insertText("X"));
+  eq("eru track: typing over a selection is a deletion followed by an insertion", show(st), "¶[-Asha:Hel][+Asha:X]lo[+Asha: bi] wor[-Asha:ld]¶Second");
+  const before = show(st);
+  apply((s) => s.tr.setSelection(TextSelection.create(s.doc, s.doc.child(0).nodeSize + 1)));
+  apply((s) => s.tr.delete(s.selection.from, s.selection.from + 1));
+  const afterDelete = show(st);
+  pmUndo(st, (tr) => (st = st.apply(tr)));
+  eq("eru track: Undo takes back a tracked edit together with its marks", [afterDelete, show(st)], ["¶[-Asha:Hel][+Asha:X]lo[+Asha: bi] wor[-Asha:ld]¶[-Asha:S]econd", before]);
+  apply((s) => s.tr.addMark(1, 4, schema.marks.bold.create()));
+  eq("eru track: formatting is applied, not tracked", eruChanges(st.doc).length, 4);
+
+  // Accept / reject
+  const tracked = st.doc;
+  const ids = eruChanges(tracked);
+  eq("eru review: accept all keeps insertions and drops deletions; reject all gives back the original text", [eruDecided(tracked, null, "accept").doc.textContent, eruDecided(tracked, null, "reject").doc.textContent], ["Xlo bi worSecond", "Hello worldSecond"]);
+  const ins = ids.find((c) => c.text === "X")!;
+  const del = ids.find((c) => c.text === "ld")!;
+  const one = eruDecided(tracked, new Set([ins.id, del.id]), "accept");
+  eq("eru review: deciding some changes leaves the others pending", [one.decided.sort(), one.doc.textContent, eruChanges(one.doc).map((c) => c.text)], [[ins.id, del.id].sort(), "HelXlo bi worSecond", ["Hel", " bi"]]);
+  const rej = eruDecided(tracked, new Set([ins.id]), "reject");
+  eq("eru review: rejecting an insertion removes its text", [rej.doc.textContent.includes("X"), eruChanges(rej.doc).length], [false, 3]);
+
+  // Someone else's text
+  let st2 = makeState(other, eruDecided(tracked, null, "accept").doc.toJSON());
+  st2 = st2.apply(st2.tr.setSelection(TextSelection.create(st2.doc, 1, 3)));
+  st2 = st2.apply(st2.tr.deleteSelection());
+  eq("eru track: another person's deletion is theirs, and an accepted text is plain again", [eruChanges(st2.doc).map((c) => [c.type, c.text, c.userName])], [[["deletion", "Xl", "Ravi"]]]);
+  let st3 = makeState(other, tracked.toJSON());
+  const asha = eruChanges(st3.doc).find((c) => c.text === " bi")!;
+  st3 = st3.apply(st3.tr.setSelection(TextSelection.create(st3.doc, asha.from, asha.to)));
+  st3 = st3.apply(st3.tr.deleteSelection());
+  eq("eru track: deleting someone else's pending insertion marks it deleted (it is not silently removed)", eruChanges(st3.doc).filter((c) => c.text === " bi").map((c) => c.type).sort(), ["deletion", "insertion"]);
+  let st4 = makeState(me, twoParas);
+  st4 = st4.apply(st4.tr.setSelection(TextSelection.create(st4.doc, 3, st4.doc.content.size - 2)));
+  st4 = st4.apply(st4.tr.deleteSelection());
+  eq("eru track: a deletion across paragraphs keeps both paragraphs and all the text", [st4.doc.childCount, st4.doc.textContent, eruDecided(st4.doc, null, "accept").doc.textContent], [2, "Hello worldSecond", "Hed"]);
+
+  // Comments: several on the same text, found again by id
+  const c = schema.marks.eruComment;
+  const commented = EditorState.create({ doc: schema.nodeFromJSON(twoParas) }).tr.addMark(1, 6, c.create({ id: "k1" })).addMark(3, 9, c.create({ id: "k2" })).doc;
+  const anchors = eruAnchors(commented);
+  eq("eru comments: overlapping comments both keep their text", [anchors.get("k1"), anchors.get("k2")], [{ from: 1, to: 6, text: "Hello" }, { from: 3, to: 9, text: "llo wo" }]);
+
+  // The schema: what a saved document may contain
+  const valid = (json: unknown) => {
+    try {
+      schema.nodeFromJSON(json).check();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  eq("eru content: headings, lists, quote, code, colours, fonts, highlight and change marks are valid; unknown nodes are not", [
+    valid({ type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "T" }] }, { type: "bulletList", content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "a" }] }] }] }, { type: "blockquote", content: [{ type: "paragraph" }] }, { type: "codeBlock", content: [{ type: "text", text: "x=1" }] }] }),
+    valid({ type: "doc", content: [{ type: "paragraph", attrs: { textAlign: "center" }, content: [{ type: "text", text: "c", marks: [{ type: "textStyle", attrs: { color: "#ff0000", fontFamily: "Georgia", fontSize: "14pt" } }, { type: "highlight", attrs: { color: "#fde047" } }, { type: "underline" }, { type: "eruInsertion", attrs: { id: "a", userId: "u", userName: "U", at: null } }] }] }] }),
+    valid({ type: "doc", content: [{ type: "script", content: [] }] }),
+  ], [true, true, false]);
+}
+
+const eruAsync = (async () => {
+  // ERU: the .docx export (a real Word file: zip with word/document.xml)
+  eq("eru export colours and sizes: CSS to Word", [eruHex("#abc"), eruHex("#1D4ED8"), eruHex("rgb(255, 0, 16)"), eruHex("red"), eruHalfPoints("12pt"), eruHalfPoints("16px"), eruHalfPoints("big")], ["AABBCC", "1D4ED8", "FF0010", undefined, 24, 24, undefined]);
+  const content = {
+    type: "doc",
+    content: [
+      { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "Policy note" }] },
+      { type: "paragraph", content: [{ type: "text", text: "Bold part", marks: [{ type: "bold" }] }, { type: "text", text: " kept", marks: [{ type: "eruInsertion", attrs: { id: "i1", userId: "u", userName: "U", at: null } }] }, { type: "text", text: " DROPPED", marks: [{ type: "eruDeletion", attrs: { id: "d1", userId: "u", userName: "U", at: null } }] }] },
+      { type: "orderedList", content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "First point" }] }] }] },
+      { type: "paragraph", content: [{ type: "text", text: "Red", marks: [{ type: "textStyle", attrs: { color: "#ff0000", fontSize: "14pt", fontFamily: "Georgia, serif" } }] }] },
+    ],
+  };
+  const buf = await eruExport("Policy note", content);
+  const xml = strFromU8(unzipSync(new Uint8Array(buf))["word/document.xml"]);
+  eq("eru export: a Word file with the text, pending insertions in and deletions out", [buf.subarray(0, 2).toString(), xml.includes("Policy note"), xml.includes("Bold part"), xml.includes(" kept"), xml.includes("DROPPED"), xml.includes("First point")], ["PK", true, true, true, false, true]);
+  eq("eru export: heading style, bold, numbering, colour, size and font carried over", [/w:pStyle w:val="Heading1"/.test(xml), /<w:b\/>/.test(xml), /<w:numPr>/.test(xml), /w:color w:val="FF0000"/.test(xml), /w:sz w:val="28"/.test(xml), /w:ascii="Georgia"/.test(xml)], [true, true, true, true, true, true]);
+})();
+
+{
+  // ERU is isolated: it imports no other module, and no other module imports it
+  const srcDir = new URL("../src/", import.meta.url);
+  const all = (readdirSync(srcDir, { recursive: true }) as string[]).filter((f) => /\.(ts|tsx)$/.test(f));
+  const isEru = (f: string) => /^(lib\/eru|app\/eru|components\/eru|app\/api\/eru)\//.test(f) || f === "db/eru-schema.ts";
+  const OTHER = /from "@\/(?:lib|components|app)\/(?:approvals|inventory|cabs|ivr|design|aistudio)\/|from "@\/db\/(?:approvals|inventory|cabs|ivr|design|aistudio)-schema"/;
+  eq("eru isolation: no ERU file imports Cabs, IVR, Inventory, Approvals, DesignDesk or AI Studio", all.filter(isEru).filter((f) => OTHER.test(readFileSync(new URL(f, srcDir), "utf8"))), []);
+  eq("eru isolation: no file outside ERU imports ERU", all.filter((f) => !isEru(f)).filter((f) => /from "@\/(?:lib|components)\/eru\/|from "@\/db\/eru-schema"/.test(readFileSync(new URL(f, srcDir), "utf8"))), []);
+  const HOST = /from "@\/(?:db|db\/schema|lib\/permissions|lib\/notifications|lib\/site-url|lib\/log-error|lib\/notice-feed|lib\/audit)"/;
+  eq("eru isolation: only the host-adapter (and db.ts) reach the hub's own code", all.filter(isEru).filter((f) => f !== "lib/eru/host-adapter.ts" && f !== "lib/eru/db.ts" && HOST.test(readFileSync(new URL(f, srcDir), "utf8"))), []);
+}
+
+Promise.all([ssoTests, eruAsync]).then(() => {
   console.log(`\n${ok}/${ok + bad} unit checks passed`);
   process.exit(bad ? 1 : 0);
 }, (e) => {
-  console.error("FAIL single sign-on tests crashed:", e);
+  console.error("FAIL async tests (single sign-on, ERU export) crashed:", e);
   process.exit(1);
 });
 
