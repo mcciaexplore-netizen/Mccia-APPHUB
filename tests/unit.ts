@@ -76,7 +76,7 @@ import { EditorState, Plugin, TextSelection } from "@tiptap/pm/state";
 import { history as pmHistory, undo as pmUndo } from "@tiptap/pm/history";
 import { unzipSync, strFromU8 } from "fflate";
 import { DEFAULT_DOMAINS as ERU_DOMAINS, ERU_ADMIN_URL_PATTERN, ERU_USER_URL_PATTERN, can as eruCan, checkProject as eruCheck, cleanDocumentTitle as eruTitle, cleanTags as eruTags, eruRolesFor, formatProjectNumber as eruNumber, initials as eruInitials, navFor as eruNavFor } from "../src/lib/eru/eru.manifest";
-import { eruSchema } from "../src/lib/eru/editor/extensions";
+import { eruSchema, plainContent as eruPlain } from "../src/lib/eru/editor/extensions";
 import { collectChanges as eruChanges, decidedDoc as eruDecided, trackTransactions as eruTrack } from "../src/lib/eru/editor/track-changes";
 import { commentAnchors as eruAnchors } from "../src/lib/eru/editor/comments";
 import { exportDocx as eruExport, halfPoints as eruHalfPoints, hexColor as eruHex } from "../src/lib/eru/docx-export";
@@ -1218,8 +1218,9 @@ const ssoTests = (async () => {
   const me = { id: "u-asha", name: "Asha" };
   const other = { id: "u-ravi", name: "Ravi" };
   let n = 0;
+  let tick = 0; // every edit a second later, as when typing
   const makeState = (who: { id: string; name: string }, docJson: unknown) =>
-    EditorState.create({ doc: schema.nodeFromJSON(docJson), plugins: [pmHistory(), new Plugin({ appendTransaction: (trs, o, s) => eruTrack(trs, o, s, who, () => `c${++n}`, () => "2026-11-13T10:00:00.000Z") })] });
+    EditorState.create({ doc: schema.nodeFromJSON(docJson), plugins: [pmHistory(), new Plugin({ appendTransaction: (trs, o, s) => eruTrack(trs, o, s, who, () => `c${++n}`, () => new Date(Date.UTC(2026, 10, 13, 10, 0, 0) + 1000 * tick++).toISOString()) })] });
   const twoParas = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }, { type: "paragraph", content: [{ type: "text", text: "Second" }] }] };
   const show = (st: EditorState) => {
     const parts: string[] = [];
@@ -1237,6 +1238,9 @@ const ssoTests = (async () => {
   apply((s) => s.tr.insertText(" b"));
   apply((s) => s.tr.insertText("ig"));
   eq("eru track: typing is marked as the typist's insertion, one change for a run of typing", [show(st), eruChanges(st.doc).map((c) => [c.type, c.text, c.userName, c.at])], ["¶Hello[+Asha: big] world¶Second", [["insertion", " big", "Asha", "2026-11-13T10:00:00.000Z"]]]);
+  let insNodes = 0;
+  st.doc.descendants((nd) => void (nd.isText && nd.marks.some((m) => m.type.name === "eruInsertion") && insNodes++));
+  eq("eru track: a run of typing is one run of marked text (one change, same attrs), not one piece per keystroke", insNodes, 1);
   apply((s) => s.tr.delete(s.selection.from - 1, s.selection.from));
   eq("eru track: deleting your own pending insertion really removes it", show(st), "¶Hello[+Asha: bi] world¶Second");
   const endWorld = st.doc.child(0).nodeSize - 1;
@@ -1281,6 +1285,11 @@ const ssoTests = (async () => {
   st4 = st4.apply(st4.tr.setSelection(TextSelection.create(st4.doc, 3, st4.doc.content.size - 2)));
   st4 = st4.apply(st4.tr.deleteSelection());
   eq("eru track: a deletion across paragraphs keeps both paragraphs and all the text", [st4.doc.childCount, st4.doc.textContent, eruDecided(st4.doc, null, "accept").doc.textContent], [2, "Hello worldSecond", "Hed"]);
+
+  // Content crosses a server action as plain data (ProseMirror's attrs objects have no prototype, which React will not send as data)
+  const pmJson = tracked.toJSON() as { content: { attrs?: object }[] };
+  const plain = eruPlain(pmJson);
+  eq("eru content: the editor's JSON is made plain for server actions (every object an ordinary one), unchanged otherwise", [Object.getPrototypeOf(pmJson.content[0].attrs ?? {}) === null, Object.getPrototypeOf(plain.content[0].attrs ?? {}) === Object.prototype, JSON.stringify(plain) === JSON.stringify(pmJson)], [true, true, true]);
 
   // Comments: several on the same text, found again by id
   const c = schema.marks.eruComment;

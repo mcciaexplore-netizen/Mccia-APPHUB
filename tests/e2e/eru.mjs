@@ -220,15 +220,21 @@ try {
   await selectText(Mb.page, "Credit demand");
   await Mb.page.getByRole("button", { name: "Italic (Ctrl+I)" }).click();
   await selectText(Mb.page, "Exports steady");
-  await Mb.page.getByLabel("Text colour").evaluate((el) => { el.value = "#dc2626"; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); });
+  await Mb.page.getByLabel("Text colour").fill("#dc2626");
   await selectText(Mb.page, "Outlook for Q3");
   await Mb.page.getByRole("button", { name: "Heading 2" }).click();
   await Mb.page.getByLabel("Font size (points)").selectOption("14").catch(() => {});
-  check("bold, italic, colour and heading show in the page", (await prose.locator("strong", { hasText: "positive" }).count()) === 1 && (await prose.locator("em", { hasText: "Credit demand" }).count()) === 1 && (await prose.locator("span[style*='color']", { hasText: "Exports steady" }).count()) === 1 && (await prose.locator("h2", { hasText: "Outlook for Q3" }).count()) === 1);
+  check("bold, italic, colour and heading show in the page", (await prose.locator("strong", { hasText: "positive" }).count()) === 1 && (await prose.locator("em", { hasText: "Credit demand" }).count()) === 1 && (await prose.locator("span[style*='color']", { hasText: "Exports steady" }).count()) === 1 && (await prose.locator("h2", { hasText: "Outlook for Q3" }).count()) === 1, [await prose.locator("strong", { hasText: "positive" }).count(), await prose.locator("em", { hasText: "Credit demand" }).count(), await prose.locator("span[style*='color']", { hasText: "Exports steady" }).count(), await prose.locator("h2", { hasText: "Outlook for Q3" }).count(), (await prose.innerHTML()).slice(-900)]);
   check("saving shows 'Saved'", await saveNow(Mb.page));
   const d1 = await docRow(docId);
   const c1 = JSON.stringify(d1.content);
-  check("the saved content has the formatting", /"type":"heading","attrs":\{[^}]*"level":2/.test(c1) && /"text":"positive","marks":\[\{"type":"bold"/.test(c1) && /"type":"italic"/.test(c1) && /"color":"#dc2626"/.test(c1) && d1.version > d0.version, c1.slice(0, 400));
+  // Stored as jsonb, which reorders keys: walk the content rather than matching its text.
+  const nodes = [];
+  const walk = (n, parent) => { nodes.push({ ...n, parent }); for (const c of n.content ?? []) walk(c, n); };
+  walk(d1.content, null);
+  const textNode = (t) => nodes.find((n) => n.type === "text" && n.text === t);
+  const hasMark = (t, type, attr) => (textNode(t)?.marks ?? []).some((m) => m.type === type && (!attr || Object.entries(attr).every(([k, v]) => m.attrs?.[k] === v)));
+  check("the saved content has the formatting", nodes.some((n) => n.type === "heading" && n.attrs?.level === 2) && hasMark("positive", "bold") && hasMark("Credit demand", "italic") && hasMark("Exports steady", "textStyle", { color: "#dc2626" }) && d1.version > d0.version, c1.slice(0, 400));
 
   section("comment");
   await selectText(Mb.page, "rose sharply");
@@ -252,12 +258,13 @@ try {
   await Mb.page.keyboard.type(" Revised upward.");
   await selectText(Mb.page, "remains strong");
   await Mb.page.keyboard.press("Backspace");
-  check("insertions show green, underlined; deletions red, struck through", (await prose.locator("ins.eru-ins", { hasText: "Revised upward." }).count()) === 1 && (await prose.locator("del.eru-del", { hasText: "remains strong" }).count()) === 1);
+  check("insertions show green, underlined; deletions red, struck through", (await prose.locator("ins.eru-ins", { hasText: "Revised upward." }).count()) === 1 && (await prose.locator("del.eru-del", { hasText: "remains strong" }).count()) === 1, [await prose.locator("ins.eru-ins").allInnerTexts(), await prose.locator("del.eru-del").allInnerTexts()]);
   check("saved", await saveNow(Mb.page));
   const pending = await sql`select * from eru_document_changes where document_id = ${docId} and status = 'pending' order by change_type`;
   check("two pending changes, both the member's", pending.length === 2 && pending.every((c) => c.user_id === member.id) && pending.some((c) => c.change_type === "deletion" && c.from_content === "remains strong") && pending.some((c) => c.change_type === "insertion" && /Revised upward\./.test(c.to_content)), pending);
-  await Mb.page.getByRole("button", { name: /^Changes \(2\)/ }).click();
-  check("the member sees the changes but no Accept / Reject", (await Mb.page.getByTestId("eru-change").count()) === 2 && (await Mb.page.getByRole("button", { name: "Accept change" }).count()) === 0);
+  // Switching tracking on opened the Changes panel already.
+  if ((await Mb.page.getByRole("button", { name: /^Changes \(2\)/ }).getAttribute("aria-pressed")) !== "true") await Mb.page.getByRole("button", { name: /^Changes \(2\)/ }).click();
+  check("the member sees the changes but no Accept / Reject", (await Mb.page.getByTestId("eru-change").count()) === 2 && (await Mb.page.getByRole("button", { name: "Accept change" }).count()) === 0, [await Mb.page.getByTestId("eru-change").count(), await Mb.page.getByRole("button", { name: "Accept change" }).count()]);
 
   section("an admin reviews");
   await go(Ad.page, `/eru/documents/${docId}`);
@@ -296,7 +303,7 @@ try {
 
   section("ERU Admin");
   await go(Ad.page, "/eru/admin");
-  check("the dashboard: four numbers, review list, chart, activity", /Total projects[\s\S]*Active[\s\S]*In review[\s\S]*Completed this month/.test(await mainText(Ad.page)) && /Projects by domain/.test(await mainText(Ad.page)) && /Recent activity/.test(await mainText(Ad.page)));
+  check("the dashboard: four numbers, review list, chart, activity", /Total projects[\s\S]*Active[\s\S]*In review[\s\S]*Completed this month/i.test(await mainText(Ad.page)) && /Tracked changes to review/i.test(await mainText(Ad.page)) && /Projects by domain/i.test(await mainText(Ad.page)) && /Recent activity/i.test(await mainText(Ad.page)), (await mainText(Ad.page)).slice(0, 400));
   check("the admin menu", (await navLabels(Ad.page, "ERU Admin")) === "Dashboard|All Projects|Members|Settings|ERU Workspace", await navLabels(Ad.page, "ERU Admin"));
   await go(Ad.page, `/eru/admin/projects?q=${proj.number}`);
   check("All Projects: search by number finds the project, with its columns", (await Ad.page.locator("tbody tr").count()) === 1 && new RegExp(`${proj.number}[\\s\\S]*ZZE Pune industry outlook[\\s\\S]*Policy Research`).test(await Ad.page.locator("tbody").innerText()));

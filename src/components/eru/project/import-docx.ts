@@ -1,7 +1,7 @@
 "use client";
 
 import { generateJSON } from "@tiptap/core";
-import { eruExtensions } from "@/lib/eru/editor/extensions";
+import { eruExtensions, plainContent } from "@/lib/eru/editor/extensions";
 
 /**
  * A .docx file as editor content, in the browser: mammoth turns it into HTML (headings, bold, italic, underline, strike-through, lists,
@@ -18,7 +18,7 @@ export async function docxToContent(file: File): Promise<{ content: Record<strin
     },
   );
   const html = result.value.replace(/<img[^>]*>/g, "");
-  const content = generateJSON(html || "<p></p>", eruExtensions());
+  const content = plainContent(generateJSON(html || "<p></p>", eruExtensions()));
   return { content, warnings: result.messages.filter((m) => m.type === "warning").length };
 }
 

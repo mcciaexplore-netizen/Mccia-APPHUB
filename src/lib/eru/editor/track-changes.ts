@@ -83,13 +83,16 @@ function changeMark(node: PMNode | null | undefined, type: MarkType) {
   return node?.isText ? node.marks.find((m) => m.type === type) : undefined;
 }
 
-/** The id to use for a change at [from, to): the id of the same user's adjacent change of the same type, or a new one. */
-function idNear(doc: PMNode, from: number, to: number, type: MarkType, userId: string, makeId: () => string): string {
+/**
+ * The attrs for a change at [from, to): those of the same user's adjacent change of the same type (so typing on continues one change, as one
+ * run of marked text), or new ones.
+ */
+function attrsNear(doc: PMNode, from: number, to: number, type: MarkType, user: TrackUser, makeId: () => string, at: string): ChangeAttrs {
   const before = from > 0 ? changeMark(doc.resolve(from).nodeBefore, type) : undefined;
-  if (before && before.attrs.userId === userId && before.attrs.id) return before.attrs.id as string;
+  if (before && before.attrs.userId === user.id && before.attrs.id) return before.attrs as ChangeAttrs;
   const after = to < doc.content.size ? changeMark(doc.resolve(to).nodeAfter, type) : undefined;
-  if (after && after.attrs.userId === userId && after.attrs.id) return after.attrs.id as string;
-  return makeId();
+  if (after && after.attrs.userId === user.id && after.attrs.id) return after.attrs as ChangeAttrs;
+  return { id: makeId(), userId: user.id, userName: user.name, at };
 }
 
 /**
@@ -165,7 +168,7 @@ export function trackTransactions(transactions: readonly Transaction[], oldState
     if (to <= from || !rt.doc.textBetween(from, to, "", "").length) continue;
     rt.removeMark(from, to, ins);
     rt.removeMark(from, to, schema.marks[DELETION]);
-    rt.addMark(from, to, ins.create({ id: idNear(rt.doc, from, to, ins, user.id, makeId), userId: user.id, userName: user.name, at }));
+    rt.addMark(from, to, ins.create(attrsNear(rt.doc, from, to, ins, user, makeId, at)));
   }
   // 2. Deleted text goes back in, marked, from the end of the document backwards so earlier positions stay right.
   let caret: number | null = null;
@@ -173,8 +176,7 @@ export function trackTransactions(transactions: readonly Transaction[], oldState
   for (const r of [...removed].sort((x, y) => y.pos - x.pos)) {
     const pos = Math.min(r.pos, rt.doc.content.size);
     const $pos = rt.doc.resolve(pos);
-    const id = idNear(rt.doc, pos, pos, del, user.id, makeId);
-    const marked = markDeleted(r.slice, $pos.parent.type, schema, { id, userId: user.id, userName: user.name, at });
+    const marked = markDeleted(r.slice, $pos.parent.type, schema, attrsNear(rt.doc, pos, pos, del, user, makeId, at));
     if (!marked) continue;
     const before = rt.doc.content.size;
     try {

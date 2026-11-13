@@ -9,7 +9,7 @@ import { useConfirm } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
 import { addCommentAction, deleteCommentAction, resolveCommentAction, reviewChangesAction, saveDocumentAction, setTrackChangesAction } from "@/lib/eru/actions/workspace";
 import { AUTOSAVE_MS, DOCUMENT_TITLE_MAX } from "@/lib/eru/eru.manifest";
-import { eruExtensions } from "@/lib/eru/editor/extensions";
+import { eruExtensions, plainContent } from "@/lib/eru/editor/extensions";
 import { collectChanges, setTracking, SKIP_TRACKING, type ChangeInfo } from "@/lib/eru/editor/track-changes";
 import { COMMENT, commentAnchors, setCommentView } from "@/lib/eru/editor/comments";
 import type { CommentView } from "@/lib/eru/queries";
@@ -86,7 +86,7 @@ export default function DocumentEditor({ doc, project, comments: initialComments
     const run = (async () => {
       const sent = edits.current;
       setSaveState((s) => ({ ...s, saving: true, error: null }));
-      const r = await saveDocumentAction(doc.id, { content: editor.getJSON(), title: titleRef.current, baseVersion: version.current });
+      const r = await saveDocumentAction(doc.id, { content: plainContent(editor.getJSON()), title: titleRef.current, baseVersion: version.current });
       if (!r.ok) {
         const isConflict = /changed by someone else/i.test(r.error);
         conflict.current = isConflict;

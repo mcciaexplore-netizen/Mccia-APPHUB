@@ -7,7 +7,7 @@ import { EruError, type SessionUser } from "./dal";
 import { audit } from "./audit";
 import { claimFile, deleteFiles } from "./files";
 import { can, cleanDocumentTitle, isUuid, MAX_CONTENT_BYTES } from "./eru.manifest";
-import { EMPTY_DOC, eruSchema } from "./editor/extensions";
+import { EMPTY_DOC, eruSchema, plainContent } from "./editor/extensions";
 import { collectChanges, decidedDoc } from "./editor/track-changes";
 import { notify } from "./host-adapter";
 
@@ -53,17 +53,16 @@ async function documentRow(id: string) {
 export async function createDocument(u: SessionUser, projectId: string, input: { title: string; content?: unknown; originalFileId?: string | null }): Promise<{ id: string }> {
   if (!can.editDocument(u.roles)) throw new EruError("ERU team members only.");
   const p = await projectOf(projectId);
-  const content = input.content ? parseContent(input.content).toJSON() : EMPTY_DOC;
+  const content = input.content ? plainContent(parseContent(input.content).toJSON()) : EMPTY_DOC;
   const [s] = await db.select({ trackChangesDefault: settings.trackChangesDefault }).from(settings).where(eq(settings.id, 1));
+  // The original upload is claimed first, so a file that cannot be used never leaves a document behind.
+  if (input.originalFileId && !isUuid(input.originalFileId)) throw new EruError("The uploaded file could not be found. Please upload it again.");
+  const original = input.originalFileId ? await claimFile(u.id, input.originalFileId, { projectId: p.id }) : null;
   const [d] = await db
     .insert(documents)
-    .values({ projectId: p.id, title: cleanDocumentTitle(input.title), content, createdBy: u.id, lastEditedBy: u.id, trackChanges: !!s?.trackChangesDefault })
+    .values({ projectId: p.id, title: cleanDocumentTitle(input.title), content, originalFileId: original?.id ?? null, createdBy: u.id, lastEditedBy: u.id, trackChanges: !!s?.trackChangesDefault })
     .returning({ id: documents.id });
-  if (input.originalFileId) {
-    if (!isUuid(input.originalFileId)) throw new EruError("The uploaded file could not be found. Please upload it again.");
-    const f = await claimFile(u.id, input.originalFileId, { projectId: p.id, documentId: d.id });
-    await db.update(documents).set({ originalFileId: f.id }).where(eq(documents.id, d.id));
-  }
+  if (original) await db.update(files).set({ documentId: d.id }).where(eq(files.id, original.id));
   await db.update(projects).set({ updatedAt: new Date() }).where(eq(projects.id, p.id));
   await audit(p.id, u.id, input.originalFileId ? "document.import" : "document.create", { documentId: d.id, title: cleanDocumentTitle(input.title) });
   return d;
@@ -108,7 +107,7 @@ export async function saveDocument(u: SessionUser, id: string, input: { content:
   const now = new Date();
   const [saved] = await db
     .update(documents)
-    .set({ content: doc.toJSON(), title: input.title === undefined ? d.title : cleanDocumentTitle(input.title), version: d.version + 1, lastEditedBy: u.id, updatedAt: now })
+    .set({ content: plainContent(doc.toJSON()), title: input.title === undefined ? d.title : cleanDocumentTitle(input.title), version: d.version + 1, lastEditedBy: u.id, updatedAt: now })
     .where(and(eq(documents.id, id), eq(documents.version, input.baseVersion)))
     .returning({ version: documents.version });
   if (!saved) throw new EruError(CONFLICT);
@@ -158,7 +157,7 @@ export async function reviewChanges(u: SessionUser, id: string, input: { baseVer
   const { doc, decided } = decidedDoc(parseContent(d.content), ids, input.decision);
   if (!decided.length) return { content: d.content, version: d.version, decided: 0 };
   const now = new Date();
-  const content = doc.toJSON() as Record<string, unknown>;
+  const content = plainContent(doc.toJSON()) as Record<string, unknown>;
   const [saved] = await db
     .update(documents)
     .set({ content, version: d.version + 1, lastEditedBy: u.id, updatedAt: now })

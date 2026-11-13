@@ -37,5 +37,11 @@ export function eruSchema(): Schema {
   return (schema ??= getSchema(eruExtensions()));
 }
 
+/**
+ * The editor's JSON as plain data. ProseMirror builds node and mark attributes as prototype-less objects (Object.create(null)), which React
+ * does not send to or from a server action as data (they arrive as opaque references), so content is passed through this both ways.
+ */
+export const plainContent = <T,>(content: T): T => JSON.parse(JSON.stringify(content)) as T;
+
 /** An empty document. */
 export const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] } as const;
