@@ -49,13 +49,13 @@ export function effectiveRole(roles: readonly IvrRole[]): "agent" | "admin" | "s
 export type IvrNavItem = { label: string; href: string; superOnly?: boolean };
 
 export const IVR_NAV: Record<IvrSection, { title: string; items: IvrNavItem[] }> = {
-  agent: { title: "IVR-CRM", items: [
+  agent: { title: "Membership CRM", items: [
     { label: "Call queue", href: "/ivr" },
     { label: "My calls", href: "/ivr/calls" },
     { label: "Pipeline", href: "/ivr/pipeline" },
     { label: "Connections", href: "/ivr/connections" },
   ] },
-  admin: { title: "IVR-CRM Admin", items: [
+  admin: { title: "Membership Admin", items: [
     { label: "Team overview", href: "/ivr/admin" },
     { label: "Members and assignment", href: "/ivr/admin/members" },
     { label: "Import members", href: "/ivr/admin/import" },

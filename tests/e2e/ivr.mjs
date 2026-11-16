@@ -203,7 +203,7 @@ try {
   const tilesM = await mainText(M.page);
   check("hub: the admin sees both tiles", tilesM.includes("ZZI IVR-CRM") && tilesM.includes("ZZI IVR-CRM Admin"));
   await go(A.page, "/ivr");
-  check("agent: /ivr opens on the call queue, with the agent menu", pathOf(A.page) === "/ivr" && (await navLabels(A.page, "IVR-CRM")) === "Call queue|My calls|Pipeline|Connections");
+  check("agent: /ivr opens on the call queue, with the agent menu", pathOf(A.page) === "/ivr" && (await navLabels(A.page, "Membership CRM")) === "Call queue|My calls|Pipeline|Connections");
   check("agent: the hub bell is in the IVR-CRM frame", (await A.page.locator("[data-hub-bell]").count()) === 1);
   await go(A.page, "/ivr/admin"); check("agent: IVR-CRM Admin sends them back to their queue", pathOf(A.page) === "/ivr");
   await go(A.page, "/ivr/admin/integrations"); check("agent: Integrations sends them back to their queue", pathOf(A.page) === "/ivr");
@@ -212,7 +212,7 @@ try {
   await go(NA.page, "/ivr/admin"); check("listed as an App Admin of IVR-CRM Admin but never given it: sent back to the hub (the application decides)", pathOf(NA.page) === "/");
   await go(MO.page, "/ivr/admin");
   check("a plain member given only IVR-CRM Admin (not an App Admin, no hub admin role) gets the full admin section", pathOf(MO.page) === "/ivr/admin"
-    && (await navLabels(MO.page, "IVR-CRM Admin")) === "Team overview|Members and assignment|Import members|Team calls|Pipeline|Analytics|PDF reports|Categories|Agents");
+    && (await navLabels(MO.page, "Membership Admin")) === "Team overview|Members and assignment|Import members|Team calls|Pipeline|Analytics|PDF reports|Categories|Agents");
   for (const p of ["/ivr/admin/members", "/ivr/admin/import", "/ivr/admin/calls", "/ivr/admin/pipeline", "/ivr/admin/analytics", "/ivr/admin/reports", "/ivr/admin/categories", "/ivr/admin/agents"]) {
     const r = await go(MO.page, p);
     check(`that member opens ${p}`, r?.status() === 200 && pathOf(MO.page) === p, r?.status());
@@ -220,14 +220,14 @@ try {
   await go(MO.page, "/ivr/admin/integrations"); check("that member: Integrations stays with the Support Admin", pathOf(MO.page) === "/ivr/admin");
   await go(M.page, "/ivr/admin");
   check("admin: /ivr/admin opens on Team overview, with the admin menu and no Integrations", pathOf(M.page) === "/ivr/admin"
-    && (await navLabels(M.page, "IVR-CRM Admin")) === "Team overview|Members and assignment|Import members|Team calls|Pipeline|Analytics|PDF reports|Categories|Agents");
+    && (await navLabels(M.page, "Membership Admin")) === "Team overview|Members and assignment|Import members|Team calls|Pipeline|Analytics|PDF reports|Categories|Agents");
   check("admin: the hub bell is in the IVR-CRM Admin frame", (await M.page.locator("[data-hub-bell]").count()) === 1);
   await go(M.page, "/ivr/admin/integrations"); check("admin: Integrations (Smartflo credentials) sends an IVR admin back to Team overview", pathOf(M.page) === "/ivr/admin");
   await go(M.page, "/ivr"); check("admin given IVR-CRM too: also opens the agents' section", pathOf(M.page) === "/ivr");
   await go(MO.page, "/ivr"); check("admin without IVR-CRM: /ivr sends them to IVR-CRM Admin", pathOf(MO.page) === "/ivr/admin");
   if (H) {
     await go(H.page, "/ivr/admin/integrations");
-    check("head admin: Integrations opens, and the menu has it", pathOf(H.page) === "/ivr/admin/integrations" && (await navLabels(H.page, "IVR-CRM Admin")).endsWith("|Integrations")
+    check("head admin: Integrations opens, and the menu has it", pathOf(H.page) === "/ivr/admin/integrations" && (await navLabels(H.page, "Membership Admin")).endsWith("|Integrations")
       && (await H.page.getByRole("heading", { name: "Integrations" }).count()) >= 1);
     await go(H.page, "/ivr"); check("head admin: opens the agents' section too", pathOf(H.page) === "/ivr");
   } else check("head admin: HEAD_ADMIN_EMAIL / HEAD_ADMIN_PASSWORD are set for the test", false);

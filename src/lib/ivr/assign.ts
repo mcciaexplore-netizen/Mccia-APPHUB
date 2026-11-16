@@ -95,7 +95,7 @@ export async function assignLeads(input: {
   const agents = (await listIvrAgents()).filter((a) => agentIds.includes(a.id));
   const known = new Map(agents.map((a) => [a.id, a.name]));
   const orderedAgents = agentIds.filter((id) => known.has(id));
-  if (orderedAgents.length !== agentIds.length) throw new Error("One of the chosen people is not an IVR-CRM agent (they need the IVR-CRM application).");
+  if (orderedAgents.length !== agentIds.length) throw new Error("One of the chosen people is not a Membership CRM agent (they need the Membership CRM application).");
 
   const rows = await loadLeads(leadIds);
   const current = new Map(rows.map((r) => [r.id, r]));

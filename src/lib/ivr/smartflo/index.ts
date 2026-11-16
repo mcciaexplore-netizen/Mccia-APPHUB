@@ -23,7 +23,7 @@ export async function getOrgIntegration() {
 export async function getSmartflo(): Promise<SmartfloProvider> {
   if (env.smartfloMode === "mock") return new MockSmartflo();
   const row = await getOrgIntegration();
-  if (!row?.encryptedSecret) throw new SmartfloError("Smartflo is not connected yet. The Support Admin can connect it in IVR-CRM Admin → Integrations.");
+  if (!row?.encryptedSecret) throw new SmartfloError("Smartflo is not connected yet. The Support Admin can connect it in Membership Admin → Integrations.");
   return new LiveSmartflo(decryptJson<SmartfloCredentials>(row.encryptedSecret), row.id);
 }
 

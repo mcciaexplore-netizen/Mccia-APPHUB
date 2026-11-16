@@ -36,7 +36,7 @@ export default async function AgentsPage() {
     <div className="grid gap-5">
       <PageHeader
         title="Agents"
-        subtitle="Everyone given the IVR-CRM application in the hub. Link each to their Smartflo agent so their calls are theirs. To add or remove an agent, give or take away IVR-CRM in Administrator → Applications."
+        subtitle="Everyone given the Membership CRM application in the hub. Link each to their Smartflo agent so their calls are theirs. To add or remove an agent, give or take away Membership CRM in Administrator → Applications."
       />
       <AgentsManager agents={dto} smartflo={opts} />
     </div>

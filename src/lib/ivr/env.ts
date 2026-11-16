@@ -5,7 +5,7 @@ const isProd = process.env.NODE_ENV === "production";
 function secret(): string {
   const v = process.env.IVR_ENCRYPTION_KEY;
   if (v && v.length >= 32) return v;
-  if (isProd) throw new Error("IVR_ENCRYPTION_KEY must be set (at least 32 characters) for IVR-CRM.");
+  if (isProd) throw new Error("IVR_ENCRYPTION_KEY must be set (at least 32 characters) for Membership CRM.");
   return "dev-only-ivr-key-change-me-0123456789abcdef";
 }
 

@@ -57,7 +57,7 @@ export default async function IntegrationsPage() {
       />
       <MembershipScope initial={lines} mappedAgents={agents.filter((a) => a.mapped).length} />
       <p className="text-[13px] text-muted">
-        Link each Smartflo agent to an IVR-CRM agent under <a className="text-primary underline" href="/ivr/admin/agents">Agents</a>. Agents whose phone number matches a
+        Link each Smartflo agent to a Membership CRM agent under <a className="text-primary underline" href="/ivr/admin/agents">Agents</a>. Agents whose phone number matches a
         user are linked automatically on every sync.
       </p>
       <details className="ivr-card p-5">

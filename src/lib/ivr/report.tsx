@@ -259,7 +259,7 @@ export function ReportDocument({ data }: { data: ReportData }) {
   const rated = data.agents.filter((a) => a.pickupRate !== null);
 
   return (
-    <Document title="IVR CRM membership report" author="IVR CRM">
+    <Document title="Membership CRM report" author="Membership CRM">
       <Page size="A4" style={s.page}>
         <Text style={s.title}>Membership calling report</Text>
         <Text style={s.sub}>
@@ -423,7 +423,7 @@ export function ReportDocument({ data }: { data: ReportData }) {
         )}
 
         <View style={s.footer} fixed>
-          <Text>IVR CRM - {o.fromLabel} to {o.toLabel}</Text>
+          <Text>Membership CRM - {o.fromLabel} to {o.toLabel}</Text>
           <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
         </View>
       </Page>
@@ -451,7 +451,7 @@ export function ReportDocument({ data }: { data: ReportData }) {
             />
           </View>
           <View style={s.footer} fixed>
-            <Text>IVR CRM - {o.fromLabel} to {o.toLabel}</Text>
+            <Text>Membership CRM - {o.fromLabel} to {o.toLabel}</Text>
             <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
           </View>
         </Page>
