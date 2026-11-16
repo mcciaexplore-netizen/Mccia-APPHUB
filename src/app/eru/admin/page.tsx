@@ -17,7 +17,7 @@ export default async function EruAdminHome() {
         <Kpi label="Total projects" value={k.total} href="/eru/admin/projects" />
         <Kpi label="Active" value={k.active} href="/eru/admin/projects?status=active" />
         <Kpi label="In review" value={k.inReview} tone="purple" href="/eru/admin/projects?status=in_review" />
-        <Kpi label="Completed this month" value={k.completedThisMonth} tone="green" href="/eru/admin/projects?status=completed" />
+        <Kpi label="Completed this month" value={k.completedThisMonth} tone="green" href="/eru/admin/projects?completed=month" />
       </div>
       <div className="grid gap-6 xl:grid-cols-2">
         <Card

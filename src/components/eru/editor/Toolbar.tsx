@@ -20,6 +20,7 @@ import {
   Undo2,
   type LucideIcon,
 } from "lucide-react";
+import { CODE_LOCKED_MESSAGE, touchesCodeBlock } from "@/lib/eru/editor/track-changes";
 
 /** The editor's formatting bar: font and size, bold to strike-through, colours, alignment, lists, headings, quote and code, undo/redo, comment. */
 
@@ -33,18 +34,24 @@ const FONTS = [
   { label: "Courier New", value: "\"Courier New\", monospace" },
 ];
 const SIZES = ["8", "9", "10", "11", "12", "14", "16", "18", "20", "24", "28", "32", "36"];
+export const NO_CODE_COMMENTS = "Comments cannot be added to code blocks.";
 
-function Tool({ icon: Icon, label, on, disabled, onClick, children }: { icon?: LucideIcon; label: string; on?: boolean; disabled?: boolean; onClick: () => void; children?: React.ReactNode }) {
+/**
+ * One button. `blocked` (a reason) shows it switched off but still answers a click with the reason, and keeps the reason as its tooltip:
+ * a truly disabled button shows no tooltip in some browsers.
+ */
+function Tool({ icon: Icon, label, on, disabled, blocked, onBlocked, onClick, children }: { icon?: LucideIcon; label: string; on?: boolean; disabled?: boolean; blocked?: string | null; onBlocked?: (reason: string) => void; onClick: () => void; children?: React.ReactNode }) {
   return (
     <button
       type="button"
       className="eru-tool"
-      aria-label={label}
-      title={label}
+      aria-label={blocked ? `${label}: ${blocked}` : label}
+      title={blocked ?? label}
       aria-pressed={on === undefined ? undefined : on}
+      aria-disabled={blocked ? true : undefined}
       disabled={disabled}
       onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
+      onClick={() => (blocked ? onBlocked?.(blocked) : onClick())}
     >
       {Icon ? <Icon size={16} aria-hidden /> : children}
     </button>
@@ -53,7 +60,7 @@ function Tool({ icon: Icon, label, on, disabled, onClick, children }: { icon?: L
 
 const Sep = () => <span className="eru-tool-sep" aria-hidden />;
 
-export function Toolbar({ editor, onComment }: { editor: Editor; onComment: () => void }) {
+export function Toolbar({ editor, trackOn, onComment, onBlocked }: { editor: Editor; trackOn: boolean; onComment: () => void; onBlocked: (reason: string) => void }) {
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => {
@@ -81,6 +88,7 @@ export function Toolbar({ editor, onComment }: { editor: Editor; onComment: () =
         canUndo: e.can().undo(),
         canRedo: e.can().redo(),
         hasSelection: !e.state.selection.empty,
+        inCode: touchesCodeBlock(e.state.doc, e.state.selection.from, e.state.selection.to),
       };
     },
   });
@@ -151,12 +159,19 @@ export function Toolbar({ editor, onComment }: { editor: Editor; onComment: () =
         H3
       </Tool>
       <Tool icon={Quote} label="Quote" on={s.quote} onClick={() => c().toggleBlockquote().run()} />
-      <Tool icon={Code2} label="Code block" on={s.code} onClick={() => c().toggleCodeBlock().run()} />
+      <Tool icon={Code2} label="Code block" on={s.code} blocked={trackOn ? CODE_LOCKED_MESSAGE : null} onBlocked={onBlocked} onClick={() => c().toggleCodeBlock().run()} />
       <Sep />
       <Tool icon={Undo2} label="Undo (Ctrl+Z)" disabled={!s.canUndo} onClick={() => c().undo().run()} />
       <Tool icon={Redo2} label="Redo (Ctrl+Shift+Z)" disabled={!s.canRedo} onClick={() => c().redo().run()} />
       <Sep />
-      <Tool icon={MessageSquarePlus} label="Add a comment on the selected text (Ctrl+Alt+M)" disabled={!s.hasSelection} onClick={onComment} />
+      <Tool
+        icon={MessageSquarePlus}
+        label="Add a comment on the selected text (Ctrl+Alt+M)"
+        disabled={!s.hasSelection}
+        blocked={s.hasSelection && s.inCode ? NO_CODE_COMMENTS : null}
+        onBlocked={onBlocked}
+        onClick={onComment}
+      />
     </div>
   );
 }

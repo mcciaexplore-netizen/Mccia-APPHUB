@@ -34,7 +34,7 @@ const P = await import("../src/lib/eru/projects");
 const D = await import("../src/lib/eru/documents");
 const A = await import("../src/lib/eru/admin");
 const { listTeam } = await import("../src/lib/eru/host-adapter");
-const { projectDetail, documentForEditor, allProjects, readFilters } = await import("../src/lib/eru/queries");
+const { projectDetail, documentForEditor, allProjects, readFilters, adminKpis } = await import("../src/lib/eru/queries");
 const { isAdmin, isMember, isSuperAdmin } = await import("../src/lib/eru/eru.manifest");
 
 type Roles = ("eru_member" | "eru_admin" | "eru_super_admin")[];
@@ -168,7 +168,9 @@ try {
 
   // Comments
   const c1 = await D.addComment(O, d1.id, { content: "Source for this figure?", from: 1, to: 12, quote: "The economy" });
-  check("comments: added, with the quoted text; the document's author is told", (await documentForEditor(d1.id))?.comments.some((c) => c.id === c1.id && c.quote === "The economy" && c.userName === other.name) && (await db.select().from(H.hubNotifications).where(eq(H.hubNotifications.userId, mem.id))).some((n) => /comment/i.test(n.title)));
+  check("comments: added, with the quoted text", (await documentForEditor(d1.id))?.comments.some((c) => c.id === c1.id && c.quote === "The economy" && c.userName === other.name));
+  const toldOf = async (userId: string) => (await db.select().from(H.hubNotifications).where(and(eq(H.hubNotifications.userId, userId), eq(H.hubNotifications.kind, "eru")))).filter((n) => n.title.startsWith("New comment on")).length;
+  check("comments: the document's creator, the project's assigned members and every ERU admin are told; never the commenter", (await toldOf(mem.id)) === 1 && (await toldOf(adm.id)) === 1 && (await toldOf(other.id)) === 0, [await toldOf(mem.id), await toldOf(adm.id), await toldOf(other.id)]);
   check("comments: an empty comment is refused", await refused(() => D.addComment(O, d1.id, { content: "  ", from: 1, to: 2, quote: "" }), /Write the comment/));
   check("comments: only the author or an admin resolves", await refused(() => D.resolveComment(M, c1.id, true), /author or an ERU admin/));
   await D.resolveComment(O, c1.id, true);
@@ -204,6 +206,19 @@ try {
   check("delete: a member cannot delete a document or a project", (await refused(() => D.deleteDocument(M, d1.id), /Only an ERU admin/)) === true && (await refused(() => P.deleteProject(M, p1.id), /Only an ERU admin/)) === true);
   await D.deleteDocument(AD, d1.id);
   check("delete: the document goes with its comments and change records", (await db.select().from(T.documentChanges).where(eq(T.documentChanges.documentId, d1.id))).length === 0 && (await db.select().from(T.documents).where(eq(T.documents.id, d1.id))).length === 0);
+  // ── Completed this month ──────────────────────────────────────────────
+  const before = (await adminKpis()).completedThisMonth;
+  await P.manageProject(AD, p1.id, { status: "completed" });
+  await P.manageProject(AD, p2.id, { status: "completed" });
+  // p2 was completed last month: its history line is moved back to before this month began.
+  await db.update(T.auditLogs).set({ createdAt: new Date(Date.now() - 40 * 86_400_000) }).where(and(eq(T.auditLogs.projectId, p2.id), eq(T.auditLogs.action, "project.update")));
+  const after = (await adminKpis()).completedThisMonth;
+  const listed = await allProjects({ ...readFilters({ completed: "month", q: "ZZE" }), page: 1 });
+  check("completed this month: the dashboard counts a project completed this month, not one completed last month", after - before === 1, [before, after]);
+  check("completed this month: the list it opens shows the same projects", listed.rows.some((r) => r.id === p1.id) && !listed.rows.some((r) => r.id === p2.id), listed.rows.map((r) => r.number));
+  await P.manageProject(AD, p1.id, { status: "active" });
+  check("completed this month: a project reopened since is no longer counted", (await adminKpis()).completedThisMonth === before, (await adminKpis()).completedThisMonth);
+
   const d2 = await D.createDocument(M, p2.id, { title: "ZZE To go" });
   await P.deleteProject(AD, p2.id);
   check("delete: deleting a project takes its documents too", (await db.select().from(T.documents).where(eq(T.documents.id, d2.id))).length === 0);

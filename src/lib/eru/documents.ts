@@ -6,10 +6,10 @@ import { auditLogs, documentChanges, documentComments, documents, files, project
 import { EruError, type SessionUser } from "./dal";
 import { audit } from "./audit";
 import { claimFile, deleteFiles } from "./files";
-import { can, cleanDocumentTitle, isUuid, MAX_CONTENT_BYTES } from "./eru.manifest";
+import { can, cleanDocumentTitle, commentRecipients, isUuid, MAX_CONTENT_BYTES } from "./eru.manifest";
 import { EMPTY_DOC, eruSchema, plainContent } from "./editor/extensions";
 import { collectChanges, decidedDoc } from "./editor/track-changes";
-import { notify } from "./host-adapter";
+import { listTeam, notify } from "./host-adapter";
 
 /**
  * Documents: creating (blank, or imported from .docx in the browser), saving, track changes and their review, comments, deleting.
@@ -211,8 +211,10 @@ export async function addComment(u: SessionUser, documentId: string, input: { co
     .values({ documentId, userId: u.id, content, selectionFrom: from, selectionTo: to, quote: String(input.quote ?? "").slice(0, 500) })
     .returning({ id: documentComments.id, createdAt: documentComments.createdAt });
   await audit(d.projectId, u.id, "comment.add", { documentId, title: d.title });
-  if (d.createdBy !== u.id)
-    await notify([{ userId: d.createdBy, title: `New comment on "${d.title}"`, body: `${u.name}: ${content.slice(0, 140)}`, link: `/eru/documents/${documentId}`, key: `comment:${c.id}` }]);
+  // The document's creator, everyone assigned to the project and every ERU admin are told (never the commenter).
+  const [p, team] = await Promise.all([projectOf(d.projectId), listTeam()]);
+  const recipients = commentRecipients({ author: u.id, documentCreator: d.createdBy, assigned: p.assignedTo, admins: team.filter((t) => t.role === "admin").map((t) => t.id) });
+  await notify(recipients.map((userId) => ({ userId, title: `New comment on "${d.title}"`, body: `${u.name}: ${content.slice(0, 140)}`, link: `/eru/documents/${documentId}`, key: `comment:${c.id}:${userId}` })));
   return { id: c.id, createdAt: c.createdAt.toISOString() };
 }
 

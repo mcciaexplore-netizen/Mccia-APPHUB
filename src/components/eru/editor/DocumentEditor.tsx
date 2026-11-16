@@ -10,11 +10,12 @@ import { useToast } from "@/components/Toast";
 import { addCommentAction, deleteCommentAction, resolveCommentAction, reviewChangesAction, saveDocumentAction, setTrackChangesAction } from "@/lib/eru/actions/workspace";
 import { AUTOSAVE_MS, DOCUMENT_TITLE_MAX } from "@/lib/eru/eru.manifest";
 import { eruExtensions, plainContent } from "@/lib/eru/editor/extensions";
-import { collectChanges, setTracking, SKIP_TRACKING, type ChangeInfo } from "@/lib/eru/editor/track-changes";
+import { BLOCKED_EVENT, collectChanges, setTracking, SKIP_TRACKING, touchesCodeBlock, type ChangeInfo } from "@/lib/eru/editor/track-changes";
 import { COMMENT, commentAnchors, setCommentView } from "@/lib/eru/editor/comments";
 import type { CommentView } from "@/lib/eru/queries";
 import { exportHref, formatDateTime } from "../ui";
-import { Toolbar } from "./Toolbar";
+import { NO_CODE_COMMENTS, Toolbar } from "./Toolbar";
+import { BottomDrawer } from "./BottomDrawer";
 import { CommentsPanel, type Draft } from "./CommentsPanel";
 import { ChangesPanel } from "./ChangesPanel";
 
@@ -26,6 +27,8 @@ export type EditorProps = {
 };
 
 type Side = "comments" | "changes" | null;
+/** Wide enough for the comments beside the page; narrower screens get them in a drawer from the bottom. */
+const WIDE = "(min-width: 1280px)";
 
 /** Runs a ProseMirror transaction on the editor, untracked and outside the undo history (comment marks, reviewed content). */
 function quietly(editor: Editor, fn: (tr: Editor["state"]["tr"]) => void) {
@@ -45,7 +48,9 @@ export default function DocumentEditor({ doc, project, comments: initialComments
   const [title, setTitle] = useState(doc.title);
   const [trackOn, setTrackOn] = useState(doc.trackChanges);
   const [comments, setComments] = useState(initialComments);
-  const [side, setSide] = useState<Side>(initialComments.some((c) => !c.resolved) ? "comments" : null);
+  // Wide screens show the comments beside the page from the start; narrow ones keep the drawer closed until asked for. (The editor only
+  // runs in the browser, so the screen width is known here.)
+  const [side, setSide] = useState<Side>(() => (initialComments.some((c) => !c.resolved) && window.matchMedia(WIDE).matches ? "comments" : null));
   const [activeComment, setActiveComment] = useState<string | null>(null);
   const [activeChange, setActiveChange] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -53,7 +58,9 @@ export default function DocumentEditor({ doc, project, comments: initialComments
   const [tops, setTops] = useState<Record<string, number>>({});
   const [paperHeight, setPaperHeight] = useState(0);
   const [selTop, setSelTop] = useState<number | null>(null);
-  const [aligned, setAligned] = useState(true);
+  const [selInCode, setSelInCode] = useState(false);
+  const [notice, setNotice] = useState<{ message: string; top: number; key: number } | null>(null);
+  const [aligned, setAligned] = useState(() => window.matchMedia(WIDE).matches);
   const [saveState, setSaveState] = useState<{ saving: boolean; savedAt: string | null; error: string | null; conflict: boolean }>({ saving: false, savedAt: doc.updatedAt, error: null, conflict: false });
   const [busy, setBusy] = useState(false);
 
@@ -64,6 +71,7 @@ export default function DocumentEditor({ doc, project, comments: initialComments
   const conflict = useRef(false);
   const titleRef = useRef(doc.title);
   const paper = useRef<HTMLDivElement>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const extensions = useMemo(() => eruExtensions(), []);
   const editor = useEditor({
@@ -77,6 +85,32 @@ export default function DocumentEditor({ doc, project, comments: initialComments
   });
 
   const dirty = () => edits.current !== savedEdits.current;
+
+  /** A short message by the caret saying why something was not done (a code block while tracking, a comment on code). */
+  const showNotice = useCallback(
+    (message: string) => {
+      if (!editor || !paper.current) return;
+      let top = 0;
+      try {
+        top = editor.view.coordsAtPos(editor.state.selection.head).top - paper.current.getBoundingClientRect().top;
+      } catch {
+        // no position to point at: the top of the page will do
+      }
+      setNotice({ message, top: Math.max(0, top - 52), key: Date.now() });
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+      noticeTimer.current = setTimeout(() => setNotice(null), 4500);
+    },
+    [editor],
+  );
+
+  // An edit the editor refused (a code block while tracking is on) explains itself.
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+    const onBlocked = (e: Event) => showNotice((e as CustomEvent<{ message: string }>).detail.message);
+    dom.addEventListener(BLOCKED_EVENT, onBlocked);
+    return () => dom.removeEventListener(BLOCKED_EVENT, onBlocked);
+  }, [editor, showNotice]);
 
   // ── Saving ────────────────────────────────────────────────────────────
   const save = useCallback(async (): Promise<boolean> => {
@@ -181,6 +215,7 @@ export default function DocumentEditor({ doc, project, comments: initialComments
     setPaperHeight(paper.current.offsetHeight);
     const sel = editor.state.selection;
     setSelTop(sel.empty ? null : editor.view.coordsAtPos(sel.from).top - base);
+    setSelInCode(!sel.empty && touchesCodeBlock(editor.state.doc, sel.from, sel.to));
   }, [editor]);
 
   useEffect(() => {
@@ -204,7 +239,7 @@ export default function DocumentEditor({ doc, project, comments: initialComments
     editor.on("selectionUpdate", onSel);
     const ro = new ResizeObserver(() => measure());
     if (paper.current) ro.observe(paper.current);
-    const mq = window.matchMedia("(min-width: 1280px)");
+    const mq = window.matchMedia(WIDE);
     const onMq = () => setAligned(mq.matches);
     onMq();
     mq.addEventListener("change", onMq);
@@ -227,6 +262,7 @@ export default function DocumentEditor({ doc, project, comments: initialComments
     if (!editor) return;
     const { from, to, empty } = editor.state.selection;
     if (empty) return toast.error("Select the text you want to comment on first.");
+    if (touchesCodeBlock(editor.state.doc, from, to)) return showNotice(NO_CODE_COMMENTS);
     const base = paper.current?.getBoundingClientRect().top ?? 0;
     setDraft({ from, to, quote: editor.state.doc.textBetween(from, to, " ", " ").slice(0, 500), top: editor.view.coordsAtPos(from).top - base });
     setSide("comments");
@@ -340,7 +376,7 @@ export default function DocumentEditor({ doc, project, comments: initialComments
             <Download size={14} aria-hidden /> Download .docx
           </a>
         </div>
-        {editor && <Toolbar editor={editor} onComment={startComment} />}
+        {editor && <Toolbar editor={editor} trackOn={trackOn} onComment={startComment} onBlocked={showNotice} />}
       </div>
 
       {saveState.conflict && (
@@ -365,18 +401,44 @@ export default function DocumentEditor({ doc, project, comments: initialComments
             {selTop !== null && !draft && (
               <button
                 type="button"
-                className="btn eru-btn-navy btn-sm absolute right-2 shadow-md xl:-right-4"
+                className={`btn btn-sm absolute right-2 shadow-md xl:-right-4 ${selInCode ? "eru-btn-off" : "eru-btn-navy"}`}
                 style={{ top: Math.max(0, selTop - 4) }}
+                aria-disabled={selInCode || undefined}
+                title={selInCode ? NO_CODE_COMMENTS : "Comment on the selected text"}
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={startComment}
+                onClick={() => (selInCode ? showNotice(NO_CODE_COMMENTS) : startComment())}
                 data-testid="eru-add-comment"
               >
                 <MessageSquarePlus size={14} aria-hidden /> Add comment
               </button>
             )}
+            {notice && (
+              <p key={notice.key} role="status" className="eru-notice" style={{ top: notice.top }} data-testid="eru-notice">
+                {notice.message}
+              </p>
+            )}
           </div>
         </div>
-        {side && (
+        {side === "comments" && !aligned && (
+          <BottomDrawer title={`Comments (${openComments})`} onClose={() => setSide((s) => (s === "comments" ? null : s))}>
+            <CommentsPanel
+              comments={comments}
+              tops={tops}
+              aligned={false}
+              height={0}
+              active={activeComment}
+              draft={draft}
+              me={me}
+              busy={busy}
+              onActivate={activateComment}
+              onSubmitDraft={submitComment}
+              onCancelDraft={() => setDraft(null)}
+              onResolve={resolve}
+              onDelete={removeComment}
+            />
+          </BottomDrawer>
+        )}
+        {side && (side === "changes" || aligned) && (
           <aside className="eru-side w-full xl:w-80" aria-label={side === "comments" ? "Comments" : "Tracked changes"}>
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-[0.95rem] font-bold text-ink">{side === "comments" ? `Comments (${openComments})` : `Tracked changes (${changes.length})`}</h2>

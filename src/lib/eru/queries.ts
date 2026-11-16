@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { db } from "./db";
 import { auditLogs, documentChanges, documentComments, documents, domains, files, projects, settings, type Priority, type ProjectStatus } from "@/db/eru-schema";
-import { isUuid, PRIORITIES, STATUSES } from "./eru.manifest";
+import { istMonthStart, isUuid, PRIORITIES, STATUSES, STATUS_LABEL } from "./eru.manifest";
 import { peopleByIds, type Person } from "./host-adapter";
 
 /** What ERU's pages read. Names of people come from the hub (peopleByIds); a person who has left shows as "Former user". */
@@ -191,16 +191,21 @@ export async function documentContent(id: string) {
 
 // ── Admin ──────────────────────────────────────────────────────────────────
 
+/**
+ * Completed this month: a project that is completed now and was moved to Completed in the current calendar month (IST), going by its
+ * history (project.update with status "Completed"). The dashboard's number and the list it opens both use this, so they always agree.
+ */
+const completedThisMonth = () =>
+  sql`(${projects.status} = 'completed' and exists (select 1 from eru_audit_logs a where a.project_id = ${projects.id} and a.action = 'project.update'
+    and a.details->>'status' = ${STATUS_LABEL.completed} and a.created_at >= ${istMonthStart().toISOString()}))`;
+
 export async function adminKpis() {
-  const monthStart = new Date(Date.now() + 330 * 60_000);
-  const istMonth = Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth(), 1) - 330 * 60_000;
   const [r] = await db
     .select({
       total: count(),
       active: sql<number>`count(*) filter (where ${projects.status} = 'active')::int`,
       inReview: sql<number>`count(*) filter (where ${projects.status} = 'in_review')::int`,
-      completedThisMonth: sql<number>`(select count(distinct a.project_id)::int from eru_audit_logs a join eru_projects p on p.id = a.project_id
-        where p.status = 'completed' and a.action = 'project.update' and a.details->>'status' = 'Completed' and a.created_at >= ${new Date(istMonth).toISOString()})`,
+      completedThisMonth: sql<number>`count(*) filter (where ${completedThisMonth()})::int`,
     })
     .from(projects);
   const [pending] = await db.select({ n: count() }).from(documentChanges).where(eq(documentChanges.status, "pending"));
@@ -242,7 +247,7 @@ export async function recentActivity(limit = 15): Promise<ActivityItem[]> {
   return rows.map((r) => ({ id: r.log.id, action: r.log.action, who: nameOf(people, r.log.userId), details: r.log.details, at: r.log.createdAt.toISOString(), projectId: r.log.projectId, projectNumber: r.number }));
 }
 
-export type ProjectFilters = { q: string; domain: string; status: string; priority: string; page: number };
+export type ProjectFilters = { q: string; domain: string; status: string; priority: string; completedMonth: boolean; page: number };
 export const PAGE_SIZE = 25;
 
 export function readFilters(sp: Record<string, string | string[] | undefined>): ProjectFilters {
@@ -254,6 +259,7 @@ export function readFilters(sp: Record<string, string | string[] | undefined>): 
     domain: /^[a-z0-9_]{1,60}$/.test(one("domain")) ? one("domain") : "",
     status: (STATUSES as string[]).includes(status) ? status : "",
     priority: (PRIORITIES as string[]).includes(priority) ? priority : "",
+    completedMonth: one("completed") === "month",
     page: Math.max(1, Math.min(1000, Math.floor(Number(one("page")) || 1))),
   };
 }
@@ -268,6 +274,7 @@ export async function allProjects(f: ProjectFilters): Promise<{ rows: ProjectCar
   if (f.domain) conds.push(eq(domains.key, f.domain));
   if (f.status) conds.push(eq(projects.status, f.status as ProjectStatus));
   if (f.priority) conds.push(eq(projects.priority, f.priority as Priority));
+  if (f.completedMonth) conds.push(completedThisMonth());
   const where = conds.length ? and(...conds) : undefined;
   const [{ n }] = await db.select({ n: count() }).from(projects).innerJoin(domains, eq(domains.id, projects.domainId)).where(where);
   const rows = await db

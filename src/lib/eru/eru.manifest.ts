@@ -112,6 +112,12 @@ export const STATUS_TONE: Record<ProjectStatus, "neutral" | "blue" | "purple" | 
 export const PRIORITIES: Priority[] = ["urgent", "high", "normal", "low"];
 export const PRIORITY_LABEL: Record<Priority, string> = { urgent: "Urgent", high: "High", normal: "Normal", low: "Low" };
 
+/** The first moment of the current calendar month in India (IST, UTC+5:30), as a Date: "this month" for the dashboard and its list. */
+export function istMonthStart(now: number = Date.now()): Date {
+  const ist = new Date(now + 330 * 60_000);
+  return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), 1) - 330 * 60_000);
+}
+
 /** ERU-0001, ERU-0042, ERU-12345: at least four digits. */
 export const formatProjectNumber = (n: number) => `ERU-${String(Math.max(1, Math.floor(n))).padStart(4, "0")}`;
 
@@ -187,6 +193,14 @@ export function checkProject(input: ProjectInput): { ok: true; value: CleanProje
 export const DOCUMENT_TITLE_MAX = 200;
 /** A document title: one line, at most 200 characters; empty becomes "Untitled document". */
 export const cleanDocumentTitle = (t: unknown) => oneLine(t, DOCUMENT_TITLE_MAX) || "Untitled document";
+
+/**
+ * Who is told about a new comment: the document's creator, everyone assigned to its project, and every ERU admin. Never the person who
+ * wrote it, and nobody twice.
+ */
+export function commentRecipients(i: { author: string; documentCreator: string; assigned: readonly string[]; admins: readonly string[] }): string[] {
+  return [...new Set([i.documentCreator, ...i.assigned, ...i.admins])].filter((id) => !!id && id !== i.author);
+}
 
 /** Initials for an avatar: the first letters of the first and last names. */
 export function initials(name: string): string {

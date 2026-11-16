@@ -74,10 +74,11 @@ import { readListQuery as aiReadList, listHref as aiListHref } from "../src/lib/
 import { createHash } from "node:crypto";
 import { EditorState, Plugin, TextSelection } from "@tiptap/pm/state";
 import { history as pmHistory, undo as pmUndo } from "@tiptap/pm/history";
+import { joinBackward as pmJoinBackward } from "@tiptap/pm/commands";
 import { unzipSync, strFromU8 } from "fflate";
-import { DEFAULT_DOMAINS as ERU_DOMAINS, ERU_ADMIN_URL_PATTERN, ERU_USER_URL_PATTERN, can as eruCan, checkProject as eruCheck, cleanDocumentTitle as eruTitle, cleanTags as eruTags, eruRolesFor, formatProjectNumber as eruNumber, initials as eruInitials, navFor as eruNavFor } from "../src/lib/eru/eru.manifest";
+import { DEFAULT_DOMAINS as ERU_DOMAINS, ERU_ADMIN_URL_PATTERN, ERU_USER_URL_PATTERN, can as eruCan, checkProject as eruCheck, cleanDocumentTitle as eruTitle, cleanTags as eruTags, commentRecipients as eruRecipients, eruRolesFor, formatProjectNumber as eruNumber, initials as eruInitials, istMonthStart as eruMonthStart, navFor as eruNavFor } from "../src/lib/eru/eru.manifest";
 import { eruSchema, plainContent as eruPlain } from "../src/lib/eru/editor/extensions";
-import { collectChanges as eruChanges, decidedDoc as eruDecided, trackTransactions as eruTrack } from "../src/lib/eru/editor/track-changes";
+import { collectChanges as eruChanges, decidedDoc as eruDecided, editsCodeBlock as eruEditsCode, SKIP_TRACKING as ERU_SKIP, touchesCodeBlock as eruTouchesCode, trackTransactions as eruTrack } from "../src/lib/eru/editor/track-changes";
 import { commentAnchors as eruAnchors } from "../src/lib/eru/editor/comments";
 import { exportDocx as eruExport, halfPoints as eruHalfPoints, hexColor as eruHex } from "../src/lib/eru/docx-export";
 import { mimeFor as eruMime, safeFileName as eruSafeName } from "../src/lib/eru/file-types";
@@ -1208,6 +1209,15 @@ const ssoTests = (async () => {
   eq("eru project form: title, domain, priority, status, date and links are checked", [eruCheck({ title: "x", domainId: dom }), eruCheck({ title: "Good title", domainId: "nope" }), eruCheck({ title: "Good title", domainId: dom, priority: "asap" }), eruCheck({ title: "Good title", domainId: dom, status: "done" }), eruCheck({ title: "Good title", domainId: dom, dueDate: "31/12/2026" }), eruCheck({ title: "Good title", domainId: dom, referenceLinks: ["javascript:alert(1)"] })].map((r) => r.ok), [false, false, false, false, false, false]);
   eq("eru tags: at most ten, 40 characters each", [eruTags(Array.from({ length: 15 }, (_, i) => `t${i}`)).length, eruTags(["x".repeat(60)])[0].length], [10, 40]);
   eq("eru documents: a title is one line of at most 200 characters, never empty", [eruTitle("  My \n paper "), eruTitle(""), eruTitle("a".repeat(300)).length], ["My paper", "Untitled document", 200]);
+  eq("eru this month: the calendar month in India (IST), from its first minute", [
+    eruMonthStart(Date.parse("2026-11-16T10:00:00Z")).toISOString(),
+    eruMonthStart(Date.parse("2026-11-30T19:00:00Z")).toISOString(), // 1 Dec, 00:30 in India
+    eruMonthStart(Date.parse("2026-11-30T18:00:00Z")).toISOString(), // still 30 Nov, 23:30 in India
+  ], ["2026-10-31T18:30:00.000Z", "2026-11-30T18:30:00.000Z", "2026-10-31T18:30:00.000Z"]);
+  eq("eru comment notices: the document's creator, everyone assigned and every ERU admin; never the commenter, nobody twice", [
+    eruRecipients({ author: "ravi", documentCreator: "asha", assigned: ["asha", "ravi", "kiran"], admins: ["meera", "kiran"] }).sort(),
+    eruRecipients({ author: "asha", documentCreator: "asha", assigned: ["asha"], admins: [] }),
+  ], [["asha", "kiran", "meera"], []]);
   eq("eru avatars: initials of the first and last names", [eruInitials("Asha Rao"), eruInitials("Vikram Singh Rathore"), eruInitials("  "), eruInitials("mona")], ["AR", "VR", "?", "M"]);
   eq("eru files: every type accepted, names made safe", [eruMime("data.csv"), eruMime("model.sav"), eruMime("x.weird"), eruSafeName("C:\\x\\Q3 report (final)!.docx")], ["text/csv", "application/octet-stream", "application/octet-stream", "Q3 report _final_.docx"]);
 }
@@ -1296,6 +1306,28 @@ const ssoTests = (async () => {
   const commented = EditorState.create({ doc: schema.nodeFromJSON(twoParas) }).tr.addMark(1, 6, c.create({ id: "k1" })).addMark(3, 9, c.create({ id: "k2" })).doc;
   const anchors = eruAnchors(commented);
   eq("eru comments: overlapping comments both keep their text", [anchors.get("k1"), anchors.get("k2")], [{ from: 1, to: 6, text: "Hello" }, { from: 3, to: 9, text: "llo wo" }]);
+
+  // Code blocks cannot carry change or comment marks: while tracking is on, edits that touch one are refused, and comments on one are not offered
+  const withCode = schema.nodeFromJSON({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Intro" }] }, { type: "codeBlock", content: [{ type: "text", text: "x = 1" }] }, { type: "paragraph", content: [{ type: "text", text: "After" }] }] });
+  // Positions: "Intro" 1-6, the code block opens at 7, its text 8-13, it closes at 14; "After" 15-20.
+  eq("eru code blocks: a range in, around or across a code block touches it; one beside it does not", [eruTouchesCode(withCode, 9, 9), eruTouchesCode(withCode, 8, 13), eruTouchesCode(withCode, 2, 17), eruTouchesCode(withCode, 1, 6), eruTouchesCode(withCode, 16, 18), eruTouchesCode(withCode, 6, 6)], [true, true, true, false, false, false]);
+  const codeState = EditorState.create({ doc: withCode });
+  eq("eru code blocks: typing, deleting or joining into one is an edit of it; elsewhere, formatting it, or our own rewrites are not", [
+    eruEditsCode(codeState.tr.insertText("9", 13)),
+    eruEditsCode(codeState.tr.delete(12, 13)),
+    (() => {
+      // Backspace at the start of "After" joins it to the code block (ProseMirror's own command, as the key runs it).
+      const at = codeState.apply(codeState.tr.setSelection(TextSelection.create(withCode, 15)));
+      let tr: import("@tiptap/pm/state").Transaction | null = null;
+      pmJoinBackward(at, (t) => (tr = t));
+      return !!tr && eruEditsCode(tr);
+    })(),
+    eruEditsCode(codeState.tr.insertText("!", 6)),
+    eruEditsCode(codeState.tr.addMark(8, 13, schema.marks.bold.create())),
+    eruEditsCode(codeState.tr.insertText("9", 13).setMeta(ERU_SKIP, true)),
+  ], [true, true, true, false, false, false]);
+  const withCodeComment = codeState.tr.addMark(8, 13, schema.marks.eruComment.create({ id: "c-code" })).doc;
+  eq("eru code blocks: a comment mark cannot be put on code-block text (why comments are not offered there)", eruAnchors(withCodeComment).has("c-code"), false);
 
   // The schema: what a saved document may contain
   const valid = (json: unknown) => {

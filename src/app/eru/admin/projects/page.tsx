@@ -13,20 +13,22 @@ const href = (f: ProjectFilters, page: number) => {
   if (f.domain) q.set("domain", f.domain);
   if (f.status) q.set("status", f.status);
   if (f.priority) q.set("priority", f.priority);
+  if (f.completedMonth) q.set("completed", "month");
   if (page > 1) q.set("page", String(page));
   const s = q.toString();
   return `/eru/admin/projects${s ? `?${s}` : ""}`;
 };
 
-/** Every project across every domain, as a table: filter by domain, status and priority; search by number or title. */
+/** Every project across every domain, as a table: filter by domain, status, priority and "completed this month"; search by number or title. */
 export default async function AllProjects({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requireAdmin();
   const f = readFilters(await searchParams);
   const [{ rows, total }, domains] = await Promise.all([allProjects(f), activeDomains()]);
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const filtered = !!(f.q || f.domain || f.status || f.priority || f.completedMonth);
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="All Projects" subtitle={`${total} project${total === 1 ? "" : "s"}${f.q || f.domain || f.status || f.priority ? " matching" : ""}.`} />
+      <PageHeader title="All Projects" subtitle={`${total} project${total === 1 ? "" : "s"}${f.completedMonth ? " completed this month" : ""}${filtered ? " matching" : ""}.`} />
       <form className="eru-card flex flex-wrap items-end gap-3 p-4" method="get" role="search">
         <label className="flex min-w-[14rem] flex-1 flex-col gap-1 text-xs font-semibold eru-muted">
           Search
@@ -68,10 +70,13 @@ export default async function AllProjects({ searchParams }: { searchParams: Prom
             ))}
           </select>
         </label>
+        <label className="flex items-center gap-2 self-center text-sm text-ink">
+          <input type="checkbox" name="completed" value="month" defaultChecked={f.completedMonth} /> Completed this month
+        </label>
         <button type="submit" className="btn eru-btn-navy">
           Filter
         </button>
-        {(f.q || f.domain || f.status || f.priority) && (
+        {filtered && (
           <Link href="/eru/admin/projects" className="btn btn-ghost">
             Clear
           </Link>

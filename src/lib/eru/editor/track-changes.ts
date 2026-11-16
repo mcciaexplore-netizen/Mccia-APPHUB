@@ -1,8 +1,9 @@
 import { Extension, Mark } from "@tiptap/core";
 import { Fragment, Slice, type MarkType, type Node as PMNode, type NodeType, type Schema } from "@tiptap/pm/model";
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
-import { ReplaceStep, Transform, type Mapping } from "@tiptap/pm/transform";
+import { ReplaceAroundStep, ReplaceStep, Transform, type Mapping } from "@tiptap/pm/transform";
 import { isHistoryTransaction } from "@tiptap/pm/history";
+import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 
 /**
  * Track changes, as editor marks. While tracking is on, the plugin rewrites every edit as it happens (appendTransaction):
@@ -11,7 +12,8 @@ import { isHistoryTransaction } from "@tiptap/pm/history";
  *   - deleting your own still-pending insertion really removes it (you are just correcting yourself);
  *   - each change carries an id, who made it and when; typing on from your own change continues it (same id).
  * Formatting, paragraph splits and joins, list and heading changes are applied straight away, not tracked. Undo removes a tracked edit
- * together with its marks (the rewrite is part of the same undo step).
+ * together with its marks (the rewrite is part of the same undo step). Code blocks cannot carry marks, so while tracking is on they cannot be
+ * edited at all (see "Code blocks while tracking" below).
  *
  * Accepting an insertion removes its mark; rejecting it removes the text. Accepting a deletion removes the text; rejecting it removes the
  * mark. decideChanges() does this on any Transform, so the server applies reviews to the stored document with exactly the same code.
@@ -191,15 +193,170 @@ export function trackTransactions(transactions: readonly Transaction[], oldState
   return rt.setMeta(SKIP_TRACKING, true);
 }
 
+// ── Code blocks while tracking ─────────────────────────────────────────────
+// A code block cannot carry marks, so its text cannot be marked inserted or deleted. Rather than let edits there slip past review (or, for
+// deletions, be silently put back), they are refused while tracking is on, with a message saying why.
+
+export const CODE_LOCKED_MESSAGE = "Code blocks cannot be edited while track changes is on. Turn off track changes to edit code blocks.";
+/** The DOM event the editor's element fires when an edit is refused (detail: { message }), for the page to show. */
+export const BLOCKED_EVENT = "eru-edit-blocked";
+
+/** Whether [from, to] lies in a code block or takes in any part of one. */
+export function touchesCodeBlock(doc: PMNode, from: number, to: number): boolean {
+  const size = doc.content.size;
+  const a = Math.max(0, Math.min(from, size));
+  const b = Math.max(a, Math.min(to, size));
+  const inCode = (pos: number) => {
+    const $p = doc.resolve(pos);
+    for (let d = $p.depth; d > 0; d--) if ($p.node(d).type.spec.code) return true;
+    return false;
+  };
+  if (inCode(a) || inCode(b)) return true;
+  let found = false;
+  if (b > a)
+    doc.nodesBetween(a, b, (n) => {
+      if (found) return false;
+      if (n.isBlock && n.type.spec.code) found = true;
+    });
+  return found;
+}
+
+/** Whether a transaction changes a code block's content or structure (formatting and our own rewrites aside). */
+export function editsCodeBlock(tr: Transaction): boolean {
+  if (!tr.docChanged || tr.getMeta(SKIP_TRACKING)) return false;
+  return tr.steps.some((step, i) => {
+    if (!(step instanceof ReplaceStep || step instanceof ReplaceAroundStep)) return false;
+    const { from, to } = step as unknown as { from: number; to: number };
+    return touchesCodeBlock(tr.docs[i], from, to);
+  });
+}
+
+const lockedDecorations = new WeakMap<PMNode, DecorationSet>();
+/** Code blocks shown as locked (dimmed, with the message as their tooltip) while tracking is on. */
+function lockedCodeBlocks(doc: PMNode): DecorationSet {
+  let set = lockedDecorations.get(doc);
+  if (!set) {
+    const decos: Decoration[] = [];
+    doc.descendants((node, pos) => {
+      if (node.isBlock && node.type.spec.code) {
+        decos.push(Decoration.node(pos, pos + node.nodeSize, { class: "eru-code-locked", title: CODE_LOCKED_MESSAGE }));
+        return false;
+      }
+    });
+    set = DecorationSet.create(doc, decos);
+    lockedDecorations.set(doc, set);
+  }
+  return set;
+}
+
+/**
+ * The browser's own selection in the editor, as document positions. Right after a click or an arrow key the editor's selection can lag the
+ * browser's for a moment; the guards below look at both, so a keystroke is judged by where the caret really is.
+ */
+function liveSelection(v: EditorView): { from: number; to: number } | null {
+  const sel = v.dom.ownerDocument.getSelection();
+  if (!sel?.anchorNode || !sel.focusNode || !v.dom.contains(sel.anchorNode) || !v.dom.contains(sel.focusNode)) return null;
+  try {
+    const a = v.posAtDOM(sel.anchorNode, sel.anchorOffset);
+    const f = v.posAtDOM(sel.focusNode, sel.focusOffset);
+    return { from: Math.min(a, f), to: Math.max(a, f) };
+  } catch {
+    return null;
+  }
+}
+
+/** The single character before (or after) a position in its own text block, or 0 when there is none: 2 for a surrogate pair. */
+function charSize(doc: PMNode, pos: number, back: boolean): number {
+  const $p = doc.resolve(pos);
+  if (back ? $p.parentOffset === 0 : $p.parentOffset === $p.parent.content.size) return 0;
+  const node = back ? $p.nodeBefore : $p.nodeAfter;
+  if (!node?.isText || !node.text) return 0;
+  const offset = back ? $p.textOffset || node.nodeSize : $p.textOffset;
+  const code = node.text.charCodeAt(back ? offset - 1 : offset);
+  const pair = back ? code >= 0xdc00 && code <= 0xdfff : code >= 0xd800 && code <= 0xdbff;
+  return pair && (back ? offset >= 2 : offset + 1 < node.text.length) ? 2 : 1;
+}
+
+/**
+ * Backspace / Delete of one character while tracking, done by the editor rather than left to the browser. The browser, deleting inside a
+ * struck-through (deleted) word, rebuilds the formatting around it, which reads back as a different edit; and stepping over text that is
+ * already deleted is what the person wants anyway. So: next to deleted text the caret steps over it; otherwise one character is deleted, as
+ * a tracked edit. Returns false (let the editor's own commands run) at the edge of a paragraph, where Backspace/Delete join paragraphs.
+ */
+function trackedDeleteKey(v: EditorView, back: boolean, pos: number): boolean {
+  const { state } = v;
+  const del = state.schema.marks[DELETION];
+  const size = charSize(state.doc, pos, back);
+  if (!size) return false;
+  const sync = state.selection.empty && state.selection.head === pos ? null : state.tr.setSelection(TextSelection.create(state.doc, pos));
+  if (sync) v.dispatch(sync.setMeta("addToHistory", false));
+  const at = (p: number) => (back ? v.state.doc.resolve(p).nodeBefore : v.state.doc.resolve(p).nodeAfter);
+  if (at(pos)?.marks.some((m) => m.type === del)) {
+    let p = pos;
+    for (let n = charSize(v.state.doc, p, back); n && at(p)?.marks.some((m) => m.type === del); n = charSize(v.state.doc, p, back)) p += back ? -n : n;
+    v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, p)).scrollIntoView());
+    return true;
+  }
+  v.dispatch(v.state.tr.delete(back ? pos - size : pos, back ? pos : pos + size).scrollIntoView());
+  return true;
+}
+
 function trackPlugin(): Plugin<TrackState> {
+  let view: EditorView | null = null;
+  const refuse = () => {
+    view?.dom.dispatchEvent(new CustomEvent(BLOCKED_EVENT, { bubbles: true, detail: { message: CODE_LOCKED_MESSAGE } }));
+    return true;
+  };
+  const tracking = (state: EditorState) => !!trackKey.getState(state)?.enabled;
+  const selectionInCode = (v: EditorView) => {
+    const live = liveSelection(v);
+    return touchesCodeBlock(v.state.doc, v.state.selection.from, v.state.selection.to) || (!!live && touchesCodeBlock(v.state.doc, live.from, live.to));
+  };
   return new Plugin<TrackState>({
     key: trackKey,
+    view(v) {
+      view = v;
+      return { destroy: () => void (view = null) };
+    },
     state: {
       init: () => ({ enabled: false, user: null }),
       apply: (tr, value) => {
         const meta = tr.getMeta(trackKey) as Partial<TrackState> | undefined;
         return meta ? { ...value, ...meta } : value;
       },
+    },
+    // The last word: whatever the source of an edit (typing, paste, drop, undo, a toolbar command), none reaches a code block while tracking.
+    filterTransaction(tr, state) {
+      if (!tracking(state) || !editsCodeBlock(tr)) return true;
+      refuse();
+      return false;
+    },
+    props: {
+      // Stopped before the browser changes the page (typing, deleting, Enter, paste, drop all announce themselves with beforeinput). Letting
+      // the browser change the page and refusing the edit afterwards would leave the page and the document out of step, and the editor's
+      // next reading of the page could then make up an edit.
+      handleDOMEvents: {
+        beforeinput: (v, e) => {
+          if (!tracking(v.state) || !selectionInCode(v)) return false;
+          e.preventDefault();
+          return refuse();
+        },
+      },
+      handleTextInput: (v, from, to) => tracking(v.state) && touchesCodeBlock(v.state.doc, from, to) && refuse(),
+      handleKeyDown: (v, e) => {
+        if (!tracking(v.state)) return false;
+        if (["Backspace", "Delete", "Enter", "Tab"].includes(e.key) && selectionInCode(v)) return refuse();
+        // A plain Backspace / Delete with nothing selected: the editor does it (see trackedDeleteKey).
+        if ((e.key === "Backspace" || e.key === "Delete") && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+          const live = liveSelection(v) ?? { from: v.state.selection.from, to: v.state.selection.to };
+          if (live.from !== live.to || !v.state.selection.empty) return false;
+          return trackedDeleteKey(v, e.key === "Backspace", live.from);
+        }
+        return false;
+      },
+      handlePaste: (v) => tracking(v.state) && selectionInCode(v) && refuse(),
+      handleDrop: (v) => tracking(v.state) && selectionInCode(v) && refuse(),
+      decorations: (state) => (tracking(state) ? lockedCodeBlocks(state.doc) : null),
     },
     appendTransaction(transactions, oldState, newState) {
       const s = trackKey.getState(newState);

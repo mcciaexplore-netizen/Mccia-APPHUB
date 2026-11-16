@@ -103,8 +103,8 @@ await sql`insert into app_admins (app_id, user_id) values (${eruApp.id}, ${admin
 const browser = await launch();
 const pageErrors = [];
 const consoleErrors = [];
-const fresh = async () => {
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
+const fresh = async (viewport = { width: 1440, height: 1000 }) => {
+  const ctx = await browser.newContext({ viewport, acceptDownloads: true });
   ctx.setDefaultTimeout(60000);
   await ctx.addInitScript(() => { try { localStorage.setItem("mccia-install-popup-seen", "1"); localStorage.setItem("mccia-install-snoozed-until", String(Date.now() + 864e5)); } catch {} });
   const page = await ctx.newPage();
@@ -113,8 +113,8 @@ const fresh = async () => {
   page.on("console", (m) => m.type() === "error" && consoleErrors.push(`${new URL(page.url()).pathname}: ${m.text().slice(0, 300)}`));
   return { ctx, page };
 };
-const signedIn = async (email) => {
-  const { ctx, page } = await fresh();
+const signedIn = async (email, viewport) => {
+  const { ctx, page } = await fresh(viewport);
   await page.goto(BASE + "/login"); await page.fill("input[name=email]", email); await page.fill("input[name=password]", PW);
   await page.click("button[type=submit]"); await page.waitForURL((u) => u.pathname === "/", { timeout: 90000 });
   return { ctx, page };
@@ -150,6 +150,10 @@ const saveNow = async (page) => {
   return poll(async () => /^Saved/.test((await page.getByTestId("eru-save-status").innerText()).trim()), 20000);
 };
 const docRow = async (id) => (await sql`select * from eru_documents where id = ${id}`)[0];
+const CODE_LOCKED = "Code blocks cannot be edited while track changes is on. Turn off track changes to edit code blocks.";
+const NO_CODE_COMMENTS = "Comments cannot be added to code blocks.";
+/** The editor's short message by the caret (why something was not done). */
+const noticeSays = async (page, text) => poll(async () => (await page.getByTestId("eru-notice").allInnerTexts()).some((t) => t.includes(text)), 6000);
 
 let exitCode = 0;
 if (process.env.E2E_ERU_OFF === "yes") {
@@ -213,6 +217,11 @@ try {
   section("edit with formatting");
   await caretAtEnd(Mb.page);
   await Mb.page.keyboard.press("Enter");
+  // A code block, made while tracking is still off (it is locked once tracking is on), then out of it with Enter three times.
+  await Mb.page.getByRole("button", { name: "Code block" }).click();
+  await Mb.page.keyboard.type("x = 1");
+  for (let i = 0; i < 3; i++) await Mb.page.keyboard.press("Enter");
+  check("a code block can be made and written in while tracking is off", (await prose.locator("pre", { hasText: "x = 1" }).count()) === 1, await prose.innerHTML());
   await Mb.page.keyboard.type("Outlook for Q3 is positive.");
   check("text typed into the page", /Outlook for Q3 is positive\./.test(await prose.innerText()));
   await selectText(Mb.page, "positive");
@@ -234,7 +243,7 @@ try {
   walk(d1.content, null);
   const textNode = (t) => nodes.find((n) => n.type === "text" && n.text === t);
   const hasMark = (t, type, attr) => (textNode(t)?.marks ?? []).some((m) => m.type === type && (!attr || Object.entries(attr).every(([k, v]) => m.attrs?.[k] === v)));
-  check("the saved content has the formatting", nodes.some((n) => n.type === "heading" && n.attrs?.level === 2) && hasMark("positive", "bold") && hasMark("Credit demand", "italic") && hasMark("Exports steady", "textStyle", { color: "#dc2626" }) && d1.version > d0.version, c1.slice(0, 400));
+  check("the saved content has the formatting", nodes.some((n) => n.type === "heading" && n.attrs?.level === 2) && hasMark("positive", "bold") && hasMark("Credit demand", "italic") && hasMark("Exports steady", "textStyle", { color: "#dc2626" }) && nodes.some((n) => n.type === "codeBlock" && (n.content ?? []).some((t) => t.text === "x = 1")) && d1.version > d0.version, c1.slice(0, 400));
 
   section("comment");
   await selectText(Mb.page, "rose sharply");
@@ -249,6 +258,33 @@ try {
   await poll(async () => JSON.stringify((await docRow(docId)).content).includes(comments[0].id), 15000);
   check("its anchor is saved in the document", JSON.stringify((await docRow(docId)).content).includes(comments[0].id));
 
+  check("the ERU admin is told about the comment (not assigned to the project, but an admin)", (await sql`select count(*)::int n from hub_notifications where user_id = ${admin.id} and kind = 'eru' and title like 'New comment on%'`)[0].n === 1);
+  check("…and the commenter is not", (await sql`select count(*)::int n from hub_notifications where user_id = ${member.id} and title like 'New comment on%'`)[0].n === 0);
+
+  section("comments on a narrow screen (a drawer from the bottom)");
+  {
+    const Nw = await signedIn("zze-member@gmail.com", { width: 900, height: 900 });
+    await go(Nw.page, `/eru/documents/${docId}`);
+    await Nw.page.locator(".eru-prose").waitFor();
+    check("on a narrow screen the comments do not pop up by themselves", (await Nw.page.getByTestId("eru-drawer").count()) === 0 && (await Nw.page.locator("aside[aria-label=Comments]").count()) === 0);
+    await Nw.page.getByRole("button", { name: /^Comments \(1\)/ }).click();
+    const drawer = Nw.page.getByTestId("eru-drawer");
+    await poll(async () => (await drawer.getAttribute("data-open").catch(() => null)) === "true");
+    await Nw.page.waitForTimeout(400);
+    const box = await drawer.boundingBox();
+    check("\"Comments\" opens a drawer that slides up from the bottom, with the comment in it", (await drawer.getAttribute("role")) === "dialog" && /Which index is this from\?/.test(await drawer.innerText()) && !!box && Math.abs(box.y + box.height - 900) < 2 && box.height < 900, box);
+    check("the comments are not also shown beside the page", (await Nw.page.locator("aside[aria-label=Comments]").count()) === 0);
+    await Nw.page.keyboard.press("Escape");
+    await poll(async () => (await drawer.count()) === 0);
+    check("Escape slides it away", (await drawer.count()) === 0);
+    await Nw.page.getByRole("button", { name: /^Comments \(1\)/ }).click();
+    await poll(async () => (await drawer.getAttribute("data-open").catch(() => null)) === "true");
+    await Nw.page.locator(".eru-drawer-backdrop").click({ position: { x: 20, y: 20 } });
+    await poll(async () => (await drawer.count()) === 0);
+    check("so does a tap on the page behind it", (await drawer.count()) === 0);
+    await Nw.ctx.close();
+  }
+
   section("track changes");
   await Mb.page.getByRole("button", { name: /Track Changes off/ }).click();
   await poll(async () => (await Mb.page.getByRole("button", { name: /Track Changes on/ }).count()) === 1);
@@ -258,6 +294,9 @@ try {
   await Mb.page.keyboard.type(" Revised upward.");
   await selectText(Mb.page, "remains strong");
   await Mb.page.keyboard.press("Backspace");
+  // Backspace again, right after the deleted words: the caret steps over them (the browser is never left to delete inside struck-through text).
+  await Mb.page.keyboard.press("Backspace");
+  check("Backspace next to deleted text steps over it, making no new change", (await prose.locator("del.eru-del").allInnerTexts()).join("|") === "remains strong" && (await prose.locator("ins.eru-ins").allInnerTexts()).join("|") === " Revised upward.", [await prose.locator("del.eru-del").allInnerTexts(), await prose.locator("ins.eru-ins").allInnerTexts()]);
   check("insertions show green, underlined; deletions red, struck through", (await prose.locator("ins.eru-ins", { hasText: "Revised upward." }).count()) === 1 && (await prose.locator("del.eru-del", { hasText: "remains strong" }).count()) === 1, [await prose.locator("ins.eru-ins").allInnerTexts(), await prose.locator("del.eru-del").allInnerTexts()]);
   check("saved", await saveNow(Mb.page));
   const pending = await sql`select * from eru_document_changes where document_id = ${docId} and status = 'pending' order by change_type`;
@@ -265,6 +304,29 @@ try {
   // Switching tracking on opened the Changes panel already.
   if ((await Mb.page.getByRole("button", { name: /^Changes \(2\)/ }).getAttribute("aria-pressed")) !== "true") await Mb.page.getByRole("button", { name: /^Changes \(2\)/ }).click();
   check("the member sees the changes but no Accept / Reject", (await Mb.page.getByTestId("eru-change").count()) === 2 && (await Mb.page.getByRole("button", { name: "Accept change" }).count()) === 0, [await Mb.page.getByTestId("eru-change").count(), await Mb.page.getByRole("button", { name: "Accept change" }).count()]);
+
+  section("code blocks while track changes is on");
+  const pre = prose.locator("pre", { hasText: "x = 1" });
+  check("the code block shows as locked, with the reason as its tooltip", /eru-code-locked/.test((await pre.getAttribute("class")) ?? "") && (await pre.getAttribute("title")) === CODE_LOCKED);
+  await pre.click();
+  await Mb.page.keyboard.press("End");
+  await Mb.page.keyboard.type("9");
+  check("typing in it changes nothing, and says why", (await pre.innerText()).trim() === "x = 1" && (await noticeSays(Mb.page, CODE_LOCKED)), await pre.innerText());
+  await Mb.page.keyboard.press("Backspace");
+  check("nor does Backspace", (await pre.innerText()).trim() === "x = 1");
+  // A switched-off (aria-disabled) button still answers a person's click with its reason. Playwright will not click one, so the click is
+  // sent to the button itself (also sure to reach it, whatever the sticky toolbar covers).
+  await Mb.page.getByRole("button", { name: /^Code block/ }).dispatchEvent("click");
+  check("the toolbar's Code block button is locked too, and says why", (await Mb.page.getByRole("button", { name: /^Code block/ }).getAttribute("aria-disabled")) === "true" && (await noticeSays(Mb.page, CODE_LOCKED)));
+
+  section("no comments on code blocks");
+  await selectText(Mb.page, "x = 1");
+  const addOnCode = Mb.page.getByTestId("eru-add-comment");
+  check("\"Add comment\" is switched off for a code-block selection", (await addOnCode.getAttribute("aria-disabled")) === "true" && (await addOnCode.getAttribute("title")) === NO_CODE_COMMENTS);
+  await addOnCode.dispatchEvent("click");
+  check("clicking it says comments cannot be added to code blocks, and adds none", (await noticeSays(Mb.page, NO_CODE_COMMENTS)) && (await Mb.page.getByLabel("Comment", { exact: true }).count()) === 0 && (await sql`select count(*)::int n from eru_document_comments where document_id = ${docId}`)[0].n === 1, [await Mb.page.getByTestId("eru-notice").allInnerTexts(), await Mb.page.getByLabel("Comment", { exact: true }).count(), (await sql`select count(*)::int n from eru_document_comments where document_id = ${docId}`)[0].n]);
+  check("the toolbar's comment button is switched off there too", (await Mb.page.getByRole("button", { name: /^Add a comment on the selected text/ }).getAttribute("aria-disabled")) === "true");
+  check("saved: still exactly the two tracked changes, the code block as it was", (await saveNow(Mb.page)) && (await sql`select count(*)::int n from eru_document_changes where document_id = ${docId} and status = 'pending'`)[0].n === 2 && JSON.stringify((await docRow(docId)).content).includes('"x = 1"'), [await sql`select change_type, from_content, to_content from eru_document_changes where document_id = ${docId} and status = 'pending'`, await prose.locator("pre").innerText()]);
 
   section("an admin reviews");
   await go(Ad.page, `/eru/documents/${docId}`);
@@ -299,7 +361,8 @@ try {
   check("the document is listed with who edited it last, and an Edit and a .docx button", (await row.count()) === 1 && /Pune Outlook Q2[\s\S]*Last edited by ZZE Admin Arjun/.test(await row.innerText()) && (await row.getByRole("link", { name: "Edit" }).count()) === 1);
   check("the activity log tells the story", /imported the document[\s\S]*/.test(await mainText(Mb.page)) && /accepted 1 change/.test(await mainText(Mb.page)) && /rejected 1 change/.test(await mainText(Mb.page)));
   await Mb.page.getByRole("tab", { name: /Members/ }).click();
-  check("Members: the assigned people; only an admin changes them", /ZZE Member Meena/.test(await mainText(Mb.page)) && /An ERU admin changes who is assigned/.test(await mainText(Mb.page)));
+  check("Members tab: a member sees it and the assigned people", (await Mb.page.getByRole("tab", { name: /Members/ }).count()) === 1 && /ZZE Member Meena/.test(await mainText(Mb.page)));
+  check("…but cannot add or remove anyone", (await Mb.page.getByRole("button", { name: /Remove|Assign/ }).count()) === 0 && /An ERU admin changes who is assigned/.test(await mainText(Mb.page)));
 
   section("ERU Admin");
   await go(Ad.page, "/eru/admin");
@@ -310,9 +373,17 @@ try {
   await go(Ad.page, "/eru/admin/projects?status=archived&q=ZZE");
   check("All Projects: filters narrow the list", (await Ad.page.locator("tbody tr").count()) === 0);
   await go(Ad.page, `/eru/projects/${projectId}`);
-  await Ad.page.getByLabel("Manage project").getByLabel("Status").selectOption("in_review");
-  await poll(async () => (await sql`select status from eru_projects where id = ${projectId}`)[0].status === "in_review");
-  check("an admin changes the status on the project page", (await sql`select status from eru_projects where id = ${projectId}`)[0].status === "in_review");
+  await Ad.page.getByRole("tab", { name: /Members/ }).click();
+  check("Members tab: an admin can assign and remove", (await Ad.page.getByRole("button", { name: "Assign" }).count()) === 1 && (await Ad.page.getByRole("button", { name: "Remove" }).count()) >= 1);
+  await Ad.page.getByLabel("Manage project").getByLabel("Status").selectOption("completed");
+  await poll(async () => (await sql`select status from eru_projects where id = ${projectId}`)[0].status === "completed");
+  check("an admin changes the status on the project page", (await sql`select status from eru_projects where id = ${projectId}`)[0].status === "completed");
+  await go(Ad.page, "/eru/admin");
+  const doneCard = Ad.page.getByRole("link", { name: /Completed this month/i });
+  check("the dashboard's \"Completed this month\" counts it and links to this month's completed projects", Number((await doneCard.innerText()).replace(/\D+/g, "")) >= 1 && (await doneCard.getAttribute("href")) === "/eru/admin/projects?completed=month", [await doneCard.innerText(), await doneCard.getAttribute("href")]);
+  await doneCard.click();
+  await Ad.page.waitForURL(/completed=month/);
+  check("…and the list it opens shows the project, filtered to completed this month", new RegExp(proj.number).test(await Ad.page.locator("tbody").innerText()) && /completed this month/i.test(await mainText(Ad.page)) && (await Ad.page.getByLabel("Completed this month").isChecked()));
 
   await go(Ad.page, "/eru/admin/members");
   check("Members lists the team with roles", (await Ad.page.getByTestId("eru-member-row").filter({ hasText: "ZZE Member Meena" }).count()) === 1);
