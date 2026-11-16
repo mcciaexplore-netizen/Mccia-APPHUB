@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
-import { ArrowLeft, Download, GitCompareArrows, Loader2, MessageSquare, MessageSquarePlus, Save } from "lucide-react";
+import { ArrowLeft, Download, GitCompareArrows, Loader2, MessageSquare, MessageSquarePlus, Paperclip, Save, TriangleAlert, X } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
 import { addCommentAction, deleteCommentAction, resolveCommentAction, reviewChangesAction, saveDocumentAction, setTrackChangesAction } from "@/lib/eru/actions/workspace";
@@ -12,18 +12,21 @@ import { AUTOSAVE_MS, DOCUMENT_TITLE_MAX } from "@/lib/eru/eru.manifest";
 import { eruExtensions, plainContent } from "@/lib/eru/editor/extensions";
 import { BLOCKED_EVENT, collectChanges, setTracking, SKIP_TRACKING, touchesCodeBlock, type ChangeInfo } from "@/lib/eru/editor/track-changes";
 import { COMMENT, commentAnchors, setCommentView } from "@/lib/eru/editor/comments";
+import { CONVERTED_WARNING } from "@/lib/eru/convert";
 import type { CommentView } from "@/lib/eru/queries";
-import { exportHref, formatDateTime } from "../ui";
+import { exportHref, fileHref, formatDateTime } from "../ui";
 import { NO_CODE_COMMENTS, Toolbar } from "./Toolbar";
 import { BottomDrawer } from "./BottomDrawer";
 import { CommentsPanel, type Draft } from "./CommentsPanel";
 import { ChangesPanel } from "./ChangesPanel";
 
 export type EditorProps = {
-  doc: { id: string; title: string; content: Record<string, unknown>; version: number; trackChanges: boolean; updatedAt: string; lastEditedBy: string };
+  doc: { id: string; title: string; content: Record<string, unknown>; version: number; trackChanges: boolean; updatedAt: string; lastEditedBy: string; original: { id: string; name: string } | null };
   project: { id: string; number: string; title: string };
   comments: CommentView[];
   me: { id: string; name: string; admin: boolean };
+  /** Just converted from a PDF or a .pptx: say that some formatting may not have come across. */
+  converted?: boolean;
 };
 
 type Side = "comments" | "changes" | null;
@@ -42,7 +45,7 @@ function quietly(editor: Editor, fn: (tr: Editor["state"]["tr"]) => void) {
  * text, the review of tracked changes (ERU admins), and the .docx download. Saving sends the version the editor started from; when someone
  * else saved in between, the save is refused and the page offers a reload instead of overwriting their work.
  */
-export default function DocumentEditor({ doc, project, comments: initialComments, me }: EditorProps) {
+export default function DocumentEditor({ doc, project, comments: initialComments, me, converted = false }: EditorProps) {
   const toast = useToast();
   const confirm = useConfirm();
   const [title, setTitle] = useState(doc.title);
@@ -63,6 +66,7 @@ export default function DocumentEditor({ doc, project, comments: initialComments
   const [aligned, setAligned] = useState(() => window.matchMedia(WIDE).matches);
   const [saveState, setSaveState] = useState<{ saving: boolean; savedAt: string | null; error: string | null; conflict: boolean }>({ saving: false, savedAt: doc.updatedAt, error: null, conflict: false });
   const [busy, setBusy] = useState(false);
+  const [convertedNote, setConvertedNote] = useState(converted);
 
   const version = useRef(doc.version);
   const edits = useRef(0); // goes up on every edit (and title change)
@@ -375,10 +379,45 @@ export default function DocumentEditor({ doc, project, comments: initialComments
           >
             <Download size={14} aria-hidden /> Download .docx
           </a>
+          {doc.original && (
+            <a href={fileHref(doc.original.id)} className="btn btn-ghost btn-sm" title={`The file this document was imported from: ${doc.original.name}`}>
+              <Paperclip size={14} aria-hidden /> Original
+            </a>
+          )}
         </div>
         {editor && <Toolbar editor={editor} trackOn={trackOn} onComment={startComment} onBlocked={showNotice} />}
       </div>
 
+      {convertedNote && (
+        <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl border border-[rgba(217,119,6,0.35)] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]" data-testid="eru-converted-note">
+          <TriangleAlert size={16} className="shrink-0" aria-hidden />
+          <span className="flex-1">
+            {CONVERTED_WARNING}
+            {doc.original && (
+              <>
+                {" "}
+                The original is kept:{" "}
+                <a href={fileHref(doc.original.id)} className="font-semibold underline">
+                  download {doc.original.name}
+                </a>
+                .
+              </>
+            )}
+          </span>
+          <button
+            type="button"
+            className="eru-tool"
+            aria-label="Dismiss"
+            onClick={() => {
+              setConvertedNote(false);
+              // Not shown again on a reload.
+              window.history.replaceState(null, "", window.location.pathname);
+            }}
+          >
+            <X size={15} aria-hidden />
+          </button>
+        </div>
+      )}
       {saveState.conflict && (
         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-[rgba(220,38,38,0.3)] bg-[var(--eru-red-tint)] px-4 py-3 text-sm text-[#991b1b]">
           <span className="flex-1">{saveState.error}</span>

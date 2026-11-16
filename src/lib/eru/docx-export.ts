@@ -1,4 +1,4 @@
-import { AlignmentType, BorderStyle, Document, ExternalHyperlink, HeadingLevel, LevelFormat, Packer, Paragraph, ShadingType, TextRun, type IRunOptions, type ParagraphChild } from "docx";
+import { AlignmentType, BorderStyle, Document, ExternalHyperlink, HeadingLevel, LevelFormat, Packer, Paragraph, ShadingType, Table, TableCell, TableRow, TextRun, WidthType, type IRunOptions, type ParagraphChild } from "docx";
 import type { Mark, Node as PMNode } from "@tiptap/pm/model";
 import { eruSchema } from "./editor/extensions";
 import { decidedDoc } from "./editor/track-changes";
@@ -6,7 +6,8 @@ import { decidedDoc } from "./editor/track-changes";
 /**
  * A document as a Word file (.docx). Pending tracked changes are shown as if accepted (insertions in, deletions out) and comments are left
  * out, so the file reads as the current text. Formatting carried over: headings 1-3, bold, italic, underline, strike-through, text colour,
- * highlight (as shading), font and size, alignment, bullet and numbered lists (nested), quotes, code, links, line breaks and dividers.
+ * highlight (as shading), font and size, alignment, bullet and numbered lists (nested), quotes, code, links, line breaks, dividers and tables
+ * (merged cells, header rows repeated on each page, column widths set in the editor).
  */
 
 const NUMBERED = "eru-numbered";
@@ -95,10 +96,55 @@ function inline(node: PMNode, extra: Partial<IRunOptions> = {}): ParagraphChild[
 const ALIGN: Record<string, (typeof AlignmentType)[keyof typeof AlignmentType]> = { left: AlignmentType.LEFT, center: AlignmentType.CENTER, right: AlignmentType.RIGHT, justify: AlignmentType.JUSTIFIED };
 const HEADING = [HeadingLevel.HEADING_1, HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3];
 
-type Ctx = { list?: { kind: "bullet" | "ordered"; level: number; instance: number }; quote?: boolean; nextInstance: () => number };
+type Ctx = { list?: { kind: "bullet" | "ordered"; level: number; instance: number }; quote?: boolean; header?: boolean; nextInstance: () => number };
 
-function blocks(node: PMNode, ctx: Ctx): Paragraph[] {
-  const out: Paragraph[] = [];
+/** A column width set in the editor (CSS pixels) in twips; one pixel is 15 twips. */
+const PX_TWIPS = 15;
+
+/**
+ * A table: its cells' content as blocks (lists, quotes and tables inside cells come across), merged cells, header cells bold and shaded,
+ * the header rows at the top repeated on each page. Column widths come across when every column has one; otherwise the table is page wide
+ * with equal columns.
+ */
+function table(node: PMNode, ctx: Ctx): Table {
+  const rows: TableRow[] = [];
+  let headerRun = true;
+  node.forEach((row) => {
+    const cells: TableCell[] = [];
+    let allHeader = row.childCount > 0;
+    row.forEach((cell) => {
+      const header = cell.type.name === "tableHeader";
+      if (!header) allHeader = false;
+      const content = blocks(cell, { nextInstance: ctx.nextInstance, header });
+      cells.push(
+        new TableCell({
+          children: content.length ? content : [new Paragraph({ children: [] })],
+          columnSpan: Number(cell.attrs.colspan) > 1 ? Number(cell.attrs.colspan) : undefined,
+          rowSpan: Number(cell.attrs.rowspan) > 1 ? Number(cell.attrs.rowspan) : undefined,
+          shading: header ? { type: ShadingType.CLEAR, color: "auto", fill: "F1F5F9" } : undefined,
+        }),
+      );
+    });
+    headerRun &&= allHeader;
+    if (cells.length) rows.push(new TableRow({ children: cells, tableHeader: headerRun || undefined }));
+  });
+  // Column widths, from the first row (a cell spanning columns carries one width per column).
+  const widths: (number | null)[] = [];
+  node.firstChild?.forEach((cell) => {
+    const span = Math.max(1, Number(cell.attrs.colspan) || 1);
+    const w = Array.isArray(cell.attrs.colwidth) ? (cell.attrs.colwidth as unknown[]) : [];
+    for (let i = 0; i < span; i++) widths.push(typeof w[i] === "number" && (w[i] as number) > 0 ? (w[i] as number) : null);
+  });
+  const sized = widths.length > 0 && widths.every((w) => w !== null);
+  return new Table({
+    rows,
+    width: sized ? { size: (widths as number[]).reduce((a, b) => a + b, 0) * PX_TWIPS, type: WidthType.DXA } : { size: 100, type: WidthType.PERCENTAGE },
+    columnWidths: sized ? (widths as number[]).map((w) => Math.round(w * PX_TWIPS)) : undefined,
+  });
+}
+
+function blocks(node: PMNode, ctx: Ctx): (Paragraph | Table)[] {
+  const out: (Paragraph | Table)[] = [];
   node.forEach((child) => {
     const t = child.type.name;
     const listProps = ctx.list
@@ -108,7 +154,8 @@ function blocks(node: PMNode, ctx: Ctx): Paragraph[] {
       : {};
     const quoteProps = ctx.quote ? { indent: { left: 720 }, border: { left: { style: BorderStyle.SINGLE, size: 12, color: "CBD5E1", space: 8 } } } : {};
     if (t === "paragraph") {
-      out.push(new Paragraph({ children: inline(child, ctx.quote ? { italics: true } : {}), alignment: ALIGN[child.attrs.textAlign as string], ...listProps, ...quoteProps }));
+      const extra = { ...(ctx.quote ? { italics: true } : {}), ...(ctx.header ? { bold: true } : {}) };
+      out.push(new Paragraph({ children: inline(child, extra), alignment: ALIGN[child.attrs.textAlign as string], ...listProps, ...quoteProps }));
     } else if (t === "heading") {
       out.push(new Paragraph({ children: inline(child), heading: HEADING[Math.min(3, Math.max(1, Number(child.attrs.level) || 1))], alignment: ALIGN[child.attrs.textAlign as string] }));
     } else if (t === "bulletList" || t === "orderedList") {
@@ -128,6 +175,8 @@ function blocks(node: PMNode, ctx: Ctx): Paragraph[] {
           children: lines.map((line, i) => new TextRun({ text: line, font: "Courier New", size: 20, break: i ? 1 : undefined })),
         }),
       );
+    } else if (t === "table") {
+      out.push(table(child, ctx));
     } else if (t === "horizontalRule") {
       out.push(new Paragraph({ thematicBreak: true, children: [] }));
     } else if (child.isBlock) {

@@ -2,7 +2,8 @@
  * End-to-end test of the ERU module in a real browser: who may open its two sections (ERU at /eru for the team: App Staff are members, App
  * Admins are admins; ERU Admin at /eru/admin for admins), and the whole life of a document: a member creates a project, uploads a .docx
  * (converted for the editor, the original kept in storage), formats text, comments on a passage, switches track changes on and makes tracked
- * edits (and cannot switch it off); an admin accepts and rejects the changes; the .docx download carries the result. Then ERU Admin: the
+ * edits (and cannot switch it off); an admin accepts and rejects the changes; the .docx download carries the result. Tables (from a .docx,
+ * and inserted, edited, saved and reloaded in the editor), and PDF and PowerPoint files converted for editing. Then ERU Admin: the
  * dashboard, All Projects, Members (adding someone writes the hub's own lists) and Settings. Run against a site with ERU_ENABLED=true and
  * SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY pointing at a storage (a local stub is fine):
  *   E2E_BASE_URL=http://localhost:3000 STORAGE_STUB=http://localhost:54400 node tests/e2e/eru.mjs
@@ -17,6 +18,7 @@ import { createRequire } from "node:module";
 import { randomBytes, scryptSync } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { samplePdf, samplePptx, tableDocx } from "../eru-fixtures.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const req = createRequire(ROOT + "/package.json");
@@ -48,6 +50,7 @@ const launch = () => playwright.chromium.launch({ channel: process.env.E2E_CHROM
 const poll = async (fn, ms = 20000) => { const end = Date.now() + ms; let v; while (Date.now() < end) { v = await fn(); if (v) return v; await new Promise((r) => setTimeout(r, 400)); } return v; };
 const hash = (pw) => { const salt = randomBytes(16); return `scrypt$16384$${salt.toString("base64")}$${scryptSync(pw, salt, 32, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }).toString("base64")}`; };
 const PW = "zze-Test-pass-123";
+const { unzipSync, strFromU8 } = req("fflate");
 
 /** A small Word file made with the docx package: a heading, a bold run, a bullet and a plain paragraph. */
 async function sampleDocx() {
@@ -138,6 +141,28 @@ const selectText = async (page, text) => {
         document.dispatchEvent(new Event("selectionchange"));
         return true;
       }
+    }
+    return false;
+  }, text);
+  await page.waitForTimeout(300);
+  return found;
+};
+/**
+ * Puts the caret just after the first occurrence of `text` (and gives the editor a moment to follow the browser's selection). Set directly:
+ * an arrow key from a selection at the end of a table cell moves on to the next cell, as tables do.
+ */
+const caretAfter = async (page, text) => {
+  const found = await page.evaluate((t) => {
+    const root = document.querySelector(".eru-prose");
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const i = n.data.indexOf(t);
+      if (i < 0) continue;
+      root.focus();
+      const r = document.createRange(); r.setStart(n, i + t.length); r.collapse(true);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      document.dispatchEvent(new Event("selectionchange"));
+      return true;
     }
     return false;
   }, text);
@@ -351,7 +376,6 @@ try {
   const [download] = await Promise.all([Ad.page.waitForEvent("download"), Ad.page.getByRole("link", { name: /Download \.docx/ }).click()]);
   const file = await download.path();
   const { readFileSync } = await import("node:fs");
-  const { unzipSync, strFromU8 } = req("fflate");
   const xml = strFromU8(unzipSync(new Uint8Array(readFileSync(file)))["word/document.xml"]);
   check("the .docx download is a Word file with the reviewed text and formatting", download.suggestedFilename() === "Pune Outlook Q2.docx" && /Pune Industry Outlook/.test(xml) && /Revised upward\./.test(xml) && /remains strong/.test(xml) && /w:pStyle w:val="Heading2"/.test(xml) && /<w:b\/>/.test(xml), download.suggestedFilename());
 
@@ -363,6 +387,135 @@ try {
   await Mb.page.getByRole("tab", { name: /Members/ }).click();
   check("Members tab: a member sees it and the assigned people", (await Mb.page.getByRole("tab", { name: /Members/ }).count()) === 1 && /ZZE Member Meena/.test(await mainText(Mb.page)));
   check("…but cannot add or remove anyone", (await Mb.page.getByRole("button", { name: /Remove|Assign/ }).count()) === 0 && /An ERU admin changes who is assigned/.test(await mainText(Mb.page)));
+
+  const SLOW = Number(process.env.E2E_SLOW_MS || 90000);
+  const ed = Mb.page.locator(".eru-prose");
+  const tool = (name) => Mb.page.getByRole("button", { name, exact: true });
+  const shape = async () => ({ rows: await ed.locator("table tr").count(), cols: await ed.locator("table tr").first().locator("th, td").count(), th: await ed.locator("table th").count() });
+  const contentHas = async (id, text) => JSON.stringify((await docRow(id)).content).includes(text);
+  /** The stored document's tables, as rows of cell texts (walking the jsonb, whose key order is not kept). */
+  const storedTables = async (id) => {
+    const out = [];
+    const txt = (n) => (n.text ?? "") + (n.content ?? []).map(txt).join("");
+    const walk = (n) => (n.type === "table" ? out.push(n.content.map((r) => r.content.map(txt))) : (n.content ?? []).forEach(walk));
+    walk((await docRow(id)).content);
+    return out;
+  };
+  const docxXml = async (id) => {
+    const r = await Mb.page.request.get(`${BASE}/api/eru/documents/${id}/export`);
+    return strFromU8(unzipSync(new Uint8Array(await r.body()))["word/document.xml"]);
+  };
+
+  section("tables: a .docx with a table");
+  await go(Mb.page, `/eru/projects/${projectId}`);
+  check("Upload document takes Word, PDF and PowerPoint files", (await Mb.page.getByTestId("eru-docx-input").getAttribute("accept")).startsWith(".docx,.pdf,.pptx"));
+  await Mb.page.getByTestId("eru-docx-input").setInputFiles({ name: "Cluster Comparison.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: await tableDocx() });
+  await Mb.page.waitForURL(/\/eru\/documents\/[0-9a-f-]{36}$/, { timeout: SLOW });
+  const wordTableId = pathOf(Mb.page).split("/").pop();
+  await ed.waitFor({ timeout: SLOW });
+  const t0 = await shape();
+  check("the Word file's table appears as a table in the editor (3 rows of 3, its header row as header cells, the text in its cells)", t0.rows === 3 && t0.cols === 3 && t0.th === 3 && (await ed.locator("table td, table th").filter({ hasText: "Hinjewadi" }).count()) === 1 && (await ed.locator("h1", { hasText: "Cluster Comparison" }).count()) === 1, [t0, (await ed.innerHTML()).slice(0, 600)]);
+  check("a Word file gets no conversion note", (await Mb.page.getByTestId("eru-converted-note").count()) === 0);
+  await caretAfter(Mb.page, "Chakan");
+  await Mb.page.keyboard.type(" (Pune)");
+  await tool("Add row below").click();
+  await ed.locator("table tr").nth(2).locator("td").first().click();
+  await Mb.page.keyboard.type("Talegaon");
+  check("its cells can be edited and a row added", (await shape()).rows === 4 && /Chakan \(Pune\)/.test(await ed.innerText()));
+  check("saved", await saveNow(Mb.page));
+  await Mb.page.reload();
+  await ed.waitFor({ timeout: SLOW });
+  check("reloaded, the table is still there with the edits", (await shape()).rows === 4 && /Talegaon/.test(await ed.locator("table").innerText()) && /Chakan \(Pune\)/.test(await ed.locator("table").innerText()), await shape());
+  const wordTables = await storedTables(wordTableId);
+  check("stored as a table: four rows, the new one in its place", wordTables.length === 1 && wordTables[0].length === 4 && wordTables[0][1][0] === "Chakan (Pune)" && wordTables[0][2][0] === "Talegaon", wordTables);
+
+  section("tables: inserted in the editor");
+  await go(Mb.page, `/eru/projects/${projectId}`);
+  await Mb.page.getByRole("button", { name: "New document" }).click();
+  await Mb.page.fill("input[name=title]", "ZZE Jobs table");
+  await Mb.page.getByRole("button", { name: "Create and open" }).click();
+  await Mb.page.waitForURL(/\/eru\/documents\/[0-9a-f-]{36}$/, { timeout: SLOW });
+  const tableDocId = pathOf(Mb.page).split("/").pop();
+  await ed.waitFor({ timeout: SLOW });
+  await ed.click();
+  await Mb.page.keyboard.type("Jobs by year");
+  check("the row, column and delete-table buttons wait until the caret is in a table", (await tool("Add row below").isDisabled()) && (await tool("Delete column").isDisabled()) && (await tool("Delete table").isDisabled()) && !(await tool("Insert table").isDisabled()));
+  await tool("Insert table").click();
+  check("Insert table puts in a 3×3 table with a header row", JSON.stringify(await shape()) === JSON.stringify({ rows: 3, cols: 3, th: 3 }), await shape());
+  for (const [i, t] of ["Year", "Units", "Jobs", "2025", "310", "88000"].entries()) {
+    if (i) await Mb.page.keyboard.press("Tab");
+    await Mb.page.keyboard.type(t);
+  }
+  await tool("Add row below").click();
+  await tool("Add column to the right").click();
+  check("Add row below and Add column to the right", JSON.stringify(await shape()) === JSON.stringify({ rows: 4, cols: 4, th: 4 }), await shape());
+  await ed.locator("table tr").first().locator("th").nth(3).click();
+  await tool("Delete column").click();
+  await ed.locator("table tr").nth(2).locator("td").first().click();
+  await tool("Delete row").click();
+  check("Delete column and Delete row take out the ones the caret is in", JSON.stringify(await shape()) === JSON.stringify({ rows: 3, cols: 3, th: 3 }) && /88000/.test(await ed.locator("table").innerText()), await shape());
+  check("saved", await saveNow(Mb.page));
+  await Mb.page.reload();
+  await ed.waitFor({ timeout: SLOW });
+  const reloaded = await ed.locator("table tr").allInnerTexts();
+  check("reloaded, the table is back exactly: header row and cells with their text", JSON.stringify(await shape()) === JSON.stringify({ rows: 3, cols: 3, th: 3 }) && /Year\s+Units\s+Jobs/.test(reloaded[0]) && /2025\s+310\s+88000/.test(reloaded[1]), reloaded);
+  check("stored as a table in the database", JSON.stringify(await storedTables(tableDocId)) === JSON.stringify([[["Year", "Units", "Jobs"], ["2025", "310", "88000"], ["", "", ""]]]), await storedTables(tableDocId));
+  const tableXml = await docxXml(tableDocId);
+  check("the .docx download has the table (header row repeated on each page)", /<w:tbl>/.test(tableXml) && /88000/.test(tableXml) && /<w:tblHeader\/>/.test(tableXml));
+  await ed.locator("table td").first().click();
+  await tool("Delete table").click();
+  const gone = (await ed.locator("table").count()) === 0;
+  await Mb.page.keyboard.press("ControlOrMeta+z");
+  check("Delete table removes it; undo brings it back", gone && (await ed.locator("table").count()) === 1);
+
+  section("import a PDF");
+  await go(Mb.page, `/eru/projects/${projectId}`);
+  await Mb.page.getByTestId("eru-docx-input").setInputFiles({ name: "Pune Manufacturing Survey.pdf", mimeType: "application/pdf", buffer: samplePdf() });
+  await Mb.page.waitForURL(/\/eru\/documents\/[0-9a-f-]{36}\?converted=1$/, { timeout: SLOW });
+  const pdfDocId = pathOf(Mb.page).split("/").pop();
+  await ed.waitFor({ timeout: SLOW });
+  const note = Mb.page.getByTestId("eru-converted-note");
+  check("it opens with the note that some formatting may not be preserved, and a link to the original", /Some formatting may not be preserved during conversion/.test(await note.innerText()) && (await note.getByRole("link", { name: /Pune Manufacturing Survey\.pdf/ }).count()) === 1, await note.innerText().catch(() => "no note"));
+  check(
+    "the PDF's text came through with its structure: title, headings, a paragraph, bullets",
+    (await ed.locator("h1", { hasText: "Pune Manufacturing Survey" }).count()) === 1 && (await ed.locator("h2").allInnerTexts()).join("|") === "Key findings|Outlook" && (await ed.locator("ul li").count()) === 2 && (await ed.locator("p", { hasText: "led by automotive components and engineering goods" }).count()) === 1,
+    (await ed.innerHTML()).slice(0, 700),
+  );
+  const pdfRow = await docRow(pdfDocId);
+  check("stored as a document titled from the file, the original PDF kept with it", pdfRow.title === "Pune Manufacturing Survey" && !!pdfRow.original_file_id, pdfRow.title);
+  if (STUB) check("the original PDF really is in the storage bucket", (await (await fetch(`${STUB}/_stub/count`)).json()).keys.some((k) => k.endsWith("Pune Manufacturing Survey.pdf")));
+  check("the editor's Original button downloads it", (await Mb.page.getByRole("link", { name: "Original" }).count()) === 1 && (await fetchIn(Mb.page, `/api/eru/files/${pdfRow.original_file_id}`)).status === 302);
+  await caretAfter(Mb.page, "through the period.");
+  await Mb.page.keyboard.type(" Output should hold in Q3.");
+  check("the converted text can be edited and saved", (await saveNow(Mb.page)) && (await contentHas(pdfDocId, "Output should hold in Q3.")));
+  await note.getByRole("button", { name: "Dismiss" }).click();
+  check("the note can be dismissed", (await note.count()) === 0 && !/converted/.test(Mb.page.url()));
+  await Mb.page.reload();
+  await ed.waitFor({ timeout: SLOW });
+  check("…and does not come back on a reload", (await note.count()) === 0);
+
+  section("import a PowerPoint");
+  await go(Mb.page, `/eru/projects/${projectId}`);
+  await Mb.page.getByTestId("eru-docx-input").setInputFiles({ name: "Quarterly Review.pptx", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", buffer: await samplePptx() });
+  await Mb.page.waitForURL(/\/eru\/documents\/[0-9a-f-]{36}\?converted=1$/, { timeout: SLOW });
+  const pptxDocId = pathOf(Mb.page).split("/").pop();
+  await ed.waitFor({ timeout: SLOW });
+  check("it opens with the conversion note", /Some formatting may not be preserved during conversion/.test(await note.innerText()));
+  check("each slide is a section headed by its title, in the deck's order", (await ed.locator("h2").allInnerTexts()).join("|") === "Quarterly Highlights|Sector Table", await ed.locator("h2").allInnerTexts());
+  check(
+    "the slides' bullets (nested), bold text, text box, subtitle and table came through",
+    (await ed.locator("ul ul li", { hasText: "Driven by exports" }).count()) === 1 && (await ed.locator("strong", { hasText: "18 percent" }).count()) === 1 && (await ed.locator("p", { hasText: "Source: MCCIA member survey" }).count()) === 1 && (await ed.locator("h3", { hasText: "By industry" }).count()) === 1 && (await ed.locator("table th").allInnerTexts()).join("|") === "Sector|Growth" && (await ed.locator('table td[colspan="2"]', { hasText: "All sectors steady" }).count()) === 1,
+    (await ed.innerHTML()).slice(0, 900),
+  );
+  await caretAfter(Mb.page, "Auto");
+  await Mb.page.keyboard.type(" parts");
+  check("the converted slides can be edited and saved", (await saveNow(Mb.page)) && (await contentHas(pptxDocId, "Auto parts")) && !!(await docRow(pptxDocId)).original_file_id);
+
+  section("a file that cannot be imported");
+  await go(Mb.page, `/eru/projects/${projectId}`);
+  const docsBefore = await Mb.page.getByTestId("eru-document-row").count();
+  await Mb.page.getByTestId("eru-docx-input").setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("plain notes") });
+  check("is refused with a message saying what can be", !!(await poll(async () => (await Mb.page.getByText(/Choose a Word document \(\.docx\), a PDF or a PowerPoint/).count()) > 0, 8000)) && (await Mb.page.getByTestId("eru-document-row").count()) === docsBefore);
 
   section("ERU Admin");
   await go(Ad.page, "/eru/admin");

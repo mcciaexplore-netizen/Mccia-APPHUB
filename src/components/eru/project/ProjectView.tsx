@@ -19,7 +19,7 @@ import {
   updateDetailsAction,
 } from "@/lib/eru/actions/workspace";
 import { PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL } from "@/lib/eru/eru.manifest";
-import { formatBytes, isDocx } from "@/lib/eru/file-types";
+import { formatBytes, IMPORT_ACCEPT, importKind } from "@/lib/eru/file-types";
 import type { ActivityItem, DocumentSummary, FileSummary } from "@/lib/eru/queries";
 import { Avatar, Avatars, Badge, Card, describeActivity, DomainBadge, Empty, exportHref, fileHref, formatDateTime, formatDay, isOverdue, PriorityBadge, StatusBadge } from "../ui";
 import { useAct } from "../use-act";
@@ -179,18 +179,20 @@ function Documents({ projectId, documents, admin }: { projectId: string; documen
   }
 
   async function importFile(file: File) {
-    if (!isDocx(file.name)) return toast.error("Choose a Word document (.docx). Other files go under Files.");
+    const kind = importKind(file.name);
+    if (!kind) return toast.error("Choose a Word document (.docx), a PDF or a PowerPoint (.pptx). Other files go under Files.");
     try {
-      setBusy("Reading the document…");
-      const { docxToContent, titleFromFile } = await import("./import-docx");
-      const { content } = await docxToContent(file);
+      setBusy(kind === "docx" ? "Reading the document…" : "Converting…");
+      const { fileToContent, titleFromFile } = await import("./import-file");
+      const { content, converted } = await fileToContent(file, kind);
       setBusy("Uploading the original…");
       const up = await uploadFile(file);
       setBusy("Creating the document…");
       const r = await createDocumentAction(projectId, { title: titleFromFile(file.name), content, originalFileId: up.fileId });
       if (!r.ok) throw new Error(r.error);
       toast.success("Imported");
-      router.push(`/eru/documents/${r.data.id}`);
+      // A converted PDF or presentation opens with a note that some formatting may not have come across.
+      router.push(`/eru/documents/${r.data.id}${converted ? "?converted=1" : ""}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "The document could not be imported.");
     } finally {
@@ -207,15 +209,15 @@ function Documents({ projectId, documents, admin }: { projectId: string; documen
           <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => setNaming(true)}>
             <FilePlus2 size={14} aria-hidden /> New document
           </button>
-          <button type="button" className="btn eru-btn-navy btn-sm" disabled={!!busy} onClick={() => input.current?.click()}>
+          <button type="button" className="btn eru-btn-navy btn-sm" disabled={!!busy} title="A Word document (.docx), a PDF or a PowerPoint (.pptx), to edit here" onClick={() => input.current?.click()}>
             <FileUp size={14} aria-hidden /> {busy ?? "Upload document"}
           </button>
           <input
             ref={input}
             type="file"
-            accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            accept={IMPORT_ACCEPT}
             className="sr-only"
-            aria-label="Upload a Word document"
+            aria-label="Upload a document (Word, PDF or PowerPoint)"
             data-testid="eru-docx-input"
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -273,7 +275,7 @@ function Documents({ projectId, documents, admin }: { projectId: string; documen
           ))}
         </ul>
       ) : (
-        <Empty title="No documents yet">Upload a Word document (.docx) to edit it here, or start a new one.</Empty>
+        <Empty title="No documents yet">Upload a Word document (.docx), a PDF or a PowerPoint (.pptx) to edit it here, or start a new one.</Empty>
       )}
       {naming && (
         <Modal title="New document" onClose={() => setNaming(false)}>

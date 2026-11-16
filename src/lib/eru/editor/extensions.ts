@@ -4,6 +4,10 @@ import { Color, FontFamily, FontSize, TextStyle } from "@tiptap/extension-text-s
 import Highlight from "@tiptap/extension-highlight";
 import TextAlign from "@tiptap/extension-text-align";
 import Typography from "@tiptap/extension-typography";
+import { Table } from "@tiptap/extension-table";
+import { TableRow } from "@tiptap/extension-table-row";
+import { TableCell } from "@tiptap/extension-table-cell";
+import { TableHeader } from "@tiptap/extension-table-header";
 import type { Schema } from "@tiptap/pm/model";
 import { DeletionMark, InsertionMark, TrackChanges } from "./track-changes";
 import { CommentMark, Comments } from "./comments";
@@ -23,6 +27,11 @@ export function eruExtensions(): Extensions {
     Highlight.configure({ multicolor: true }),
     TextAlign.configure({ types: ["heading", "paragraph"] }),
     Typography,
+    // Tables (from a .docx import, a PowerPoint table, or inserted here), with columns resizable by dragging their edge.
+    Table.configure({ resizable: true, HTMLAttributes: { class: "eru-table" } }),
+    TableRow,
+    TableHeader,
+    TableCell,
     InsertionMark,
     DeletionMark,
     CommentMark,

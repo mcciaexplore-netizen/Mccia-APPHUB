@@ -81,7 +81,10 @@ import { eruSchema, plainContent as eruPlain } from "../src/lib/eru/editor/exten
 import { collectChanges as eruChanges, decidedDoc as eruDecided, editsCodeBlock as eruEditsCode, SKIP_TRACKING as ERU_SKIP, touchesCodeBlock as eruTouchesCode, trackTransactions as eruTrack } from "../src/lib/eru/editor/track-changes";
 import { commentAnchors as eruAnchors } from "../src/lib/eru/editor/comments";
 import { exportDocx as eruExport, halfPoints as eruHalfPoints, hexColor as eruHex } from "../src/lib/eru/docx-export";
-import { mimeFor as eruMime, safeFileName as eruSafeName } from "../src/lib/eru/file-types";
+import { IMPORT_ACCEPT as ERU_IMPORT_ACCEPT, importKind as eruImportKind, mimeFor as eruMime, safeFileName as eruSafeName } from "../src/lib/eru/file-types";
+import { ConvertError as EruConvertError, parseSlideXml as eruParseSlide, pdfToDoc as eruPdfToDoc, readPdf as eruReadPdf, readPptx as eruReadPptx, slideOrder as eruSlideOrder, slidesToDoc as eruSlidesToDoc, type PdfItem as EruPdfItem } from "../src/lib/eru/convert";
+import { addColumnAfter as pmAddColumnAfter, addRowAfter as pmAddRowAfter, deleteRow as pmDeleteRow } from "@tiptap/pm/tables";
+import { samplePdf as eruSamplePdf, samplePptx as eruSamplePptx, tableDocx as eruTableDocx } from "./eru-fixtures.mjs";
 
 let ok = 0, bad = 0;
 const eq = (name: string, got: unknown, want: unknown) => {
@@ -1363,6 +1366,218 @@ const eruAsync = (async () => {
   eq("eru export: heading style, bold, numbering, colour, size and font carried over", [/w:pStyle w:val="Heading1"/.test(xml), /<w:b\/>/.test(xml), /<w:numPr>/.test(xml), /w:color w:val="FF0000"/.test(xml), /w:sz w:val="28"/.test(xml), /w:ascii="Georgia"/.test(xml)], [true, true, true, true, true, true]);
 })();
 
+// ── ERU: tables, and PDF / PowerPoint import ─────────────────────────────
+const eruP = (t: string) => ({ type: "paragraph", content: [{ type: "text", text: t }] });
+const eruCell = (t: string, colwidth: number[] | null = null, type = "tableCell", colspan = 1) => ({ type, attrs: { colspan, rowspan: 1, colwidth }, content: [eruP(t)] });
+/** A table with a header row, column widths set by dragging, and a cell spanning both columns. */
+const eruTableDoc = {
+  type: "doc",
+  content: [
+    {
+      type: "table",
+      content: [
+        { type: "tableRow", content: [eruCell("Cluster", [150], "tableHeader"), eruCell("Jobs", [90], "tableHeader")] },
+        { type: "tableRow", content: [eruCell("Chakan", [150]), eruCell("61000", [90])] },
+        { type: "tableRow", content: [eruCell("Total", [150, 90], "tableCell", 2)] },
+      ],
+    },
+    eruP("After the table"),
+  ],
+};
+/** A document as a short outline: block types, with their text. */
+const eruOutline = (json: unknown): string[] => {
+  const out: string[] = [];
+  const walk = (n: { type: string; attrs?: Record<string, unknown>; content?: unknown[]; text?: string }, depth: number) => {
+    const txt = (x: typeof n): string => (x.text ?? "") + (x.content ?? []).map((c) => (c as typeof n).type === "hardBreak" ? "⏎" : txt(c as typeof n)).join("");
+    if (["heading", "paragraph"].includes(n.type)) {
+      out.push(`${"  ".repeat(depth)}${n.type === "heading" ? `h${n.attrs?.level}` : "p"}:${txt(n)}`);
+      return;
+    }
+    if (n.type === "tableHeader" || n.type === "tableCell") {
+      const span = Number(n.attrs?.colspan) > 1 ? `[span ${n.attrs?.colspan}]` : "";
+      out.push(`${"  ".repeat(depth)}${n.type === "tableHeader" ? "th" : "td"}${span}:${txt(n)}`);
+      return;
+    }
+    if (n.type !== "doc") out.push(`${"  ".repeat(depth)}${n.type}`);
+    for (const c of n.content ?? []) walk(c as typeof n, n.type === "doc" ? 0 : depth + 1);
+  };
+  walk(json as never, 0);
+  return out;
+};
+
+{
+  const schema = eruSchema();
+  // A table is content the server accepts and stores as it is (the save checks the content against this same schema).
+  const node = schema.nodeFromJSON(eruTableDoc);
+  let valid = true;
+  try {
+    node.check();
+  } catch {
+    valid = false;
+  }
+  // Saving: the editor's JSON goes through plainContent to the server, into jsonb, and back out to the editor.
+  const stored = JSON.parse(JSON.stringify(eruPlain(node.toJSON()))) as { content: { content: { content: { type: string; attrs: { colwidth: number[] | null; colspan: number } }[] }[] }[] };
+  const back = schema.nodeFromJSON(stored);
+  eq(
+    "eru tables: a table (header row, merged cell, column widths) is valid content and comes back from storage the same",
+    [valid, back.eq(node), stored.content[0].content[0].content[0].type, stored.content[0].content[0].content[0].attrs.colwidth, stored.content[0].content[2].content[0].attrs.colspan, back.textContent],
+    [true, true, "tableHeader", [150], 2, "ClusterJobsChakan61000TotalAfter the table"],
+  );
+
+  // Tables while tracking: text typed in a cell is tracked; adding a row or column is structure (applied, not tracked); a deleted row's text
+  // is kept, struck through, for review (one change: the row's text; the typist's own insertion in it simply goes).
+  const me = { id: "u-asha", name: "Asha" };
+  let n = 0;
+  let st = EditorState.create({ doc: node, plugins: [new Plugin({ appendTransaction: (trs, o, s) => eruTrack(trs, o, s, me, () => `t${++n}`, () => "2026-11-16T10:00:00.000Z") })] });
+  const posOf = (s: EditorState, text: string) => {
+    let at = -1;
+    s.doc.descendants((nd, pos) => {
+      if (at < 0 && nd.isText && nd.text!.includes(text)) at = pos + nd.text!.indexOf(text);
+    });
+    return at;
+  };
+  const run = (cmd: (s: EditorState, d: (tr: import("@tiptap/pm/state").Transaction) => void) => boolean) => cmd(st, (tr) => (st = st.apply(tr)));
+  st = st.apply(st.tr.setSelection(TextSelection.create(st.doc, posOf(st, "Chakan") + 6)));
+  st = st.apply(st.tr.insertText(" East"));
+  const rows = () => st.doc.firstChild!.childCount;
+  const cols = () => st.doc.firstChild!.child(1).childCount;
+  const before = [rows(), cols()];
+  const added = [run(pmAddRowAfter), run(pmAddColumnAfter)];
+  eq(
+    "eru tables while tracking: typing in a cell is tracked; adding a row and a column is applied untracked",
+    [eruChanges(st.doc).map((c) => [c.type, c.text]), before, added, [rows(), cols()]],
+    [[["insertion", " East"]], [3, 2], [true, true], [4, 3]],
+  );
+  st = st.apply(st.tr.setSelection(TextSelection.create(st.doc, posOf(st, "61000"))));
+  const deleted = run(pmDeleteRow);
+  const changes = eruChanges(st.doc);
+  eq(
+    "eru tables while tracking: deleting a row with text keeps the text, struck through, until an admin reviews it",
+    [deleted, rows(), changes.filter((c) => c.type === "deletion").map((c) => c.text).join("|"), st.doc.textContent.includes("61000")],
+    [true, 4, "Chakan61000", true],
+  );
+  const accepted = eruDecided(st.doc, null, "accept").doc;
+  eq("eru tables while tracking: accepting the deletion removes the row's text", [accepted.textContent.includes("61000"), accepted.textContent.includes("Chakan East")], [false, false]);
+
+  // What "Upload document" takes.
+  eq(
+    "eru import: .docx, .pdf and .pptx (any case) are imported; anything else goes under Files",
+    [eruImportKind("Report.DOCX"), eruImportKind("survey.pdf"), eruImportKind("deck.PPTX"), eruImportKind("old.ppt"), eruImportKind("notes.txt"), eruImportKind("pdf"), ERU_IMPORT_ACCEPT.split(",").slice(0, 3)],
+    ["docx", "pdf", "pptx", null, null, null, [".docx", ".pdf", ".pptx"]],
+  );
+
+  // PDF: lines become headings (by size), paragraphs and lists, from pdf.js's text pieces.
+  const line = (str: string, y: number, size = 11, x = 72): EruPdfItem => ({ str, x, y, width: str.length * size * 0.5, size, eol: true });
+  const numbered = eruPdfToDoc([[line("Steps", 700, 18), line("1. Collect the data", 670), line("2. Clean it", 656), line("Done. Then we report the results to the members.", 620), line("Page 1 of 3", 40, 9)]]);
+  eq("eru pdf: numbered lines become a numbered list; a page number is left out", eruOutline(numbered), ["h1:Steps", "orderedList", "  listItem", "    p:Collect the data", "  listItem", "    p:Clean it", "p:Done. Then we report the results to the members."]);
+  const split = eruPdfToDoc([[line("A short closing line.", 700, 11, 72), line("A new paragraph that starts on the next line but runs on", 686, 11, 72), line("over a second line here.", 672, 11, 72), line("x".repeat(90), 640)]]);
+  eq("eru pdf: a short line ending a sentence ends its paragraph; lines that run on are joined", eruOutline(split).length, 3);
+  let noText = "";
+  try {
+    eruPdfToDoc([[], [{ str: "   ", x: 0, y: 0, width: 0, size: 11, eol: true }]]);
+  } catch (e) {
+    noText = e instanceof EruConvertError ? e.message : "wrong error";
+  }
+  eq("eru pdf: a PDF with no text (scanned pages) is refused with a reason", /no text to convert/.test(noText), true);
+
+  // PowerPoint: the slide list's order, and a slide's shapes.
+  eq(
+    "eru pptx: slides in the deck's order (presentation.xml, through its relationships), not file-name order",
+    eruSlideOrder('<p:sldIdLst><p:sldId id="256" r:id="rId9"/><p:sldId id="257" r:id="rId2"/></p:sldIdLst>', '<Relationships><Relationship Target="slides/slide1.xml" Id="rId2" Type="x"/><Relationship Id="rId9" Type="x" Target="/ppt/slides/slide10.xml"/><Relationship Id="rId1" Target="slideMasters/slideMaster1.xml"/></Relationships>'),
+    ["ppt/slides/slide10.xml", "ppt/slides/slide1.xml"],
+  );
+  const parsed = eruParseSlide('<p:sp><p:nvSpPr><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:pPr lvl="2"><a:buNone/></a:pPr><a:r><a:rPr i="1" u="sng"/><a:t xml:space="preserve">Note &lt;draft&gt; &#8377;5</a:t></a:r><a:br/><a:r><a:t>next</a:t></a:r></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:nvPr><p:ph type="dt"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:r><a:t>16/11/2026</a:t></a:r></a:p></p:txBody></p:sp>');
+  eq(
+    "eru pptx: a paragraph's level, bullet, italic and underline, entities, line breaks; the date placeholder left out",
+    parsed,
+    { shapes: [{ kind: "body", paras: [{ runs: [{ text: "Note <draft> ₹5", italic: true, underline: true }, { br: true }, { text: "next" }], level: 2, bullet: "none" }] }] },
+  );
+  let empty = "";
+  try {
+    eruSlidesToDoc([{ shapes: [] }, { shapes: [{ kind: "text", paras: [{ runs: [{ text: "  " }], level: 0, bullet: "auto" }] }] }]);
+  } catch (e) {
+    empty = e instanceof EruConvertError ? e.message : "wrong error";
+  }
+  eq("eru pptx: a deck with no text (pictures only) is refused with a reason", /no text to convert/.test(empty), true);
+}
+
+const eruImports = (async () => {
+  const schema = eruSchema();
+  // The sample PDF, read by pdf.js as in the browser.
+  const pdf = eruPdfToDoc(await eruReadPdf(new Uint8Array(eruSamplePdf())));
+  schema.nodeFromJSON(pdf).check();
+  eq("eru pdf: a real PDF becomes headings, paragraphs (a hyphenated word joined) and bullets; page numbers left out", eruOutline(pdf), [
+    "h1:Pune Manufacturing Survey",
+    "h2:Key findings",
+    "p:Output across the Pune region rose in the second quarter, led by automotive components and engineering goods, while textiles held steady through the period.",
+    "bulletList",
+    "  listItem",
+    "    p:Exports up 12 percent",
+    "  listItem",
+    "    p:Hiring plans remain firm",
+    "h2:Outlook",
+    "p:Members expect demand to stay strong into the festive season.",
+  ]);
+  let broken = "";
+  try {
+    await eruReadPdf(new TextEncoder().encode("%PDF-1.4 this is not really a PDF"));
+  } catch (e) {
+    broken = e instanceof EruConvertError ? e.message : "wrong error";
+  }
+  eq("eru pdf: a damaged PDF is refused with a reason", /could not be read/.test(broken), true);
+
+  // The sample .pptx.
+  const deck = eruSlidesToDoc(await eruReadPptx(new Uint8Array(await eruSamplePptx())));
+  schema.nodeFromJSON(deck).check();
+  eq("eru pptx: each slide a section (title as heading), nested bullets, text boxes, subtitle, table with header row and merged cell", eruOutline(deck), [
+    "h2:Quarterly Highlights",
+    "bulletList",
+    "  listItem",
+    "    p:Revenue grew 18 percent",
+    "    bulletList",
+    "      listItem",
+    "        p:Driven by exports",
+    "  listItem",
+    "    p:R&D spend doubled",
+    "p:Source: MCCIA member survey",
+    "h2:Sector Table",
+    "h3:By industry",
+    "table",
+    "  tableRow",
+    "    th:Sector",
+    "    th:Growth",
+    "  tableRow",
+    "    td:Auto",
+    "    td:14%",
+    "  tableRow",
+    "    td[span 2]:All sectors steady",
+  ]);
+  const boldRun = JSON.stringify(deck).includes('{"type":"text","text":"18 percent","marks":[{"type":"bold"}]}');
+  eq("eru pptx: bold text stays bold; the slide-number footer is left out", [boldRun, JSON.stringify(deck).includes('"text":"1"')], [true, false]);
+  let notPptx = "";
+  try {
+    await eruReadPptx(new TextEncoder().encode("not a zip"));
+  } catch (e) {
+    notPptx = e instanceof EruConvertError ? e.message : "wrong error";
+  }
+  eq("eru pptx: a file that is not a .pptx is refused with a reason", /could not be opened as a PowerPoint/.test(notPptx), true);
+
+  // .docx: mammoth keeps a Word table as an HTML table, which the editor (now with tables) reads as a table.
+  const mammoth = await import("mammoth");
+  const word = await eruTableDocx();
+  // (In Node mammoth reads a Buffer; the browser build, which the import uses, reads an ArrayBuffer.)
+  const html = (await mammoth.convertToHtml({ buffer: word } as never)).value;
+  eq("eru docx import: mammoth turns a Word table into an HTML table (rows and cells kept)", [/<table>/.test(html), (html.match(/<tr>/g) ?? []).length, /Chakan/.test(html), /<t[hd]><p>(<strong>)?Cluster/.test(html)], [true, 3, true, true]);
+
+  // The .docx export carries a table: rows and cells, the merged cell, the header row (repeated on each page, bold, shaded), column widths.
+  const xml = strFromU8(unzipSync(new Uint8Array(await eruExport("Clusters", eruTableDoc)))["word/document.xml"]);
+  eq(
+    "eru export: a table comes across with its header row, merged cell and column widths",
+    [/<w:tbl>/.test(xml), (xml.match(/<w:tr>|<w:tr /g) ?? []).length, /<w:tblHeader\/>/.test(xml), /<w:gridSpan w:val="2"\/>/.test(xml), /<w:gridCol w:w="2250"\/>/.test(xml), /<w:gridCol w:w="1350"\/>/.test(xml), /w:fill="F1F5F9"/.test(xml), /Chakan/.test(xml), /After the table/.test(xml)],
+    [true, 3, true, true, true, true, true, true, true],
+  );
+})();
+
 {
   // ERU is isolated: it imports no other module, and no other module imports it
   const srcDir = new URL("../src/", import.meta.url);
@@ -1375,11 +1590,11 @@ const eruAsync = (async () => {
   eq("eru isolation: only the host-adapter (and db.ts) reach the hub's own code", all.filter(isEru).filter((f) => f !== "lib/eru/host-adapter.ts" && f !== "lib/eru/db.ts" && HOST.test(readFileSync(new URL(f, srcDir), "utf8"))), []);
 }
 
-Promise.all([ssoTests, eruAsync]).then(() => {
+Promise.all([ssoTests, eruAsync, eruImports]).then(() => {
   console.log(`\n${ok}/${ok + bad} unit checks passed`);
   process.exit(bad ? 1 : 0);
 }, (e) => {
-  console.error("FAIL async tests (single sign-on, ERU export) crashed:", e);
+  console.error("FAIL async tests (single sign-on, ERU export and imports) crashed:", e);
   process.exit(1);
 });
 

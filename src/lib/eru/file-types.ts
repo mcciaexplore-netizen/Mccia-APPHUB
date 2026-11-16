@@ -45,8 +45,15 @@ export function safeFileName(name: string): string {
   return cleaned.slice(0, 120 - ext.length) + ext;
 }
 
-/** A .docx file, by name (what the import accepts). */
-export const isDocx = (name: string) => /\.docx$/i.test(name);
+/** What "Upload document" turns into an editable document: a Word file as it is, a PDF or a PowerPoint (.pptx) converted to text. */
+export type ImportKind = "docx" | "pdf" | "pptx";
+/** The kind of document a file can be imported as, by name; null for anything else (which goes under Files). */
+export function importKind(name: string): ImportKind | null {
+  const m = /\.(docx|pdf|pptx)$/i.exec(name);
+  return m ? (m[1].toLowerCase() as ImportKind) : null;
+}
+/** The upload picker's filter for documents to import. */
+export const IMPORT_ACCEPT = [".docx", ".pdf", ".pptx", MIME.docx, MIME.pdf, MIME.pptx].join(",");
 
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;

@@ -2,6 +2,12 @@
 
 import { useEditorState, type Editor } from "@tiptap/react";
 import {
+  BetweenHorizontalEnd,
+  BetweenVerticalEnd,
+  Columns3,
+  Grid2x2X,
+  Rows3,
+  Table as TableIcon,
   AlignCenter,
   AlignJustify,
   AlignLeft,
@@ -22,7 +28,10 @@ import {
 } from "lucide-react";
 import { CODE_LOCKED_MESSAGE, touchesCodeBlock } from "@/lib/eru/editor/track-changes";
 
-/** The editor's formatting bar: font and size, bold to strike-through, colours, alignment, lists, headings, quote and code, undo/redo, comment. */
+/**
+ * The editor's formatting bar: font and size, bold to strike-through, colours, alignment, lists, headings, quote and code, tables (insert;
+ * add or delete a row or column; delete the table), undo/redo, comment.
+ */
 
 const FONTS = [
   { label: "Default font", value: "" },
@@ -35,6 +44,8 @@ const FONTS = [
 ];
 const SIZES = ["8", "9", "10", "11", "12", "14", "16", "18", "20", "24", "28", "32", "36"];
 export const NO_CODE_COMMENTS = "Comments cannot be added to code blocks.";
+/** A new table: three rows (the first a header row) by three columns. */
+const NEW_TABLE = { rows: 3, cols: 3, withHeaderRow: true };
 
 /**
  * One button. `blocked` (a reason) shows it switched off but still answers a click with the reason, and keeps the reason as its tooltip:
@@ -59,6 +70,14 @@ function Tool({ icon: Icon, label, on, disabled, blocked, onBlocked, onClick, ch
 }
 
 const Sep = () => <span className="eru-tool-sep" aria-hidden />;
+
+/** An icon with a small "remove" sign on it (delete a row, a column). */
+const Removing = ({ icon: Icon }: { icon: LucideIcon }) => (
+  <span className="eru-tool-removing" aria-hidden>
+    <Icon size={16} />
+    <span>−</span>
+  </span>
+);
 
 export function Toolbar({ editor, trackOn, onComment, onBlocked }: { editor: Editor; trackOn: boolean; onComment: () => void; onBlocked: (reason: string) => void }) {
   const s = useEditorState({
@@ -89,6 +108,8 @@ export function Toolbar({ editor, trackOn, onComment, onBlocked }: { editor: Edi
         canRedo: e.can().redo(),
         hasSelection: !e.state.selection.empty,
         inCode: touchesCodeBlock(e.state.doc, e.state.selection.from, e.state.selection.to),
+        inTable: e.isActive("table"),
+        canInsertTable: e.can().insertTable(NEW_TABLE),
       };
     },
   });
@@ -160,6 +181,19 @@ export function Toolbar({ editor, trackOn, onComment, onBlocked }: { editor: Edi
       </Tool>
       <Tool icon={Quote} label="Quote" on={s.quote} onClick={() => c().toggleBlockquote().run()} />
       <Tool icon={Code2} label="Code block" on={s.code} blocked={trackOn ? CODE_LOCKED_MESSAGE : null} onBlocked={onBlocked} onClick={() => c().toggleCodeBlock().run()} />
+      <Sep />
+      <span className="contents" role="group" aria-label="Table">
+        <Tool icon={TableIcon} label="Insert table" disabled={!s.canInsertTable} onClick={() => c().insertTable(NEW_TABLE).run()} />
+        <Tool icon={BetweenHorizontalEnd} label="Add row below" disabled={!s.inTable} onClick={() => c().addRowAfter().run()} />
+        <Tool icon={BetweenVerticalEnd} label="Add column to the right" disabled={!s.inTable} onClick={() => c().addColumnAfter().run()} />
+        <Tool label="Delete row" disabled={!s.inTable} onClick={() => c().deleteRow().run()}>
+          <Removing icon={Rows3} />
+        </Tool>
+        <Tool label="Delete column" disabled={!s.inTable} onClick={() => c().deleteColumn().run()}>
+          <Removing icon={Columns3} />
+        </Tool>
+        <Tool icon={Grid2x2X} label="Delete table" disabled={!s.inTable} onClick={() => c().deleteTable().run()} />
+      </span>
       <Sep />
       <Tool icon={Undo2} label="Undo (Ctrl+Z)" disabled={!s.canUndo} onClick={() => c().undo().run()} />
       <Tool icon={Redo2} label="Redo (Ctrl+Shift+Z)" disabled={!s.canRedo} onClick={() => c().redo().run()} />

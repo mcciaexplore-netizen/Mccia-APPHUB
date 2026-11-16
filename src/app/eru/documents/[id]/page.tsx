@@ -10,15 +10,16 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: d ? `${d.doc.title} · ERU · MCCIA App Hub` : "ERU · MCCIA App Hub" };
 }
 
-/** The document editor, the full width of the page (no sidebar). */
-export default async function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
+/** The document editor, the full width of the page (no sidebar). `?converted=1`: just imported from a PDF or a .pptx (the page warns about formatting). */
+export default async function DocumentPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ converted?: string }> }) {
   const u = await requireMember();
   const { id } = await params;
+  const converted = (await searchParams).converted === "1";
   const [d, unread] = await Promise.all([documentForEditor(id), unreadNotices(u.id)]);
   if (!d) notFound();
   return (
     <HubShell user={{ name: u.name, role: u.hubRole }} unread={unread}>
-      <EditorLoader doc={d.doc} project={d.project} comments={d.comments} me={{ id: u.id, name: u.name, admin: u.admin }} />
+      <EditorLoader doc={d.doc} project={d.project} comments={d.comments} me={{ id: u.id, name: u.name, admin: u.admin }} converted={converted} />
     </HubShell>
   );
 }

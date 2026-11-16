@@ -132,6 +132,55 @@ try {
   check("documents: content the editor does not support is refused", await refused(() => D.saveDocument(M, d1.id, { content: { type: "doc", content: [{ type: "iframe" }] }, baseVersion: 2 }), /does not support/));
   check("documents: something that is not a document is refused", await refused(() => D.saveDocument(M, d1.id, { content: "<p>hi</p>", baseVersion: 2 }), /could not be read/));
 
+  // ── Tables: created (as an import would), saved and loaded back whole ──
+  {
+    const { eruSchema } = await import("../src/lib/eru/editor/extensions");
+    const { exportDocx } = await import("../src/lib/eru/docx-export");
+    const cell = (t: string, type = "tableCell", attrs: Record<string, unknown> = {}) => ({ type, attrs: { colspan: 1, rowspan: 1, colwidth: null, ...attrs }, content: [para(text(t))] });
+    const row = (...cells: unknown[]) => ({ type: "tableRow", content: cells });
+    const table = (...rows: unknown[]) => ({ type: "table", content: rows });
+    const imported = { type: "doc", content: [para(text("Clusters")), table(row(cell("Cluster", "tableHeader"), cell("Jobs", "tableHeader")), row(cell("Chakan"), cell("61000")))] };
+    const t1 = await D.createDocument(M, p1.id, { title: "ZZE Tables", content: imported });
+    const same = (a: unknown, b: unknown) => eruSchema().nodeFromJSON(a).eq(eruSchema().nodeFromJSON(b));
+    const loaded1 = await documentForEditor(t1.id);
+    check("tables: a document created with a table (as from a .docx import) loads with the table whole", !!loaded1 && same(loaded1.doc.content, imported) && loaded1.doc.original === null, loaded1?.doc.content);
+    // The person then adds a row, sets column widths (by dragging) and merges two cells, and the editor saves.
+    const edited = {
+      type: "doc",
+      content: [
+        para(text("Clusters")),
+        table(
+          row(cell("Cluster", "tableHeader", { colwidth: [180] }), cell("Jobs", "tableHeader", { colwidth: [120] })),
+          row(cell("Chakan", "tableCell", { colwidth: [180] }), cell("61000", "tableCell", { colwidth: [120] })),
+          row(cell("Hinjewadi", "tableCell", { colwidth: [180] }), cell("88000", "tableCell", { colwidth: [120] })),
+          row(cell("Total: 149000", "tableCell", { colspan: 2, colwidth: [180, 120] })),
+        ),
+        para(text("After the table.")),
+      ],
+    };
+    const ts = await D.saveDocument(M, t1.id, { content: edited, baseVersion: 1 });
+    const loaded2 = await documentForEditor(t1.id);
+    const [raw] = await db.select({ content: T.documents.content }).from(T.documents).where(eq(T.documents.id, t1.id));
+    const stored = raw.content as { content: { type: string; content: { content: { attrs: { colwidth: number[]; colspan: number } }[] }[] }[] };
+    check(
+      "tables: a table edited in the editor is saved and loaded back whole (rows, header cells, merged cell, column widths)",
+      ts.version === 2 && !!loaded2 && same(loaded2.doc.content, edited) && stored.content[1].content.length === 4 && stored.content[1].content[3].content[0].attrs.colspan === 2 && stored.content[1].content[0].content[0].attrs.colwidth[0] === 180,
+      stored,
+    );
+    // Tracked text in a cell gets its change record like any other.
+    const insId = randomUUID();
+    const trackedTable = JSON.parse(JSON.stringify(edited));
+    trackedTable.content[1].content[1].content[1].content[0].content.push(text(" (est.)", [{ type: "eruInsertion", attrs: { id: insId, userId: M.id, userName: M.name, at: new Date().toISOString() } }]));
+    await D.saveDocument(M, t1.id, { content: trackedTable, baseVersion: 2 });
+    const rec = await db.select().from(T.documentChanges).where(eq(T.documentChanges.id, insId));
+    check("tables: a tracked insertion inside a table cell gets its change record", rec.length === 1 && rec[0].toContent === " (est.)" && rec[0].status === "pending", rec);
+    const word = await exportDocx("ZZE Tables", (await db.select({ content: T.documents.content }).from(T.documents).where(eq(T.documents.id, t1.id)))[0].content);
+    const { unzipSync, strFromU8 } = await import("fflate");
+    const xml = strFromU8(unzipSync(new Uint8Array(word))["word/document.xml"]);
+    check("tables: the stored table comes out in the .docx download", /<w:tbl>/.test(xml) && /Hinjewadi/.test(xml) && /61000 \(est\.\)|61000<\/w:t>[\s\S]*?\(est\.\)/.test(xml) && /<w:gridSpan w:val="2"\/>/.test(xml));
+    await D.deleteDocument(AD, t1.id);
+  }
+
   // Track changes: on by a member, off only by an admin
   await D.setTrackChanges(M, d1.id, true);
   check("track changes: a member switches it on, but cannot switch it off", (await db.select().from(T.documents).where(eq(T.documents.id, d1.id)))[0].trackChanges && (await refused(() => D.setTrackChanges(M, d1.id, false), /Only an ERU admin/)) === true);

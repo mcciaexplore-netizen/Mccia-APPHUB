@@ -162,10 +162,13 @@ export async function documentForEditor(id: string) {
     .where(eq(documents.id, id))
     .limit(1);
   if (!d) return null;
-  const comments = await db.select().from(documentComments).where(eq(documentComments.documentId, id)).orderBy(asc(documentComments.createdAt));
+  const [comments, [original]] = await Promise.all([
+    db.select().from(documentComments).where(eq(documentComments.documentId, id)).orderBy(asc(documentComments.createdAt)),
+    d.doc.originalFileId ? db.select({ id: files.id, name: files.fileName }).from(files).where(eq(files.id, d.doc.originalFileId)).limit(1) : Promise.resolve([]),
+  ]);
   const people = await peopleByIds([d.doc.lastEditedBy, ...comments.map((c) => c.userId), ...comments.map((c) => c.resolvedBy)]);
   return {
-    doc: { id: d.doc.id, title: d.doc.title, content: d.doc.content, version: d.doc.version, trackChanges: d.doc.trackChanges, updatedAt: d.doc.updatedAt.toISOString(), lastEditedBy: nameOf(people, d.doc.lastEditedBy) },
+    doc: { id: d.doc.id, title: d.doc.title, content: d.doc.content, version: d.doc.version, trackChanges: d.doc.trackChanges, updatedAt: d.doc.updatedAt.toISOString(), lastEditedBy: nameOf(people, d.doc.lastEditedBy), original: original ?? null },
     project: d.project,
     comments: comments.map(
       (c): CommentView => ({
