@@ -41,7 +41,7 @@ export function AgentsManager({ agents, smartflo }: { agents: AgentRowDTO[]; sma
   if (!agents.length) {
     return (
       <div className="ivr-card">
-        <Empty title="No agents yet">Give the IVR-CRM application to the Membership team in Administrator → Applications. They appear here.</Empty>
+        <Empty title="No agents yet">Give the Membership CRM application to the Membership team in Administrator → Applications. They appear here.</Empty>
       </div>
     );
   }

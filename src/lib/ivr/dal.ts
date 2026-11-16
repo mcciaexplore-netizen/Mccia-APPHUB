@@ -59,7 +59,7 @@ export async function assertUser(): Promise<SessionUser> {
   const a = await resolveAccess();
   if (a.status === "anonymous") throw new HttpError(401, "Not signed in");
   if (await needsOwnPassword()) throw new HttpError(403, "Choose your own password first: you are still using the temporary one.");
-  if (!a.user.role) throw new HttpError(403, "You do not have IVR-CRM.");
+  if (!a.user.role) throw new HttpError(403, "You do not have Membership CRM.");
   return { id: a.user.id, name: a.user.name, email: a.user.email, role: a.user.role, roles: a.user.roles };
 }
 export async function assertAdmin(): Promise<SessionUser> {

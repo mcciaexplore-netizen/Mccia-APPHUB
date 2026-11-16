@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const secret = env.cronSecret;
   const given = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!secret || !safeEqual(given, secret)) return new NextResponse("Unauthorized", { status: 401 });
-  if (!ivrEnabled()) return NextResponse.json({ ok: true, skipped: "IVR-CRM is switched off (IVR_ENABLED)." });
+  if (!ivrEnabled()) return NextResponse.json({ ok: true, skipped: "Membership CRM is switched off (IVR_ENABLED)." });
   const hours = Number(req.nextUrl.searchParams.get("hours"));
   if (hours > 0) {
     const result = await runSync({ hours: Math.min(hours, 24 * 90) });

@@ -17,7 +17,7 @@ export function MembershipScope({ initial, mappedAgents }: { initial: string[]; 
         <h2 className="text-xl">Membership scope</h2>
         <p className="text-[13px] text-muted">
           Your Smartflo account is shared with other departments, so once phone lines are set below this CRM keeps only Membership calls: those an
-          IVR-CRM agent handled ({mappedAgents} linked now), or that came in on one of these lines. Everything else is ignored (never deleted from
+          Membership CRM agent handled ({mappedAgents} linked now), or that came in on one of these lines. Everything else is ignored (never deleted from
           Smartflo). With no line set, every inbound call is kept.
         </p>
       </div>

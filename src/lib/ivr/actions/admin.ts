@@ -37,7 +37,7 @@ export async function saveAgentProfile(id: string, input: z.input<typeof profile
     const me = await assertAdmin();
     const p = profileSchema.safeParse(input);
     if (!p.success) return { ok: false, error: zodMsg(p.error) };
-    if (!(await isAgentNow(id))) return { ok: false, error: "That person is not an IVR-CRM agent (they need the IVR-CRM application)." };
+    if (!(await isAgentNow(id))) return { ok: false, error: "That person is not a Membership CRM agent (they need the Membership CRM application)." };
     const phone = p.data.phone ? normalizePhone(p.data.phone) : null;
     if (p.data.phone && !phone) return { ok: false, error: "That phone number is not valid." };
     await saveProfile(id, { phone, softphoneExtension: p.data.softphoneExtension || null });
@@ -55,7 +55,7 @@ export async function mapAgent(agentId: string, userId: string | null): Promise<
     const me = await assertAdmin();
     const [agent] = await db.select().from(smartfloAgents).where(eq(smartfloAgents.id, agentId)).limit(1);
     if (!agent) return { ok: false, error: "Smartflo agent not found." };
-    if (userId && !(await isAgentNow(userId))) return { ok: false, error: "That person is not an IVR-CRM agent (they need the IVR-CRM application)." };
+    if (userId && !(await isAgentNow(userId))) return { ok: false, error: "That person is not a Membership CRM agent (they need the Membership CRM application)." };
     await clearSmartfloLink(agentId);
     if (userId) {
       await db.update(smartfloAgents).set({ mappedUserId: null }).where(and(eq(smartfloAgents.mappedUserId, userId), ne(smartfloAgents.id, agentId)));
@@ -106,7 +106,7 @@ export async function connectSmartflo(input: { email?: string; password?: string
     return {
       ok: true,
       message:
-        `Connected. The account has ${test.agents} agents; ${sync ? `${sync.agents} Membership agent${sync.agents === 1 ? " was" : "s were"} kept (${sync.mapped} matched to IVR-CRM agents) and ${sync.ignored} others ignored` : "none saved yet"}. Run a sync to pull call history.` +
+        `Connected. The account has ${test.agents} agents; ${sync ? `${sync.agents} Membership agent${sync.agents === 1 ? " was" : "s were"} kept (${sync.mapped} matched to Membership CRM agents) and ${sync.ignored} others ignored` : "none saved yet"}. Run a sync to pull call history.` +
         (test.note ? ` ${test.note}` : "") +
         (syncError ? ` Saving the agent list failed: ${syncError}` : ""),
     };

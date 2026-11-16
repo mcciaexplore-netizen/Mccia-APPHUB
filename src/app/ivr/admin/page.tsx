@@ -81,7 +81,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/ivr/admin"
               {agents.length === 0 && (
                 <tr>
                   <td className="ivr-td text-muted" colSpan={11}>
-                    No agents yet. Give the IVR-CRM application to the Membership team in the hub.
+                    No agents yet. Give the Membership CRM application to the Membership team in the hub.
                   </td>
                 </tr>
               )}
