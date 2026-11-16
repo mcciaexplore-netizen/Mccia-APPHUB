@@ -3,6 +3,9 @@ import { HttpError, assertUser, isAdminRole } from "@/lib/ivr/dal";
 import { getKpis } from "@/lib/ivr/stats";
 import { resolveRange } from "@/lib/ivr/time";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 // Polled by the KPI strip. Agents only ever see their own numbers.
 export async function GET(req: NextRequest) {
   try {

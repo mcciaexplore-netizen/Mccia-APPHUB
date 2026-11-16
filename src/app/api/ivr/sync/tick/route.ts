@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { HttpError, assertUser } from "@/lib/ivr/dal";
 import { runIncrementalSync } from "@/lib/ivr/smartflo/sync";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 export const maxDuration = 60;
 
 // Called by the heartbeat in every open IVR-CRM tab (and by the "Sync now" chip). Anyone holding an IVR-CRM role may trigger it: it is throttled

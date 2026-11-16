@@ -4,6 +4,9 @@ import { env } from "@/lib/ivr/env";
 import { ivrEnabled } from "@/lib/ivr/flags";
 import { processWebhook } from "@/lib/ivr/smartflo/sync";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 // Smartflo does not sign webhooks, so the URL itself carries a secret. Configure it in API Connect > Webhook. Smartflo cannot sign in, so
 // src/proxy.ts lets /api/ivr/webhooks/ through without a hub session; this secret is the only gate.
 async function handle(req: NextRequest, ctx: RouteContext<"/api/ivr/webhooks/smartflo/[secret]">) {

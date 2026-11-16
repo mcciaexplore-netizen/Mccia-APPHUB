@@ -3,6 +3,9 @@ import { HttpError, assertMember } from "@/lib/eru/dal";
 import { fileById, fileLink } from "@/lib/eru/files";
 import { StorageError } from "@/lib/eru/storage";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 // A stored file (a project file, or a document's original upload), for anyone in the ERU team: a redirect to a signed link that works for
 // 60 seconds. ?inline=1 shows an image or PDF in the page instead of downloading it. Uploads not yet claimed by a project are not served.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

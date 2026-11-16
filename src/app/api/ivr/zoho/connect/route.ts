@@ -2,6 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { HttpError, assertUser } from "@/lib/ivr/dal";
 import { buildConsentUrl, zohoConfigured } from "@/lib/ivr/zoho";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   try {
     const user = await assertUser();

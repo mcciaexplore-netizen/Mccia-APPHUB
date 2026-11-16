@@ -73,5 +73,22 @@ type Db = ReturnType<typeof drizzleNeon<typeof schema>>;
 
 const globalForDb = globalThis as unknown as { __db?: Db };
 
-// Typed as the neon flavour; the pg flavour is API-compatible for what we use.
-export const db: Db = (globalForDb.__db ??= createDb() as unknown as Db);
+/** The one client, made on first use (and kept on globalThis so hot reload does not open another). */
+const realDb = (): Db => (globalForDb.__db ??= createDb() as unknown as Db);
+
+/**
+ * Typed as the neon flavour; the pg flavour is API-compatible for what we use.
+ *
+ * Made on first use, not when this file is imported: `next build` imports every route to read its settings, and a build without
+ * DATABASE_URL (it is only needed when a request comes in) would otherwise fail there. Behaviour once running is unchanged: the first
+ * query makes the same single client, and a missing DATABASE_URL still fails loudly then.
+ */
+export const db: Db = new Proxy({} as Db, {
+  get(_target, prop) {
+    const real = realDb();
+    const value = Reflect.get(real as object, prop, real);
+    return typeof value === "function" ? value.bind(real) : value;
+  },
+  has: (_target, prop) => prop in (realDb() as object),
+  getPrototypeOf: () => Object.getPrototypeOf(realDb()),
+});

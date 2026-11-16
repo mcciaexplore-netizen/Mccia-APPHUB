@@ -6,6 +6,9 @@ import { HttpError, assertAdmin } from "@/lib/ivr/dal";
 import { REPORT_SECTIONS, buildReport, renderReportPdf, type ReportSection } from "@/lib/ivr/report";
 import { addDays, istDayStart, parseIstDate, toIstDateString } from "@/lib/ivr/time";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 export const runtime = "nodejs";
 export const maxDuration = 60;
 

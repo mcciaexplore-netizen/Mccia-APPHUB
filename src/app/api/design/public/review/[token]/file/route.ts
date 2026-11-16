@@ -4,6 +4,9 @@ import { reviewFileByToken } from "@/lib/design/approvals";
 import { fileLink } from "@/lib/design/files";
 import { StorageError } from "@/lib/design/storage";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 // The design behind a review link (no sign-in: the link itself is the key). Works while the review is open, and for 7 days after a
 // decision so the requester can still download what they approved. A redirect to a 60-second signed link.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {

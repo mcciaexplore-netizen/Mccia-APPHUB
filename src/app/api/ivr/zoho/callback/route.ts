@@ -3,6 +3,9 @@ import { audit } from "@/lib/ivr/audit";
 import { HttpError, assertUser } from "@/lib/ivr/dal";
 import { ZohoError, completeConnection, verifyState } from "@/lib/ivr/zoho";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 function back(req: NextRequest, params: Record<string, string>) {
   const url = new URL("/ivr/connections", req.url);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);

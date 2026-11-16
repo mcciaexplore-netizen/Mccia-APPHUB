@@ -4,6 +4,9 @@ import { fileById, fileLink } from "@/lib/aistudio/files";
 import { canOpenFile } from "@/lib/aistudio/requests";
 import { StorageError } from "@/lib/aistudio/storage";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 // A stored file, for someone allowed to see it (see canOpenFile): a redirect to a signed link that works for 60 seconds. ?inline=1 shows
 // an image or PDF in the page instead of downloading it.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

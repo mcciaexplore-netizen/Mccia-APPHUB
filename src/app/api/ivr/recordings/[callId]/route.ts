@@ -4,6 +4,9 @@ import { db } from "@/lib/ivr/db";
 import { calls } from "@/db/ivr-schema";
 import { HttpError, assertUser, isAdminRole } from "@/lib/ivr/dal";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 // Recordings are a few MB. When a file has to be read into memory to serve it properly, refuse anything bigger than this.
 const MAX_BUFFER = 60 * 1024 * 1024;
 

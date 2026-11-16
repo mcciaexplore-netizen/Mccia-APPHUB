@@ -2,6 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { HttpError, assertTeam } from "@/lib/design/dal";
 import { activity } from "@/lib/design/detail";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 // Polled every 15 seconds by the activity feeds, for the creative team: a lead sees every ticket's events (?scope=mine keeps it to their
 // own); a designer only ever the events of the tickets assigned to them.
 export async function GET(req: NextRequest) {

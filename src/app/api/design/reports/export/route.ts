@@ -5,6 +5,9 @@ import { report, reportRows } from "@/lib/design/reports";
 import { renderReportPdf } from "@/lib/design/report-pdf";
 import { daysBetween, istDate, addDays } from "@/lib/design/rules";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 export const runtime = "nodejs";
 export const maxDuration = 60;
 

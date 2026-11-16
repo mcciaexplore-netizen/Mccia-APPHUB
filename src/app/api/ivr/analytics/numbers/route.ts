@@ -3,6 +3,9 @@ import { isUuid, numberStats, type Direction } from "@/lib/ivr/analytics";
 import { HttpError, assertAdmin } from "@/lib/ivr/dal";
 import { resolveRange } from "@/lib/ivr/time";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 const q = (s: string | number | null) => {
   const v = s === null ? "" : String(s);
   // Stop spreadsheet apps treating a cell as a formula

@@ -4,6 +4,9 @@ import { docxFileName, exportDocx } from "@/lib/eru/docx-export";
 import { logError } from "@/lib/eru/host-adapter";
 import { documentContent } from "@/lib/eru/queries";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 // A document as a Word file, as last saved (pending tracked changes as if accepted, no comments), for anyone in the ERU team.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {

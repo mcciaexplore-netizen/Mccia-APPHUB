@@ -2,6 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { HttpError, assertAdmin } from "@/lib/ivr/dal";
 import { searchUnlinkedAgents } from "@/lib/ivr/host-adapter";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 // "Add an agent" on Integrations: active hub users (IVR-CRM or not) not linked to a Smartflo agent yet, whose name or email contains `q`.
 // IVR admins only. At most 8; one character is enough.
 export async function GET(req: NextRequest) {

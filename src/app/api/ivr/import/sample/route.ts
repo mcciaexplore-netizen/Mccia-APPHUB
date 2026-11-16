@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { HttpError, assertAdmin } from "@/lib/ivr/dal";
 import { listIvrAgents } from "@/lib/ivr/host-adapter";
 
+// Never run at build time: every request reads the database (and who is asking).
+export const dynamic = "force-dynamic";
+
 const q = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
 
 // A small CSV that shows the shape the importer understands, using real agents from this installation; the last row names no agent, so the allocation rules decide.
