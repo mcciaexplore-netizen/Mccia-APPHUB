@@ -151,21 +151,28 @@ const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
 const HOURS = Array.from({ length: 25 }, (_, h) => h);
 const hourText = (h: number) => `${String(h).padStart(2, "0")}:00`;
 
+/** Which days are worked: fixed (see isWorkingDay in sla.ts); the schedule only sets each day's hours. */
+const DAY_RULE = ["Always working", "Always working", "Always working", "Always working", "Always working", "1st and 3rd of the month", "Always off"];
+const SATURDAY_NOTE = "Saturdays: 1st and 3rd are working days, 2nd and 4th are off. Sundays are always off.";
+
 export function SchedulePanel({ days }: { days: { dayOfWeek: number; isWorking: boolean; startHour: number; endHour: number }[] }) {
   const { busy, save } = useSave();
   const [rows, setRows] = useState(days);
   const set = (i: number, patch: Partial<(typeof rows)[number]>) => setRows((cur) => cur.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   return (
     <Card title="Working schedule">
-      <p className="mb-4 text-sm ds-muted">Deadlines count only these hours (IST). Holidays are skipped too.</p>
+      <p className="mb-2 text-sm ds-muted">Deadlines, the 48-working-hour minimum on requests and their priority count only working hours (IST). Holidays are skipped too.</p>
+      <p className="mb-4 rounded-lg border border-[var(--ds-navy-line)] bg-[var(--ds-navy-tint)] px-3 py-2 text-sm font-semibold text-[var(--ds-navy)]" data-testid="ds-saturday-note">
+        Monday to Friday are always working days. {SATURDAY_NOTE}
+      </p>
       <div className="flex flex-col gap-2">
         {rows.map((r, i) => (
           <div key={r.dayOfWeek} className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--ds-line)] px-3 py-2">
-            <label className="flex w-36 items-center gap-2 text-sm font-semibold text-ink">
-              <input type="checkbox" checked={r.isWorking} onChange={(e) => set(i, { isWorking: e.target.checked })} />
-              {DAYS[r.dayOfWeek]}
-            </label>
-            {r.isWorking ? (
+            <span className="flex w-60 flex-col text-sm">
+              <span className="font-semibold text-ink">{DAYS[r.dayOfWeek]}</span>
+              <span className="text-xs ds-muted">{DAY_RULE[r.dayOfWeek]}</span>
+            </span>
+            {r.dayOfWeek < 6 ? (
               <>
                 <label className="flex items-center gap-2 text-sm">
                   <span className="ds-muted">From</span>
@@ -196,7 +203,7 @@ export function SchedulePanel({ days }: { days: { dayOfWeek: number; isWorking: 
       </div>
       <div className="mt-5 flex justify-end">
         <button type="button" className="btn btn-sm ds-btn-navy" disabled={busy} onClick={() => save(() => saveScheduleAction(rows))}>
-          <Spin on={busy} /> Save schedule
+          <Spin on={busy} /> Save hours
         </button>
       </div>
     </Card>

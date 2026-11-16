@@ -61,10 +61,14 @@ import {
 
 import { DESIGN_ADMIN_URL_PATTERN, DESIGN_TEAM_URL_PATTERN, designRolesFor, isLead as designIsLead, navFor as designNavFor } from "../src/lib/design/design.manifest";
 import {
-  DEFAULT_SCHEDULE as DESIGN_SCHEDULE, baseNumber as designBase, changeCutoff as designCutoff, dueHealth as designDueHealth, formatTicketNumber as designNumber, istMoment as designIst,
-  isSlackWebhook as designSlack, figmaEmbedUrl as designFigma, priorityFor as designPriority, requesterTabOf as designTab, revisionTags as designRevTags, slaHoursFor as designSla,
-  stepOf as designStep, versionNumber as designVersion, workingDue as designWorkingDue,
+  baseNumber as designBase, changeCutoff as designCutoff, dueHealth as designDueHealth, formatTicketNumber as designNumber, istMoment as designIst,
+  isSlackWebhook as designSlack, figmaEmbedUrl as designFigma, requesterTabOf as designTab, revisionTags as designRevTags,
+  stepOf as designStep, versionNumber as designVersion,
 } from "../src/lib/design/rules";
+import {
+  DEFAULT_SCHEDULE as DESIGN_SCHEDULE, earliestDelivery as designEarliest, isWorkingDay as designIsWorking, minDeliveryDate as designMinDelivery, priorityFor as designPriority,
+  priorityText as designPriorityText, slaHoursFor as designSla, workingDaysUntil as designDaysUntil, workingDue as designWorkingDue,
+} from "../src/lib/design/sla";
 import { MAX_FILES as DESIGN_MAX_FILES, RETIRED_TYPE_KEYS as DESIGN_RETIRED, contentOf as designContentOf, SEED_TYPES as DESIGN_SEED, checkRequest as designCheck, cleanLinks as designLinks, ticketTitle as designTitle } from "../src/lib/design/form";
 import { loadTone as designTone, suggestAssignee as designSuggest, workingDays as designDays, workloadGrid as designGrid } from "../src/lib/design/capacity";
 import { mimeFor as designMime, safeFileName as designSafeName } from "../src/lib/design/file-types";
@@ -1090,13 +1094,48 @@ const ssoTests = (async () => {
   eq("design apps: the two URLs, and nothing else matches", ["/design", "/design/", "/design/admin", "/design/request", "/designs"].map((u) => [new RegExp(DESIGN_TEAM_URL_PATTERN).test(u), new RegExp(DESIGN_ADMIN_URL_PATTERN).test(u)]), [[true, false], [true, false], [false, true], [false, false], [false, false]]);
   eq("design leads: a lead or the Support Admin", [designIsLead(["design_lead"]), designIsLead(["design_super_admin"]), designIsLead(["design_member"])], [true, true, false]);
 
-  // Priority from the delivery date, and deadlines in working hours
-  eq("design priority: next day urgent, 3 days high, 10 days normal, beyond low", ["2026-11-03", "2026-11-05", "2026-11-12", "2026-11-13"].map((d) => designPriority(d, "2026-11-02")), ["urgent", "high", "normal", "low"]);
-  const fri6pm = designIst("2026-11-06", 18);
-  eq("design deadline: 2 working hours from Friday 18:00 IST is Monday 11:00", designWorkingDue(fri6pm, 2, DESIGN_SCHEDULE, new Set()).toISOString(), designIst("2026-11-09", 11).toISOString());
-  eq("design deadline: a holiday is skipped", designWorkingDue(fri6pm, 2, DESIGN_SCHEDULE, new Set(["2026-11-09"])).toISOString(), designIst("2026-11-10", 11).toISOString());
+  // The working calendar (November 2026: Saturdays 7th = 1st, 14th = 2nd, 21st = 3rd, 28th = 4th; August 2026 has a 5th, the 29th)
+  eq(
+    "design working days: Monday to Friday always; 1st and 3rd Saturdays yes; 2nd, 4th and 5th Saturdays no; Sundays never",
+    ["2026-11-16", "2026-11-20", "2026-11-07", "2026-11-14", "2026-11-21", "2026-11-28", "2026-08-29", "2026-11-08", "2026-11-15"].map((d) => designIsWorking(d)),
+    [true, true, true, false, true, false, false, false, false],
+  );
+  eq("design working days: a holiday is never a working day (a weekday or a working Saturday)", [designIsWorking("2026-11-18", new Set(["2026-11-18"])), designIsWorking("2026-11-21", new Set(["2026-11-21"])), designIsWorking("2026-11-19", new Set(["2026-11-18"]))], [false, false, true]);
+  eq("design working days: a moment is taken on the IST calendar (Saturday 00:30 IST is Friday evening UTC)", [designIsWorking(designIst("2026-11-14", 0, 30)), designIsWorking(designIst("2026-11-21", 0, 30))], [false, true]);
+
+  // The 48-hour buffer: the same time two working days on, from the first working moment
+  const at = (day: string, h: number, m = 0) => designIst(day, h, m).toISOString();
+  const earliest = (day: string, h: number, m = 0, hol: string[] = []) => designEarliest(designIst(day, h, m), DESIGN_SCHEDULE, new Set(hol)).toISOString();
+  eq("design buffer: opened Monday 10:00 → Wednesday 10:00", earliest("2026-11-16", 10), at("2026-11-18", 10));
+  eq("design buffer: opened Friday 17:00 before an off Saturday (2nd) → the weekend skipped → Tuesday 17:00", earliest("2026-11-13", 17), at("2026-11-17", 17));
+  eq("design buffer: opened Friday 17:00 before a working Saturday (3rd) → Monday 17:00", earliest("2026-11-20", 17), at("2026-11-23", 17));
+  eq("design buffer: opened on a working Saturday (3rd) at 11:00 → counted from there, Sunday skipped → Tuesday 11:00", earliest("2026-11-21", 11), at("2026-11-24", 11));
+  eq("design buffer: opened out of hours (Sunday afternoon, Monday 20:30, Tuesday 08:00) counts from the next opening", [earliest("2026-11-15", 15), earliest("2026-11-16", 20, 30), earliest("2026-11-17", 8)], [at("2026-11-18", 10), at("2026-11-19", 10), at("2026-11-19", 10)]);
+  eq("design buffer: a holiday on the way adds a day", earliest("2026-11-16", 10, 0, ["2026-11-17"]), at("2026-11-19", 10));
+  const minDay = (day: string, h: number, m = 0) => designMinDelivery(designIst(day, h, m), DESIGN_SCHEDULE, new Set());
+  eq(
+    "design buffer: the first date allowed is the first working day due (18:00) on or after the earliest moment",
+    [minDay("2026-11-16", 10), minDay("2026-11-16", 17, 59), minDay("2026-11-16", 18, 30), minDay("2026-11-13", 17), minDay("2026-11-13", 18, 30), minDay("2026-11-20", 18, 30)],
+    ["2026-11-18", "2026-11-18", "2026-11-19", "2026-11-17", "2026-11-18", "2026-11-24"],
+  );
+
+  // Priority from the delivery date, in working days (never Urgent: under 48 working hours cannot be asked for)
+  eq(
+    "design priority: up to 3 working days High, up to 10 Normal, beyond Low (counted from Monday 16 Nov; the 3rd Saturday counts, the 4th does not)",
+    ["2026-11-18", "2026-11-19", "2026-11-20", "2026-11-27", "2026-11-30", "2026-12-31"].map((d) => [designDaysUntil(d, "2026-11-16"), designPriority(d, "2026-11-16")]),
+    [[2, "high"], [3, "high"], [4, "normal"], [10, "normal"], [11, "low"], [36, "low"]],
+  );
+  eq("design priority: a holiday is not counted", designPriority("2026-11-20", "2026-11-16", new Set(["2026-11-17"])), "high");
+  eq("design priority: the form's wording", [designPriorityText("2026-11-18", "2026-11-16"), designPriorityText("2026-11-23", "2026-11-16"), designPriorityText("2026-12-07", "2026-11-16")], ["HIGH — 2 working days from now", "NORMAL — 6 working days from now", "LOW — 17 working days from now"]);
+
+  // Deadlines in working hours
+  const fri6pm = designIst("2026-11-13", 18);
+  eq("design deadline: 2 working hours from Friday 18:00 IST, before an off Saturday, is Monday 11:00", designWorkingDue(fri6pm, 2, DESIGN_SCHEDULE, new Set()).toISOString(), designIst("2026-11-16", 11).toISOString());
+  eq("design deadline: before a working (1st) Saturday it runs into the Saturday", designWorkingDue(designIst("2026-11-06", 18), 2, DESIGN_SCHEDULE, new Set()).toISOString(), designIst("2026-11-07", 11).toISOString());
+  eq("design deadline: a holiday is skipped", designWorkingDue(fri6pm, 2, DESIGN_SCHEDULE, new Set(["2026-11-16"])).toISOString(), designIst("2026-11-17", 11).toISOString());
   eq("design deadline: before opening time starts at 10:00", designWorkingDue(designIst("2026-11-04", 7), 3, DESIGN_SCHEDULE, new Set()).toISOString(), designIst("2026-11-04", 13).toISOString());
   eq("design deadline: time waiting on the requester is added on", designWorkingDue(designIst("2026-11-04", 10), 1, DESIGN_SCHEDULE, new Set(), 3600).toISOString(), designIst("2026-11-04", 12).toISOString());
+  eq("design deadline: a day's own hours come from the schedule", designWorkingDue(designIst("2026-11-16", 9), 2, { ...DESIGN_SCHEDULE, 0: { isWorking: true, startHour: 9, endHour: 17 } }, new Set()).toISOString(), designIst("2026-11-16", 11).toISOString());
   eq("design deadline: urgent gets half (at least 2 hours)", [designSla(24, "urgent"), designSla(3, "urgent"), designSla(24, "normal")], [12, 2, 24]);
 
   // Steps, tabs, cut-off and versions
@@ -1119,7 +1158,9 @@ const ssoTests = (async () => {
   eq("design form: a required question", designCheck({ ...base, details: { flyer: { channel: "Print" } } }, types, "2026-11-02"), { ok: false, error: "Size is required" });
   eq("design form: a select answer must be on the list", designCheck({ ...base, details: { flyer: { size: "A3", channel: "Print" } } }, types, "2026-11-02"), { ok: false, error: "Size: please choose from the list" });
   eq("design form: with several designs the error names the design", designCheck({ ...base, requirements: ["flyer", "banner"] }, types, "2026-11-02"), { ok: false, error: "Banner / standee – Size (width x height) is required" });
-  eq("design form: delivery must be tomorrow or later", designCheck({ ...base, deliveryDate: "2026-11-02" }, types, "2026-11-02"), { ok: false, error: "The delivery date must be tomorrow or later" });
+  const tooSoon = designCheck({ ...base, deliveryDate: "2026-11-17" }, types, "2026-11-16", "2026-11-18");
+  eq("design form: a delivery date before the 48-working-hour minimum is refused, saying why and who to ask", [tooSoon.ok, !tooSoon.ok && /must be Wed,? 18 Nov 2026 or later/.test(tooSoon.error) && /48 working hours/.test(tooSoon.error) && /aistudio@mcciapune\.com/.test(tooSoon.error)], [false, true]);
+  eq("design form: the minimum date itself is allowed", designCheck({ ...base, deliveryDate: "2026-11-18" }, types, "2026-11-16", "2026-11-18").ok, true);
   eq("design form: an unknown design", designCheck({ ...base, requirements: ["poster"] }, types, "2026-11-02").ok, false);
   eq("design form: too many files", designCheck({ ...base, fileIds: Array.from({ length: DESIGN_MAX_FILES + 1 }, (_, i) => `00000000-0000-4000-8000-00000000000${i}`) }, types, "2026-11-02").ok, false);
   eq("design form: numbers are numbers", designCheck({ requirements: ["book"], details: { book: { pages: "48", content_ready: "Partly" } }, brief: "Directory", deliveryDate: "2026-11-20" }, types, "2026-11-02").ok, true);
@@ -1128,8 +1169,8 @@ const ssoTests = (async () => {
   eq("design title: the event and the designs", designTitle({ eventName: "AGM", brief: "x", requirements: ["flyer", "banner"] }, new Map([["flyer", "Flyer"], ["banner", "Banner"]])), "AGM – Flyer, Banner");
 
   // Capacity and workload
-  const days = designDays("2026-11-02", 7, DESIGN_SCHEDULE, new Set(["2026-11-04"]));
-  eq("design working days: weekends and holidays skipped", days, ["2026-11-02", "2026-11-03", "2026-11-05", "2026-11-06"]);
+  const days = designDays("2026-11-02", 7, new Set(["2026-11-04"]));
+  eq("design working days: Sunday, holidays and off Saturdays skipped; the 1st Saturday kept", [days, designDays("2026-11-09", 7, new Set())], [["2026-11-02", "2026-11-03", "2026-11-05", "2026-11-06", "2026-11-07"], ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"]]);
   const people = [{ id: "a", name: "Asha", dailyHours: 8, leaves: [] }, { id: "b", name: "Ravi", dailyHours: 8, leaves: [{ start: "2026-11-02", end: "2026-11-08" }] }, { id: "c", name: "Meera", dailyHours: 4, leaves: [] }];
   const open = [{ id: "t1", number: "DF-1", title: "x", assigneeId: "a", dueDay: "2026-11-03", remainingHours: 10 }];
   eq("design auto-assign: the most free capacity; someone on leave all week is skipped", designSuggest(people, open, days)?.id, "c");

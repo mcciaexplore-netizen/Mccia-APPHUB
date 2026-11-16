@@ -2,7 +2,7 @@ import "server-only";
 import { asc, eq, sql } from "drizzle-orm";
 import { db } from "./db";
 import { designTypes, holidays, settings, workingSchedule, type DesignType } from "@/db/design-schema";
-import { DEFAULT_SCHEDULE, slaHoursFor, workingDue, type WorkingDay } from "./rules";
+import { DEFAULT_SCHEDULE, minDeliveryDate, slaHoursFor, workingDue, type WorkingDay } from "./sla";
 import type { FormType } from "./form";
 import type { Priority } from "@/db/design-schema";
 
@@ -50,6 +50,7 @@ export async function typeNames(): Promise<Map<string, string>> {
   return new Map((await listTypes(true)).map((t) => [t.key, t.name]));
 }
 
+/** The working schedule: each weekday's hours (which days are worked is decided by isWorkingDay, in sla.ts). */
 export async function getSchedule(): Promise<Record<number, WorkingDay>> {
   const rows = await db.select().from(workingSchedule);
   if (!rows.length) return DEFAULT_SCHEDULE;
@@ -66,4 +67,13 @@ export async function getHolidays(): Promise<Set<string>> {
 export async function workingDeadline(typeSlaHours: number, priority: Priority, start = new Date()): Promise<Date> {
   const [schedule, hols] = await Promise.all([getSchedule(), getHolidays()]);
   return workingDue(start, slaHoursFor(typeSlaHours, priority), schedule, hols);
+}
+
+/**
+ * The first delivery date the request form allows, for a form opened at `openedAt` (48 working hours on). The server checks a request
+ * against the date a form opened FORM_GRACE_HOURS ago would have allowed, so a form left open a while is not refused at the last step.
+ */
+export async function minDelivery(openedAt = new Date()): Promise<string> {
+  const [schedule, hols] = await Promise.all([getSchedule(), getHolidays()]);
+  return minDeliveryDate(openedAt, schedule, hols);
 }

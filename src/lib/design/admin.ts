@@ -38,14 +38,18 @@ export async function saveType(id: string | null, input: z.input<typeof typeInpu
 
 // ── Working week ─────────────────────────────────────────────────────────────
 
+/**
+ * Saves each day's hours. Which days are worked is fixed in code (isWorkingDay, sla.ts: Monday to Friday, the 1st and 3rd Saturday), since
+ * this table cannot say "1st and 3rd Saturday"; its is_working flags are kept as they are.
+ */
 export async function saveSchedule(days: { dayOfWeek: number; isWorking: boolean; startHour: number; endHour: number }[]): Promise<void> {
   for (const d of days) {
     if (!(d.dayOfWeek >= 0 && d.dayOfWeek <= 6)) throw new DesignError("Unknown day.");
-    if (d.isWorking && !(d.startHour >= 0 && d.endHour <= 24 && d.startHour < d.endHour)) throw new DesignError("Each working day must end after it starts.");
+    if (d.dayOfWeek < 6 && !(d.startHour >= 0 && d.endHour <= 24 && d.startHour < d.endHour)) throw new DesignError("Each working day must end after it starts.");
   }
-  if (!days.some((d) => d.isWorking)) throw new DesignError("Keep at least one working day.");
+  const current = await getSchedule();
   for (const d of days) {
-    const row = { isWorking: d.isWorking, startHour: Math.round(d.startHour), endHour: Math.round(d.endHour) };
+    const row = { isWorking: current[d.dayOfWeek]?.isWorking ?? d.isWorking, startHour: Math.round(d.startHour), endHour: Math.round(d.endHour) };
     await db.insert(workingSchedule).values({ dayOfWeek: d.dayOfWeek, ...row }).onConflictDoUpdate({ target: workingSchedule.dayOfWeek, set: row });
   }
 }

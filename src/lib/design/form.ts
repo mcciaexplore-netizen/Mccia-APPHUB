@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 import type { DesignQuestion } from "@/db/design-schema";
-import { daysBetween, istDate } from "./rules";
+import { addDays, dayLabel, daysBetween, istDate } from "./rules";
 
 export const MAX_FILES = 5;
 export const MAX_FILE_MB = 10;
@@ -150,15 +150,18 @@ export function cleanLinks(links: string[]): { ok: true; links: string[] } | { o
   return { ok: true, links: out };
 }
 
-/** Every check on a request, before anything is stored. `types` are the active kinds of design, by key. */
-export function checkRequest(input: RequestInput, types: Map<string, FormType>, today: string = istDate()): { ok: true; value: CleanRequest } | { ok: false; error: string } {
+/**
+ * Every check on a request, before anything is stored. `types` are the active kinds of design, by key. `minDelivery` is the first delivery
+ * date allowed (48 working hours on, see sla.ts; the server passes it in).
+ */
+export function checkRequest(input: RequestInput, types: Map<string, FormType>, today: string = istDate(), minDelivery: string = addDays(today, 2)): { ok: true; value: CleanRequest } | { ok: false; error: string } {
   const p = requestInput.safeParse(input);
   if (!p.success) return { ok: false, error: p.error.issues[0]?.message ?? "Check the form" };
   const v = p.data;
   const requirements = [...new Set(v.requirements)];
   const unknown = requirements.find((r) => !types.has(r));
   if (unknown) return { ok: false, error: "One of the designs chosen is no longer offered. Reload the page and choose again." };
-  if (daysBetween(today, v.deliveryDate) < 1) return { ok: false, error: "The delivery date must be tomorrow or later" };
+  if (v.deliveryDate < minDelivery) return { ok: false, error: `The delivery date must be ${dayLabel(minDelivery)} or later: every request needs at least 48 working hours. For urgent requirements, contact AI Studio at aistudio@mcciapune.com.` };
   if (v.eventDate && daysBetween(today, v.eventDate) < 0) return { ok: false, error: "The event date cannot be in the past" };
   const details: Answers = {};
   for (const r of requirements) {

@@ -1,15 +1,19 @@
 import { requireRequester } from "@/lib/design/dal";
-import { listTypes } from "@/lib/design/config";
+import { getHolidays, listTypes, minDelivery } from "@/lib/design/config";
 import { RETIRED_TYPE_KEYS } from "@/lib/design/form";
 import { listDepartmentNames } from "@/lib/design/host-adapter";
-import { addDays, istDate } from "@/lib/design/rules";
+import { istDate } from "@/lib/design/rules";
 import { PageHeader } from "@/components/design/ui";
 import { RequestForm } from "@/components/design/request/request-form";
 
-/** Request a design: open to every signed-in hub user. The request lands in Pending Review for a design lead. */
+/**
+ * Request a design: open to every signed-in hub user. The request lands in Pending Review for a design lead. The earliest delivery date is
+ * worked out as the page opens (48 working hours on); the holidays ahead go to the form so it can count working days for the priority.
+ */
 export default async function RequestPage() {
   const user = await requireRequester();
-  const [types, departments] = await Promise.all([listTypes(), listDepartmentNames()]);
+  const today = istDate();
+  const [types, departments, earliest, holidays] = await Promise.all([listTypes(), listDepartmentNames(), minDelivery(new Date()), getHolidays()]);
   return (
     <div className="ds-request-page">
       <PageHeader title="Request a Design" subtitle="Fill in the details and our design team will get back to you." />
@@ -17,8 +21,9 @@ export default async function RequestPage() {
         types={types.filter((t) => !RETIRED_TYPE_KEYS.includes(t.key)).map((t) => ({ key: t.key, name: t.name, questions: t.questions }))}
         departments={departments}
         defaultDepartment={user.department ?? ""}
-        minDelivery={addDays(istDate(), 1)}
-        today={istDate()}
+        minDelivery={earliest}
+        today={today}
+        holidays={[...holidays].filter((d) => d >= today)}
       />
     </div>
   );

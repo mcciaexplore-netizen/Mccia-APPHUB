@@ -45,8 +45,9 @@ export function StatusBadge({ status }: { status: TicketStatus }) {
 }
 
 const PRIORITY_TONE: Record<Priority, "red" | "orange" | "blue" | "neutral"> = { urgent: "red", high: "orange", normal: "blue", low: "neutral" };
-export function PriorityBadge({ priority }: { priority: Priority }) {
-  return <Badge tone={PRIORITY_TONE[priority]}>{PRIORITY_LABEL[priority]}</Badge>;
+/** A priority in its colour; `text` in place of the plain label (the request form's "HIGH — 2 working days from now"). */
+export function PriorityBadge({ priority, text }: { priority: Priority; text?: string }) {
+  return <Badge tone={PRIORITY_TONE[priority]}>{text ?? PRIORITY_LABEL[priority]}</Badge>;
 }
 
 /** A deadline: red when late, amber within a day. */

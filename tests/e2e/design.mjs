@@ -196,6 +196,13 @@ try {
   check("a lead opens Design Admin, with its menu", pathOf(L.page) === "/design/admin" && (await navLabels(L.page, "Design Admin")) === "Dashboard|Pending Review|Board|All Tickets|Library|Calendar|Workload|Reports|Settings", await navLabels(L.page, "Design Admin"));
   await go(L.page, "/design/admin/settings");
   check("a lead (not the Support Admin) does not see Integrations", !(await L.page.getByRole("tab", { name: /Integrations/ }).count()) && !/Delete all past data/.test(await mainText(L.page)));
+  await go(L.page, "/design/admin/settings?tab=schedule");
+  const scheduleText = await mainText(L.page);
+  check(
+    "Settings › Working schedule: the Saturday rule is stated, each day shows its rule, and only the hours are edited",
+    /Saturdays: 1st and 3rd are working days,\s*2nd and 4th are off\. Sundays are always off\./.test(await L.page.getByTestId("ds-saturday-note").innerText()) && /Saturday\s*1st and 3rd of the month/.test(scheduleText) && /Sunday\s*Always off/.test(scheduleText) && (await L.page.locator('main input[type="checkbox"]').count()) === 0 && (await L.page.getByLabel("Saturday start").count()) === 1,
+    scheduleText.slice(0, 400),
+  );
   const anon = await fresh();
   await go(anon.page, "/design/request"); check("not signed in: the request form goes to sign-in", pathOf(anon.page) === "/login");
   check("not signed in: a stored file goes to sign-in", (await fetchIn(anon.page, "/api/design/files/00000000-0000-4000-8000-000000000000")).status === 307);
@@ -221,8 +228,19 @@ try {
   await R.page.fill("#brief", "ZZD annual meeting flyer: logo top left, date and venue large.");
   await R.page.fill("#event-name", "ZZD AGM");
   await R.page.fill("#content", "ZZD Annual General Meeting\n12 November, 5 pm, MCCIA Hall");
-  await R.page.fill("#delivery", istDay(5));
-  check("priority shows itself from the date (5 days: Normal)", await poll(async () => /Normal/.test(await R.page.locator("main").innerText())));
+  // At least 48 working hours: dates before the earliest one are blocked, with the note below the picker.
+  const minDelivery = await R.page.locator("#delivery").getAttribute("min");
+  const weekdayOfDay = (d) => new Date(`${d}T00:00:00Z`).getUTCDay();
+  check("the delivery date picker blocks the next two days at least (48 working hours), and its first date is not a Sunday", !!minDelivery && minDelivery >= istDay(2) && minDelivery <= istDay(6) && weekdayOfDay(minDelivery) !== 0, minDelivery);
+  const whenText = await R.page.locator("section", { has: R.page.getByRole("heading", { name: "When do you need it?" }) }).innerText();
+  check("below the picker, the 48-hour note and AI Studio's address", /Minimum 48 working hours required for all requests\.\s*For urgent requirements, please contact AI Studio directly at aistudio@mcciapune\.com/.test(whenText) && (await R.page.getByRole("link", { name: "aistudio@mcciapune.com" }).getAttribute("href")) === "mailto:aistudio@mcciapune.com", whenText);
+  await R.page.fill("#delivery", istDay(1));
+  check("a date sooner than that is refused (out of the picker's range) and the priority says it is too soon", (await R.page.locator("#delivery").evaluate((el) => el.validity.rangeUnderflow)) && /Too soon: the earliest is/.test(await R.page.getByTestId("ds-priority").innerText()));
+  // Eight days on is always 4 to 10 working days: Normal.
+  const deliveryDay = istDay(8);
+  await R.page.fill("#delivery", deliveryDay);
+  check("priority shows itself as the date is picked: NORMAL — n working days from now", await poll(async () => /^Priority:\s*NORMAL — \d+ working days from now$/.test((await R.page.getByTestId("ds-priority").innerText()).trim())), await R.page.getByTestId("ds-priority").innerText());
+  check("no Urgent on the form any more", !/Urgent/.test(await mainText(R.page)));
   check("a reference file uploads straight to storage", await upload(R.page, "zzd-logo.png"));
   await R.page.getByRole("button", { name: /Submit request/ }).click();
   await R.page.getByText("Your request has been submitted").waitFor();
@@ -231,7 +249,7 @@ try {
   const trackPath = /\/track\/[A-Za-z0-9.-]+/.exec(formText)?.[0];
   check("success screen: the ticket number and the tracking link", !!number && !!trackPath, formText.slice(0, 160));
   let t1 = await ticketByNumber(number);
-  check("the request waits in Pending Review, Normal priority, due 18:00 IST on the day asked", t1?.status === "pending_review" && t1.priority === "normal" && t1.department === "ZZD Marketing" && new Date(t1.due_at).toISOString() === new Date(`${istDay(5)}T12:30:00Z`).toISOString());
+  check("the request waits in Pending Review, Normal priority, due 18:00 IST on the day asked", t1?.status === "pending_review" && t1.priority === "normal" && t1.department === "ZZD Marketing" && new Date(t1.due_at).toISOString() === new Date(`${deliveryDay}T12:30:00Z`).toISOString());
   check("the answers are kept per design", JSON.stringify(t1.details.flyer) === JSON.stringify({ size: "A4", channel: "Print", language: "Marathi" }), JSON.stringify(t1.details));
   const att = await sql`select f.storage_key, f.size from design_attachments a join design_files f on f.id = a.file_id where a.ticket_id = ${t1.id}`;
   check("the file is attached, its size checked in storage", att.length === 1 && att[0].size === PNG.length);

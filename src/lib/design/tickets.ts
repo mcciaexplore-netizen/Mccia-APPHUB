@@ -24,11 +24,12 @@ import { audit } from "./audit";
 import { DesignError, type SessionUser } from "./dal";
 import { claimFiles, deleteFiles, releaseFiles } from "./files";
 import { RETIRED_TYPE_KEYS, answerLines, checkRequest, ticketTitle, type RequestInput } from "./form";
-import { formTypes, getHolidays, getSchedule, getSettings, nextTicketSeq, typeNames, workingDeadline } from "./config";
+import { formTypes, getHolidays, getSettings, minDelivery, nextTicketSeq, typeNames, workingDeadline } from "./config";
 import { isAssignable, listDesigners, peopleByIds } from "./host-adapter";
 import * as notice from "./notify";
 import { remainingHours, suggestAssignee, workingDays, HORIZON_DAYS, type CapDesigner, type CapTicket } from "./capacity";
-import { ACTIVE_STATUSES, FINISHED_STATUSES, PRIORITIES, deliveryDueAt, formatTicketNumber, istDate, priorityFor, STATUS_LABEL } from "./rules";
+import { ACTIVE_STATUSES, FINISHED_STATUSES, PRIORITIES, formatTicketNumber, istDate, STATUS_LABEL } from "./rules";
+import { deliveryDueAt, FORM_GRACE_HOURS, priorityFor } from "./sla";
 
 /**
  * Tickets: making them from the request form, who may see and change them, the Pending Review decisions, moving them along, and the small
@@ -163,7 +164,9 @@ const assertOpen = (t: Ticket) => {
 /** The request form: one ticket for every design chosen, waiting in Pending Review for a lead. Files are claimed first, all or none. */
 export async function createRequest(u: SessionUser, input: RequestInput): Promise<{ id: string; number: string; trackingUrl: string }> {
   const types = new Map([...(await formTypes())].filter(([k]) => !RETIRED_TYPE_KEYS.includes(k)));
-  const checked = checkRequest(input, types);
+  // At least 48 working hours' notice: the date a form opened FORM_GRACE_HOURS ago would have allowed (see minDelivery).
+  const [earliest, hols] = await Promise.all([minDelivery(new Date(Date.now() - FORM_GRACE_HOURS * 3_600_000)), getHolidays()]);
+  const checked = checkRequest(input, types, istDate(), earliest);
   if (!checked.ok) throw new DesignError(checked.error);
   const r = checked.value;
   const claimed = await claimFiles(u.id, r.fileIds, "attachment");
@@ -185,7 +188,7 @@ export async function createRequest(u: SessionUser, input: RequestInput): Promis
         deliveryDate: r.deliveryDate,
         department: r.department ?? u.department,
         referenceLinks: r.referenceLinks,
-        priority: priorityFor(r.deliveryDate),
+        priority: priorityFor(r.deliveryDate, istDate(), hols),
         status: "pending_review",
         requesterId: u.id,
         dueAt: deliveryDueAt(r.deliveryDate),
@@ -214,12 +217,11 @@ export async function createRequest(u: SessionUser, input: RequestInput): Promis
 export async function capacityData(): Promise<{ designers: CapDesigner[]; open: CapTicket[]; days: string[]; today: string }> {
   const designers = await listDesigners();
   const ids = designers.map((d) => d.id);
-  const [profs, leaveRows, openRows, types, schedule, hols] = await Promise.all([
+  const [profs, leaveRows, openRows, types, hols] = await Promise.all([
     ids.length ? db.select().from(profiles).where(inArray(profiles.userId, ids)) : Promise.resolve([]),
     ids.length ? db.select().from(leaves).where(inArray(leaves.userId, ids)) : Promise.resolve([]),
     db.select().from(tickets).where(inArray(tickets.status, [...ACTIVE_STATUSES, "waiting_on_requester", "in_review"] as TicketStatus[])),
     db.select({ id: designTypes.id, effort: designTypes.effortHours }).from(designTypes),
-    getSchedule(),
     getHolidays(),
   ]);
   const effort = new Map(types.map((t) => [t.id, t.effort]));
@@ -241,7 +243,7 @@ export async function capacityData(): Promise<{ designers: CapDesigner[]; open: 
         dueDay: t.dueAt ? istDate(t.dueAt) : null,
         remainingHours: remainingHours(t.estimateHours, effort.get(t.designTypeId) ?? null, t.timeSpentSeconds),
       })),
-    days: workingDays(today, HORIZON_DAYS, schedule, hols),
+    days: workingDays(today, HORIZON_DAYS, hols),
     today,
   };
 }

@@ -1,7 +1,7 @@
 /**
  * DesignDesk's workflow rules, as pure functions (no database, no server code) so the pages, the server and the unit tests share one copy:
- * statuses and their labels, priority from the delivery date, working-hours deadlines, the requester's five progress steps, the change
- * cut-off before an event, ticket numbers and revision tags. Times are IST (the studio's clock), whatever the server's zone.
+ * statuses and their labels, IST dates, the requester's five progress steps, the change cut-off before an event, ticket numbers and revision
+ * tags. Times are IST (the studio's clock), whatever the server's zone. Working days, deadlines and priority are in sla.ts.
  */
 import type { ApprovalStatus, Priority, TicketStatus } from "@/db/design-schema";
 
@@ -117,63 +117,12 @@ export function daysBetween(from: string, to: string): number {
 export function addDays(day: string, n: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
 }
+/** An IST date for people: "Wed, 18 Nov 2026". */
+export const dayLabel = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 /** 0 = Monday … 6 = Sunday, for an IST date. */
 export function weekdayOf(day: string): number {
   return (new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7;
 }
-
-/** Priority follows how soon the design is needed; the form never asks for it. */
-export function priorityFor(deliveryDate: string, today: string = istDate()): Priority {
-  const days = daysBetween(today, deliveryDate);
-  if (days <= 1) return "urgent";
-  if (days <= 3) return "high";
-  if (days <= 10) return "normal";
-  return "low";
-}
-
-/** Form requests are due at 18:00 IST on the delivery date asked for. */
-export const deliveryDueAt = (deliveryDate: string) => istMoment(deliveryDate, 18);
-
-// ── Working-hours deadlines ──────────────────────────────────────────────────
-
-export type WorkingDay = { isWorking: boolean; startHour: number; endHour: number };
-/** Per weekday (0 = Monday). Used when the studio has not set its own hours. */
-export const DEFAULT_SCHEDULE: Record<number, WorkingDay> = Object.fromEntries(
-  [0, 1, 2, 3, 4, 5, 6].map((d) => [d, { isWorking: d < 5, startHour: 10, endHour: 19 }]),
-);
-
-/**
- * When `slaHours` of working time from `start` runs out: only working hours on working days count, holidays are skipped, and time spent
- * waiting on the requester (`pausedSeconds`) is added on. Gives up (returning the last point reached) after a year with no working time.
- */
-export function workingDue(start: Date, slaHours: number, schedule: Record<number, WorkingDay>, holidays: Set<string>, pausedSeconds = 0): Date {
-  let remaining = slaHours * HOUR_MS + pausedSeconds * 1000;
-  let t = +start;
-  for (let guard = 0; remaining > 0 && guard < 400; guard++) {
-    const day = istDate(t);
-    const s = schedule[weekdayOf(day)];
-    const nextDay = +istMoment(addDays(day, 1));
-    if (!s || !s.isWorking || holidays.has(day) || s.endHour <= s.startHour) {
-      t = nextDay;
-      continue;
-    }
-    const open = +istMoment(day, s.startHour);
-    const close = +istMoment(day, s.endHour);
-    if (t < open) t = open;
-    if (t >= close) {
-      t = nextDay;
-      continue;
-    }
-    const left = close - t;
-    if (remaining <= left) return new Date(t + remaining);
-    remaining -= left;
-    t = nextDay;
-  }
-  return new Date(t);
-}
-
-/** Urgent work gets half the usual time (at least two hours). */
-export const slaHoursFor = (typeSla: number, priority: Priority) => (priority === "urgent" ? Math.max(2, Math.floor(typeSla / 2)) : typeSla);
 
 // ── Changes and revisions ────────────────────────────────────────────────────
 

@@ -6,7 +6,8 @@
  *   - workloadGrid: each designer's hours per day for the next days, spreading each open ticket's remaining work evenly over the working
  *     days left before its deadline (all of it today when it is already late), so an overloaded day shows as more than they can do.
  */
-import { addDays, weekdayOf, type WorkingDay } from "./rules";
+import { addDays } from "./rules";
+import { isWorkingDay } from "./sla";
 
 export type CapDesigner = { id: string; name: string; dailyHours: number; leaves: { start: string; end: string }[] };
 export type CapTicket = { id: string; number: string; title: string; assigneeId: string | null; dueDay: string | null; remainingHours: number };
@@ -18,12 +19,12 @@ export const remainingHours = (estimate: number | null, typicalEffort: number | 
 
 const onLeave = (d: CapDesigner, day: string) => d.leaves.some((l) => l.start <= day && day <= l.end);
 
-/** The working days from `today` (inclusive) for `count` calendar days, skipping non-working weekdays and holidays. */
-export function workingDays(today: string, count: number, schedule: Record<number, WorkingDay>, holidays: Set<string>): string[] {
+/** The working days from `today` (inclusive) for `count` calendar days (isWorkingDay: weekdays, 1st and 3rd Saturdays, not holidays). */
+export function workingDays(today: string, count: number, holidays: ReadonlySet<string>): string[] {
   const out: string[] = [];
   for (let i = 0; i < count; i++) {
     const day = addDays(today, i);
-    if (schedule[weekdayOf(day)]?.isWorking && !holidays.has(day)) out.push(day);
+    if (isWorkingDay(day, holidays)) out.push(day);
   }
   return out;
 }

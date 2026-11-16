@@ -6,7 +6,8 @@ import { CheckCircle2, Copy, Plus, Trash2 } from "lucide-react";
 import type { DesignQuestion } from "@/db/design-schema";
 import { submitRequest } from "@/lib/design/actions/requests";
 import { MAX_FILES, MAX_FILE_MB, MAX_REFERENCE_LINKS } from "@/lib/design/form";
-import { priorityFor } from "@/lib/design/rules";
+import { dayLabel } from "@/lib/design/rules";
+import { priorityFor, priorityText } from "@/lib/design/sla";
 import { FileDrop } from "../file-drop";
 import { PriorityBadge } from "../ui";
 
@@ -53,7 +54,23 @@ function Question({ q, id, value, onChange }: { q: DesignQuestion; id: string; v
   );
 }
 
-export function RequestForm({ types, departments, defaultDepartment, minDelivery, today }: { types: FormType[]; departments: string[]; defaultDepartment: string; minDelivery: string; today: string }) {
+export function RequestForm({
+  types,
+  departments,
+  defaultDepartment,
+  minDelivery,
+  today,
+  holidays,
+}: {
+  types: FormType[];
+  departments: string[];
+  defaultDepartment: string;
+  /** The first delivery date allowed: 48 working hours from when the form was opened. */
+  minDelivery: string;
+  today: string;
+  /** Holidays from today on (not working days, for counting the priority). */
+  holidays: string[];
+}) {
   const [chosen, setChosen] = useState<string[]>([]);
   const [answers, setAnswers] = useState<Answers>({});
   const [brief, setBrief] = useState("");
@@ -72,6 +89,7 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
   const [pending, start] = useTransition();
 
   const byKey = useMemo(() => new Map(types.map((t) => [t.key, t])), [types]);
+  const holidaySet = useMemo(() => new Set(holidays), [holidays]);
   const toggle = (key: string) => setChosen((c) => (c.includes(key) ? c.filter((k) => k !== key) : [...c, key]));
   const answer = (type: string, q: string, v: string) => setAnswers((a) => ({ ...a, [type]: { ...(a[type] ?? {}), [q]: v } }));
 
@@ -152,7 +170,8 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
       </div>
     );
 
-  const priority = delivery && delivery >= minDelivery ? priorityFor(delivery, today) : null;
+  const tooSoon = !!delivery && delivery < minDelivery;
+  const priority = delivery && !tooSoon ? priorityFor(delivery, today, holidaySet) : null;
 
   return (
     <form key={formKey} onSubmit={submit} className="flex flex-col gap-6" noValidate={false}>
@@ -292,14 +311,41 @@ export function RequestForm({ types, departments, defaultDepartment, minDelivery
         <div className="flex flex-wrap items-end gap-4">
           <label className="flex flex-col gap-1 text-sm" htmlFor="delivery">
             <span className="font-medium text-ink">Delivery date{required}</span>
-            <input id="delivery" type="date" className="input" required min={minDelivery} value={delivery} onChange={(e) => setDelivery(e.target.value)} />
+            <input
+              id="delivery"
+              type="date"
+              className="input"
+              required
+              min={minDelivery}
+              value={delivery}
+              aria-describedby="delivery-note"
+              aria-invalid={tooSoon || undefined}
+              onChange={(e) => setDelivery(e.target.value)}
+            />
           </label>
-          <div className="flex items-center gap-2 pb-2 text-sm" aria-live="polite">
+          <div className="flex items-center gap-2 pb-2 text-sm" aria-live="polite" data-testid="ds-priority">
             <span className="ds-muted">Priority:</span>
-            {priority ? <PriorityBadge priority={priority} /> : <span className="ds-muted">choose a date</span>}
+            {priority ? (
+              <PriorityBadge priority={priority} text={priorityText(delivery, today, holidaySet)} />
+            ) : tooSoon ? (
+              <span className="font-semibold text-[var(--ds-red)]">Too soon: the earliest is {dayLabel(minDelivery)}</span>
+            ) : (
+              <span className="ds-muted">choose a date</span>
+            )}
           </div>
         </div>
-        <p className="mt-2 text-xs ds-muted">Next day or sooner is Urgent, within 3 days High, within 10 days Normal, later Low.</p>
+        <p id="delivery-note" className="mt-3 text-sm text-[#6b7280]">
+          Minimum 48 working hours required for all requests.
+          <br />
+          For urgent requirements, please contact AI Studio directly at{" "}
+          <a href="mailto:aistudio@mcciapune.com" className="underline">
+            aistudio@mcciapune.com
+          </a>
+        </p>
+        <p className="mt-1 text-xs ds-muted">
+          Earliest date you can choose: {dayLabel(minDelivery)}. Up to 3 working days is High priority, up to 10 Normal, later Low. Working days are Monday to Friday and the 1st and 3rd
+          Saturday of the month.
+        </p>
       </Section>
 
 

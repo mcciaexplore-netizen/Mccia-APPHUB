@@ -5,7 +5,7 @@ import { designTypes, tickets, timeEntries, type TicketStatus } from "@/db/desig
 import { peopleByIds } from "./host-adapter";
 import { capacityData } from "./tickets";
 import { workingDays, workloadGrid, type WorkloadRow } from "./capacity";
-import { getHolidays, getSchedule } from "./config";
+import { getHolidays } from "./config";
 import { addDays, istDate, istMoment, OPEN_STATUSES, STATUS_LABEL, weekdayOf } from "./rules";
 
 /**
@@ -36,7 +36,7 @@ export const WORKLOAD_DAYS = 10;
 
 export async function workload(): Promise<{ rows: WorkloadRow[]; days: string[] }> {
   const c = await capacityData();
-  const days = workingDays(c.today, WORKLOAD_DAYS + 6, await getSchedule(), await getHolidays()).slice(0, WORKLOAD_DAYS);
+  const days = workingDays(c.today, WORKLOAD_DAYS + 6, await getHolidays()).slice(0, WORKLOAD_DAYS);
   return { rows: workloadGrid(c.designers, c.open, days, c.today), days };
 }
 
