@@ -390,6 +390,30 @@ try {
   check("active calls: once it hangs up it is no longer active", !(await api(M.page, "/api/ivr/kpis?range=today")).body?.kpis?.activeCalls?.some((c) => c.callId === "zzi-wh-ring"));
   await hook(WEBHOOK_SECRET, { call_id: "zzi-wh-out-nolines", direction: "outbound", customer_number: "+919111100078", agent_number: "+919999999999", billsec: "0", call_status: "missed" });
   check("webhook: but an outbound call by someone who is not an IVR-CRM agent is still not", (await sql`select count(*)::int n from ivr_calls where smartflo_call_id = 'zzi-wh-out-nolines'`)[0].n === 0);
+
+  // Live updates: a page left open shows a finished call sent by webhook within seconds, without anyone reloading it (not at the next
+  // minute's sync). Asha has My calls open, the admin Team calls; one webhook for a call Asha answered reaches both.
+  await go(A.page, "/ivr/calls"); await go(M.page, "/ivr/admin/calls");
+  const beforeA = await rows(A.page), beforeM = await rows(M.page);
+  await A.page.evaluate(() => { window.__zziNoReload = true; }); await M.page.evaluate(() => { window.__zziNoReload = true; });
+  await A.page.waitForTimeout(7000); // the pages take their first answer as the baseline
+  const liveStart = new Date(Date.now() - 120_000);
+  const sentAt = Date.now();
+  await hook(WEBHOOK_SECRET, { call_id: "zzi-wh-live", direction: "inbound", customer_number: A1.phone, call_to_number: "+912071000000", answered_agent_number: PHONE_A,
+    start_stamp: ist(liveStart), end_stamp: ist(new Date(liveStart.getTime() + 60_000)), duration: 60, billsec: 50, call_status: "answered" });
+  const shownA = await poll(async () => (await rows(A.page)) > beforeA, 15000);
+  const tookA = Math.round((Date.now() - sentAt) / 1000);
+  const shownM = await poll(async () => (await rows(M.page)) > beforeM, 15000);
+  const noReload = await A.page.evaluate(() => window.__zziNoReload === true) && await M.page.evaluate(() => window.__zziNoReload === true);
+  check(`live: Asha's open My calls shows the webhook's call by itself within seconds (${tookA}s), no reload`, !!shownA && tookA <= 12 && noReload, `${beforeA} -> ${await rows(A.page)}`);
+  check("live: the admin's open Team calls shows it too", !!shownM, `${beforeM} -> ${await rows(M.page)}`);
+  check("live: the changes check gives an agent only their own calls (scope=team is ignored for them)", await (async () => {
+    const own = (await api(A.page, "/api/ivr/sync/changes?scope=own")).body?.changedAt;
+    const asTeam = (await api(A.page, "/api/ivr/sync/changes?scope=team")).body?.changedAt;
+    const team = (await api(M.page, "/api/ivr/sync/changes?scope=team")).body?.changedAt;
+    return !!own && own === asTeam && !!team && team >= own;
+  })());
+  check("live: someone without Membership CRM cannot ask (403)", (await api(O.page, "/api/ivr/sync/changes")).status === 403);
   // The line goes back before the sync runs below: with no line set the (mock) sync would keep every inbound call on the account.
   await setLines(["+91 20 6000 0001"]);
   await go(B.page, "/ivr/calls");
