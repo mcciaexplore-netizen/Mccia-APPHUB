@@ -35,9 +35,10 @@
 .eru-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--eru-grey); }
 .eru-muted { color: var(--eru-grey); }
 
-/* Domain cards: a coloured bar on the left, set per card with --eru-accent */
-.eru-domain { position: relative; overflow: hidden; }
-.eru-domain::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--eru-accent, var(--eru-navy)); }
+/* Domain tiles: square, with a coloured bar along the top (set per tile with --eru-accent). Not overflow: hidden, so a tile with more
+   text than fits grows taller instead of cutting it off; the bar takes the card's rounded corners itself. */
+.eru-domain { position: relative; }
+.eru-domain::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; border-radius: 11px 11px 0 0; background: var(--eru-accent, var(--eru-navy)); }
 
 /* Badges */
 .eru-badge { display: inline-flex; align-items: center; gap: 0.3rem; border-radius: 99px; padding: 0.15rem 0.6rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; border: 1px solid transparent; line-height: 1.5; }
