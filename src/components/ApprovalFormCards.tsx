@@ -12,7 +12,7 @@ export function ApprovalFormCards() {
     <section aria-labelledby="approval-forms-title" className="mb-10">
       <h2 id="approval-forms-title" className="mb-4 text-lg text-ink">Approval Forms</h2>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] gap-6">
-        {FORMS.map((f, i) => <AppCard key={f.app.id} app={f.app} index={i} href={f.href} cta="Open form" />)}
+        {FORMS.map((f) => <AppCard key={f.app.id} app={f.app} href={f.href} cta="Open form" />)}
       </div>
     </section>
   );
