@@ -12,6 +12,10 @@ type Tick =
 
 const BEAT_MS = 60_000;
 const SLOW_MS = 10 * 60_000;
+/** How often an open page asks whether a call it shows has changed (a webhook saved a finished call). */
+const WATCH_MS = 5_000;
+/** The same outside working hours (few calls end then), or while the last ask failed. */
+const WATCH_SLOW_MS = 30_000;
 
 function ago(iso: string | null, now: number): string {
   if (!iso) return "not yet";
@@ -24,16 +28,23 @@ function ago(iso: string | null, now: number): string {
 }
 
 /**
- * Keeps call data fresh while the app is open: asks the server to sync every minute (the server throttles and runs only one
- * sync for all tabs), refreshes the page data when new calls arrived, and shows when the last sync happened.
+ * Keeps call data fresh while the app is open:
+ *   - every minute it asks the server to sync from Smartflo (the server throttles and runs only one sync for all tabs), refreshes the page
+ *     data when new calls arrived, and shows when the last sync happened;
+ *   - every few seconds it asks whether a call the person can see has changed (`scope`: "team" on the admin pages, "own" for an agent),
+ *     and refreshes the page when one has, so a finished call Smartflo sends by webhook shows within seconds.
+ * Both stop while the tab is hidden and catch up the moment it is shown again.
  */
-export function AutoSync({ initialLastSyncAt }: { initialLastSyncAt: string | null }) {
+export function AutoSync({ initialLastSyncAt, scope = "own" }: { initialLastSyncAt: string | null; scope?: "own" | "team" }) {
   const router = useRouter();
   const [last, setLast] = useState<string | null>(initialLastSyncAt);
   const [state, setState] = useState<"idle" | "busy" | "error" | "off">("idle");
   const [now, setNow] = useState(() => Date.now());
   const busy = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The last "calls changed at" this page has shown: undefined until the first answer (which is the baseline, not a change). */
+  const seenChange = useRef<string | null | undefined>(undefined);
+  const quiet = useRef(false);
 
   const tick = useCallback(
     async (manual: boolean) => {
@@ -51,11 +62,15 @@ export function AutoSync({ initialLastSyncAt }: { initialLastSyncAt: string | nu
         if (t.lastSyncAt) setLast(t.lastSyncAt);
         if (t.ran && t.ok) {
           setState("idle");
-          if (t.upserted > 0) router.refresh();
+          if (t.upserted > 0) {
+            router.refresh();
+            seenChange.current = undefined; // that refresh shows everything; take the next answer as the new baseline
+          }
         } else if (t.ran) {
           setState("error");
         } else {
           setState(t.reason === "after_hours" || t.reason === "disabled" ? "off" : "idle");
+          quiet.current = t.reason === "after_hours" || t.reason === "disabled";
           if (t.reason === "after_hours" || t.reason === "disabled" || t.reason === "not_connected") next = SLOW_MS;
         }
       } catch {
@@ -91,6 +106,45 @@ export function AutoSync({ initialLastSyncAt }: { initialLastSyncAt: string | nu
       clearInterval(clock);
     };
   }, [tick]);
+
+  // The few-seconds check for calls saved by webhook. Cheap: one indexed query on the server, no Smartflo request.
+  useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const check = async (): Promise<number> => {
+      try {
+        const res = await fetch(`/api/ivr/sync/changes?scope=${scope}`, { cache: "no-store" });
+        if (res.status === 401 || res.status === 403 || res.status === 404) return SLOW_MS;
+        if (!res.ok) return WATCH_SLOW_MS;
+        const { changedAt } = (await res.json()) as { changedAt: string | null };
+        if (seenChange.current === undefined) seenChange.current = changedAt;
+        else if (changedAt !== seenChange.current) {
+          seenChange.current = changedAt;
+          router.refresh();
+        }
+      } catch {
+        return WATCH_SLOW_MS;
+      }
+      return quiet.current ? WATCH_SLOW_MS : WATCH_MS;
+    };
+    const loop = async () => {
+      if (stopped) return;
+      const wait = document.visibilityState === "visible" ? await check() : WATCH_MS;
+      if (!stopped) timer = setTimeout(loop, wait + Math.random() * 1000);
+    };
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (timer) clearTimeout(timer);
+      void loop();
+    };
+    void loop();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [router, scope]);
 
   const label =
     state === "error" ? "Sync problem, retrying" : state === "busy" ? "Syncing calls…" : `Calls synced ${ago(last, now)}${state === "off" ? " (auto-sync paused)" : ""}`;

@@ -25,7 +25,7 @@ export default async function Layout({ children }: { children: React.ReactNode }
         </aside>
         <div className="page-slot min-w-0 flex-1">{children}</div>
       </div>
-      <AutoSync initialLastSyncAt={org?.lastSyncAt?.toISOString() ?? null} />
+      <AutoSync initialLastSyncAt={org?.lastSyncAt?.toISOString() ?? null} scope="team" />
     </HubShell>
   );
 }
