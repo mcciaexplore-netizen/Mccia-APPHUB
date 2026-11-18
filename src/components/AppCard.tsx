@@ -27,8 +27,8 @@ const STATUS = {
  * for, its status, its category, when this person last opened it, and (for those who manage access) how many people have it. An external
  * application opens in a new tab (↗); a part of the hub opens in the same tab (→). An unavailable application is faded and cannot be opened.
  */
-export function AppCard({ app, deptName, index = 0, canOpenUnavailable = false, href, cta, kind = "Application", lastOpened, people, waiting }: {
-  app: CardApp; /** The application's category (Finance, Car Booking, ...). */ deptName?: string; index?: number; canOpenUnavailable?: boolean;
+export function AppCard({ app, deptName, canOpenUnavailable = false, href, cta, kind = "Application", lastOpened, people, waiting }: {
+  app: CardApp; /** The application's category (Finance, Car Booking, ...). */ deptName?: string; canOpenUnavailable?: boolean;
   /** A page inside the hub to open directly, in the same tab (instead of an application, through /go). */ href?: string;
   /** The words on the right of the footer; defaults to "Open". */ cta?: string;
   /** What it is, when there is no category. */ kind?: string;
@@ -40,9 +40,9 @@ export function AppCard({ app, deptName, index = 0, canOpenUnavailable = false, 
   const blocked = status === "unavailable" && !canOpenUnavailable;
   const builtIn = !!app.path && !app.ssoSlug;
   const external = !href && !builtIn;
-  // Comes in staggered (60ms each; the first dozen only, so a long list does not keep the page waiting; cards further down come in as they
-  // are scrolled to, see Reveal). On hover it lifts 3px with a deeper shadow and a teal edge (its coloured top stays); pressed, it gives a little.
-  const cls = `tile-${palette(app.id)} group flex min-h-52 card-in flex-col overflow-hidden rounded-[14px] border border-gray-200 border-t-[3px] border-t-[color:var(--tile-ink)] bg-white p-5 transition-[translate,scale,box-shadow,border-color] duration-150 ease-out ${blocked ? "opacity-55" : "hover:-translate-y-[3px] hover:border-[color:var(--c-primary)] hover:border-t-[color:var(--tile-ink)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.10)] active:scale-[0.98] active:duration-100"}`;
+  // Shown at once with the page, every card together (no staggered entrance: the hub should be all there the moment it opens). On hover it
+  // lifts 3px with a deeper shadow and a teal edge (its coloured top stays); pressed, it gives a little.
+  const cls = `tile-${palette(app.id)} group flex min-h-52 flex-col overflow-hidden rounded-[14px] border border-gray-200 border-t-[3px] border-t-[color:var(--tile-ink)] bg-white p-5 transition-[translate,scale,box-shadow,border-color] duration-150 ease-out ${blocked ? "opacity-55" : "hover:-translate-y-[3px] hover:border-[color:var(--c-primary)] hover:border-t-[color:var(--tile-ink)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.10)] active:scale-[0.98] active:duration-100"}`;
   const inner = (
     <>
       <span className="flex items-start justify-between gap-2">
@@ -68,12 +68,11 @@ export function AppCard({ app, deptName, index = 0, canOpenUnavailable = false, 
       </span>
     </>
   );
-  const style = { animationDelay: `${Math.min(index, 11) * 60}ms` };
-  if (blocked) return <div className={cls} style={style} title={app.description ?? app.name} aria-disabled="true">{inner}</div>;
+  if (blocked) return <div className={cls} title={app.description ?? app.name} aria-disabled="true">{inner}</div>;
   // A part of the hub, or an application built into it, opens in the same tab without reloading the page (the built-in one records the
   // launch on the side). Any other application goes through /go or /launch (route handlers that redirect, or sign the person in), which
   // must be a real page load: those stay plain links.
-  if (href) return <Link href={href} title={app.description ?? app.name} style={style} className={cls}>{inner}</Link>;
-  if (builtIn) return <LaunchLink appId={app.id} href={app.path!} title={app.description ?? app.name} style={style} className={cls}>{inner}</LaunchLink>;
-  return <a href={app.ssoSlug ? `/launch/${app.ssoSlug}` : `/go/${app.id}`} target="_self" rel="noopener noreferrer" title={app.description ?? app.name} style={style} className={cls}>{inner}</a>;
+  if (href) return <Link href={href} title={app.description ?? app.name} className={cls}>{inner}</Link>;
+  if (builtIn) return <LaunchLink appId={app.id} href={app.path!} title={app.description ?? app.name} className={cls}>{inner}</LaunchLink>;
+  return <a href={app.ssoSlug ? `/launch/${app.ssoSlug}` : `/go/${app.id}`} target="_self" rel="noopener noreferrer" title={app.description ?? app.name} className={cls}>{inner}</a>;
 }
