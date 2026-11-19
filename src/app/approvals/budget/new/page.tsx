@@ -13,7 +13,7 @@ export default async function Page() {
   const user = await requirePage();
   return (
     <>
-      <PageHeader title="Budget Approval" intro="An event's budget, sent to the approver you choose. Total income, total expense and the surplus or deficit are worked out as you type." />
+      <PageHeader intro="An event's budget, sent to the approver you choose. Total income, total expense and the surplus or deficit are worked out as you type." />
       <BudgetForm {...await budgetFormProps(user)} />
     </>
   );

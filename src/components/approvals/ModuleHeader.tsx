@@ -17,11 +17,15 @@ export function ModuleHeader({ roles, unread }: { roles: ApprovalsRole[]; unread
   if (pathname === "/approvals") return null; // the Approval System's own page (the form cards) has its own heading
   const parts = pathname.split("/").filter(Boolean).slice(1);
   const review = parseReviewPath(parts);
-  const title = review ? REVIEW_LABEL[review.key] : parseRecommendationPath(parts) ? REVIEW_LABEL.recommendation : app.title;
+  // The Budget pages sit in HR Approval's menu but are not HR: they are headed with their own name.
+  const revise = /^\/approvals\/requests\/([^/]+)\/revise$/.exec(pathname);
+  const budget = pathname === "/approvals/budget" || pathname.startsWith("/approvals/budget/");
+  const title = revise ? "Revise Budget" : budget ? "Budget Approval" : review ? REVIEW_LABEL[review.key] : parseRecommendationPath(parts) ? REVIEW_LABEL.recommendation : app.title;
   // Where "← Back" goes: a request back to the list it was opened from; its correction form to the request; the settings screens to
   // Administrator (where they are opened from); every other page to Approval Forms.
   const edit = /^\/approvals\/requests\/([^/]+)\/edit$/.exec(pathname);
   const back = edit ? { href: `/approvals/requests/${edit[1]}`, label: "Back to the request" }
+    : revise ? { href: `/approvals/requests/${revise[1]}?app=hr`, label: "Back to the budget" }
     : pathname.startsWith("/approvals/requests/") ? { href: "/approvals", label: "Back", history: true }
     : pathname.startsWith("/approvals/admin/") ? { href: "/administrator", label: "Back to Administrator" }
     : { href: "/approvals", label: "Back to Approval Forms" };

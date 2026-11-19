@@ -112,6 +112,9 @@ try {
   await go(R.page, "/approvals/budget/new");
   const f = R.page.locator("[data-testid=budget-form]");
   check("a plain requester opens the Budget Approval form", (await f.count()) === 1);
+  const headings = (await R.page.locator("h1, h2").allInnerTexts()).map((h) => h.trim());
+  check("its main heading is Budget Approval, and HR Approval appears nowhere on it", (await R.page.locator("h1").first().innerText()).trim() === "Budget Approval" && !(await R.page.locator("body").innerText()).includes("HR Approval") && headings.filter((h) => h === "Budget Approval").length === 1, headings.join(" | "));
+  check("its back link is Back to Approval Forms", (await R.page.getByRole("link", { name: /Back to Approval Forms/ }).getAttribute("href")) === "/approvals");
   const labels = (await f.locator(".zf-label").allInnerTexts()).map((l) => l.replace(/\s*\*$/, "").trim());
   check("its sections are in order: event, income, expenses, vendors, summary, total budget requested, approver", JSON.stringify(labels) === JSON.stringify(["Event name", "Description", "Department", "Financial year", "Income sources", "Expenses", "Vendor name", "Summary", "Total Budget Requested", "Approver"]), labels.join(" | "));
   check("the totals and the summary are worked out, not typed (no boxes for them)", (await R.page.locator("[data-testid=budget-total-income]").evaluate((e) => e.tagName)) === "OUTPUT" && (await R.page.locator("[data-testid=budget-balance]").evaluate((e) => e.tagName)) === "DD");
@@ -210,6 +213,8 @@ try {
     && (await R.page.locator("[data-testid=budget-version-0] [data-testid=budget-active-badge]").count()) === 1 && (await R.page.locator("[data-testid=budget-revision-count]").textContent()) === "0 revisions");
   await R.page.locator("[data-testid=budget-revise]").click();
   await R.page.waitForURL(/\/revise$/);
+  check("the revision page is headed Revise Budget (not HR Approval), with a link back to the budget", (await R.page.locator("h1").first().innerText()).trim() === "Revise Budget" && !(await R.page.locator("body").innerText()).includes("HR Approval")
+    && (await R.page.getByRole("link", { name: /Back to the budget/ }).getAttribute("href")) === `/approvals/requests/${origId}?app=hr`);
   check("the revision form shows the budget in force and keeps its income and expense rows, vendors and approver", (await text(R.page)).includes("The budget in force is ₹10,000.00") && (await R.page.locator("#bud-income-amount-0").inputValue()) === "5,000.00"
     && (await R.page.locator("[data-testid=budget-income-rows] li").count()) === 2 && (await R.page.locator("[data-testid=budget-expense-rows] li").count()) === 2
     && (await R.page.locator("[data-testid=budget-vendors] input").count()) === 2 && (await R.page.locator("#bud-approver").innerText()).includes("ZZ Bud Approver"));

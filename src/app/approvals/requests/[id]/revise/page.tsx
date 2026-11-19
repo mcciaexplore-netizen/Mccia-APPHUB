@@ -23,7 +23,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (!active?.budget) redirect(`/approvals/requests/${id}?app=hr`);
   return (
     <>
-      <PageHeader title="Revise Budget" intro="Ask for a new budget amount when the approved one is exceeded. The revision needs a fresh approval." />
+      <PageHeader intro="Ask for a new budget amount when the approved one is exceeded. The revision needs a fresh approval." />
       <BudgetForm {...await budgetRevisionProps(user, asked, active)} />
     </>
   );
