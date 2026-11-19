@@ -188,14 +188,17 @@ try {
   await R.page.getByRole("button", { name: "Submit", exact: true }).click();
   check("a row with an amount but no name is refused", (await f.locator("[data-testid=budget-income-rows] .zf-error").innerText().catch(() => "")).includes("income source name"));
   await R.page.locator("#bud-income-name-1").fill("ZZ Stalls");
-  await R.page.locator("#bud-amount").fill("10000");
-  await R.page.locator("#bud-vendor-0").fill("ZZ Sai Caterers");
+  check("Total Budget Requested is the Total Expense, worked out and not typed (₹10,000.00)", (await R.page.locator("[data-testid=budget-requested]").textContent()) === "₹10,000.00" && (await R.page.locator("input#bud-amount").count()) === 0, await R.page.locator("[data-testid=budget-requested]").textContent());
+  await R.page.locator("#bud-vendor-name-0").fill("ZZ Sai Caterers");
+  await R.page.locator("#bud-vendor-amount-0").fill("0");
   await R.page.getByRole("button", { name: "Add vendor" }).click();
-  await R.page.locator("#bud-vendor-1").fill("ZZ Wrong Vendor");
+  await R.page.locator("#bud-vendor-name-1").fill("ZZ Wrong Vendor");
+  await R.page.locator("#bud-vendor-amount-1").fill("0");
   await R.page.getByRole("button", { name: "Add vendor" }).click();
-  await R.page.locator("#bud-vendor-2").fill("ZZ Pune Sound");
+  await R.page.locator("#bud-vendor-name-2").fill("ZZ Pune Sound");
+  await R.page.locator("#bud-vendor-amount-2").fill("0");
   await R.page.getByRole("button", { name: "Remove vendor 2" }).click();
-  const vendorValues = await R.page.locator("[data-testid=budget-vendors] input").evaluateAll((els) => els.map((e) => e.value));
+  const vendorValues = await R.page.locator("[data-testid=budget-vendors] input[id^=bud-vendor-name]").evaluateAll((els) => els.map((e) => e.value));
   check("vendors can be added without limit and removed one by one", JSON.stringify(vendorValues) === JSON.stringify(["ZZ Sai Caterers", "ZZ Pune Sound"]), vendorValues);
   await R.page.locator("#bud-approver").click();
   await R.page.locator(".zd-pop input[aria-label=Search]").fill("ZZ Bud");
@@ -269,10 +272,11 @@ try {
     && (await R.page.getByRole("link", { name: /Back to the budget/ }).getAttribute("href")) === `/approvals/requests/${origId}?app=hr`);
   check("the revision form shows the budget in force and keeps its income and expense rows, vendors and approver", (await text(R.page)).includes("The budget in force is ₹10,000.00") && (await R.page.locator("#bud-income-amount-0").inputValue()) === "5,000.00"
     && (await R.page.locator("[data-testid=budget-income-rows] li").count()) === 2 && (await R.page.locator("[data-testid=budget-expense-rows] li").count()) === 2
-    && (await R.page.locator("[data-testid=budget-vendors] input").count()) === 2 && (await R.page.locator("#bud-approver").innerText()).includes("ZZ Bud Approver"));
+    && (await R.page.locator("[data-testid=budget-vendors] input[id^=bud-vendor-name]").count()) === 2 && (await R.page.locator("#bud-approver").innerText()).includes("ZZ Bud Approver"));
   await R.page.getByRole("button", { name: "Submit revision" }).click();
-  check("the new amount and a reason are required", (await R.page.locator("[data-testid=budget-form] .zf-error").count()) >= 2);
-  await R.page.locator("#bud-amount").fill("15000");
+  check("a reason is required", (await R.page.locator("[data-testid=budget-form] .zf-error").allInnerTexts()).some((e) => e.includes("why the budget")));
+  await R.page.locator("#bud-expense-amount-1").fill("9000");
+  check("the new Total Budget Requested follows the expenses (₹15,000.00)", (await R.page.locator("[data-testid=budget-requested]").textContent()) === "₹15,000.00");
   await R.page.locator("#bud-reason").fill("Venue cost increased");
   await R.page.getByRole("button", { name: "Submit revision" }).click();
   await R.page.waitForURL((u) => /\/approvals\/requests\/[0-9a-f-]{36}/.test(u.pathname) && !u.pathname.includes(origId), { timeout: 30000 });
@@ -295,7 +299,8 @@ try {
   check("once Rev 1 is approved it is the active budget, and the history counts 1 revision", (await R.page.locator("[data-testid=budget-version-1] [data-testid=budget-active-badge]").count()) === 1 && (await R.page.locator("[data-testid=budget-version-0] [data-testid=budget-active-badge]").count()) === 0 && (await R.page.locator("[data-testid=budget-revision-count]").textContent()) === "1 revision");
 
   // Rev 2, rejected: Rev 1 stays in force.
-  const r2 = await api(R.page, `/api/approvals/requests/${r1Id}/revise`, "POST", { budgetPaise: 1800000, reason: "Additional catering required", incomeLines: [{ name: "ZZ Sponsorship", amountPaise: 500000 }], expenseLines: [{ name: "ZZ Venue", amountPaise: 600000 }, { name: "ZZ Catering", amountPaise: 1200000 }], vendors: ["ZZ Sai Caterers"], approverUserId: approver.id });
+  const r2 = await api(R.page, `/api/approvals/requests/${r1Id}/revise`, "POST", { budgetPaise: 99, reason: "Additional catering required", incomeLines: [{ name: "ZZ Sponsorship", amountPaise: 500000 }], expenseLines: [{ name: "ZZ Venue", amountPaise: 600000 }, { name: "ZZ Catering", amountPaise: 1200000 }], vendors: ["ZZ Sai Caterers"], approverUserId: approver.id });
+  check("the server keeps the Total Budget Requested to the expense total, whatever amount is sent", Number((await sql`select amount_paise from apr_requests where id = ${r2.body?.id}`)[0]?.amount_paise) === 1800000);
   check("a revision can be asked for from a revision's page too: Rev 2 is numbered -R2 and linked to the original", r2.status === 201 && r2.body?.requestNo === `${origNo}-R2` && (await sql`select parent_request_id from apr_requests where id = ${r2.body?.id}`)[0]?.parent_request_id === origId, r2);
   await go(A.page, `/approvals/requests/${r2.body.id}`);
   await decide(A.page, "Reject", "Catering is covered by the sponsor");
@@ -395,7 +400,8 @@ try {
     await R.page.locator("#bud-event").fill("ZZ Layout Event");
     await R.page.locator("#bud-desc").fill("x");
     await pick(R.page, "bud-dept", "ZZ Budget Events");
-    await R.page.locator("#bud-amount").fill("1000");
+    await R.page.locator("#bud-expense-name-0").fill("ZZ Hall");
+    await R.page.locator("#bud-expense-amount-0").fill("1000");
     await pick(R.page, "bud-approver", "ZZ Bud Approver");
     await R.page.getByRole("button", { name: "Submit", exact: true }).click();
     check("the required extra field must be answered", (await R.page.locator("[data-testid=budget-form] .zf-error").allInnerTexts()).some((e) => e.includes("ZZ Venue type")));

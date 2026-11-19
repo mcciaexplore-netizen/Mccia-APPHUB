@@ -115,7 +115,7 @@ export type BudgetFormProps = {
  * The Budget Approval form, and the same form for a revision of an approved budget. In order: the event, its income (named rows), its
  * expenses (named rows), the vendors (names and amounts), the Budget Summary (Surplus or Deficit: total income against total expense plus
  * total vendor amount), the Total
- * Budget Requested, and the approver. The totals and the summary are worked out as the person types and cannot be edited. The approver is one
+ * Budget Requested (the total of the expenses), and the approver. The totals and the summary are worked out as the person types and cannot be edited. The approver is one
  * person, picked from everyone in the hub by typing their name.
  */
 export function BudgetForm({ fields, people, departments: initialDepartments = [], financialYears = [], defaultFinancialYear = "", revision }: BudgetFormProps) {
@@ -141,9 +141,11 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const budgetPaise = budget.trim() ? parseINR(budget) : null;
   const totalIncome = sumOf(income);
   const totalExpense = sumOf(expenses);
+  // The Total Budget Requested is the total of the expenses. Only when the Support Admin has hidden the Expenses section is it typed in.
+  const fromExpenses = shown("expenses");
+  const budgetPaise = fromExpenses ? totalExpense : budget.trim() ? parseINR(budget) : null;
   const totalVendor = sumOf(vendors);
   const balance = budgetBalance(totalIncome, totalExpense + totalVendor);
 
@@ -166,7 +168,9 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
     if (shown("expenses")) checkRows("expense", expenses, err);
     if (shown("vendors")) checkRows("vendor", vendors, err);
     checkExtra(fields, custom, err);
-    if (budgetPaise === null || budgetPaise <= 0) err.budget = "Enter the total budget requested, above 0, with at most 2 decimals.";
+    if (budgetPaise === null || budgetPaise <= 0) {
+      err.budget = fromExpenses ? "Add the expenses: the Total Budget Requested is their total, and must be above 0." : "Enter the total budget requested, above 0, with at most 2 decimals.";
+    }
     if (!approverId) err.approver = "Choose the approver.";
     setErrors(err);
     if (Object.keys(err).length) return;
@@ -255,7 +259,14 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
       <>
         {revision && <Row label="Current budget"><p className="py-2">{show(revision.budgetPaise)}</p></Row>}
         <Row label={revision ? `New ${lab("amount", "Total Budget Requested").toLowerCase()}` : lab("amount", "Total Budget Requested")} required htmlFor="bud-amount" error={errors.budget}>
-          <MoneyInput id="bud-amount" value={budget} onChange={setBudget} invalid={!!errors.budget} />
+          {fromExpenses
+            ? (
+              <>
+                <output id="bud-amount" className="block py-2 font-bold" data-testid="budget-requested">{show(totalExpense)}</output>
+                <p className="text-sm text-[var(--z-muted)]">The total of the expenses above.</p>
+              </>
+            )
+            : <MoneyInput id="bud-amount" value={budget} onChange={setBudget} invalid={!!errors.budget} />}
         </Row>
       </>
     ),

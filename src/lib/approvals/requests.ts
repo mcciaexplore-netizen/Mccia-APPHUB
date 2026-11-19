@@ -7,7 +7,7 @@ import {
 } from "@/db/approvals-schema";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
-import { activeVersion, budgetRequestNo, nextRevisionNo, revisionBlocker, revisionRequestNo, type BudgetLine } from "./budget";
+import { activeVersion, budgetRequestNo, linesTotal, nextRevisionNo, revisionBlocker, revisionRequestNo, type BudgetLine } from "./budget";
 import { commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, TYPE_LABEL, wrongFormMessage, type ExpenditureForm } from "./calc";
 import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { resolveCustomAnswers } from "./form-config";
@@ -301,6 +301,17 @@ function vendorsOf(input: { vendors: string[]; vendorLines: BudgetLine[] }): Pic
 }
 
 /**
+ * The Total Budget Requested: the total of the expense rows. Only a form whose Expenses section the Support Admin has hidden (so it sends no
+ * expense rows) has the amount typed in instead.
+ */
+function requestedTotal(input: { expenseLines: BudgetLine[]; budgetPaise: number }): number {
+  if (!input.expenseLines.length) return input.budgetPaise;
+  const total = linesTotal(input.expenseLines);
+  if (total <= 0) throw new ApprovalsError("The Total Budget Requested is the total of the expenses: add the expenses, above 0.");
+  return total;
+}
+
+/**
  * A new budget for an event: sent to the one approver the requester picked, who approves or rejects it. It has no number while it waits: its
  * permanent Budget ID (BUD-2627-0001 style, in the financial year the requester chose) is given when it is approved (see assignBudgetId).
  */
@@ -308,15 +319,16 @@ export async function submitBudget(input: BudgetRequestInput, actor: ApprovalsUs
   const department = await resolveDepartment(input.departmentId);
   const approver = await budgetApprover(input.approverUserId, actor);
   const customValues = await resolveCustomAnswers("budget", input.custom);
+  const amountPaise = requestedTotal(input);
   const details: BudgetDetails = {
     eventName: input.eventName, description: input.description, departmentId: department.id, departmentName: department.name,
     financialYear: input.financialYear, incomeLines: input.incomeLines, expenseLines: input.expenseLines, ...vendorsOf(input),
   };
   return createRequest(actor, {
-    type: "budget", requesterName: actor.name, requesterEmail: actor.email, requestedAt: new Date(), amountPaise: input.budgetPaise, overBudget: false,
+    type: "budget", requesterName: actor.name, requesterEmail: actor.email, requestedAt: new Date(), amountPaise, overBudget: false,
     files: [], customValues, insertDetails: async () => {},
     approver: { userId: approver.id, stepLabel: BUDGET_STEP }, financialYear: input.financialYear, budgetDetails: details, emailApprover: true, numberLater: true,
-    assignedNotice: () => ({ title: `Budget approval for ${input.eventName} is waiting for your approval`, body: `${actor.name}${moneyOf(input.budgetPaise)}` }),
+    assignedNotice: () => ({ title: `Budget approval for ${input.eventName} is waiting for your approval`, body: `${actor.name}${moneyOf(amountPaise)}` }),
   });
 }
 
@@ -346,16 +358,17 @@ export async function reviseBudget(requestId: string, input: BudgetRevisionInput
   const base = (activeVersion(versions) ?? versions.find((v) => v.id === original.id))?.details ?? original.budgetDetails;
   if (!base) throw new ApprovalsError("This budget has no details to revise.", 409);
   const revisionNo = nextRevisionNo(versions);
+  const amountPaise = requestedTotal(input);
   // The revision's own rows replace the base's (an older budget's fixed income lines are not carried over: they are now rows).
   const { income: _oldIncome, ...rest } = base;
   void _oldIncome;
   const details: BudgetDetails = { ...rest, incomeLines: input.incomeLines, expenseLines: input.expenseLines, ...vendorsOf(input), revisionReason: input.reason };
   return createRequest(actor, {
-    type: "budget", requesterName: original.requesterName, requesterEmail: original.requesterEmail, requestedAt: new Date(), amountPaise: input.budgetPaise, overBudget: false,
+    type: "budget", requesterName: original.requesterName, requesterEmail: original.requesterEmail, requestedAt: new Date(), amountPaise, overBudget: false,
     files: [], customValues, insertDetails: async () => {},
     approver: { userId: approver.id, stepLabel: BUDGET_STEP }, financialYear: original.financialYear ?? base.financialYear,
     requestNo: revisionRequestNo(original.requestNo, revisionNo), budgetDetails: details, revisionOf: { parentRequestId: original.id, revisionNo }, emailApprover: true,
-    assignedNotice: (no) => ({ title: `Budget revision requested for ${base.eventName}`, body: `${no} (Rev ${revisionNo}) · ${original.requesterName}${moneyOf(input.budgetPaise)} · ${input.reason.slice(0, 200)}` }),
+    assignedNotice: (no) => ({ title: `Budget revision requested for ${base.eventName}`, body: `${no} (Rev ${revisionNo}) · ${original.requesterName}${moneyOf(amountPaise)} · ${input.reason.slice(0, 200)}` }),
   });
 }
 
