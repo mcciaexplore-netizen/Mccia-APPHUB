@@ -127,3 +127,64 @@ export const requestNoText = (r: { type: string; requestNo: string | null; statu
 
 /** How a revision's row stores the Budget ID (unique per row): the ID with "-R1", "-R2", ... after it. Shown as the ID alone (budgetIdOf). */
 export const revisionRequestNo = (originalNo: string, revisionNo: number): string => `${originalNo}-R${revisionNo}`;
+
+/* ---------------------------------------------------------------- comparing versions */
+
+/** One row of income, expenses or vendors between two versions: added, removed, its amount changed, or the same. */
+export type LineChange = { kind: "added" | "removed" | "changed" | "unchanged"; name: string; beforePaise: number | null; afterPaise: number | null };
+
+const lineKey = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
+
+/**
+ * What changed in a list of rows from one version to the next. Rows are matched by name (any capitals or spacing); a name used twice is
+ * matched in order. The later version's rows come first, in its order, then the rows it no longer has.
+ */
+export function diffLines(before: readonly BudgetLine[], after: readonly BudgetLine[]): LineChange[] {
+  const left = new Map<string, BudgetLine[]>();
+  for (const l of before) left.set(lineKey(l.name), [...(left.get(lineKey(l.name)) ?? []), l]);
+  const out: LineChange[] = after.map((l) => {
+    const was = left.get(lineKey(l.name))?.shift();
+    if (!was) return { kind: "added", name: l.name, beforePaise: null, afterPaise: l.amountPaise };
+    return { kind: was.amountPaise === l.amountPaise ? "unchanged" : "changed", name: l.name, beforePaise: was.amountPaise, afterPaise: l.amountPaise };
+  });
+  for (const rest of left.values()) for (const l of rest) out.push({ kind: "removed", name: l.name, beforePaise: l.amountPaise, afterPaise: null });
+  return out;
+}
+
+/** A version as compared: its rows and its Total Budget Requested. */
+export type ComparableVersion = { incomeLines: BudgetLine[]; expenseLines: BudgetLine[]; vendorLines: BudgetLine[]; amountPaise: number | null };
+export type VersionComparison = {
+  income: LineChange[];
+  expenses: LineChange[];
+  vendors: LineChange[];
+  /** Total Budget Requested before and after, and by how much it went up (negative: down). */
+  total: { beforePaise: number; afterPaise: number; changePaise: number };
+  /** The Surplus / Deficit before and after. */
+  balance: { before: BudgetBalance; after: BudgetBalance };
+};
+
+/** Everything that changed from one version of a budget to another. */
+export function compareVersions(from: ComparableVersion, to: ComparableVersion): VersionComparison {
+  const balanceOf = (v: ComparableVersion) => budgetBalance(linesTotal(v.incomeLines), linesTotal(v.expenseLines) + linesTotal(v.vendorLines));
+  const [b, a] = [from.amountPaise ?? 0, to.amountPaise ?? 0];
+  return {
+    income: diffLines(from.incomeLines, to.incomeLines),
+    expenses: diffLines(from.expenseLines, to.expenseLines),
+    vendors: diffLines(from.vendorLines, to.vendorLines),
+    total: { beforePaise: b, afterPaise: a, changePaise: a - b },
+    balance: { before: balanceOf(from), after: balanceOf(to) },
+  };
+}
+
+/**
+ * The comparisons offered between the versions of a budget (given oldest first, the original at 0): each revision against the version just
+ * before it, and from Revision 2 on, the original against it too. As [from, to] positions.
+ */
+export function comparisonPairs(count: number): [number, number][] {
+  const pairs: [number, number][] = [];
+  for (let to = 1; to < count; to++) {
+    pairs.push([to - 1, to]);
+    if (to > 1) pairs.push([0, to]);
+  }
+  return pairs;
+}

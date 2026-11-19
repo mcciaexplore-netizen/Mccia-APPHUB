@@ -6,6 +6,7 @@ import { BudgetId } from "@/components/approvals/BudgetId";
 import { DecisionPanel, WithdrawButton } from "@/components/approvals/DecisionPanel";
 import { PrintButton, PrintedOn } from "@/components/approvals/PrintRequest";
 import { Timeline } from "@/components/approvals/Timeline";
+import { RevisionChanges } from "@/components/approvals/RevisionChanges";
 import { TYPE_LABEL } from "@/lib/approvals/calc";
 import { BALANCE_LABEL, versionLabel, type BudgetLine } from "@/lib/approvals/budget";
 import { formatDate, formatDateTime, formatINR, isoToDisplay } from "@/lib/approvals/format";
@@ -192,8 +193,13 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
   const name = d.hr ? `${d.hr.firstName} ${d.hr.lastName}` : d.requesterName;
   const status = <StatusPill status={d.status} currentStepNo={d.steps.find((s) => s.status === "pending")?.stepNo} />;
 
-  return (
-    <div className="apr-printable space-y-8">
+  // With at least one revision, a budget's page has a second column: what changed between its versions (not printed).
+  const compare = b && b.history.length > 1 ? b.history.map((h) => ({
+    id: h.id, label: h.revisionNo ? `Revision ${h.revisionNo}` : "Original", status: h.status, reason: h.reason, amountPaise: h.amountPaise,
+    incomeLines: h.figures.incomeLines, expenseLines: h.figures.expenseLines, vendorLines: h.figures.vendorLines,
+  })) : null;
+  const page = (
+    <div className="apr-printable min-w-0 space-y-8">
       <div className="apr-print-only apr-print-head">
         <Image src="/mccia-logo.png" alt="MCCIA" width={134} height={36} loading="eager" className="h-10 w-auto" />
         <h1>{b ? "Budget" : (d.requestNo ?? "Request")} · {b?.revisionNo ? `Budget revision (${versionLabel(b.revisionNo)})` : TYPE_LABEL[d.type]}{(d.hr?.categoryName ?? e?.categoryName ?? b?.details.eventName) ? ` — ${d.hr?.categoryName ?? e?.categoryName ?? b?.details.eventName}` : ""}</h1>
@@ -304,6 +310,13 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
       </section>
 
       <footer className="apr-print-only apr-print-foot"><PrintedOn by={viewerName} /></footer>
+    </div>
+  );
+  if (!compare) return page;
+  return (
+    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]" data-testid="budget-two-columns">
+      {page}
+      <div className="xl:sticky xl:top-4"><RevisionChanges versions={compare} currentId={d.id} /></div>
     </div>
   );
 }

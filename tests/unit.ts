@@ -27,7 +27,7 @@ import { safeNext } from "../src/lib/session";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
   FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, decidesIn, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
-import { activeVersion, budgetBalance, budgetIdOf, budgetIdView, budgetRequestNo, requestNoText, cleanVendors, expenseLinesOf, incomeLinesOf, linesTotal, nextRevisionNo, revisionBase, revisionBlocker, revisionRequestNo, versionLabel, waitingRevision } from "../src/lib/approvals/budget";
+import { activeVersion, budgetBalance, budgetIdOf, compareVersions, comparisonPairs, diffLines, budgetIdView, budgetRequestNo, requestNoText, cleanVendors, expenseLinesOf, incomeLinesOf, linesTotal, nextRevisionNo, revisionBase, revisionBlocker, revisionRequestNo, versionLabel, waitingRevision } from "../src/lib/approvals/budget";
 import { budgetRequestInput, budgetRevisionInput } from "../src/lib/approvals/request-schemas";
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
@@ -222,6 +222,21 @@ eq("budget: vendors are trimmed and blank ones dropped", cleanVendors(["  Sai Ca
     revisionBase([v("o", null, "pending")])?.id, revisionBase([v("o", null, "approved"), v("r1", 1, "pending")])?.id,
     revisionBase([v("o", null, "approved"), v("r1", 1, "rejected")])?.id, revisionBase([v("o", null, "rejected"), v("r1", 1, "withdrawn")])?.id,
   ], [null, "r2", "o", "r1", "o", "r1"]);
+  {
+    const L = (name: string, amountPaise: number) => ({ name, amountPaise });
+    eq("budget compare: rows matched by name (any capitals or spacing): added, removed, changed, the same", diffLines(
+      [L("Stall income", 2000000), L("Transport", 500000), L("Venue", 100)],
+      [L("Sponsorship", 5000000), L(" stall  INCOME ", 3000000), L("Venue", 100)],
+    ).map((c) => `${c.kind}:${c.name}:${c.beforePaise}:${c.afterPaise}`), ["added:Sponsorship:null:5000000", "changed: stall  INCOME :2000000:3000000", "unchanged:Venue:100:100", "removed:Transport:500000:null"]);
+    const cmp = compareVersions(
+      { incomeLines: [L("A", 1000)], expenseLines: [L("X", 2000)], vendorLines: [], amountPaise: 2000 },
+      { incomeLines: [L("A", 1000)], expenseLines: [L("X", 2000), L("Y", 1500)], vendorLines: [L("V", 500)], amountPaise: 3500 },
+    );
+    eq("budget compare: the total's change, and the Surplus/Deficit before and after (vendors count as going out)", [cmp.total, cmp.balance.before, cmp.balance.after],
+      [{ beforePaise: 2000, afterPaise: 3500, changePaise: 1500 }, { kind: "deficit", amountPaise: 1000 }, { kind: "deficit", amountPaise: 3000 }]);
+    eq("budget compare: the comparisons offered: each revision with the one before, and from Rev 2 the original too; none without a revision",
+      [comparisonPairs(1), comparisonPairs(2), comparisonPairs(4)], [[], [[0, 1]], [[0, 1], [1, 2], [0, 2], [2, 3], [0, 3]]]);
+  }
   eq("budget: the next revision is one more than the highest so far", [nextRevisionNo([v("o", null, "approved")]), nextRevisionNo([v("o", null, "approved"), v("r1", 1, "rejected"), v("r2", 2, "approved")])], [1, 3]);
 }
 {

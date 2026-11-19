@@ -224,6 +224,7 @@ try {
   const pendingId = await idOf(R.page, "budget-id");
   check("the request page's Budget ID says Pending approval, in grey italics, at the top and in its Budget ID row", pendingId.text === "Pending approval" && pendingId.kind === "pending" && pendingId.cls.includes("italic")
     && (await idOf(R.page, "budget-id-row")).text === "Pending approval" && (await R.page.locator("h2", { hasText: "Budget ID" }).count()) === 1, pendingId);
+  check("with no revision there is no Revision Changes panel, and one column", (await R.page.locator("[data-testid=revision-changes]").count()) === 0 && (await R.page.locator("[data-testid=budget-two-columns]").count()) === 0);
   check("Revise Budget is offered to the requester while it is still pending", (await R.page.locator("[data-testid=budget-revise]").count()) === 1);
   check("the history lists the Original Budget as Under Review, with its amount", (await R.page.locator("[data-testid=budget-version-0] [data-testid=budget-version-status]").textContent()) === "Under Review"
     && (await R.page.locator("[data-testid=budget-version-0] [data-testid=budget-version-amount]").textContent()) === "₹10,000.00");
@@ -316,6 +317,25 @@ try {
     && (await R.page.locator("[data-testid=budget-version-1]").textContent()).includes("ZZ Bud Approver") && (await R.page.locator("[data-testid=budget-revision-count]").textContent()) === "2 revisions");
   check("and Revise Budget is offered again (no limit on revisions)", (await R.page.locator("[data-testid=budget-revise]").count()) === 1);
   await shot(R.page, "detail");
+  const panelBox = await R.page.locator("[data-testid=revision-changes]").boundingBox(), mainBox = await R.page.locator(".apr-printable").boundingBox();
+  check("with revisions, Revision Changes sits on the right of the request", !!panelBox && !!mainBox && panelBox.x > mainBox.x + mainBox.width - 1, [panelBox, mainBox]);
+  const changes = async () => ({
+    pick: await R.page.locator("[data-testid=changes-pick] option:checked").textContent(),
+    removed: await R.page.locator("[data-testid=revision-changes] [data-testid=change-removed]").allTextContents(),
+    changed: await R.page.locator("[data-testid=revision-changes] [data-testid=change-changed]").allTextContents(),
+    total: await R.page.locator("[data-testid=changes-total]").textContent(),
+    status: await R.page.locator("[data-testid=changes-status]").textContent(),
+    reason: await R.page.locator("[data-testid=changes-reason]").textContent().catch(() => ""),
+  });
+  const c12 = await changes();
+  check("on the original's page it starts on Revision 1 → Revision 2: ZZ Stalls and ZZ Pune Sound removed, catering changed, total up ₹3,000 (in red), Rejected, with its reason",
+    c12.pick === "Revision 1 → Revision 2" && c12.removed.some((t) => t.includes("ZZ Stalls")) && c12.removed.some((t) => t.includes("ZZ Pune Sound")) && c12.changed.some((t) => t.includes("ZZ Catering") && t.includes("₹9,000.00") && t.includes("₹12,000.00"))
+    && c12.total === "Change: +₹3,000.00" && (await R.page.locator("[data-testid=changes-total]").getAttribute("class")).includes("red") && c12.status === "Rejected" && c12.reason.includes("Additional catering required"), c12);
+  check("the picker offers every comparison", JSON.stringify(await R.page.locator("[data-testid=changes-pick] option").allTextContents()) === JSON.stringify(["Original → Revision 1", "Revision 1 → Revision 2", "Original → Revision 2"]));
+  await R.page.locator("[data-testid=changes-pick]").selectOption({ label: "Original → Revision 1" });
+  const c01 = await changes();
+  check("switching to Original → Revision 1 shows its own changes: catering ₹4,000 → ₹9,000, total up ₹5,000, Approved", c01.changed.some((t) => t.includes("ZZ Catering") && t.includes("₹4,000.00") && t.includes("₹9,000.00")) && c01.removed.length === 0
+    && c01.total === "Change: +₹5,000.00" && c01.status === "Approved" && c01.reason.includes("Venue cost increased"), c01);
   check("every version in the Budget History shows the same Budget ID", JSON.stringify(await R.page.locator("[data-testid=budget-history] [data-kind]").allTextContents()) === JSON.stringify([origNo, origNo, origNo]));
   await go(R.page, `/approvals/requests/${r1Id}`);
   check("a revision's own page shows the original's Budget ID, with no suffix", (await R.page.locator("[data-testid=budget-id]").textContent()) === origNo && !(await text(R.page)).includes(`${origNo}-R`));
@@ -371,6 +391,7 @@ try {
   check("the event name can be changed on a revision; the original keeps its own", (await sql`select budget_details->>'eventName' n from apr_requests where id = ${e2.body?.id}`)[0].n === "ZZ Revise Early (bigger hall)"
     && (await sql`select budget_details->>'eventName' n from apr_requests where id = ${pre.id}`)[0].n === "ZZ Revise Early");
   await go(R.page, `/approvals/requests/${pre.id}`);
+  check("Revision Changes shows a Pending approval badge while the revision compared waits", (await R.page.locator("[data-testid=changes-pending]").count()) === 1 && (await R.page.locator("[data-testid=changes-status]").textContent()) === "Pending approval");
   check("every version shows Pending approval as its Budget ID while none is approved", (await R.page.locator("[data-testid=budget-history] [data-kind=pending]").allTextContents()).every((t) => t === "Pending approval")
     && (await R.page.locator("[data-testid=budget-version-2] [data-testid=budget-version-status]").textContent()) === "Pending");
   await api(A.page, `/api/approvals/requests/${e2.body.id}/decision`, "POST", { action: "approve" });
