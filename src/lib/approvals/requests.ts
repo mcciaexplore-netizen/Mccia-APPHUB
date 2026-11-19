@@ -54,13 +54,13 @@ type Prepared = {
   financialYear?: string;
   /** A request number given by the caller (a budget revision: the original's number with -R1, -R2, ...), instead of the next serial. */
   requestNo?: string;
-  /** How the next serial is written (a budget: BUD-2627-0001); by default <prefix>-<year>-0001. The serial is still counted per prefix and year. */
-  formatNo?: (financialYear: string, n: number) => string;
+  /** No number yet: a budget is given its permanent ID when it is approved (see assignBudgetId), so it waits with none. */
+  numberLater?: boolean;
   budgetDetails?: BudgetDetails;
   /** A budget revision: the original budget request, and which revision this is. */
   revisionOf?: { parentRequestId: string; revisionNo: number };
   /** What the approver is told (the bell and the email): by default "<type> <number> is waiting for your approval". */
-  assignedNotice?: (requestNo: string) => { title: string; body: string };
+  assignedNotice?: (requestNo: string | null) => { title: string; body: string };
   /** Always email the approver, whatever the notification settings say (the Budget form promises an email). */
   emailApprover?: boolean;
 };
@@ -101,7 +101,7 @@ function roleRules(r: Awaited<ReturnType<typeof roleApprovers>>) {
   ];
 }
 
-async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: string; requestNo: string }> {
+async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: string; requestNo: string | null }> {
   const settings = await getSettings();
 
   const fileIds = p.files.map((f) => f.fileId);
@@ -151,7 +151,7 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
   }
 
   const first = plan.steps[0];
-  let requestNo: string;
+  let requestNo: string | null;
   try {
     await p.insertDetails(draft.id);
     await db.insert(aprRequestSteps).values(plan.steps.map((s, i) => ({
@@ -164,8 +164,7 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
         return { requestId: draft.id, slot: f.slot, fileName: meta.fileName, mime: meta.mime, size: meta.size, storageKey: meta.id, uploadedBy: actor.id };
       }));
     }
-    const writeNo = p.formatNo ?? ((y: string, n: number) => formatRequestNo(REQUEST_PREFIX[p.type], y, n));
-    requestNo = p.requestNo ?? writeNo(fy, await nextSerial(REQUEST_PREFIX[p.type], fy));
+    requestNo = p.requestNo ?? (p.numberLater ? null : formatRequestNo(REQUEST_PREFIX[p.type], fy, await nextSerial(REQUEST_PREFIX[p.type], fy)));
     // The last write: from here on the request is visible and waiting for the first approver.
     const flipped = await db
       .update(aprRequests)
@@ -295,8 +294,8 @@ async function budgetApprover(approverUserId: string, actor: ApprovalsUser) {
 }
 
 /**
- * A new budget for an event: sent to the one approver the requester picked, who approves or rejects it. Its ID is BUD-2627-0001 style, in
- * the financial year the requester chose (counted per year, so the first budget of 2027-28 is BUD-2728-0001).
+ * A new budget for an event: sent to the one approver the requester picked, who approves or rejects it. It has no number while it waits: its
+ * permanent Budget ID (BUD-2627-0001 style, in the financial year the requester chose) is given when it is approved (see assignBudgetId).
  */
 export async function submitBudget(input: BudgetRequestInput, actor: ApprovalsUser) {
   const department = await departmentById(input.departmentId);
@@ -310,8 +309,8 @@ export async function submitBudget(input: BudgetRequestInput, actor: ApprovalsUs
   return createRequest(actor, {
     type: "budget", requesterName: actor.name, requesterEmail: actor.email, requestedAt: new Date(), amountPaise: input.budgetPaise, overBudget: false,
     files: [], customValues, insertDetails: async () => {},
-    approver: { userId: approver.id, stepLabel: BUDGET_STEP }, financialYear: input.financialYear, budgetDetails: details, emailApprover: true, formatNo: budgetRequestNo,
-    assignedNotice: (no) => ({ title: `Budget approval ${no} for ${input.eventName} is waiting for your approval`, body: `${actor.name}${moneyOf(input.budgetPaise)}` }),
+    approver: { userId: approver.id, stepLabel: BUDGET_STEP }, financialYear: input.financialYear, budgetDetails: details, emailApprover: true, numberLater: true,
+    assignedNotice: () => ({ title: `Budget approval for ${input.eventName} is waiting for your approval`, body: `${actor.name}${moneyOf(input.budgetPaise)}` }),
   });
 }
 
@@ -321,17 +320,19 @@ export async function submitBudget(input: BudgetRequestInput, actor: ApprovalsUs
  * approved; the amount, income, vendors and approver are what the person sends now. Only one revision can wait at a time, and until one is
  * approved the budget approved before it stays in force. `requestId` may be the original or any revision of it.
  */
-export async function reviseBudget(requestId: string, input: BudgetRevisionInput, actor: ApprovalsUser): Promise<{ id: string; requestNo: string }> {
+export async function reviseBudget(requestId: string, input: BudgetRevisionInput, actor: ApprovalsUser): Promise<{ id: string; requestNo: string | null }> {
   const [asked] = await db.select().from(aprRequests).where(eq(aprRequests.id, requestId));
   if (!asked || asked.type !== "budget" || asked.status === "draft" || !(await canSeeRequest(actor, requestId))) throw new ApprovalsError("That request does not exist.", 404);
   const original = asked.parentRequestId ? (await db.select().from(aprRequests).where(eq(aprRequests.id, asked.parentRequestId)))[0] : asked;
-  if (!original?.requestNo) throw new ApprovalsError("That request does not exist.", 404);
+  if (!original) throw new ApprovalsError("That request does not exist.", 404);
   const versions = await db
     .select({ id: aprRequests.id, revisionNo: aprRequests.revisionNo, status: aprRequests.status, details: aprRequests.budgetDetails })
     .from(aprRequests)
     .where(sql`${aprRequests.id} = ${original.id} or ${aprRequests.parentRequestId} = ${original.id}`);
   const blocked = revisionBlocker(original, versions, actor.id);
   if (blocked) throw new ApprovalsError(blocked, original.requesterUserId === actor.id ? 409 : 403);
+  // An approved budget always has its Budget ID (given when it was approved); a revision's number is built from it.
+  if (!original.requestNo) throw new ApprovalsError("This budget has no Budget ID yet, so it cannot be revised.", 409);
   const approver = await budgetApprover(input.approverUserId, actor);
   const customValues = await resolveCustomAnswers("budget", input.custom);
 
@@ -350,6 +351,30 @@ export async function reviseBudget(requestId: string, input: BudgetRevisionInput
     requestNo: revisionRequestNo(original.requestNo, revisionNo), budgetDetails: details, revisionOf: { parentRequestId: original.id, revisionNo }, emailApprover: true,
     assignedNotice: (no) => ({ title: `Budget revision requested for ${base.eventName}`, body: `${no} (Rev ${revisionNo}) · ${original.requesterName}${moneyOf(input.budgetPaise)} · ${input.reason.slice(0, 200)}` }),
   });
+}
+
+/**
+ * The permanent Budget ID an original budget gets as it is approved: BUD-<short year>-NNNN in its financial year, numbered in the order
+ * budgets of that year are approved (how many already have an ID, plus one). The ID is written by the same update that approves the budget,
+ * so an approved budget never lacks one; if two budgets of a year are approved at the same moment and reach for the same number, the
+ * database refuses the second (request numbers are unique) and it takes the next one.
+ */
+async function approveBudgetWithId(req: typeof aprRequests.$inferSelect, set: Partial<typeof aprRequests.$inferInsert>, where: ReturnType<typeof and>): Promise<{ moved: boolean; requestNo: string }> {
+  const fy = req.financialYear ?? req.budgetDetails?.financialYear ?? financialYearOf(req.requestedAt);
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(aprRequests)
+    .where(and(eq(aprRequests.type, "budget"), sql`${aprRequests.parentRequestId} is null`, eq(aprRequests.financialYear, fy), sql`${aprRequests.requestNo} is not null`, eq(aprRequests.status, "approved")));
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const requestNo = budgetRequestNo(fy, n + 1 + attempt);
+    try {
+      const moved = await db.update(aprRequests).set({ ...set, requestNo }).where(where).returning({ id: aprRequests.id });
+      return { moved: moved.length > 0, requestNo };
+    } catch (e) {
+      if (pgCode(e) !== "23505") throw e; // that number was just taken: try the next
+    }
+  }
+  throw new ApprovalsError("Could not give this budget its Budget ID. Please try approving it again.", 500);
 }
 
 /* ---------------------------------------------------------------- decide */
@@ -401,6 +426,8 @@ export async function decideRequest(requestId: string, input: { action: "approve
   const withdrawn = () => { gone = true; return new ApprovalsError("This request was withdrawn while you were deciding, so nothing was changed.", 409); };
   let status: AprRequestStatus;
   let next: typeof aprRequestSteps.$inferSelect | undefined;
+  /** The Budget ID an original budget was given by this approval. */
+  let assignedNo: string | null = null;
   try {
     if (decision === "rejected") {
       const moved = await db.update(aprRequests).set({ status: "rejected", decidedAt: now, decisionComment: input.comment, currentApproverUserId: null, updatedAt: now }).where(stillPending).returning({ id: aprRequests.id });
@@ -425,8 +452,16 @@ export async function decideRequest(requestId: string, input: { action: "approve
         await db.update(aprRequestSteps).set({ status: "pending", assignedAt: now }).where(and(eq(aprRequestSteps.id, next.id), eq(aprRequestSteps.status, "waiting")));
         status = "pending";
       } else {
-        const moved = await db.update(aprRequests).set({ status: "approved", decidedAt: now, decisionComment: input.comment, currentApproverUserId: null, updatedAt: now }).where(stillPending).returning({ id: aprRequests.id });
-        if (moved.length === 0) throw withdrawn();
+        const approve = { status: "approved" as const, decidedAt: now, decisionComment: input.comment, currentApproverUserId: null, updatedAt: now };
+        if (req.type === "budget" && !req.requestNo) {
+          // An original budget gets its permanent Budget ID now, as it is approved.
+          const given = await approveBudgetWithId(req, approve, stillPending);
+          if (!given.moved) throw withdrawn();
+          assignedNo = given.requestNo;
+        } else {
+          const moved = await db.update(aprRequests).set(approve).where(stillPending).returning({ id: aprRequests.id });
+          if (moved.length === 0) throw withdrawn();
+        }
         status = "approved";
       }
     }
@@ -437,9 +472,10 @@ export async function decideRequest(requestId: string, input: { action: "approve
 
   // The decision is made. What follows is history and messages: if one of them cannot be written the decision still stands and the
   // approver is told it worked (a failure here must not invite a second click), so it is logged.
-  const no = req.requestNo ?? "";
-  // A budget's messages name its event: "Budget approval BUD-2026-27-0001 (Annual Summit)".
-  const what = `${req.type === "budget" && req.revisionNo ? "Budget revision" : TYPE_LABEL[req.type]} ${no}${req.budgetDetails?.eventName ? ` (${req.budgetDetails.eventName})` : ""}`;
+  const no = assignedNo ?? req.requestNo ?? "";
+  // A budget's messages name its event: "Budget approval BUD-2627-0001 (Annual Summit)", or "Budget approval (Annual Summit)" when it was
+  // rejected before it ever had an ID.
+  const what = `${req.type === "budget" && req.revisionNo ? "Budget revision" : TYPE_LABEL[req.type]}${no ? ` ${no}` : ""}${req.budgetDetails?.eventName ? ` (${req.budgetDetails.eventName})` : ""}`;
   try {
     await addEvent({ requestId, action: decision === "approved" ? "approved" : decision === "rejected" ? "rejected" : "returned", stepNo: step.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: status, comment: input.comment });
     if (next) {
@@ -588,7 +624,8 @@ export async function withdrawRequest(requestId: string, comment: string | null,
   await db.update(aprRequestSteps).set({ status: "skipped" }).where(and(eq(aprRequestSteps.requestId, requestId), inArray(aprRequestSteps.status, ["pending", "waiting", "returned"])));
   await addEvent({ requestId, action: "withdrawn", actorUserId: actor.id, actorName: actor.name, fromStatus: req.status, toStatus: "withdrawn", comment });
   if (req.currentApproverUserId) {
-    await notify({ userId: req.currentApproverUserId, requestId, link: link(requestId, req.type), title: `${TYPE_LABEL[req.type]} ${req.requestNo ?? ""} was withdrawn`, body: `${req.requesterName} took it back.` });
+    const what = `${TYPE_LABEL[req.type]}${req.requestNo ? ` ${req.requestNo}` : ""}${req.budgetDetails?.eventName ? ` (${req.budgetDetails.eventName})` : ""}`;
+    await notify({ userId: req.currentApproverUserId, requestId, link: link(requestId, req.type), title: `${what} was withdrawn`, body: `${req.requesterName} took it back.` });
   }
 }
 

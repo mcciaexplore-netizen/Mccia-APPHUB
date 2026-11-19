@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Download, Paperclip } from "lucide-react";
 import { StatusPill } from "@/components/approvals/shared-ui";
+import { BudgetId } from "@/components/approvals/BudgetId";
 import { DecisionPanel, WithdrawButton } from "@/components/approvals/DecisionPanel";
 import { PrintButton, PrintedOn } from "@/components/approvals/PrintRequest";
 import { Timeline } from "@/components/approvals/Timeline";
@@ -78,10 +79,11 @@ function LinesTable({ kind, lines, total }: { kind: "income" | "expense"; lines:
 }
 
 /** A budget's event, income and expenses, summary, amount and vendors, shown in the Request section's list. */
-function BudgetItems({ b, amountPaise }: { b: BudgetRequestView; amountPaise: number | null }) {
+function BudgetItems({ b, amountPaise, requestNo, status }: { b: BudgetRequestView; amountPaise: number | null; requestNo: string | null; status: RequestDetail["status"] }) {
   const d = b.details;
   return (
     <>
+      <Item label="Budget ID"><BudgetId requestNo={requestNo} status={status} testId="budget-id-row" /></Item>
       <Item label="Event name">{d.eventName}</Item>
       <Item label="Description"><span className="whitespace-pre-wrap">{d.description}</span></Item>
       <Item label="Department">{d.departmentName}</Item>
@@ -113,10 +115,10 @@ function BudgetHistory({ b, currentId }: { b: BudgetRequestView; currentId: stri
         Budget history
         <span className="badge badge-neutral" data-testid="budget-revision-count">{revisions} {revisions === 1 ? "revision" : "revisions"}</span>
       </h2>
-      <div className="table-wrap max-w-4xl">
+      <div className="table-wrap">
         <table className="apr-table">
           <thead>
-            <tr><th>Version</th><th>Amount</th><th>Submitted</th><th>Decided</th><th>Status</th><th>Approver</th><th>Reason for revision</th></tr>
+            <tr><th>Version</th><th>Budget ID</th><th>Amount</th><th>Submitted</th><th>Decided</th><th>Status</th><th>Approver</th><th>Reason for revision</th></tr>
           </thead>
           <tbody>
             {b.history.map((h) => {
@@ -127,6 +129,7 @@ function BudgetHistory({ b, currentId }: { b: BudgetRequestView; currentId: stri
                     {h.canOpen && h.id !== currentId ? <Link href={`/approvals/requests/${h.id}?app=hr`} className="apr-link">{versionLabel(h.revisionNo)}</Link> : <b>{versionLabel(h.revisionNo)}</b>}
                     {active && <span className="badge badge-green ml-2" data-testid="budget-active-badge">Active budget</span>}
                   </td>
+                  <td className="whitespace-nowrap"><BudgetId requestNo={h.requestNo} status={h.status} /></td>
                   <td>{money(h.amountPaise)}</td>
                   <td>{formatDate(h.submittedAt)}</td>
                   <td>{h.decidedAt && h.status !== "pending" ? formatDate(h.decidedAt) : "—"}</td>
@@ -164,9 +167,8 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
     <div className="apr-printable space-y-8">
       <div className="apr-print-only apr-print-head">
         <Image src="/mccia-logo.png" alt="MCCIA" width={134} height={36} loading="eager" className="h-10 w-auto" />
-        <h1>{d.requestNo ?? "Request"} · {b?.revisionNo ? `Budget revision (${versionLabel(b.revisionNo)})` : TYPE_LABEL[d.type]}{(d.hr?.categoryName ?? e?.categoryName ?? b?.details.eventName) ? ` — ${d.hr?.categoryName ?? e?.categoryName ?? b?.details.eventName}` : ""}</h1>
+        <h1>{b ? "Budget" : (d.requestNo ?? "Request")} · {b?.revisionNo ? `Budget revision (${versionLabel(b.revisionNo)})` : TYPE_LABEL[d.type]}{(d.hr?.categoryName ?? e?.categoryName ?? b?.details.eventName) ? ` — ${d.hr?.categoryName ?? e?.categoryName ?? b?.details.eventName}` : ""}</h1>
         <dl className="zdl">
-          {b && <Item label="Budget ID"><b data-testid="budget-id-print">{d.requestNo}</b></Item>}
           <Item label="Submitted by">{submitter.name}</Item>
           <Item label="Department">{submitter.department}</Item>
           <Item label="Submitted on">{formatDateTime(d.requestedAt)}</Item>
@@ -176,7 +178,7 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
 
       <div className="apr-no-print flex flex-wrap items-center gap-3">
         {b ? (
-          <h2 className="!text-xl"><span className="mr-2 align-middle text-xs font-semibold uppercase tracking-wide text-[var(--z-muted)]">Budget ID</span><span data-testid="budget-id">{d.requestNo}</span></h2>
+          <h2 className="!text-xl"><span className="mr-2 align-middle text-xs font-semibold uppercase tracking-wide text-[var(--z-muted)]">Budget ID</span><BudgetId requestNo={d.requestNo} status={d.status} testId="budget-id" /></h2>
         ) : <h2 className="!text-xl">{d.requestNo ?? "Request"}</h2>}
         <span className="text-[var(--z-muted)]">{b?.revisionNo ? `Budget revision · ${versionLabel(b.revisionNo)}` : TYPE_LABEL[d.type]}</span>
         {status}
@@ -214,7 +216,7 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
           {e?.branchName && <Item label="Branch Name">{e.branchName}</Item>}
           {e && <Item label="Nature of Expenditure"><span className="whitespace-pre-wrap">{e.nature}</span></Item>}
           <Item label="Date of Request">{formatDateTime(d.requestedAt)}</Item>
-          {b ? <BudgetItems b={b} amountPaise={d.amountPaise} /> : <>
+          {b ? <BudgetItems b={b} amountPaise={d.amountPaise} requestNo={d.requestNo} status={d.status} /> : <>
             <Item label="Financial year">{d.financialYear}</Item>
             <Item label="Amount">{money(d.amountPaise)}</Item>
           </>}

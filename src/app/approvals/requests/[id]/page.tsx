@@ -24,7 +24,9 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       <div className="apr-no-print"><PageHeader title="Request" /></div>
       {justSubmitted && (
         <div role="status" className="apr-no-print mb-6 rounded-md border border-line bg-green-tint px-4 py-3 text-sm text-ink">
-          <b>Request submitted: {detail.requestNo}.</b> Keep this number. When it is approved or rejected you will get a notification on the bell above, and it opens this page.
+          {detail.budget && !detail.requestNo
+            ? <><b>Budget submitted.</b> Its Budget ID is given when it is approved. You will get a notification on the bell above when it is decided, and it opens this page.</>
+            : <><b>Request submitted: {detail.requestNo}.</b> Keep this number. When it is approved or rejected you will get a notification on the bell above, and it opens this page.</>}
         </div>
       )}
       <RequestDetailView d={detail} submitter={submitter ?? { name: detail.requesterName, department: null }} viewerName={user.name} />

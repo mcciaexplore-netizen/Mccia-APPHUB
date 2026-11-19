@@ -172,20 +172,22 @@ try {
   await R.page.waitForURL(/\/approvals\/requests\/[0-9a-f-]{36}/, { timeout: 30000 });
   const origId = R.page.url().match(/requests\/([0-9a-f-]{36})/)[1];
   const [orig] = await sql`select request_no, type, status, amount_paise, financial_year, budget_details, current_approver_user_id from apr_requests where id = ${origId}`;
-  const shortFy = `${orig?.financial_year?.slice(2, 4)}${orig?.financial_year?.slice(5, 7)}`;
-  check("it is saved as a pending budget with its own Budget ID, BUD-<short year>-NNNN (BUD-2627-0001 for 2026-27), waiting for the approver picked", orig?.type === "budget" && orig.status === "pending" && new RegExp(`^BUD-${shortFy}-\\d{4}$`).test(orig.request_no) && orig.current_approver_user_id === approver.id && Number(orig.amount_paise) === 1000000, orig);
+  check("it is saved as a pending budget with NO Budget ID yet (that comes with approval), waiting for the approver picked", orig?.type === "budget" && orig.status === "pending" && orig.request_no === null && orig.current_approver_user_id === approver.id && Number(orig.amount_paise) === 1000000, orig);
   const d = orig?.budget_details ?? {};
   check("its details are kept as JSON: event, department, year, the income and expense rows (names and paise) and vendors", d.eventName === EVENT && d.departmentName === "ZZ Budget Events" && d.financialYear === orig.financial_year
     && JSON.stringify(d.incomeLines) === JSON.stringify([{ name: "ZZ Sponsorship", amountPaise: 500000 }, { name: "ZZ Stalls", amountPaise: 250000 }])
     && JSON.stringify(d.expenseLines) === JSON.stringify([{ name: "ZZ Venue", amountPaise: 600000 }, { name: "ZZ Catering", amountPaise: 400000 }])
     && d.income === undefined && JSON.stringify(d.vendors) === JSON.stringify(["ZZ Sai Caterers", "ZZ Pune Sound"]), d);
   const shown = await text(R.page);
-  check("the page confirms it and shows each income and expense row, their totals, the Deficit and the Total Budget Requested", shown.includes(`Request submitted: ${orig.request_no}`) && shown.includes(EVENT)
+  check("the page confirms it and shows each income and expense row, their totals, the Deficit and the Total Budget Requested", shown.includes("Budget submitted. Its Budget ID is given when it is approved.") && shown.includes(EVENT)
     && ["ZZ Sponsorship", "ZZ Stalls", "ZZ Venue", "ZZ Catering", "Total Income", "₹7,500.00", "Total Expense", "₹10,000.00", "Deficit: ₹2,500.00", "Total Budget Requested"].every((t) => shown.includes(t)), shown.slice(0, 400));
-  check("the request page shows the Budget ID prominently", (await R.page.locator("[data-testid=budget-id]").textContent()) === orig.request_no && (await R.page.locator("h2", { hasText: "Budget ID" }).count()) === 1);
+  const idOf = async (page, testId) => { const el = page.locator(`[data-testid=${testId}]`).first(); return { text: await el.textContent(), kind: await el.getAttribute("data-kind"), cls: await el.getAttribute("class") }; };
+  const pendingId = await idOf(R.page, "budget-id");
+  check("the request page's Budget ID says Pending approval, in grey italics, at the top and in its Budget ID row", pendingId.text === "Pending approval" && pendingId.kind === "pending" && pendingId.cls.includes("italic")
+    && (await idOf(R.page, "budget-id-row")).text === "Pending approval" && (await R.page.locator("h2", { hasText: "Budget ID" }).count()) === 1, pendingId);
   check("no Revise Budget while it is pending", (await R.page.locator("[data-testid=budget-revise]").count()) === 0);
   const n1 = await poll(async () => (await sql`select title from apr_notifications where user_id = ${approver.id} and request_id = ${origId}`)[0]);
-  check("the approver gets a bell notification naming the event", n1?.title === `Budget approval ${orig.request_no} for ${EVENT} is waiting for your approval`, n1?.title);
+  check("the approver gets a bell notification naming the event", n1?.title === `Budget approval for ${EVENT} is waiting for your approval`, n1?.title);
 
   section("Who can see it");
   check("someone else cannot open it (404)", (await go(O.page, `/approvals/requests/${origId}`))?.status() === 404);
@@ -200,17 +202,26 @@ try {
   check("a plain hub user picked as approver gets the Budget place in the sidebar, with a red badge of 1", (await place.count()) === 1 && (await place.innerText()).includes("1"), await place.innerText().catch(() => "none"));
   await go(A.page, "/approvals/review/budget/pending");
   check("the Budget list's first column is the Budget ID", /\bbudget id\b/i.test((await A.page.locator("main table thead th").first().textContent()) ?? ""));
-  check("their Pending Budget list holds it, with the event in the Event column", (await text(A.page)).includes(orig.request_no) && (await text(A.page)).includes(EVENT) && /\bevent\b/i.test(await text(A.page)), (await text(A.page)).split("Waiting for your decision")[1] ?? await text(A.page));
+  check("their Pending Budget list holds it, with the event in the Event column", (await text(A.page)).includes("Pending approval") && (await text(A.page)).includes(EVENT) && /\bevent\b/i.test(await text(A.page)), (await text(A.page)).split("Waiting for your decision")[1] ?? await text(A.page));
   await go(A.page, `/approvals/requests/${origId}`);
   const panel = A.page.locator("section[aria-label='Your decision']");
   check("they can Approve or Reject it; there is no Return for corrections", (await panel.getByRole("button", { name: "Approve", exact: true }).count()) === 1 && (await panel.getByRole("button", { name: "Reject", exact: true }).count()) === 1 && (await panel.getByRole("button", { name: /Return/ }).count()) === 0);
   check("the server refuses a return too", (await api(A.page, `/api/approvals/requests/${origId}/decision`, "POST", { action: "return", comment: "fix" })).status === 422);
   await panel.getByRole("button", { name: "Reject", exact: true }).click();
   check("rejecting needs a reason", (await panel.locator(".zf-error").innerText().catch(() => "")).includes("comment"));
+  // Its Budget ID is given now: the next number among the budgets of its year already approved.
+  const shortFy = `${orig.financial_year.slice(2, 4)}${orig.financial_year.slice(5, 7)}`;
+  const approvedBefore = (await sql`select count(*)::int n from apr_requests where type = 'budget' and parent_request_id is null and status = 'approved' and request_no is not null and financial_year = ${orig.financial_year}`)[0].n;
+  const expectedNo = `BUD-${shortFy}-${String(approvedBefore + 1).padStart(4, "0")}`;
   await decide(A.page, "Approve");
   check("they approve it", await poll(async () => (await sql`select status from apr_requests where id = ${origId}`)[0].status === "approved"));
+  const origNo = (await sql`select request_no from apr_requests where id = ${origId}`)[0].request_no;
+  check(`approving gives it its permanent Budget ID, BUD-<short year>-NNNN numbered by approval order (${expectedNo})`, origNo === expectedNo, origNo);
   const n2 = await poll(async () => (await sql`select title from apr_notifications where user_id = ${requester.id} and request_id = ${origId}`)[0]);
-  check("the requester is told it was approved", n2?.title === `Your Budget approval ${orig.request_no} (${EVENT}) was approved`, n2?.title);
+  check("the requester is told it was approved, with its Budget ID", n2?.title === `Your Budget approval ${origNo} (${EVENT}) was approved`, n2?.title);
+  await go(R.page, `/approvals/requests/${origId}`);
+  const approvedId = await idOf(R.page, "budget-id");
+  check("its page now shows the Budget ID in navy and bold", approvedId.text === origNo && approvedId.kind === "assigned" && approvedId.cls.includes("font-bold") && approvedId.cls.includes("003F8A"), approvedId);
   check("the approver cannot ask for a revision of someone else's budget (403)", (await api(A.page, `/api/approvals/requests/${origId}/revise`, "POST", { budgetPaise: 100, reason: "x", income: {}, vendors: [], approverUserId: approver.id })).status === 403);
 
   section("Revisions");
@@ -232,7 +243,7 @@ try {
   await R.page.waitForURL((u) => /\/approvals\/requests\/[0-9a-f-]{36}/.test(u.pathname) && !u.pathname.includes(origId), { timeout: 30000 });
   const r1Id = R.page.url().match(/requests\/([0-9a-f-]{36})/)[1];
   const [r1] = await sql`select request_no, parent_request_id, revision_no, status, amount_paise, budget_details from apr_requests where id = ${r1Id}`;
-  check("Rev 1 is its own pending request, linked to the original, numbered <original>-R1, with the reason", r1?.parent_request_id === origId && r1.revision_no === 1 && r1.status === "pending" && r1.request_no === `${orig.request_no}-R1` && r1.budget_details?.revisionReason === "Venue cost increased" && r1.budget_details?.eventName === EVENT, r1);
+  check("Rev 1 is its own pending request, linked to the original, numbered <original>-R1, with the reason", r1?.parent_request_id === origId && r1.revision_no === 1 && r1.status === "pending" && r1.request_no === `${origNo}-R1` && r1.budget_details?.revisionReason === "Venue cost increased" && r1.budget_details?.eventName === EVENT, r1);
   const n3 = await poll(async () => (await sql`select title from apr_notifications where user_id = ${approver.id} and request_id = ${r1Id}`)[0]);
   check(`the approver is told "Budget revision requested for ${EVENT}"`, n3?.title === `Budget revision requested for ${EVENT}`, n3?.title);
   check("a second revision while one is pending is refused (409)", (await api(R.page, `/api/approvals/requests/${origId}/revise`, "POST", { budgetPaise: 1600000, reason: "again", income: {}, vendors: [], approverUserId: approver.id })).status === 409);
@@ -250,7 +261,7 @@ try {
 
   // Rev 2, rejected: Rev 1 stays in force.
   const r2 = await api(R.page, `/api/approvals/requests/${r1Id}/revise`, "POST", { budgetPaise: 1800000, reason: "Additional catering required", incomeLines: [{ name: "ZZ Sponsorship", amountPaise: 500000 }], expenseLines: [{ name: "ZZ Venue", amountPaise: 600000 }, { name: "ZZ Catering", amountPaise: 1200000 }], vendors: ["ZZ Sai Caterers"], approverUserId: approver.id });
-  check("a revision can be asked for from a revision's page too: Rev 2 is numbered -R2 and linked to the original", r2.status === 201 && r2.body?.requestNo === `${orig.request_no}-R2` && (await sql`select parent_request_id from apr_requests where id = ${r2.body?.id}`)[0]?.parent_request_id === origId, r2);
+  check("a revision can be asked for from a revision's page too: Rev 2 is numbered -R2 and linked to the original", r2.status === 201 && r2.body?.requestNo === `${origNo}-R2` && (await sql`select parent_request_id from apr_requests where id = ${r2.body?.id}`)[0]?.parent_request_id === origId, r2);
   await go(A.page, `/approvals/requests/${r2.body.id}`);
   await decide(A.page, "Reject", "Catering is covered by the sponsor");
   await poll(async () => (await sql`select status from apr_requests where id = ${r2.body.id}`)[0].status === "rejected");
@@ -263,11 +274,11 @@ try {
 
   section("Lists and print");
   await go(A.page, "/approvals/review/budget/approved");
-  check("the approver's Approved Budget list has the original and Rev 1", (await text(A.page)).includes(orig.request_no) && (await text(A.page)).includes(`${orig.request_no}-R1`));
+  check("the approver's Approved Budget list has the original and Rev 1", (await text(A.page)).includes(origNo) && (await text(A.page)).includes(`${origNo}-R1`));
   await go(A.page, "/approvals/review/budget/rejected");
-  check("their Rejected Budget list has Rev 2", (await text(A.page)).includes(`${orig.request_no}-R2`));
+  check("their Rejected Budget list has Rev 2 (its ID shown as Not assigned)", (await text(A.page)).includes("Not assigned") && (await text(A.page)).includes(EVENT));
   const csv = await A.page.evaluate(async () => { const r = await fetch("/api/approvals/requests/export?screen=review/budget/approved"); return { status: r.status, body: await r.text() }; });
-  check("they can export their Budget list", csv.status === 200 && csv.body.includes(`${orig.request_no}-R1`), csv.status);
+  check("they can export their Budget list", csv.status === 200 && csv.body.includes(`${origNo}-R1`), csv.status);
   check("someone else cannot export it (403)", (await O.page.evaluate(async () => (await fetch("/api/approvals/requests/export?screen=review/budget/approved")).status)) === 403);
 
   await go(R.page, `/approvals/requests/${origId}`);
@@ -275,13 +286,30 @@ try {
   await R.page.emulateMedia({ media: "print" });
   const printed = (await R.page.locator(".apr-printable").innerText()).replace(/\s+/g, " ");
   check("the printed page has the income and expense rows, their totals, the summary, the vendors and the revision history", ["ZZ Sponsorship", "ZZ Stalls", "Total Income", "ZZ Venue", "ZZ Catering", "Total Expense", "Deficit: ₹2,500.00", "Total Budget Requested", "ZZ Sai Caterers", "ZZ Pune Sound", "Budget history", "Rev 1", "Rev 2", "Venue cost increased"].every((t) => printed.includes(t)), printed.slice(0, 300));
-  check("the printed page shows the Budget ID", (await R.page.locator("[data-testid=budget-id-print]").textContent()) === orig.request_no && printed.includes(`Budget ID ${orig.request_no}`));
+  check("the printed page shows the Budget ID", (await R.page.locator("[data-testid=budget-id-row]").textContent()) === origNo && printed.includes(`Budget ID ${origNo}`));
   check("…and leaves out the controls", !printed.includes("Revise Budget") && !printed.includes("Timeline"));
   await shot(R.page, "print");
   const pdf = await R.page.pdf({ preferCSSPageSize: true, printBackground: true });
   const pages = (pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
   check("it prints on one A4 page", pages === 1, `${pages} pages`);
   await R.page.emulateMedia({ media: "screen" });
+
+  section("Budget IDs follow the order of approval");
+  const raise = async (eventName) => (await api(R.page, "/api/approvals/requests", "POST", { kind: "budget", eventName, description: "x", departmentId: dept.id, financialYear: orig.financial_year, incomeLines: [], expenseLines: [], vendors: [], budgetPaise: 50000, approverUserId: approver.id })).body;
+  const first = await raise("ZZ Order First"), second = await raise("ZZ Order Second"), third = await raise("ZZ Order Rejected");
+  check("a budget gets no number when it is submitted", first?.requestNo === null && second?.requestNo === null && third?.requestNo === null, [first, second, third]);
+  const seq = (no) => Number(String(no).slice(-4));
+  await api(A.page, `/api/approvals/requests/${second.id}/decision`, "POST", { action: "approve" });
+  await api(A.page, `/api/approvals/requests/${first.id}/decision`, "POST", { action: "approve" });
+  const [noSecond, noFirst] = await Promise.all([second.id, first.id].map(async (id) => (await sql`select request_no from apr_requests where id = ${id}`)[0].request_no));
+  check("the one approved first gets the lower number, whatever order they were submitted in", seq(noSecond) === seq(origNo) + 1 && seq(noFirst) === seq(origNo) + 2 && noFirst.startsWith(`BUD-${shortFy}-`), [origNo, noSecond, noFirst]);
+  await api(A.page, `/api/approvals/requests/${third.id}/decision`, "POST", { action: "reject", comment: "Not this year" });
+  check("a rejected budget is never given one", (await sql`select request_no from apr_requests where id = ${third.id}`)[0].request_no === null);
+  await go(R.page, `/approvals/requests/${third.id}`);
+  const rejectedId = await idOf(R.page, "budget-id");
+  check("…and its page says Not assigned, in grey", rejectedId.text === "Not assigned" && rejectedId.kind === "none" && rejectedId.cls.includes("italic"), rejectedId);
+  const n4 = await poll(async () => (await sql`select title from apr_notifications where user_id = ${requester.id} and request_id = ${third.id}`)[0]);
+  check("…and the message about it names the event, with no number", n4?.title === "Your Budget approval (ZZ Order Rejected) was rejected", n4?.title);
 
   section("Budgets raised before income and expenses were rows");
   const [old] = await sql`insert into apr_requests (request_no, type, status, requester_user_id, requester_name, requester_email, financial_year, current_step, total_steps, amount_paise, budget_details, decided_at)

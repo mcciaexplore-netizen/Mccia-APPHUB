@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { BudgetId } from "@/components/approvals/BudgetId";
+import { requestNoText } from "@/lib/approvals/budget";
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import { ClickableRow } from "@/components/approvals/ClickableRow";
 import { ListFilters } from "@/components/approvals/ListFilters";
@@ -85,7 +87,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
               const href = `/approvals/requests/${r.id}?app=${appForType(r.type)}`;
               return (
                 <ClickableRow key={r.id} href={href}>
-                  <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{r.requestNo ?? "—"}</Link></td>
+                  <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{r.type === "budget" ? <BudgetId requestNo={r.requestNo} status={r.status} /> : (r.requestNo ?? "—")}</Link></td>
                   {mixed && <td className="hidden md:table-cell">{TYPE_SHORT[r.type]}</td>}
                   <td>{r.name}</td>
                   <td className="hidden md:table-cell">{r.categoryName ?? ""}</td>
@@ -97,7 +99,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
                   <td className="whitespace-nowrap"><span className="inline-flex flex-wrap items-center gap-1"><StatusPill status={r.status} currentStepNo={r.currentStep} /></span></td>
                   <td className="hidden md:table-cell">{r.approverName ?? ""}</td>
                   <td className="hidden md:table-cell whitespace-nowrap">{r.decidedAt ? formatDateTime(r.decidedAt) : ""}</td>
-                  {screen.quickDecide && <td className="whitespace-nowrap">{r.mineToDecide && <QuickDecide id={r.id} label={r.requestNo ?? "request"} kind={decisionMode(r.currentStep, r.totalSteps)} />}</td>}
+                  {screen.quickDecide && <td className="whitespace-nowrap">{r.mineToDecide && <QuickDecide id={r.id} label={r.type === "budget" ? requestNoText(r) : (r.requestNo ?? "request")} kind={decisionMode(r.currentStep, r.totalSteps)} />}</td>}
                 </ClickableRow>
               );
             })}

@@ -8,12 +8,13 @@ import { parseListParams } from "@/lib/approvals/list-params";
 import { listRequests, reviewItemsFor, type RequestRow } from "@/lib/approvals/request-queries";
 import { resolveScreen } from "@/lib/approvals/screens";
 import { STATUS_LABEL, TYPE_LABEL } from "@/lib/approvals/calc";
+import { requestNoText } from "@/lib/approvals/budget";
 
 export const dynamic = "force-dynamic";
 
 const HEADER = ["Request No.", "Type", "Name", "Category", "Branch", "Vendor", "Amount (INR)", "Date of Request", "Status", "Approver", "Decision Date"];
 const line = (r: RequestRow) => [
-  r.requestNo ?? "", TYPE_LABEL[r.type], r.name, r.categoryName ?? "", r.branchName ?? "", r.vendorName ?? "",
+  r.type === "budget" ? requestNoText(r) : (r.requestNo ?? ""), TYPE_LABEL[r.type], r.name, r.categoryName ?? "", r.branchName ?? "", r.vendorName ?? "",
   r.amountPaise == null ? "" : formatINR(r.amountPaise), formatDateTime(r.requestedAt), STATUS_LABEL[r.status],
   r.approverName ?? "", formatDateTime(r.decidedAt),
 ];

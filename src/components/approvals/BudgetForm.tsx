@@ -166,9 +166,9 @@ export function BudgetForm({ fields, people, departments = [], financialYears = 
     };
     const r = revision
       ? await api<{ id: string; requestNo: string }>("POST", `/api/approvals/requests/${revision.requestId}/revise`, { ...common, reason })
-      : await api<{ id: string; requestNo: string }>("POST", "/api/approvals/requests", { kind: "budget", ...common, eventName, description, departmentId, financialYear });
+      : await api<{ id: string; requestNo: string | null }>("POST", "/api/approvals/requests", { kind: "budget", ...common, eventName, description, departmentId, financialYear });
     if (!r.ok) { setSubmitting(false); setFormError(r.error); toast.error(r.error); return; }
-    toast.success(revision ? `Budget revision submitted: ${r.data.requestNo}` : `Budget submitted: ${r.data.requestNo}`);
+    toast.success(revision ? `Budget revision submitted: ${r.data.requestNo}` : "Budget submitted. Its Budget ID is given when it is approved.");
     router.push(`/approvals/requests/${r.data.id}?app=hr&submitted=1`);
     router.refresh();
   };

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ClickableRow } from "@/components/approvals/ClickableRow";
 import { EmptyState, StatusPill } from "@/components/approvals/shared-ui";
 import { appForType } from "@/lib/approvals/approvals.manifest";
+import { requestNoText } from "@/lib/approvals/budget";
 import { formatDate, formatDateTime, formatINR } from "@/lib/approvals/format";
 import { listMyDecisions, listRequests } from "@/lib/approvals/request-queries";
 import { PAGE_SIZE } from "@/lib/approvals/screens";
@@ -49,7 +50,9 @@ export async function MyRequestsList({ user, page, path, submitted }: { user: Ap
     <>
       {justSent && (
         <div role="status" className="mb-6 rounded-md border border-line bg-green-tint px-4 py-3 text-sm text-ink">
-          <b>Request submitted: {justSent.requestNo}.</b> Keep this number. When it is approved or rejected you will get a notification on the bell above.
+          {justSent.type === "budget" && !justSent.requestNo
+            ? <><b>Budget submitted.</b> Its Budget ID is given when it is approved. You will get a notification on the bell above when it is decided.</>
+            : <><b>Request submitted: {justSent.requestNo}.</b> Keep this number. When it is approved or rejected you will get a notification on the bell above.</>}
         </div>
       )}
       {rows.length === 0 ? <EmptyState kind="myRequests" /> : (
@@ -69,7 +72,7 @@ export async function MyRequestsList({ user, page, path, submitted }: { user: Ap
                 const href = requestHref(r);
                 return (
                   <ClickableRow key={r.id} href={href}>
-                    <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{r.requestNo ?? "—"}</Link></td>
+                    <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{requestNoText(r)}</Link></td>
                     <td className="hidden md:table-cell">{typeLabel(r.type)}</td>
                     <td className="hidden md:table-cell whitespace-nowrap">{formatDate(r.requestedAt)}</td>
                     <td className="whitespace-nowrap text-right">{amountOrCategory(r)}</td>
@@ -109,7 +112,7 @@ export async function MyPendingApprovalsList({ user, page, path }: { user: Appro
               const href = requestHref(r);
               return (
                 <ClickableRow key={r.id} href={href}>
-                  <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{r.requestNo ?? "—"}</Link></td>
+                  <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{requestNoText(r)}</Link></td>
                   <td>{r.name}</td>
                   <td className="hidden md:table-cell">{typeLabel(r.type)}</td>
                   <td className="hidden md:table-cell whitespace-nowrap">{formatDate(r.requestedAt)}</td>
@@ -148,7 +151,7 @@ export async function MyDecisionsList({ user, page, path }: { user: ApprovalsUse
               const href = requestHref(r);
               return (
                 <ClickableRow key={r.id} href={href}>
-                  <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{r.requestNo ?? "—"}</Link></td>
+                  <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{r.requestNo ?? (r.type === "budget" ? "Not assigned" : "—")}</Link></td>
                   <td>{r.name}</td>
                   <td className="hidden md:table-cell">{typeLabel(r.type)}</td>
                   <td className="hidden md:table-cell whitespace-nowrap">{r.actedAt ? formatDateTime(r.actedAt) : ""}</td>
