@@ -7,7 +7,7 @@ import {
 } from "@/db/approvals-schema";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
-import { budgetRequestNo, linesTotal, nextRevisionNo, revisionBase, revisionBlocker, revisionRequestNo, waitingRevision, type BudgetLine } from "./budget";
+import { budgetIdOf, budgetRequestNo, linesTotal, nextRevisionNo, revisionBase, revisionBlocker, revisionRequestNo, waitingRevision, type BudgetLine } from "./budget";
 import { commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, TYPE_LABEL, wrongFormMessage, type ExpenditureForm } from "./calc";
 import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { resolveCustomAnswers } from "./form-config";
@@ -377,7 +377,7 @@ export async function reviseBudget(requestId: string, input: BudgetRevisionInput
       approver: { userId: approver.id, stepLabel: BUDGET_STEP }, financialYear: original.financialYear ?? base.financialYear,
       requestNo: original.requestNo ? revisionRequestNo(original.requestNo, revisionNo) : undefined, numberLater: true,
       budgetDetails: details, revisionOf: { parentRequestId: original.id, revisionNo }, emailApprover: true,
-      assignedNotice: (no) => ({ title: `Budget revision requested for ${details.eventName}`, body: `${no ? `${no} ` : ""}(Rev ${revisionNo}) · ${original.requesterName}${moneyOf(amountPaise)} · ${input.reason.slice(0, 200)}` }),
+      assignedNotice: (no) => ({ title: `Budget revision requested for ${details.eventName}`, body: `${no ? `${budgetIdOf(no)} ` : ""}(Rev ${revisionNo}) · ${original.requesterName}${moneyOf(amountPaise)} · ${input.reason.slice(0, 200)}` }),
     });
   } catch (e) {
     if (putBack) await putBack().catch((err) => logError(`[approvals] could not put back budget revision ${replaced!.id} after a failed revision`, err));
@@ -393,7 +393,8 @@ export async function reviseBudget(requestId: string, input: BudgetRevisionInput
       logError(`[approvals] could not record that budget revision ${replaced.id} was replaced`, e);
     }
   }
-  return made;
+  // The Budget ID as shown: the same for every version.
+  return { id: made.id, requestNo: made.requestNo ? budgetIdOf(made.requestNo) : null };
 }
 
 /** Withdraws a waiting revision that a new one replaces, and returns how to put it back if the new one cannot be saved. */
@@ -539,7 +540,8 @@ export async function decideRequest(requestId: string, input: { action: "approve
 
   // The decision is made. What follows is history and messages: if one of them cannot be written the decision still stands and the
   // approver is told it worked (a failure here must not invite a second click), so it is logged.
-  const no = assignedNo ?? req.requestNo ?? "";
+  const rawNo = assignedNo ?? req.requestNo ?? "";
+  const no = req.type === "budget" && rawNo ? budgetIdOf(rawNo) : rawNo;
   // A budget's messages name its event: "Budget approval BUD-2627-0001 (Annual Summit)", or "Budget approval (Annual Summit)" when it was
   // rejected before it ever had an ID.
   const what = `${req.type === "budget" && req.revisionNo ? "Budget revision" : TYPE_LABEL[req.type]}${no ? ` ${no}` : ""}${req.budgetDetails?.eventName ? ` (${req.budgetDetails.eventName})` : ""}`;
@@ -691,7 +693,7 @@ export async function withdrawRequest(requestId: string, comment: string | null,
   await db.update(aprRequestSteps).set({ status: "skipped" }).where(and(eq(aprRequestSteps.requestId, requestId), inArray(aprRequestSteps.status, ["pending", "waiting", "returned"])));
   await addEvent({ requestId, action: "withdrawn", actorUserId: actor.id, actorName: actor.name, fromStatus: req.status, toStatus: "withdrawn", comment });
   if (req.currentApproverUserId) {
-    const what = `${TYPE_LABEL[req.type]}${req.requestNo ? ` ${req.requestNo}` : ""}${req.budgetDetails?.eventName ? ` (${req.budgetDetails.eventName})` : ""}`;
+    const what = `${TYPE_LABEL[req.type]}${req.requestNo ? ` ${req.type === "budget" ? budgetIdOf(req.requestNo) : req.requestNo}` : ""}${req.budgetDetails?.eventName ? ` (${req.budgetDetails.eventName})` : ""}`;
     await notify({ userId: req.currentApproverUserId, requestId, link: link(requestId, req.type), title: `${what} was withdrawn`, body: `${req.requesterName} took it back.` });
   }
 }

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ClickableRow } from "@/components/approvals/ClickableRow";
 import { EmptyState, StatusPill } from "@/components/approvals/shared-ui";
 import { appForType } from "@/lib/approvals/approvals.manifest";
-import { requestNoText } from "@/lib/approvals/budget";
+import { budgetIdOf, requestNoText } from "@/lib/approvals/budget";
 import { formatDate, formatDateTime, formatINR } from "@/lib/approvals/format";
 import { listMyDecisions, listRequests } from "@/lib/approvals/request-queries";
 import { PAGE_SIZE } from "@/lib/approvals/screens";
@@ -151,7 +151,7 @@ export async function MyDecisionsList({ user, page, path }: { user: ApprovalsUse
               const href = requestHref(r);
               return (
                 <ClickableRow key={r.id} href={href}>
-                  <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{r.requestNo ?? (r.type === "budget" ? "Not assigned" : "—")}</Link></td>
+                  <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{r.type === "budget" ? (r.requestNo ? budgetIdOf(r.requestNo) : "Not assigned") : (r.requestNo ?? "—")}</Link></td>
                   <td>{r.name}</td>
                   <td className="hidden md:table-cell">{typeLabel(r.type)}</td>
                   <td className="hidden md:table-cell whitespace-nowrap">{r.actedAt ? formatDateTime(r.actedAt) : ""}</td>

@@ -306,7 +306,7 @@ try {
   // Rev 2, rejected: Rev 1 stays in force.
   const r2 = await api(R.page, `/api/approvals/requests/${r1Id}/revise`, "POST", { budgetPaise: 99, reason: "Additional catering required", incomeLines: [{ name: "ZZ Sponsorship", amountPaise: 500000 }], expenseLines: [{ name: "ZZ Venue", amountPaise: 600000 }, { name: "ZZ Catering", amountPaise: 1200000 }], vendors: ["ZZ Sai Caterers"], approverUserId: approver.id });
   check("the server keeps the Total Budget Requested to the expense total, whatever amount is sent", Number((await sql`select amount_paise from apr_requests where id = ${r2.body?.id}`)[0]?.amount_paise) === 1800000);
-  check("a revision can be asked for from a revision's page too: Rev 2 is numbered -R2 and linked to the original", r2.status === 201 && r2.body?.requestNo === `${origNo}-R2` && (await sql`select parent_request_id from apr_requests where id = ${r2.body?.id}`)[0]?.parent_request_id === origId, r2);
+  check("a revision can be asked for from a revision's page too: Rev 2 shows the same Budget ID and is linked to the original", r2.status === 201 && r2.body?.requestNo === origNo && (await sql`select parent_request_id from apr_requests where id = ${r2.body?.id}`)[0]?.parent_request_id === origId, r2);
   await go(A.page, `/approvals/requests/${r2.body.id}`);
   await decide(A.page, "Reject", "Catering is covered by the sponsor");
   await poll(async () => (await sql`select status from apr_requests where id = ${r2.body.id}`)[0].status === "rejected");
@@ -316,14 +316,17 @@ try {
     && (await R.page.locator("[data-testid=budget-version-1]").textContent()).includes("ZZ Bud Approver") && (await R.page.locator("[data-testid=budget-revision-count]").textContent()) === "2 revisions");
   check("and Revise Budget is offered again (no limit on revisions)", (await R.page.locator("[data-testid=budget-revise]").count()) === 1);
   await shot(R.page, "detail");
+  check("every version in the Budget History shows the same Budget ID", JSON.stringify(await R.page.locator("[data-testid=budget-history] [data-kind]").allTextContents()) === JSON.stringify([origNo, origNo, origNo]));
+  await go(R.page, `/approvals/requests/${r1Id}`);
+  check("a revision's own page shows the original's Budget ID, with no suffix", (await R.page.locator("[data-testid=budget-id]").textContent()) === origNo && !(await text(R.page)).includes(`${origNo}-R`));
 
   section("Lists and print");
   await go(A.page, "/approvals/review/budget/approved");
-  check("the approver's Approved Budget list has the original and Rev 1", (await text(A.page)).includes(origNo) && (await text(A.page)).includes(`${origNo}-R1`));
+  check("the approver's Approved Budget list has the original and Rev 1, both under the one Budget ID (no -R1)", (await A.page.locator("main tbody tr", { hasText: origNo }).count()) === 2 && !(await text(A.page)).includes(`${origNo}-R`));
   await go(A.page, "/approvals/review/budget/rejected");
-  check("their Rejected Budget list has Rev 2 (its ID shown as Not assigned)", (await text(A.page)).includes("Not assigned") && (await text(A.page)).includes(EVENT));
+  check("their Rejected Budget list has Rev 2, under the budget's same ID", (await text(A.page)).includes(origNo) && !(await text(A.page)).includes(`${origNo}-R`) && (await text(A.page)).includes(EVENT));
   const csv = await A.page.evaluate(async () => { const r = await fetch("/api/approvals/requests/export?screen=review/budget/approved"); return { status: r.status, body: await r.text() }; });
-  check("they can export their Budget list", csv.status === 200 && csv.body.includes(`${origNo}-R1`), csv.status);
+  check("they can export their Budget list", csv.status === 200 && csv.body.split(origNo).length === 3 && !csv.body.includes(`${origNo}-R`), csv.status);
   check("someone else cannot export it (403)", (await O.page.evaluate(async () => (await fetch("/api/approvals/requests/export?screen=review/budget/approved")).status)) === 403);
 
   await go(R.page, `/approvals/requests/${origId}`);
@@ -372,7 +375,7 @@ try {
     && (await R.page.locator("[data-testid=budget-version-2] [data-testid=budget-version-status]").textContent()) === "Pending");
   await api(A.page, `/api/approvals/requests/${e2.body.id}/decision`, "POST", { action: "approve" });
   const fam = Object.fromEntries((await sql`select id, request_no from apr_requests where id in (${pre.id}, ${e1.body.id}, ${e2.body.id})`).map((r) => [r.id, r.request_no]));
-  check("the first approval (Rev 2) gives the budget its ID: the original BUD-…, each revision the same with -R1, -R2", /^BUD-\d{4}-\d{4}$/.test(fam[pre.id] ?? "") && fam[e1.body.id] === `${fam[pre.id]}-R1` && fam[e2.body.id] === `${fam[pre.id]}-R2`, fam);
+  check("the first approval (Rev 2) gives the budget its one ID: no new number for the revisions (stored per row as the ID + -R1, -R2, never shown)", /^BUD-\d{4}-\d{4}$/.test(fam[pre.id] ?? "") && fam[e1.body.id] === `${fam[pre.id]}-R1` && fam[e2.body.id] === `${fam[pre.id]}-R2`, fam);
   await api(A.page, `/api/approvals/requests/${pre.id}/decision`, "POST", { action: "approve" });
   check("approving the original later keeps that same ID", (await sql`select request_no from apr_requests where id = ${pre.id}`)[0].request_no === fam[pre.id]);
 

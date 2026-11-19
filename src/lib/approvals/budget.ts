@@ -5,7 +5,7 @@
  * A budget is one request (type "budget") sent to one approver the requester picks. The person who raised it can ask
  * for a revision at any stage: a new request of its own, linked to the original (parent_request_id) and numbered Rev 1, Rev 2, ... Each
  * revision needs a fresh approval; only one can wait at a time (a new one replaces it); the budget in force is the latest approved version (a
- * rejected revision changes nothing). The Budget ID is given when the first version is approved, and revisions carry it with -R1, -R2.
+ * rejected revision changes nothing). The Budget ID is given when the first version is approved, and every version shows that same ID.
  */
 import type { AprRequestStatus } from "@/db/approvals-schema";
 
@@ -104,14 +104,20 @@ export const budgetRequestNo = (financialYear: string, n: number): string =>
   `BUD-${financialYear.slice(2, 4)}${financialYear.slice(5, 7)}-${String(n).padStart(4, "0")}`;
 
 /**
- * What a budget's ID says, from its request number and status. The Budget ID is given when the first version of the budget is approved, so
- * until then no version has one: "Pending approval" while it waits, "Not assigned" once rejected or withdrawn. Once the budget has its ID,
- * a waiting version shows its number with "(Pending)".
+ * The Budget ID, the same for every version of a budget: BUD-2627-0001 for the original and each of its revisions. It is given once, when the
+ * first version is approved, and never changes. (Request numbers must be unique, so a revision's own row keeps the ID with "-R<n>" after it;
+ * that is only how it is stored, and is never shown.)
+ */
+export const budgetIdOf = (requestNo: string): string => requestNo.replace(/-R\d+$/, "");
+
+/**
+ * What a version's Budget ID says. Once the budget has its ID, every version shows it (the version itself is told apart in the Budget History:
+ * Original, Revision 1, ...). Before that: "Pending approval" while it waits, "Not assigned" once rejected or withdrawn.
  */
 export type BudgetIdView = { text: string; kind: "assigned" | "pending" | "none" };
 export function budgetIdView(r: { requestNo: string | null; status: AprRequestStatus }): BudgetIdView {
-  if (r.status === "approved" && r.requestNo) return { text: r.requestNo, kind: "assigned" };
-  if (r.status === "pending" || r.status === "returned" || r.status === "draft") return r.requestNo ? { text: `${r.requestNo} (Pending)`, kind: "pending" } : { text: "Pending approval", kind: "pending" };
+  if (r.requestNo) return { text: budgetIdOf(r.requestNo), kind: "assigned" };
+  if (r.status === "pending" || r.status === "returned" || r.status === "draft") return { text: "Pending approval", kind: "pending" };
   return { text: "Not assigned", kind: "none" };
 }
 
@@ -119,5 +125,5 @@ export function budgetIdView(r: { requestNo: string | null; status: AprRequestSt
 export const requestNoText = (r: { type: string; requestNo: string | null; status: AprRequestStatus }): string =>
   r.type === "budget" ? budgetIdView(r).text : (r.requestNo ?? "—");
 
-/** A revision's request number: the original's with "-R1", "-R2", ... after it. */
+/** How a revision's row stores the Budget ID (unique per row): the ID with "-R1", "-R2", ... after it. Shown as the ID alone (budgetIdOf). */
 export const revisionRequestNo = (originalNo: string, revisionNo: number): string => `${originalNo}-R${revisionNo}`;
