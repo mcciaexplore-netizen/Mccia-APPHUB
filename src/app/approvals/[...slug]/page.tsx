@@ -2,8 +2,10 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { ListScreenView } from "@/components/approvals/ListScreenView";
 import { RecommendationTabs } from "@/components/approvals/RecommendationTabs";
+import { RetiredBudgets } from "@/components/approvals/RetiredBudgets";
 import { TableSkeleton } from "@/components/approvals/Skeletons";
 import { FULL_ACCESS_ROLES, REVIEW_LABEL, REVIEW_TAB_LABEL, allNavItems, canSee, decidesIn, parseRecommendationPath, parseReviewPath } from "@/lib/approvals/approvals.manifest";
+import { canDeleteBudgets } from "@/lib/approvals/budget-delete";
 import { requirePage } from "@/lib/approvals/guard";
 import { hasRole } from "@/lib/approvals/host-adapter";
 import { parseListParams } from "@/lib/approvals/list-params";
@@ -54,6 +56,14 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     return <div className="page-enter"><Streamed><ListScreenView slug={slug.join("/")} screen={screen} params={parseListParams(await searchParams)} user={user} /></Streamed></div>;
   }
   const screen = resolveScreen(slug, false);
-  if (screen) return <div className="page-enter"><Streamed><ListScreenView slug={slug.join("/")} screen={screen} params={parseListParams(await searchParams)} user={user} /></Streamed></div>;
+  if (screen) {
+    return (
+      <div className="page-enter">
+        <Streamed><ListScreenView slug={slug.join("/")} screen={screen} params={parseListParams(await searchParams)} user={user} /></Streamed>
+        {/* All Budgets: the deleted budgets' retired IDs, for those who can delete budgets. */}
+        {slug.join("/") === "budget/all" && canDeleteBudgets(user) && <Streamed><RetiredBudgets /></Streamed>}
+      </div>
+    );
+  }
   notFound();
 }

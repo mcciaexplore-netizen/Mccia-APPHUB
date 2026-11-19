@@ -27,7 +27,7 @@ import { safeNext } from "../src/lib/session";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
   FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, decidesIn, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
-import { activeVersion, budgetBalance, budgetIdOf, compareVersions, comparisonPairs, diffLines, budgetIdView, budgetRequestNo, requestNoText, cleanVendors, expenseLinesOf, incomeLinesOf, linesTotal, nextRevisionNo, revisionBase, revisionBlocker, revisionRequestNo, versionLabel, waitingRevision } from "../src/lib/approvals/budget";
+import { activeVersion, budgetBalance, budgetIdOf, compareVersions, comparisonPairs, deleteConfirmed, diffLines, nextBudgetSerial, budgetIdView, budgetRequestNo, requestNoText, cleanVendors, expenseLinesOf, incomeLinesOf, linesTotal, nextRevisionNo, revisionBase, revisionBlocker, revisionRequestNo, versionLabel, waitingRevision } from "../src/lib/approvals/budget";
 import { budgetRequestInput, budgetRevisionInput } from "../src/lib/approvals/request-schemas";
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
@@ -237,6 +237,14 @@ eq("budget: vendors are trimmed and blank ones dropped", cleanVendors(["  Sai Ca
     eq("budget compare: the comparisons offered: each revision with the one before, and from Rev 2 the original too; none without a revision",
       [comparisonPairs(1), comparisonPairs(2), comparisonPairs(4)], [[], [[0, 1]], [[0, 1], [1, 2], [0, 2], [2, 3], [0, 3]]]);
   }
+  eq("budget delete: the next ID is one more than the highest given or retired in the year (deleted IDs are never reused); other years and old formats are ignored", [
+    nextBudgetSerial("2026-27", [], []), nextBudgetSerial("2026-27", ["BUD-2627-0002"], ["BUD-2627-0001"]), nextBudgetSerial("2026-27", ["BUD-2627-0001"], ["BUD-2627-0002"]),
+    nextBudgetSerial("2026-27", ["BUD-2728-0009", "BUD-2026-27-0007", null, "BUD-2627-0003-R1"], []),
+  ], [1, 3, 3, 4]);
+  eq("budget delete: confirmed only by the exact Budget ID (or the event name when it has none)", [
+    deleteConfirmed("BUD-2627-0002", "BUD-2627-0002", "Summit"), deleteConfirmed(" BUD-2627-0002 ", "BUD-2627-0002", "Summit"), deleteConfirmed("bud-2627-0002", "BUD-2627-0002", "Summit"),
+    deleteConfirmed("BUD-2627-0001", "BUD-2627-0002", "Summit"), deleteConfirmed("Summit", null, "Summit"), deleteConfirmed("", null, "Summit"),
+  ], [true, true, false, false, true, false]);
   eq("budget: the next revision is one more than the highest so far", [nextRevisionNo([v("o", null, "approved")]), nextRevisionNo([v("o", null, "approved"), v("r1", 1, "rejected"), v("r2", 2, "approved")])], [1, 3]);
 }
 {

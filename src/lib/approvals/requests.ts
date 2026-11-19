@@ -7,7 +7,7 @@ import {
 } from "@/db/approvals-schema";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
-import { budgetIdOf, budgetRequestNo, linesTotal, nextRevisionNo, revisionBase, revisionBlocker, revisionRequestNo, waitingRevision, type BudgetLine } from "./budget";
+import { budgetIdOf, budgetRequestNo, linesTotal, nextBudgetSerial, nextRevisionNo, revisionBase, revisionBlocker, revisionRequestNo, waitingRevision, type BudgetLine } from "./budget";
 import { commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, TYPE_LABEL, wrongFormMessage, type ExpenditureForm } from "./calc";
 import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { resolveCustomAnswers } from "./form-config";
@@ -15,6 +15,7 @@ import type { CustomAnswers } from "./form-fields";
 import { financialYearOf, formatINR, todayIST } from "./format";
 import { getDirectoryUsers, listUsers, roleApprovers, type ApprovalsUser } from "./host-adapter";
 import { resolveDepartment } from "./departments";
+import { retiredBudgetIds } from "./budget-delete";
 import { notify } from "./notify";
 import { canSeeRequest } from "./request-queries";
 import type { BudgetRequestInput, BudgetRevisionInput, HrRequestInput, LargeExpenditureInput, ResubmitInput, SmallExpenditureInput } from "./request-schemas";
@@ -415,7 +416,7 @@ async function replaceWaitingRevision(r: { id: string; status: AprRequestStatus;
 
 /**
  * The Budget ID, given when the first version of a budget (the original or any revision) is approved: BUD-<short year>-NNNN in the
- * original's financial year, numbered in the order budgets of that year get one (how many already have one, plus one). The original takes
+ * original's financial year, one more than the highest given in that year (retired IDs of deleted budgets included, so none is reused). The original takes
  * it, and every revision takes it with -R<n>; it never changes after that. If two budgets of a year reach for the same number at the same
  * moment, the database refuses the second (request numbers are unique) and it takes the next one. Returns the number of `versionId`.
  */
@@ -425,10 +426,12 @@ async function assignBudgetIds(originalId: string, versionId: string): Promise<s
   let base = original.requestNo;
   if (!base) {
     const fy = original.financialYear ?? original.budgetDetails?.financialYear ?? financialYearOf(original.requestedAt);
-    const [{ n }] = await db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(aprRequests)
-      .where(and(eq(aprRequests.type, "budget"), sql`${aprRequests.parentRequestId} is null`, eq(aprRequests.financialYear, fy), sql`${aprRequests.requestNo} is not null`));
+    // One more than the highest ID ever given in the year, deleted budgets' retired IDs included, so no ID is ever given twice.
+    const [given, retired] = await Promise.all([
+      db.select({ no: aprRequests.requestNo }).from(aprRequests).where(and(eq(aprRequests.type, "budget"), sql`${aprRequests.parentRequestId} is null`, sql`${aprRequests.requestNo} like ${budgetRequestNo(fy, 0).slice(0, -4) + "%"}`)),
+      retiredBudgetIds(),
+    ]);
+    const n = nextBudgetSerial(fy, given.map((g) => g.no), retired) - 1;
     for (let attempt = 0; attempt < 20 && !base; attempt++) {
       const no = budgetRequestNo(fy, n + 1 + attempt);
       try {

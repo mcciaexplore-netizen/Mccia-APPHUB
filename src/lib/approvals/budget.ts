@@ -188,3 +188,37 @@ export function comparisonPairs(count: number): [number, number][] {
   }
   return pairs;
 }
+
+/* ---------------------------------------------------------------- deleting, retired IDs */
+
+/** A deleted budget's ID, kept so it is never given again, with who deleted it and when. */
+export type RetiredBudget = {
+  budgetId: string;
+  eventName: string;
+  /** The Total Budget Requested of the original. */
+  amountPaise: number | null;
+  /** How many versions (the original and its revisions) were deleted with it. */
+  versions: number;
+  deletedAt: string;
+  deletedById: string;
+  deletedByName: string;
+};
+
+/**
+ * The next Budget ID number in a financial year: one more than the highest ever given in it, counting the IDs of budgets that still exist
+ * and the retired IDs of deleted ones, so a deleted budget's ID is never given again (BUD-2627-0001 deleted, 0002 exists: the next is 0003).
+ */
+export function nextBudgetSerial(financialYear: string, existing: readonly (string | null)[], retired: readonly string[]): number {
+  const prefix = budgetRequestNo(financialYear, 0).slice(0, -4); // "BUD-2627-"
+  let max = 0;
+  for (const no of [...existing, ...retired]) {
+    if (!no?.startsWith(prefix)) continue;
+    const m = /^(\d{4,})$/.exec(budgetIdOf(no).slice(prefix.length));
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return max + 1;
+}
+
+/** What has to be typed to confirm deleting a budget: its Budget ID, or, for one never approved (no ID), its event name. */
+export const deleteConfirmText = (budgetId: string | null, eventName: string): string => budgetId ?? eventName;
+export const deleteConfirmed = (typed: string, budgetId: string | null, eventName: string): boolean => typed.trim() === deleteConfirmText(budgetId, eventName).trim();

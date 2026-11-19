@@ -65,6 +65,10 @@ const removeData = async () => {
   await sql`delete from departments where name like 'ZZ Budget%'`;
   await sql`delete from apr_departments where name like 'ZZ%'`;
   await sql`delete from apr_admin_audit where entity = 'department' and summary like '%ZZ%'`;
+  // Deleted test budgets: their audit rows and their places on the retired list.
+  await sql`delete from apr_admin_audit where entity = 'budget' and summary like '%ZZ%'`;
+  await sql`update apr_settings set value = (select coalesce(jsonb_agg(e), '[]'::jsonb) from jsonb_array_elements(value::jsonb) e where e->>'eventName' not like 'ZZ%')::text where key = 'retired_budget_ids'`;
+  await sql`delete from apr_settings where key = 'retired_budget_ids' and value = '[]'`;
   // The Budget form's layout, as this test sets it (it starts and ends with the defaults: no rows).
   await sql`delete from apr_form_fields where form = 'budget'`;
   await sql`delete from apr_admin_audit where entity = 'form_fields' and summary like '%Budget%'`;
@@ -421,6 +425,53 @@ try {
     await H.getByRole("button", { name: "Sign in" }).click(); await H.waitForFunction(() => location.pathname !== "/login", null, { timeout: 30000 });
     await H.goto(BASE + "/administrator/approval-forms");
     if (new URL(H.url()).pathname === "/unlock") { await H.locator("input[name=password]").fill(ADMIN_PW); await H.getByRole("button", { name: "Unlock" }).click(); await H.waitForURL((u) => u.pathname !== "/unlock", { timeout: 20000 }).catch(() => {}); await H.goto(BASE + "/administrator/approval-forms"); }
+
+    section("Deleting a budget (Support Admin)");
+    const d1 = await raise("ZZ Delete Keep"), d2 = await raise("ZZ Delete Me");
+    await api(A.page, `/api/approvals/requests/${d1.id}/decision`, "POST", { action: "approve" });
+    await api(A.page, `/api/approvals/requests/${d2.id}/decision`, "POST", { action: "approve" });
+    const noOf = async (id) => (await sql`select request_no from apr_requests where id = ${id}`)[0]?.request_no;
+    const [no1, no2] = [await noOf(d1.id), await noOf(d2.id)];
+    const d2rev = await api(R.page, `/api/approvals/requests/${d2.id}/revise`, "POST", { reason: "ZZ more", incomeLines: [], expenseLines: [{ name: "ZZ Hall", amountPaise: 90000 }], vendors: [], budgetPaise: 1, approverUserId: approver.id });
+    await go(R.page, `/approvals/requests/${d2.id}`);
+    check("the requester has no Delete Budget button", (await R.page.locator("[data-testid=budget-delete]").count()) === 0);
+    await go(A.page, `/approvals/requests/${d2.id}`);
+    check("nor does the approver", (await A.page.locator("[data-testid=budget-delete]").count()) === 0);
+    check("…and the server refuses them (403)", (await api(R.page, `/api/approvals/requests/${d2.id}/delete`, "POST", { confirm: no2 })).status === 403 && (await api(A.page, `/api/approvals/requests/${d2.id}/delete`, "POST", { confirm: no2 })).status === 403);
+    await H.goto(BASE + `/approvals/requests/${d2.id}`);
+    const del = H.locator("[data-testid=budget-delete]");
+    check("the Support Admin sees a red Delete Budget button next to Print", (await del.count()) === 1 && (await del.getAttribute("class")).includes("btn-danger")
+      && (await H.getByRole("button", { name: "Print" }).locator("xpath=..").locator("[data-testid=budget-delete]").count()) === 1);
+    await del.click();
+    const dlg = H.locator("[data-testid=budget-delete-dialog]");
+    const go2 = H.locator("[data-testid=budget-delete-go]");
+    check("the confirmation names the Budget ID and event, says the ID is retired, and Delete permanently starts disabled", (await dlg.textContent()).includes(no2) && (await dlg.textContent()).includes("ZZ Delete Me")
+      && (await dlg.textContent()).includes(`The Budget ID ${no2} will be permanently retired and cannot be used again`) && await go2.isDisabled());
+    await H.locator("[data-testid=budget-delete-confirm]").fill(no1);
+    check("a different ID keeps it disabled", await go2.isDisabled());
+    check("…and the server refuses a wrong confirmation (422)", (await api(H, `/api/approvals/requests/${d2.id}/delete`, "POST", { confirm: no1 })).status === 422);
+    await H.locator("[data-testid=budget-delete-confirm]").fill(no2);
+    check("typing the exact Budget ID enables it", !(await go2.isDisabled()));
+    await go2.click();
+    await H.waitForURL((u) => u.pathname === "/approvals/budget/all", { timeout: 30000 });
+    check("it goes to the Budget list with the message", (await H.locator("body").innerText()).includes(`Budget ${no2} has been permanently deleted. This ID has been retired.`));
+    check("the original, its revision and all their history are gone; the other budget is untouched", (await sql`select count(*)::int n from apr_requests where id in (${d2.id}, ${d2rev.body.id})`)[0].n === 0
+      && (await sql`select count(*)::int n from apr_approval_events where request_id in (${d2.id}, ${d2rev.body.id})`)[0].n === 0 && (await noOf(d1.id)) === no1);
+    const retiredRow = JSON.parse((await sql`select value from apr_settings where key = 'retired_budget_ids'`)[0]?.value ?? "[]").find((r) => r.budgetId === no2);
+    check("its ID is on the retired list, with who deleted it, the event and the amount", retiredRow?.eventName === "ZZ Delete Me" && retiredRow.amountPaise === 50000 && retiredRow.versions === 2 && !!retiredRow.deletedByName, retiredRow);
+    const auditRow = (await sql`select summary, action from apr_admin_audit where entity = 'budget' and entity_id = ${d2.id}`)[0];
+    check("the deletion is in the audit log", auditRow?.action === "delete" && auditRow.summary.includes(no2) && auditRow.summary.includes("ZZ Delete Me") && auditRow.summary.includes("retired"), auditRow);
+    await H.reload();
+    const retiredText = await H.locator("[data-testid=retired-budgets]").textContent().catch(() => "");
+    check("All Budgets shows the deleted budget under retired IDs, with who deleted it", retiredText.includes(no2) && retiredText.includes("ZZ Delete Me") && retiredText.includes(retiredRow?.deletedByName ?? "?"), retiredText.slice(0, 300));
+    await go(A.page, "/approvals/budget/all");
+    check("someone who cannot delete does not see the retired list", (await A.page.locator("[data-testid=retired-budgets]").count()) === 0);
+    const d3 = await raise("ZZ Delete After");
+    await api(A.page, `/api/approvals/requests/${d3.id}/decision`, "POST", { action: "approve" });
+    check("the next budget approved skips the retired ID (it was the highest): it gets the one after it", seq(await noOf(d3.id)) === seq(no2) + 1, [no1, no2, await noOf(d3.id)]);
+
+    await H.goto(BASE + "/administrator/approval-forms");
+    if (new URL(H.url()).pathname === "/unlock") { await H.locator("input[name=password]").fill(ADMIN_PW); await H.getByRole("button", { name: "Unlock" }).click(); await H.waitForURL((u) => u.pathname !== "/unlock", { timeout: 30000 }); }
     const card = H.locator('a[href="/administrator/approval-forms/budget"]').filter({ hasText: "Budget form" }).first();
     check("Administrator → Approval Forms has a Budget form card beside HR and Expenditure, with its description and Edit form", (await card.count()) === 1 && (await card.innerText()).includes("The budget approval form for events, with income, expenses and revision tracking.") && (await card.innerText()).includes("Edit form")
       && (await H.locator('a[href="/administrator/approval-forms/hr"]').count()) >= 1 && (await H.locator('a[href="/administrator/approval-forms/expenditure"]').count()) >= 1);

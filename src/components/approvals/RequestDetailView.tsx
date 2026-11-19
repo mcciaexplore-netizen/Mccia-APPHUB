@@ -4,6 +4,7 @@ import { Download, Paperclip } from "lucide-react";
 import { StatusPill } from "@/components/approvals/shared-ui";
 import { BudgetId } from "@/components/approvals/BudgetId";
 import { DecisionPanel, WithdrawButton } from "@/components/approvals/DecisionPanel";
+import { DeleteBudgetButton } from "@/components/approvals/DeleteBudgetButton";
 import { PrintButton, PrintedOn } from "@/components/approvals/PrintRequest";
 import { Timeline } from "@/components/approvals/Timeline";
 import { RevisionChanges } from "@/components/approvals/RevisionChanges";
@@ -221,6 +222,7 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
         <span className="ml-auto flex flex-wrap items-center gap-2">
           {b?.canRevise && <Link href={`/approvals/requests/${d.id}/revise`} className="btn btn-primary btn-sm" data-testid="budget-revise">Revise Budget</Link>}
           <PrintButton />
+          {b?.canDelete && <DeleteBudgetButton requestId={d.id} budgetId={b.budgetId} eventName={b.history[0]?.figures.details.eventName ?? b.details.eventName} confirmText={b.deleteConfirm} />}
           {d.can.withdraw && <WithdrawButton id={d.id} />}
         </span>
       </div>

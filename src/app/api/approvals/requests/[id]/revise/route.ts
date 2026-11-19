@@ -6,8 +6,8 @@ import { budgetRevisionInput } from "@/lib/approvals/request-schemas";
 export const dynamic = "force-dynamic";
 
 /**
- * Asks for a revision of an approved budget: a new request, linked to the original, that needs a fresh approval. Only the person who raised
- * the budget may, only once it is approved, and only while no other revision of it is waiting (all checked inside).
+ * Asks for a revision of a budget, at any stage: a new request, linked to the original, that needs its own approval. Only the person who
+ * raised the budget may (checked inside); a revision still waiting is replaced by the new one.
  */
 export const POST = route<{ id: string }>({}, async ({ req, user, params }) => {
   await rateLimit("submit", user.id, 30, 600);

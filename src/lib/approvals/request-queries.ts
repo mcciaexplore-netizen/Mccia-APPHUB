@@ -6,7 +6,8 @@ import {
   aprApprovalEvents, aprAttachments, aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprPublicationTypes,
   aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType, type BudgetDetails,
 } from "@/db/approvals-schema";
-import { activeVersion, budgetBalance, expenseLinesOf, incomeLinesOf, linesTotal, vendorLinesOf, revisionBase, revisionBlocker, waitingRevision, type BudgetBalance, type BudgetLine } from "./budget";
+import { activeVersion, budgetBalance, budgetIdOf, deleteConfirmText, expenseLinesOf, incomeLinesOf, linesTotal, vendorLinesOf, revisionBase, revisionBlocker, waitingRevision, type BudgetBalance, type BudgetLine } from "./budget";
+import { canDeleteBudgets } from "./budget-delete";
 import { decisionMode, type DecisionMode } from "./calc";
 import { REVIEW_KEYS, isDgOnly, type ReviewItem, type ReviewKey } from "./approvals.manifest";
 import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
@@ -394,6 +395,11 @@ export type BudgetRequestView = {
   waitingRevisionNo: number | null;
   /** The version a revision starts from: the latest one still standing. */
   baseId: string | null;
+  /** Whether this person may delete the whole budget (the Support Admin and the Super Admin), and what they type to confirm it. */
+  canDelete: boolean;
+  deleteConfirm: string;
+  /** The budget's ID (the same for every version), or null while it has none. */
+  budgetId: string | null;
 };
 
 /** The budget section of a budget request: its own figures and its history, with what this person may open and do. */
@@ -435,6 +441,9 @@ async function budgetViewOf(req: typeof aprRequests.$inferSelect, user: Approval
     })),
     waitingRevisionNo: waiting?.revisionNo ?? null,
     baseId: revisionBase(versions)?.id ?? null,
+    canDelete: canDeleteBudgets(user),
+    deleteConfirm: deleteConfirmText(original?.requestNo ? budgetIdOf(original.requestNo) : null, original?.details?.eventName ?? d.eventName),
+    budgetId: original?.requestNo ? budgetIdOf(original.requestNo) : null,
     activeId: active?.id ?? null,
     originalId,
     customByKey: Object.fromEntries((req.customValues ?? []).map((c) => [c.key, c.value])),
