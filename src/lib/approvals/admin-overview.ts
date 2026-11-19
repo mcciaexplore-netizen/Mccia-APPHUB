@@ -10,7 +10,7 @@ import { aprRequests, type AprRequestStatus } from "@/db/approvals-schema";
 export type StatusCounts = { pending: number; approved: number; rejected: number; returned: number; withdrawn: number; total: number };
 const empty = (): StatusCounts => ({ pending: 0, approved: 0, rejected: 0, returned: 0, withdrawn: 0, total: 0 });
 
-type WaitingRow = { id: string; requestNo: string | null; kind: "hr" | "expenditure_large" | "expenditure_small"; requester: string; amountPaise: number | null; requestedAt: Date; waitingFor: string | null };
+type WaitingRow = { id: string; requestNo: string | null; kind: "hr" | "expenditure_large" | "expenditure_small" | "budget"; requester: string; amountPaise: number | null; requestedAt: Date; waitingFor: string | null };
 
 export async function approvalsOverview(): Promise<{ hr: StatusCounts; large: StatusCounts; small: StatusCounts; waiting: WaitingRow[] }> {
   const [rows, waiting] = await Promise.all([
@@ -27,6 +27,7 @@ export async function approvalsOverview(): Promise<{ hr: StatusCounts; large: St
   ]);
   const out = { hr: empty(), large: empty(), small: empty() };
   for (const r of rows) {
+    if (r.type === "budget") continue; // the overview covers HR and expenditure; budgets have their own lists
     const bucket = r.type === "hr" ? out.hr : r.type === "expenditure_large" ? out.large : out.small;
     bucket[r.status as Exclude<AprRequestStatus, "draft">] += r.n;
     bucket.total += r.n;

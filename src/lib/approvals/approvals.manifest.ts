@@ -83,6 +83,16 @@ export const approvalsApps: NavApp[] = [
           { label: "Rejected Expenditure Requests", href: "/approvals/expenditures/rejected" },
         ],
       },
+      {
+        label: "Budget",
+        items: [
+          { label: "Budget Approval", href: "/approvals/budget/new", form: true },
+          { label: "All Budgets", href: "/approvals/budget/all" },
+          { label: "Approved Budgets", href: "/approvals/budget/approved" },
+          { label: "Pending Budgets", href: "/approvals/budget/pending" },
+          { label: "Rejected Budgets", href: "/approvals/budget/rejected" },
+        ],
+      },
       { label: "Event Approvals", disabled: true },
       { label: "Recommended Queue", href: "/approvals/inbox", roles: ["dg"] },
       {
@@ -181,12 +191,16 @@ function appOwning(pathname: string): AppKey | null {
 }
 
 /**
- * The two places an approver works, under Approval System in the hub's sidebar: HR (the HR requests) and Expenditure (expenses of every size).
- * Each has three lists, Pending, Approved and Rejected, at /approvals/review/<place>/<list>.
+ * The places an approver works, under Approval System in the hub's sidebar: HR (the HR requests), Expenditure (expenses of every size) and
+ * Budget (budgets, decided by whoever the requester picked, so anyone in the hub can have this place). Each has three lists, Pending,
+ * Approved and Rejected, at /approvals/review/<place>/<list>.
  */
-export type ReviewKey = "hr" | "expenditure";
-export const REVIEW_KEYS: readonly ReviewKey[] = ["hr", "expenditure"];
-export const REVIEW_LABEL: Record<ReviewKey | "recommendation", string> = { hr: "HR", expenditure: "Expenditure", recommendation: "Recommended" };
+export type ReviewKey = "hr" | "expenditure" | "budget";
+export const REVIEW_KEYS: readonly ReviewKey[] = ["hr", "expenditure", "budget"];
+/** The two places whose requests are recommended on to the Director General (a budget has one approver, so it is never recommended). */
+export type RecommendationKey = "hr" | "expenditure";
+export const RECOMMENDATION_KEYS: readonly RecommendationKey[] = ["hr", "expenditure"];
+export const REVIEW_LABEL: Record<ReviewKey | "recommendation", string> = { hr: "HR", expenditure: "Expenditure", budget: "Budget", recommendation: "Recommended" };
 export const REVIEW_TABS = ["pending", "approved", "rejected"] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
 export const REVIEW_TAB_LABEL: Record<ReviewTab, string> = { pending: "Pending", approved: "Approved", rejected: "Rejected" };
@@ -194,15 +208,25 @@ export const REVIEW_TAB_LABEL: Record<ReviewTab, string> = { pending: "Pending",
  * What the sidebar needs for one of them: which, and how many requests wait for this person there. The Director General has one place,
  * "recommendation" (what was recommended to them), with a tab each for HR and Expenditure; `counts` is what waits in each tab.
  */
-export type ReviewItem = { key: ReviewKey | "recommendation"; waiting: number; counts?: Record<ReviewKey, number> };
+export type ReviewItem = { key: ReviewKey | "recommendation"; waiting: number; counts?: Record<RecommendationKey, number> };
+/**
+ * Whether a person's lists in a place are their own work (what waits for them, what they approved or rejected) rather than everything by
+ * status. HR and Expenditure: the people who decide (approver, dg). Budget: anyone who does not oversee everything, since any person in the
+ * hub can be picked to approve a budget; the Director General counts as deciding too.
+ */
+export const decidesIn = (key: ReviewKey, roles: readonly ApprovalsRole[]): boolean => {
+  const decides = roles.some((r) => r === "approver" || r === "dg");
+  return key === "budget" ? decides || !roles.some((r) => r === "viewer" || r === "approvals_admin") : decides;
+};
+
 /** Where a place opens: an approver's on its Pending list, the Director General's on the HR tab of what was recommended to them. */
 export const reviewHref = (key: ReviewItem["key"]) => (key === "recommendation" ? "/approvals/review/recommendation/hr" : `/approvals/review/${key}/pending`);
 
 /** The tab of the Director General's Recommended place a path names, or null. */
-export function parseRecommendationPath(parts: readonly string[]): ReviewKey | null {
+export function parseRecommendationPath(parts: readonly string[]): RecommendationKey | null {
   const [head, place, key, ...rest] = parts;
   if (head !== "review" || place !== "recommendation" || rest.length > 0) return null;
-  return REVIEW_KEYS.find((x) => x === key) ?? null;
+  return RECOMMENDATION_KEYS.find((x) => x === key) ?? null;
 }
 
 /** The place and list a path under /approvals/review/ names, or null. */
@@ -217,8 +241,10 @@ export function parseReviewPath(parts: readonly string[]): { key: ReviewKey; tab
 /** The page each application opens on when it is chosen in the hub's sidebar. */
 export const APP_ENTRY: Record<AppKey, string> = { hr: "/approvals/hr/new", exp: "/approvals/expenses/new" };
 
-/** Which application a request belongs to: HR requests and expenditure of the threshold and above are HR Approval; expenses below it are Expenditure. */
-export const appForType = (type: "hr" | "expenditure_large" | "expenditure_small"): AppKey => (type === "expenditure_small" ? "exp" : "hr");
+/** Which application a request belongs to: HR requests, expenditure of the threshold and above and budgets are HR Approval; expenses below it are Expenditure. */
+export const appForType = (type: "hr" | "expenditure_large" | "expenditure_small" | "budget"): AppKey => (type === "expenditure_small" ? "exp" : "hr");
+/** The Budget Approval form. */
+export const BUDGET_ENTRY = "/approvals/budget/new";
 
 const parseApp = (v: string | null | undefined): AppKey | null => (v === "hr" || v === "exp" ? v : null);
 

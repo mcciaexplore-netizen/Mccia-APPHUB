@@ -12,9 +12,11 @@ const ADD = "__add__";
 
 /** Search, date range and filters above a list. The state lives in the address, so a filtered view can be shared and exported. */
 export function ListFilters({
-  params, categories, branches, showStatus, showBranch, exportHref, addCategory,
+  params, categories, branches, showStatus, showBranch, exportHref, addCategory, showCategory = true,
 }: {
   params: ListParams; categories: Opt[]; branches: Opt[]; showStatus: boolean; showBranch: boolean; exportHref: string;
+  /** Off for budget lists: a budget has an event, not a category. */
+  showCategory?: boolean;
   /** For the Approvals admin: "+ Add category" at the bottom of the Category list, adding to this kind of list. */
   addCategory?: { kind: "categories" | "hr-categories"; noun: string };
 }) {
@@ -40,14 +42,16 @@ export function ListFilters({
       </label>
       <label className="block"><span className="label-xs block">From</span><input className="input" type="date" value={params.from} onChange={(e) => apply({ from: e.target.value })} /></label>
       <label className="block"><span className="label-xs block">To</span><input className="input" type="date" value={params.to} onChange={(e) => apply({ to: e.target.value })} /></label>
-      <label className="block">
-        <span className="label-xs block">Category</span>
-        <select className="input w-44" value={params.categoryId} onChange={(e) => (e.target.value === ADD ? setAdding(true) : apply({ categoryId: e.target.value }))}>
-          <option value="">All</option>
-          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          {addCategory && <option value={ADD}>+ Add category</option>}
-        </select>
-      </label>
+      {showCategory && (
+        <label className="block">
+          <span className="label-xs block">Category</span>
+          <select className="input w-44" value={params.categoryId} onChange={(e) => (e.target.value === ADD ? setAdding(true) : apply({ categoryId: e.target.value }))}>
+            <option value="">All</option>
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {addCategory && <option value={ADD}>+ Add category</option>}
+          </select>
+        </label>
+      )}
       {showBranch && (
         <label className="block">
           <span className="label-xs block">Branch</span>

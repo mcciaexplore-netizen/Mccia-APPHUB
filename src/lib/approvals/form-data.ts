@@ -1,11 +1,12 @@
 import "server-only";
 import { z } from "zod";
 import type { EditInfo, ExpenditureFormProps, HrFormProps } from "@/components/approvals/RequestForms";
-import { hasRole, listUsers, type ApprovalsUser } from "./host-adapter";
+import type { BudgetFormProps } from "@/components/approvals/BudgetForm";
+import { hasRole, listDepartments, listUsers, type ApprovalsUser } from "./host-adapter";
 import { getFormFields } from "./form-config";
 import { listMaster, type MasterRow } from "./masters";
-import { formatINR } from "./format";
-import type { EditValues } from "./request-queries";
+import { financialYearOf, formatINR, recentFinancialYears } from "./format";
+import type { EditValues, RequestDetail } from "./request-queries";
 import { getSettings } from "./settings";
 
 const byName = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label);
@@ -87,6 +88,39 @@ export async function expenditureEditProps(user: ApprovalsUser, requestId: strin
       employeeId: person?.value ?? "", email: v.requesterEmail, categoryId: e.categoryId, branchId: e.branchId ?? "", nature: e.nature ?? "", vendor: e.vendorName ?? "",
       amount: v.amountPaise == null ? "" : formatINR(v.amountPaise), budgetAllocated: money(e.budget.allocatedPaise), budgetUsed: money(e.budget.usedPaise), expenseDate: e.expenseDate ?? "", taxInvoiceDate: e.taxInvoiceDate ?? "",
       pubTypeId: e.publicationTypeId ?? "", pubId: e.publicationId ?? "",
+    },
+  };
+}
+
+/* ---------------------------------------------------------------- budget */
+
+/** Everyone in the hub but the person filling the form in, as approver choices: "Name (email)", so two people of the same name differ. */
+async function approverOptions(user: ApprovalsUser) {
+  return (await listUsers()).filter((u) => u.id !== user.id).map((u) => ({ value: u.id, label: `${u.name} (${u.email})` })).sort(byName);
+}
+
+/** The Budget Approval form: the hub's departments, the financial years (this one first, the next one too, and the last few), and the approvers. */
+export async function budgetFormProps(user: ApprovalsUser): Promise<BudgetFormProps> {
+  const [departments, people] = await Promise.all([listDepartments(), approverOptions(user)]);
+  return {
+    people,
+    departments: departments.map((d) => ({ value: d.id, label: d.name })),
+    financialYears: recentFinancialYears(4),
+    defaultFinancialYear: financialYearOf(),
+  };
+}
+
+/**
+ * The revision form of a budget: it starts from the budget in force (`active`, the latest approved version), with the approver the current
+ * request went to. `asked` is the request the person opened (the original or a revision).
+ */
+export async function budgetRevisionProps(user: ApprovalsUser, asked: RequestDetail, active: RequestDetail): Promise<BudgetFormProps> {
+  const b = active.budget!;
+  return {
+    people: await approverOptions(user),
+    revision: {
+      requestId: asked.id, requestNo: asked.budget!.history[0]?.requestNo ?? asked.requestNo ?? "", eventName: b.details.eventName, departmentName: b.details.departmentName,
+      financialYear: b.details.financialYear, budgetPaise: active.amountPaise ?? 0, income: b.details.income, vendors: b.details.vendors, approverUserId: asked.budget!.approverUserId,
     },
   };
 }

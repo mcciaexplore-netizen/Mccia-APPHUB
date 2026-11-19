@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { FULL_ACCESS_ROLES, isDgOnly } from "@/lib/approvals/approvals.manifest";
+import { FULL_ACCESS_ROLES, decidesIn, isDgOnly, parseReviewPath } from "@/lib/approvals/approvals.manifest";
 import { route } from "@/lib/approvals/guard";
 import { hasAnyRole } from "@/lib/approvals/host-adapter";
 import { toCsv } from "@/lib/csv";
 import { formatDateTime, formatINR } from "@/lib/approvals/format";
 import { parseListParams } from "@/lib/approvals/list-params";
-import { listRequests, type RequestRow } from "@/lib/approvals/request-queries";
+import { listRequests, reviewItemsFor, type RequestRow } from "@/lib/approvals/request-queries";
 import { resolveScreen } from "@/lib/approvals/screens";
 import { STATUS_LABEL, TYPE_LABEL } from "@/lib/approvals/calc";
 
@@ -22,10 +22,18 @@ const line = (r: RequestRow) => [
  * The list as a CSV file (opens in Excel): the same screen and filters as on the page, every page of it, up to 5,000 rows. Only for people
  * with full access, like the lists it comes from.
  */
-export const GET = route({ roles: [...FULL_ACCESS_ROLES] }, async ({ req, user }) => {
-  if (isDgOnly(user.roles)) return NextResponse.json({ error: "Not allowed." }, { status: 403 }); // the Director General works from the Recommended Queue
+export const GET = route({}, async ({ req, user }) => {
   const q = req.nextUrl.searchParams;
-  const screen = resolveScreen((q.get("screen") ?? "").split("/").filter(Boolean), hasAnyRole(user, ["approver", "dg"]));
+  const slug = (q.get("screen") ?? "").split("/").filter(Boolean);
+  // The Budget place is anyone's who was sent a budget (as its pages are); every other list needs full access, and the Director General
+  // works from the Recommended Queue.
+  const review = parseReviewPath(slug);
+  if (review?.key === "budget") {
+    if (!(await reviewItemsFor(user)).some((i) => i.key === "budget") && !hasAnyRole(user, ["dg"])) return NextResponse.json({ error: "Not allowed." }, { status: 403 });
+  } else if (!hasAnyRole(user, FULL_ACCESS_ROLES) || isDgOnly(user.roles)) {
+    return NextResponse.json({ error: "Not allowed." }, { status: 403 });
+  }
+  const screen = resolveScreen(slug, review ? decidesIn(review.key, user.roles) : hasAnyRole(user, ["approver", "dg"]));
   if (!screen) return NextResponse.json({ error: "Unknown list." }, { status: 404 });
   const p = parseListParams(Object.fromEntries(q.entries()));
 

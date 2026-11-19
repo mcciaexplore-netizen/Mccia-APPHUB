@@ -13,8 +13,8 @@ import type { AprRequestType } from "@/db/approvals-schema";
  * Each row opens its request.
  */
 
-const typeLabel = (t: AprRequestType) => (t === "hr" ? "HR" : "Expenditure");
-/** An expenditure's amount, an HR request's category. */
+const typeLabel = (t: AprRequestType) => (t === "hr" ? "HR" : t === "budget" ? "Budget" : "Expenditure");
+/** An expenditure's or a budget's amount, an HR request's category. */
 const amountOrCategory = (r: { type: AprRequestType; amountPaise: number | null; categoryName: string | null }) =>
   r.type === "hr" ? (r.categoryName ?? "") : r.amountPaise == null ? "" : formatINR(r.amountPaise);
 const requestHref =(r: { id: string; type: AprRequestType }) => `/approvals/requests/${r.id}?app=${appForType(r.type)}`;

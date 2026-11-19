@@ -29,6 +29,7 @@
     "test:load:write": "tsx --require ./tests/stub-server-only.cjs tests/load/write-load.mts",
     "test:e2e:approvals": "node tests/e2e/approvals.mjs",
     "test:e2e:approvals:flow": "node tests/e2e/approvals-flow.mjs",
+    "test:e2e:approvals:budget": "node tests/e2e/approvals-budget.mjs",
     "test:e2e:eru": "node tests/e2e/eru.mjs"
   },
   "dependencies": {

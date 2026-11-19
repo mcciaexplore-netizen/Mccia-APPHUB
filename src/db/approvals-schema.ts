@@ -26,7 +26,9 @@ import { sql } from "drizzle-orm";
  */
 
 // The type list is meant to grow (reimbursement, events, car booking): add a value here, a detail table and routing rules.
-export const aprRequestType = pgEnum("apr_request_type", ["hr", "expenditure_small", "expenditure_large"]);
+// "budget": an event's budget, sent to one approver the requester picks; its details are in apr_requests.budget_details (no detail table),
+// and each revision of an approved budget is a request of its own, linked to the original by parent_request_id.
+export const aprRequestType = pgEnum("apr_request_type", ["hr", "expenditure_small", "expenditure_large", "budget"]);
 // "returned": an approver sent the request back to the person who raised it, to be corrected and resubmitted to the same approver.
 export const aprRequestStatus = pgEnum("apr_request_status", ["draft", "pending", "approved", "rejected", "withdrawn", "returned"]);
 export const aprStepStatus = pgEnum("apr_step_status", ["waiting", "pending", "approved", "rejected", "skipped", "returned"]);
@@ -208,6 +210,12 @@ export const aprRequests = pgTable(
     overBudget: boolean("over_budget").notNull().default(false),
     // Resubmit clones a rejected request into a new draft and links back to the original.
     resubmittedFromId: uuid("resubmitted_from_id"),
+    // Budget requests only (type "budget"): the event, its income, vendors and, on a revision, why it was revised. See BudgetDetails.
+    budgetDetails: jsonb("budget_details").$type<BudgetDetails>(),
+    // A revision of an approved budget points at the original budget request (never at another revision), and is numbered 1, 2, 3...
+    // The original has neither. At most one revision of a budget can be open at a time (the partial unique index below).
+    parentRequestId: uuid("parent_request_id"),
+    revisionNo: integer("revision_no"),
     // Reserved for a later import of old Zoho records.
     legacyId: text("legacy_id").unique(),
     reminderLastSentAt: timestamp("reminder_last_sent_at", { withTimezone: true }),
@@ -221,8 +229,28 @@ export const aprRequests = pgTable(
     index("apr_requests_approver_idx").on(t.currentApproverUserId),
     index("apr_requests_requested_at_idx").on(t.requestedAt),
     index("apr_requests_fy_idx").on(t.financialYear),
+    index("apr_requests_parent_idx").on(t.parentRequestId),
+    unique("apr_requests_parent_revision_uq").on(t.parentRequestId, t.revisionNo),
+    uniqueIndex("apr_requests_one_open_revision_uq").on(t.parentRequestId).where(sql`${t.parentRequestId} is not null and ${t.status} in ('draft', 'pending')`),
   ],
 );
+
+/**
+ * What a budget request holds besides its amount (apr_requests.amount_paise is the budget asked for). Money is integer paise; income lines
+ * left empty are null. `financialYear` is the year the event's budget belongs to, as the requester chose it ("2026-27").
+ */
+export type BudgetDetails = {
+  eventName: string;
+  description: string;
+  departmentId: string;
+  /** The department's name when the request was raised, so it still reads right if the department is renamed or removed. */
+  departmentName: string;
+  financialYear: string;
+  income: { sponsorshipPaise: number | null; stallPaise: number | null; participantsPaise: number | null; otherPaise: number | null };
+  vendors: string[];
+  /** Revisions only: why the budget had to change. */
+  revisionReason?: string | null;
+};
 
 /**
  * How the request forms are laid out, set by the Support Admin. A row either overrides one of the built-in fields of a form (its label, its

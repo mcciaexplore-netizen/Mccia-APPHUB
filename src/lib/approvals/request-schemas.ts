@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isFinancialYear } from "./format";
 import { idSchema } from "./validation";
 
 /** What a person may attach: PDF, JPG, PNG, Word and Excel files, up to 10 MB each. Shared by the upload route and the forms. */
@@ -125,6 +126,44 @@ export type SmallExpenditureInput = z.output<typeof smallExpenditureInput>;
  */
 export const largeExpenditureInput = smallExpenditureInput.extend({ supportingDocs: optionalFile });
 export type LargeExpenditureInput = z.output<typeof largeExpenditureInput>;
+
+/* ---------------------------------------------------------------- budget */
+
+/** An income line: empty, or a sum of zero or more. */
+const incomePaise = (what: string) => budgetPaise(what).nullish().transform((v) => v ?? null);
+const income = z.object({
+  sponsorshipPaise: incomePaise("Sponsorship income"),
+  stallPaise: incomePaise("Stall income"),
+  participantsPaise: incomePaise("Participants income"),
+  otherPaise: incomePaise("Other income"),
+});
+/** Vendor names: as many as needed; blank ones are dropped. */
+const vendors = z.array(z.string().max(300, "Keep each vendor name under 300 characters")).max(200, "That is too many vendors for one budget").default([])
+  .transform((list) => list.map((v) => v.trim()).filter(Boolean));
+const financialYear = z.string().refine(isFinancialYear, "Choose the financial year");
+
+/** The Budget Approval form. The approver is one person the requester picks from everyone in the hub. */
+export const budgetRequestInput = z.object({
+  eventName: requiredText("Event name", 200),
+  description: requiredText("Description", 4000),
+  departmentId: idSchema,
+  financialYear,
+  income,
+  vendors,
+  budgetPaise: amountPaise,
+  approverUserId: idSchema,
+});
+export type BudgetRequestInput = z.output<typeof budgetRequestInput>;
+
+/** A revision of an approved budget: the new amount and why, with the income, vendors and approver as they now stand. */
+export const budgetRevisionInput = z.object({
+  budgetPaise: amountPaise,
+  reason: requiredText("Reason for revision", 4000),
+  income,
+  vendors,
+  approverUserId: idSchema,
+});
+export type BudgetRevisionInput = z.output<typeof budgetRevisionInput>;
 
 export const decisionInput = z.object({
   action: z.enum(["approve", "reject", "return"]),

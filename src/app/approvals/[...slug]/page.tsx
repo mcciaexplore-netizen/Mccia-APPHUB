@@ -3,9 +3,9 @@ import { notFound } from "next/navigation";
 import { ListScreenView } from "@/components/approvals/ListScreenView";
 import { RecommendationTabs } from "@/components/approvals/RecommendationTabs";
 import { TableSkeleton } from "@/components/approvals/Skeletons";
-import { FULL_ACCESS_ROLES, REVIEW_LABEL, REVIEW_TAB_LABEL, allNavItems, canSee, parseRecommendationPath, parseReviewPath } from "@/lib/approvals/approvals.manifest";
+import { FULL_ACCESS_ROLES, REVIEW_LABEL, REVIEW_TAB_LABEL, allNavItems, canSee, decidesIn, parseRecommendationPath, parseReviewPath } from "@/lib/approvals/approvals.manifest";
 import { requirePage } from "@/lib/approvals/guard";
-import { hasAnyRole, hasRole } from "@/lib/approvals/host-adapter";
+import { hasRole } from "@/lib/approvals/host-adapter";
 import { parseListParams } from "@/lib/approvals/list-params";
 import { reviewItemsFor } from "@/lib/approvals/request-queries";
 import { resolveScreen } from "@/lib/approvals/screens";
@@ -30,8 +30,9 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const recommended = parseRecommendationPath(slug);
   const item = allNavItems().find((i) => i.href === path);
   if (!item && !review && !recommended && !resolveScreen(slug, false)) notFound();
-  // A list open to every requester (their own Approved Forms) needs no more than being signed in; every other list needs full access.
-  const user = await (item?.roles?.includes("requester") ? requirePage() : requirePage(...FULL_ACCESS_ROLES));
+  // A list open to every requester (their own Approved Forms) needs no more than being signed in, and so does the Budget place (anyone in the
+  // hub can be picked to approve a budget; whether they have that place is checked below). Every other list needs full access.
+  const user = await (item?.roles?.includes("requester") || review?.key === "budget" ? requirePage() : requirePage(...FULL_ACCESS_ROLES));
   if (item && !canSee(item, user.roles)) notFound();
   if (recommended) {
     // The Director General's place: what was recommended to them, a tab each for HR and Expenditure.
@@ -49,8 +50,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     // their role gives them (HR Admin: HR, Expense Admin: Expenditure); the Director General opens both, as the final approver of each.
     const items = await reviewItemsFor(user);
     if (!items.some((i) => i.key === review.key) && !hasRole(user, "dg")) notFound();
-    const decides = hasAnyRole(user, ["approver", "dg"]);
-    const screen = { ...resolveScreen(slug, decides)!, title: `${REVIEW_TAB_LABEL[review.tab]} ${REVIEW_LABEL[review.key]} Approvals` };
+    const screen = { ...resolveScreen(slug, decidesIn(review.key, user.roles))!, title: `${REVIEW_TAB_LABEL[review.tab]} ${REVIEW_LABEL[review.key]} Approvals` };
     return <div className="page-enter"><Streamed><ListScreenView slug={slug.join("/")} screen={screen} params={parseListParams(await searchParams)} user={user} /></Streamed></div>;
   }
   const screen = resolveScreen(slug, false);

@@ -8,7 +8,7 @@ import { approvalsOverview } from "@/lib/approvals/admin-overview";
 
 export const metadata = { title: "Audit Log · MCCIA Approvals" };
 
-const KIND: Record<string, string> = { hr: "HR request", expenditure_large: "Expenditure ₹10,000+", expenditure_small: "Expense below ₹10,000" };
+const KIND: Record<string, string> = { hr: "HR request", expenditure_large: "Expenditure ₹10,000+", expenditure_small: "Expense below ₹10,000", budget: "Budget approval" };
 
 export default async function Page() {
   await requirePage("approvals_admin");

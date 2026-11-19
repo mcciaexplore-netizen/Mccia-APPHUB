@@ -76,6 +76,21 @@ export async function getDirectoryUsers(ids: string[]): Promise<DirectoryUser[]>
   return rows.map((u) => ({ id: u.id, name: u.name, email: u.email, headAdmin: u.role === "head_admin", active: u.active }));
 }
 
+/** The hub's departments (its organisation units, not the application groups), active ones, by name: the Budget form's Department list. */
+export async function listDepartments(): Promise<{ id: string; name: string }[]> {
+  return db
+    .select({ id: departments.id, name: departments.name })
+    .from(departments)
+    .where(and(eq(departments.kind, "organisation"), eq(departments.isActive, true)))
+    .orderBy(asc(departments.name));
+}
+
+/** One department by id, active or not (null when there is none), to keep its name on a budget request. */
+export async function departmentById(id: string): Promise<{ id: string; name: string; active: boolean } | null> {
+  const [row] = await db.select({ id: departments.id, name: departments.name, active: departments.isActive, kind: departments.kind }).from(departments).where(eq(departments.id, id));
+  return row && row.kind === "organisation" ? { id: row.id, name: row.name, active: row.active } : null;
+}
+
 /** Who submitted a request, for its printed page: their name and the department they belong to in the hub (null when none is set). */
 export async function submitterOf(userId: string): Promise<{ name: string; department: string | null } | null> {
   const [row] = await db

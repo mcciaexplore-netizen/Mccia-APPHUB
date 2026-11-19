@@ -142,6 +142,10 @@
 .apr-root .apr-table tbody tr { transition: background 0.12s ease; }
 .apr-root .apr-table tbody tr:hover { background: var(--z-hover, #f9fafb); }
 
+/* The version of a budget in force, in its history table. */
+.apr-root .apr-table tr.apr-budget-active td { background: var(--color-green-tint, #ecfdf5); }
+.apr-root .apr-table tr.apr-budget-active td:first-child { box-shadow: inset 3px 0 0 #16a34a; }
+
 /* ------------------------------------------------------------------ printing a request (the Print button on its page, or Ctrl+P)
    Only the request (.apr-printable) goes on paper, sized to fit one A4 page: everything on the page that does not hold it (the hub's top bar,
    the sidebar, the module heading, the controls and the timeline, marked .apr-no-print) is left out, in black on white. Scoped by :has and a
@@ -178,4 +182,10 @@
   .apr-printable .apr-print-head h1 { font-size: 13px; font-weight: 700; margin: 0 0 0.25rem; }
   .apr-printable .apr-print-chain li { margin: 0.05rem 0; }
   .apr-printable .apr-print-foot { margin-top: 0.7rem !important; padding-top: 0.2rem; border-top: 1px solid #000; font-size: 9px; }
+  /* A budget's history: a compact table, the version in force in bold. */
+  .apr-printable .table-wrap { overflow: visible !important; border: 0 !important; }
+  .apr-printable .apr-table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+  .apr-printable .apr-table th, .apr-printable .apr-table td { border: 1px solid #999; padding: 0.1rem 0.3rem; text-align: left; }
+  .apr-printable .apr-table tr.apr-budget-active td { font-weight: 700; box-shadow: none; }
+  .apr-printable .badge { border: 1px solid #000; padding: 0 0.3rem; font-size: 8.5px; }
 }

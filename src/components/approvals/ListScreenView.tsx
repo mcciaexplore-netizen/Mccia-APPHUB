@@ -15,7 +15,7 @@ import { hasRole, type ApprovalsUser } from "@/lib/approvals/host-adapter";
 import type { AprRequestStatus } from "@/db/approvals-schema";
 import { decisionMode } from "@/lib/approvals/calc";
 
-const TYPE_SHORT = { hr: "HR", expenditure_large: "Expenditure", expenditure_small: "Expense" } as const;
+const TYPE_SHORT = { hr: "HR", expenditure_large: "Expenditure", expenditure_small: "Expense", budget: "Budget" } as const;
 
 /** One list screen: filters on top, a sortable table, a pager. Which rows appear is decided by the server, never by the filter alone. */
 export async function ListScreenView({ slug, screen, params, user }: { slug: string; screen: ListScreen; params: ListParams; user: ApprovalsUser }) {
@@ -25,8 +25,8 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
       types: screen.types, statuses: params.status ? [params.status as AprRequestStatus] : screen.statuses, mine: screen.mine, waitingForMe: screen.waitingForMe, decidedByMe: screen.decidedByMe, recommendedByMe: screen.recommendedByMe, rejectedByMe: screen.rejectedByMe, approvedByMe: screen.approvedByMe, reachedMe: screen.reachedMe,
       q: params.q, from: params.from, to: params.to, categoryId: params.categoryId, branchId: params.branchId, sort: params.sort, dir: params.dir, page: params.page, pageSize: PAGE_SIZE,
     }),
-    screen.categories !== "expense" ? listMasterCached("hr-categories", true) : Promise.resolve([]),
-    screen.categories !== "hr" ? listMasterCached("categories", true) : Promise.resolve([]),
+    screen.categories === "hr" || screen.categories === "all" ? listMasterCached("hr-categories", true) : Promise.resolve([]),
+    screen.categories === "expense" || screen.categories === "all" ? listMasterCached("categories", true) : Promise.resolve([]),
     screen.branch ? listMasterCached("branches", true) : Promise.resolve([]),
   ]);
   const categories = [...hrCats, ...expCats].map((c) => ({ id: c.id, name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
@@ -57,8 +57,8 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
         title={screen.title} intro={screen.intro}
         actions={screen.newHref ? <Link href={screen.newHref} className="btn btn-primary btn-sm"><Plus size={14} /> New request</Link> : undefined}
       />
-      <ListFilters params={params} categories={categories} branches={branches.map((b) => ({ id: b.id, name: b.name }))} showStatus={!screen.statuses} showBranch={!!screen.branch} exportHref={exportHref}
-        addCategory={hasRole(user, "approvals_admin") ? (screen.categories === "hr" ? { kind: "hr-categories", noun: "HR request type" } : { kind: "categories", noun: "expense type" }) : undefined} />
+      <ListFilters params={params} categories={categories} branches={branches.map((b) => ({ id: b.id, name: b.name }))} showStatus={!screen.statuses} showBranch={!!screen.branch} showCategory={screen.categories !== "none"} exportHref={exportHref}
+        addCategory={hasRole(user, "approvals_admin") && screen.categories !== "none" ? (screen.categories === "hr" ? { kind: "hr-categories", noun: "HR request type" } : { kind: "categories", noun: "expense type" }) : undefined} />
 
       {rows.length === 0 ? <EmptyState kind={empty} /> : (
       <div className="table-wrap">
@@ -68,7 +68,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
               {th("Request No.", "requestNo")}
               {mixed && <th className="hidden md:table-cell">Type</th>}
               {th("Name", "name")}
-              {th("Category", "category", "hidden md:table-cell")}
+              {th(screen.categories === "none" ? "Event" : "Category", "category", "hidden md:table-cell")}
               {screen.branch && th("Branch", "branch")}
               {screen.vendor && <th className="hidden md:table-cell">Vendor</th>}
               {screen.vendor && <th className="hidden md:table-cell">Tax invoice date</th>}

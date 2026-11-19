@@ -5,7 +5,7 @@ import { HubShell } from "@/components/HubShell";
 import { ApprovalsSidebar, type SideLink } from "@/components/approvals/ApprovalsSidebar";
 import { ModuleHeader } from "@/components/approvals/ModuleHeader";
 import { MobileMenu } from "@/components/MobileMenu";
-import { MY_APPROVALS_ROLES, REVIEW_KEYS, REVIEW_LABEL, REVIEW_TABS, REVIEW_TAB_LABEL, type ReviewKey } from "@/lib/approvals/approvals.manifest";
+import { MY_APPROVALS_ROLES, REVIEW_KEYS, REVIEW_LABEL, REVIEW_TABS, REVIEW_TAB_LABEL, decidesIn, type ReviewKey } from "@/lib/approvals/approvals.manifest";
 import { requirePage } from "@/lib/approvals/guard";
 import { hasAnyRole, hasRole, type ApprovalsUser } from "@/lib/approvals/host-adapter";
 import { unreadCount } from "@/lib/approvals/notify";
@@ -32,7 +32,7 @@ async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
   // person has are worked out, so the two do not wait for each other; the counts of a place they do not have are simply not shown.
   const filterOf = (s: ListScreen): ListFilter =>
     ({ types: s.types, statuses: s.statuses, mine: s.mine, waitingForMe: s.waitingForMe, approvedByMe: s.approvedByMe, rejectedByMe: s.rejectedByMe });
-  const screens = [...REVIEW_KEYS.flatMap((k) => REVIEW_TABS.map((t) => reviewScreen(k, t, decides))), screenFor(approvedHref.replace("/approvals/", "").split("/"))];
+  const screens = [...REVIEW_KEYS.flatMap((k) => REVIEW_TABS.map((t) => reviewScreen(k, t, decidesIn(k, user.roles)))), screenFor(approvedHref.replace("/approvals/", "").split("/"))];
   // My Pending Approvals for everyone (their own requests still pending or needing correction), and for people who decide the second
   // My Pending Approvals (waiting for their decision) and My Approvals: counted in
   // the same query, with the filters their pages list by.

@@ -26,7 +26,9 @@ import { appInput } from "../src/lib/validation";
 import { safeNext } from "../src/lib/session";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
-  FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
+  FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, decidesIn, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
+import { activeVersion, cleanVendors, netBudget, nextRevisionNo, revisionBlocker, revisionRequestNo, totalIncome, versionLabel } from "../src/lib/approvals/budget";
+import { budgetRequestInput, budgetRevisionInput } from "../src/lib/approvals/request-schemas";
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import { INVENTORY_URL_PATTERN, inventoryRoleFor, navFor } from "../src/lib/inventory/inventory.manifest";
@@ -166,7 +168,8 @@ eq("menu: admin-only item is hidden from a requester and shown to an admin", [ca
 eq("full access: a plain requester has none, each of the four roles has it", [hasFullAccess(["requester"]), ...FULL_ACCESS_ROLES.map((r) => hasFullAccess(["requester", r]))], [false, true, true, true, true]);
 const pagesOf = (roles: ApprovalsRole[], app: "hr" | "exp") =>
   approvalsApps.find((a) => a.key === app)!.nav.flatMap((e) => (isGroup(e) ? e.items : [e])).filter((i) => canSee(i, roles)).map((i) => i.label);
-eq("a plain requester sees the forms and their own Approved Forms: HR, Expenditure and Approved Forms in HR Approval, Expenses in Expenditure", [pagesOf(["requester"], "hr"), pagesOf(["requester"], "exp")], [["HR", "Expenditure", "Approved Forms"], ["Expenses"]]);
+eq("a plain requester sees the forms and their own Approved Forms: HR, Expenditure, Budget Approval and Approved Forms in HR Approval, Expenses in Expenditure", [pagesOf(["requester"], "hr"), pagesOf(["requester"], "exp")], [["HR", "Expenditure", "Budget Approval", "Approved Forms"], ["Expenses"]]);
+eq("menu: the budget lists (All, Approved, Pending, Rejected Budgets) are for full access, not a plain requester", [pagesOf(["requester"], "hr").some((l) => /Budgets$/.test(l)), ["All Budgets", "Approved Budgets", "Pending Budgets", "Rejected Budgets"].every((l) => pagesOf(["requester", "viewer"], "hr").includes(l))], [false, true]);
 eq("menu: in Expenditure an approver is offered 'Waiting for Me', an oversight role 'All Pending', and nobody gets the old 'Pending' that showed everything to everyone", [pagesOf(["requester", "approver"], "exp").includes("Waiting for Me"), pagesOf(["requester", "approver"], "exp").includes("All Pending"), pagesOf(["requester", "viewer"], "exp").includes("All Pending"), pagesOf(["requester", "viewer"], "exp").includes("Waiting for Me"), pagesOf(["requester", "approvals_admin"], "exp").includes("Pending")], [true, false, true, false, false]);
 eq("screens: 'expenses/pending' is each approver's own list (only what waits for them, decided in place) and 'expenses/waiting' is the list of every pending small expense", [screenFor(["expenses", "pending"])?.waitingForMe, screenFor(["expenses", "pending"])?.quickDecide, screenFor(["expenses", "waiting"])?.waitingForMe, screenFor(["expenses", "waiting"])?.statuses, screenFor(["expenses", "waiting"])?.types], [true, true, undefined, ["pending"], ["expenditure_small"]]);
 eq("full access still has the forms, and more", [FULL_ACCESS_ROLES.every((r) => pagesOf(["requester", r], "hr").includes("HR") && pagesOf(["requester", r], "exp").includes("Expenses")), pagesOf(["requester", "viewer"], "hr").length > 2], [true, true]);
@@ -181,6 +184,41 @@ eq("review: a path resolves to its list, and the fixed lists still resolve", [re
 eq("review: the Director General's Recommended place has a tab each for HR and Expenditure, and nothing else is one", [parseRecommendationPath(["review", "recommendation", "hr"]), parseRecommendationPath(["review", "recommendation", "expenditure"]), parseRecommendationPath(["review", "recommendation"]), parseRecommendationPath(["review", "recommendation", "events"]), parseRecommendationPath(["review", "hr", "pending"])], ["hr", "expenditure", null, null, null]);
 eq("review: what was recommended to the DG is everything that reached their step, with the buttons on what waits", [recommendationScreen("hr").reachedMe, recommendationScreen("hr").quickDecide, recommendationScreen("hr").statuses, recommendationScreen("hr").types, recommendationScreen("expenditure").types, resolveScreen(["review", "recommendation", "expenditure"], true)?.reachedMe], [true, true, undefined, ["hr"], ["expenditure_large", "expenditure_small"], true]);
 eq("review: where each place opens", [reviewHref("hr"), reviewHref("expenditure"), reviewHref("recommendation")], ["/approvals/review/hr/pending", "/approvals/review/expenditure/pending", "/approvals/review/recommendation/hr"]);
+// Approvals: Budget, the third place, decided by whoever the requester picked, and never recommended on to the DG.
+eq("review: Budget is a place with Pending, Approved and Rejected; the DG's Recommended tabs stay HR and Expenditure", [parseReviewPath(["review", "budget", "pending"]), parseRecommendationPath(["review", "recommendation", "budget"]), reviewScreen("budget", "pending", true).types, reviewScreen("budget", "pending", true).quickDecide, reviewScreen("budget", "pending", true).categories], [{ key: "budget", tab: "pending" }, null, ["budget"], true, "none"]);
+eq("review: anyone in the hub works Budget as their own queue (they may be picked); someone who only oversees sees every budget by status", [decidesIn("budget", ["requester"]), decidesIn("budget", ["requester", "viewer"]), decidesIn("budget", ["requester", "approvals_admin", "viewer"]), decidesIn("budget", ["requester", "dg"]), decidesIn("hr", ["requester"]), decidesIn("hr", ["requester", "approver"])], [true, false, false, true, false, true]);
+eq("budget: a budget belongs to HR Approval, and its lists resolve (with no category filter)", [appForType("budget"), screenFor(["budget", "all"])?.types, screenFor(["budget", "pending"])?.statuses, screenFor(["budget", "all"])?.categories], ["hr", ["budget"], ["pending"], "none"]);
+
+// Approvals: the Budget form's money and its revisions.
+const inc = (s: number | null, st: number | null, p: number | null, o: number | null) => ({ sponsorshipPaise: s, stallPaise: st, participantsPaise: p, otherPaise: o });
+eq("budget: total income adds the lines filled in (an empty one is nothing); net = budget − total income, below zero when income is more", [totalIncome(inc(500000, null, 250000, 0)), netBudget(1000000, inc(500000, null, 250000, 0)), totalIncome(inc(null, null, null, null)), netBudget(100000, inc(300000, null, null, null))], [750000, 250000, 0, -200000]);
+eq("budget: versions read Original, Rev 1, Rev 2; a revision's number is the original's with -R1, -R2", [versionLabel(null), versionLabel(0), versionLabel(1), versionLabel(2), revisionRequestNo("BUD-2026-27-0004", 2)], ["Original", "Original", "Rev 1", "Rev 2", "BUD-2026-27-0004-R2"]);
+eq("budget: vendors are trimmed and blank ones dropped", cleanVendors(["  Sai Caterers ", "", "   ", "Pune Sound"]), ["Sai Caterers", "Pune Sound"]);
+{
+  const v = (id: string, revisionNo: number | null, status: "pending" | "approved" | "rejected" | "withdrawn" | "draft") => ({ id, revisionNo, status });
+  eq("budget: the budget in force is the latest approved version; a rejected or pending revision leaves the one before in force; none while nothing is approved", [
+    activeVersion([v("o", null, "approved")])?.id, activeVersion([v("o", null, "approved"), v("r1", 1, "approved"), v("r2", 2, "pending")])?.id,
+    activeVersion([v("o", null, "approved"), v("r1", 1, "rejected")])?.id, activeVersion([v("o", null, "approved"), v("r1", 1, "approved"), v("r2", 2, "rejected"), v("r3", 3, "approved")])?.id,
+    activeVersion([v("o", null, "pending")]),
+  ], ["o", "r1", "o", "r3", null]);
+  const orig = (status: "pending" | "approved" | "rejected") => ({ status, requesterUserId: "me" });
+  eq("budget: only the person who raised an approved budget can revise it, one revision at a time, as many times as needed", [
+    revisionBlocker(orig("approved"), [v("o", null, "approved")], "me"), revisionBlocker(orig("approved"), [v("o", null, "approved")], "someone-else")?.slice(0, 8),
+    revisionBlocker(orig("pending"), [v("o", null, "pending")], "me")?.slice(0, 30), revisionBlocker(orig("rejected"), [v("o", null, "rejected")], "me")?.slice(0, 30),
+    revisionBlocker(orig("approved"), [v("o", null, "approved"), v("r1", 1, "pending")], "me")?.slice(0, 15),
+    revisionBlocker(orig("approved"), [v("o", null, "approved"), v("r1", 1, "rejected"), v("r2", 2, "approved"), v("r3", 3, "withdrawn")], "me"),
+  ], [null, "Only the", "Only an approved budget can be", "Only an approved budget can be", "A revision of t", null]);
+  eq("budget: the next revision is one more than the highest so far", [nextRevisionNo([v("o", null, "approved")]), nextRevisionNo([v("o", null, "approved"), v("r1", 1, "rejected"), v("r2", 2, "approved")])], [1, 3]);
+}
+{
+  const ok = { eventName: " Annual Summit ", description: "Two days", departmentId: "11111111-1111-4111-8111-111111111111", financialYear: "2026-27", income: { sponsorshipPaise: 500000 }, vendors: [" A ", ""], budgetPaise: 1000000, approverUserId: "22222222-2222-4222-8222-222222222222" };
+  const parsed = budgetRequestInput.safeParse(ok);
+  eq("budget form: names trimmed, empty income lines null, blank vendors dropped", parsed.success ? [parsed.data.eventName, parsed.data.income, parsed.data.vendors] : parsed.error.issues, ["Annual Summit", { sponsorshipPaise: 500000, stallPaise: null, participantsPaise: null, otherPaise: null }, ["A"]]);
+  const bad = (patch: object) => budgetRequestInput.safeParse({ ...ok, ...patch }).success;
+  eq("budget form: event, description, department, year, budget and approver are required; a year like 2026-28 and a negative income are refused", [bad({ eventName: " " }), bad({ description: "" }), bad({ departmentId: "x" }), bad({ financialYear: "2026-28" }), bad({ budgetPaise: 0 }), bad({ approverUserId: "" }), bad({ income: { stallPaise: -1 } }), bad({ income: {}, vendors: [] })], [false, false, false, false, false, false, false, true]);
+  eq("budget revision: the new amount and a reason are required; income and vendors may be left as they were", [budgetRevisionInput.safeParse({ budgetPaise: 1500000, reason: "Venue cost increased", income: {}, approverUserId: ok.approverUserId }).success, budgetRevisionInput.safeParse({ budgetPaise: 1500000, reason: " ", income: {}, approverUserId: ok.approverUserId }).success], [true, false]);
+}
+
 // Approvals: the form layout the Support Admin sets (names, order, hidden fields, extra fields) and the answers to the extra fields.
 const row = (o: Partial<FormFieldRow> & { key: string }): FormFieldRow => ({ form: "hr", label: o.key, builtin: true, kind: "text", required: false, hidden: false, sortOrder: 0, options: [], ...o });
 eq("form fields: with nothing set, every form has its own fields in the default order, none hidden", FORM_KEYS.map((f) => [mergeFields(f, []).map((x) => x.key).join(), mergeFields(f, []).some((x) => x.hidden)]), FORM_KEYS.map((f) => [BUILTIN[f].map((d) => d.key).join(), false]));

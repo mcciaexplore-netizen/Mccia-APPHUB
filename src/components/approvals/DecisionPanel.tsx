@@ -5,8 +5,11 @@ import { api, useAction } from "@/components/approvals/api";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { MODE_WORDS, type DecisionMode } from "@/lib/approvals/calc";
 
-/** Approve, Return for corrections and Reject, with a comment box. A comment is required to reject or return, never to approve. */
-export function DecisionPanel({ id, mode }: { id: string; mode: DecisionMode }) {
+/**
+ * Approve, Return for corrections and Reject, with a comment box. A comment is required to reject or return, never to approve. A budget is
+ * only approved or rejected (`canReturn` false): its requester asks for a revision instead.
+ */
+export function DecisionPanel({ id, mode, canReturn = true }: { id: string; mode: DecisionMode; canReturn?: boolean }) {
   const words = MODE_WORDS[mode];
   const { run, pending } = useAction();
   const [comment, setComment] = useState("");
@@ -25,13 +28,13 @@ export function DecisionPanel({ id, mode }: { id: string; mode: DecisionMode }) 
     <section className="glass max-w-3xl space-y-3 p-4" aria-label="Your decision">
       <h2>Your decision</h2>
       <label className="block">
-        <span className="label-xs mb-1.5 block">Comments (required to return or reject)</span>
+        <span className="label-xs mb-1.5 block">{canReturn ? "Comments (required to return or reject)" : "Comments (a reason is required to reject)"}</span>
         <textarea className="input !h-24 w-full" value={comment} onChange={(e) => { setComment(e.target.value); setError(null); }} maxLength={2000} />
       </label>
       {error && <p className="zf-error" role="alert">{error}</p>}
       <div className="flex flex-wrap gap-2">
         <button type="button" className="btn btn-primary btn-press" disabled={pending} onClick={() => decide("approve")}>{words.approve}</button>
-        <button type="button" className="btn btn-ghost" disabled={pending} onClick={() => decide("return")}>Return for corrections</button>
+        {canReturn && <button type="button" className="btn btn-ghost" disabled={pending} onClick={() => decide("return")}>Return for corrections</button>}
         <button type="button" className="btn btn-danger btn-press" disabled={pending} onClick={() => decide("reject")}>{words.reject}</button>
       </div>
     </section>

@@ -1,5 +1,5 @@
 import type { AprRequestStatus, AprRequestType } from "@/db/approvals-schema";
-import { parseRecommendationPath, parseReviewPath, type ReviewKey, type ReviewTab } from "./approvals.manifest";
+import { parseRecommendationPath, parseReviewPath, type RecommendationKey, type ReviewKey, type ReviewTab } from "./approvals.manifest";
 
 /**
  * The list screens in the sidebar, as data. Each one is the same table with a different starting filter, so one component renders
@@ -31,8 +31,8 @@ export type ListScreen = {
   vendor?: boolean;
   /** Approve and Reject buttons on each row (the DG's inbox). */
   quickDecide?: boolean;
-  /** Which category list the filter offers. */
-  categories: "hr" | "expense" | "all";
+  /** Which category list the filter offers ("none": budgets, which have an event instead of a category). */
+  categories: "hr" | "expense" | "all" | "none";
   /** The form to open for a new request, shown as a button. */
   newHref?: string;
 };
@@ -43,6 +43,7 @@ export const PAGE_SIZE = 25;
 const HR: AprRequestType[] = ["hr"];
 const LARGE: AprRequestType[] = ["expenditure_large"];
 const SMALL: AprRequestType[] = ["expenditure_small"];
+const BUDGET: AprRequestType[] = ["budget"];
 
 const LIST_SCREENS: Record<string, ListScreen> = {
   "hr/all": { title: "All Hr", intro: "Every HR request you are allowed to see.", types: HR, categories: "hr", newHref: "/approvals/hr/new" },
@@ -61,6 +62,11 @@ const LIST_SCREENS: Record<string, ListScreen> = {
   "expenses/mine": { title: "My Requests", intro: "Expenses below ₹10,000 that you raised, with where each one stands.", types: SMALL, mine: true, vendor: true, categories: "expense", newHref: "/approvals/expenses/new" },
   "expenses/rejected": { title: "Rejected Expenses", intro: "Expenses below ₹10,000 that were rejected.", types: SMALL, statuses: ["rejected"], vendor: true, categories: "expense" },
 
+  "budget/all": { title: "All Budgets", intro: "Every budget request you are allowed to see, revisions included.", types: BUDGET, categories: "none", newHref: "/approvals/budget/new" },
+  "budget/approved": { title: "Approved Budgets", intro: "Budgets and budget revisions that were approved.", types: BUDGET, statuses: ["approved"], categories: "none" },
+  "budget/pending": { title: "Pending Budgets", intro: "Budgets and budget revisions still waiting for a decision.", types: BUDGET, statuses: ["pending"], categories: "none" },
+  "budget/rejected": { title: "Rejected Budgets", intro: "Budgets and budget revisions that were rejected.", types: BUDGET, statuses: ["rejected"], categories: "none" },
+
   inbox: {
     title: "Recommended Queue", intro: "Everything recommended to you for the final decision, HR and Expenditure together, newest first. Open a request to see its details before deciding.",
     statuses: ["pending"], waitingForMe: true, quickDecide: true, categories: "all",
@@ -76,7 +82,8 @@ const LIST_SCREENS: Record<string, ListScreen> = {
 
 export const screenFor = (slug: string[]): ListScreen | undefined => LIST_SCREENS[slug.join("/")];
 
-const REVIEW_TYPES: Record<ReviewKey, AprRequestType[]> = { hr: HR, expenditure: ["expenditure_large", "expenditure_small"] };
+const REVIEW_TYPES: Record<ReviewKey, AprRequestType[]> = { hr: HR, expenditure: ["expenditure_large", "expenditure_small"], budget: BUDGET };
+const REVIEW_CATEGORIES: Record<ReviewKey, ListScreen["categories"]> = { hr: "hr", expenditure: "expense", budget: "none" };
 
 /**
  * The three lists of HR and of Expenditure that an approver works from (Pending, Approved, Rejected). For someone who decides requests they
@@ -85,7 +92,7 @@ const REVIEW_TYPES: Record<ReviewKey, AprRequestType[]> = { hr: HR, expenditure:
  */
 export function reviewScreen(key: ReviewKey, tab: ReviewTab, decides: boolean): ListScreen {
   const types = REVIEW_TYPES[key];
-  const common = { types, categories: key === "hr" ? ("hr" as const) : ("expense" as const) };
+  const common = { types, categories: REVIEW_CATEGORIES[key] };
   if (tab === "pending") {
     return decides
       ? { ...common, title: "Pending", intro: "Waiting for your decision. Approve or Reject here, or open a request to see its files and budget first.", statuses: ["pending"], waitingForMe: true, quickDecide: true }
@@ -102,7 +109,7 @@ export function reviewScreen(key: ReviewKey, tab: ReviewTab, decides: boolean): 
 }
 
 /** What was recommended to the Director General, one tab for HR and one for Expenditure: everything that reached their step, with the buttons on what still waits. */
-export function recommendationScreen(key: ReviewKey): ListScreen {
+export function recommendationScreen(key: RecommendationKey): ListScreen {
   return {
     title: key === "hr" ? "Recommended: HR" : "Recommended: Expenditure",
     intro: "What was recommended to you for the final decision. Approve or Reject what is still waiting, or open a request to see its files and budget first; the others show how you decided.",

@@ -3,19 +3,20 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   aprApprovalEvents, aprAttachmentSlot, aprAttachments, aprBranches, aprCategories, aprCounters, aprExpenditureDetails,
-  aprHrCategories, aprHrDetails, aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType,
+  aprHrCategories, aprHrDetails, aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType, type BudgetDetails,
 } from "@/db/approvals-schema";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
+import { activeVersion, nextRevisionNo, revisionBlocker, revisionRequestNo } from "./budget";
 import { commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, TYPE_LABEL, wrongFormMessage, type ExpenditureForm } from "./calc";
 import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { resolveCustomAnswers } from "./form-config";
 import type { CustomAnswers } from "./form-fields";
 import { financialYearOf, formatINR, todayIST } from "./format";
-import { getDirectoryUsers, listUsers, roleApprovers, type ApprovalsUser } from "./host-adapter";
+import { departmentById, getDirectoryUsers, listUsers, roleApprovers, type ApprovalsUser } from "./host-adapter";
 import { notify } from "./notify";
 import { canSeeRequest } from "./request-queries";
-import type { HrRequestInput, LargeExpenditureInput, ResubmitInput, SmallExpenditureInput } from "./request-schemas";
+import type { BudgetRequestInput, BudgetRevisionInput, HrRequestInput, LargeExpenditureInput, ResubmitInput, SmallExpenditureInput } from "./request-schemas";
 import { getSettings } from "./settings";
 import { logError } from "@/lib/log-error";
 
@@ -30,7 +31,7 @@ import { logError } from "@/lib/log-error";
  */
 
 /** The letters each kind of request starts its number with. */
-const REQUEST_PREFIX = { hr: "HR", expenditure_large: "EXP", expenditure_small: "EXB" } as const;
+const REQUEST_PREFIX = { hr: "HR", expenditure_large: "EXP", expenditure_small: "EXB", budget: "BUD" } as const;
 
 type Slot = (typeof aprAttachmentSlot.enumValues)[number];
 type Prepared = {
@@ -44,6 +45,28 @@ type Prepared = {
   /** The answers to the extra fields of the form, already checked (see resolveCustomAnswers). */
   customValues: CustomAnswers;
   insertDetails: (requestId: string) => Promise<void>;
+  /**
+   * Budget requests: the approver the requester picked, instead of the steps the hub's roles give (HR and expenditure). One step, already
+   * checked to be an active person other than the requester.
+   */
+  approver?: { userId: string; stepLabel: string };
+  /** The financial year the request counts in, when the form asks for it (the Budget form); otherwise the year of its date. */
+  financialYear?: string;
+  /** A request number given by the caller (a budget revision: the original's number with -R1, -R2, ...), instead of the next serial. */
+  requestNo?: string;
+  budgetDetails?: BudgetDetails;
+  /** A budget revision: the original budget request, and which revision this is. */
+  revisionOf?: { parentRequestId: string; revisionNo: number };
+  /** What the approver is told (the bell and the email): by default "<type> <number> is waiting for your approval". */
+  assignedNotice?: (requestNo: string) => { title: string; body: string };
+  /** Always email the approver, whatever the notification settings say (the Budget form promises an email). */
+  emailApprover?: boolean;
+};
+
+/** A database error code, wherever the driver puts it. */
+const pgCode = (e: unknown): string | undefined => {
+  const x = e as { code?: string; cause?: { code?: string } };
+  return x?.code ?? x?.cause?.code;
 };
 
 const link = (id: string, type: AprRequestType) => `/approvals/requests/${id}?app=${appForType(type)}`;
@@ -85,20 +108,28 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
 
   // Who approves comes from the roles in the hub, in code: HR requests go to the HR Admin, then the Super Admin; expenses go to the Expense
   // Admin, and from the threshold up on to the Super Admin. A role nobody holds is skipped, and nobody approves their own request.
-  const allRules = roleRules(await roleApprovers());
-  const rules = allRules.filter((r) => r.requestType === p.type);
-  const plan = planSteps(rules, actor.id, p.amountPaise ?? 0, escalationApprover(allRules));
-  if (plan.problem) throw new ApprovalsError(planProblemMessage(plan.problem), 409);
+  // A budget names its own approver instead (one step).
+  let plan: ReturnType<typeof planSteps>;
+  if (p.approver) {
+    plan = { steps: [{ stepNo: 1, stepLabel: p.approver.stepLabel, approverUserId: p.approver.userId }], problem: null };
+  } else {
+    const allRules = roleRules(await roleApprovers());
+    const rules = allRules.filter((r) => r.requestType === p.type);
+    plan = planSteps(rules, actor.id, p.amountPaise ?? 0, escalationApprover(allRules));
+    if (plan.problem) throw new ApprovalsError(planProblemMessage(plan.problem), 409);
+  }
   const approvers = new Map((await getDirectoryUsers(plan.steps.map((s) => s.approverUserId))).map((u) => [u.id, u]));
   for (const s of plan.steps) {
     const a = approvers.get(s.approverUserId);
-    if (!a?.active) throw new ApprovalsError(`The ${s.stepLabel} is not an active user any more. Ask the Support Admin to give the role to someone else.`, 409);
+    if (!a?.active) {
+      throw new ApprovalsError(p.approver ? "The approver you chose is not an active user any more. Please pick someone else." : `The ${s.stepLabel} is not an active user any more. Ask the Support Admin to give the role to someone else.`, 409);
+    }
   }
 
   // From here the files are this request's. If it cannot be saved they are given back, so the person can simply try again.
   if (!(await claimFiles(fileIds))) throw new ApprovalsError("One of the attached files was already used on another request. Please attach it again.", 409);
 
-  const fy = financialYearOf(p.requestedAt);
+  const fy = p.financialYear ?? financialYearOf(p.requestedAt);
   let draft: { id: string };
   try {
     [draft] = await db
@@ -106,11 +137,14 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
     .values({
       type: p.type, status: "draft", requesterUserId: actor.id, requesterName: p.requesterName, requesterEmail: p.requesterEmail,
       requestedAt: p.requestedAt, financialYear: fy, currentStep: 0, totalSteps: plan.steps.length, amountPaise: p.amountPaise, overBudget: p.overBudget,
-      customValues: p.customValues,
+      customValues: p.customValues, budgetDetails: p.budgetDetails ?? null,
+      parentRequestId: p.revisionOf?.parentRequestId ?? null, revisionNo: p.revisionOf?.revisionNo ?? null,
     })
     .returning({ id: aprRequests.id });
   } catch (e) {
     await releaseFiles(fileIds).catch(() => {});
+    // The database allows one open revision per budget (and one row per revision number): a second one sent at the same moment lands here.
+    if (p.revisionOf && pgCode(e) === "23505") throw new ApprovalsError("A revision of this budget is already waiting for approval. Wait for it to be decided before asking for another.", 409);
     throw e;
   }
 
@@ -128,7 +162,7 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
         return { requestId: draft.id, slot: f.slot, fileName: meta.fileName, mime: meta.mime, size: meta.size, storageKey: meta.id, uploadedBy: actor.id };
       }));
     }
-    requestNo = formatRequestNo(REQUEST_PREFIX[p.type], fy, await nextSerial(REQUEST_PREFIX[p.type], fy));
+    requestNo = p.requestNo ?? formatRequestNo(REQUEST_PREFIX[p.type], fy, await nextSerial(REQUEST_PREFIX[p.type], fy));
     // The last write: from here on the request is visible and waiting for the first approver.
     const flipped = await db
       .update(aprRequests)
@@ -151,10 +185,10 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
   } catch (e) {
     logError(`[approvals] could not write the history of new request ${draft.id}`, e);
   }
+  const notice = p.assignedNotice?.(requestNo) ?? { title: `${TYPE_LABEL[p.type]} ${requestNo} is waiting for your approval`, body: `${p.requesterName}${moneyOf(p.amountPaise)}` };
   await notify({
-    userId: first.approverUserId, requestId: draft.id, link: link(draft.id, p.type), email: settings.notifyApproverOnAssignment,
-    title: `${TYPE_LABEL[p.type]} ${requestNo} is waiting for your approval`,
-    body: `${p.requesterName}${moneyOf(p.amountPaise)}`,
+    userId: first.approverUserId, requestId: draft.id, link: link(draft.id, p.type), email: p.emailApprover || settings.notifyApproverOnAssignment,
+    title: notice.title, body: notice.body,
   });
   return { id: draft.id, requestNo };
 }
@@ -244,6 +278,72 @@ export async function submitExpenditure(form: ExpenditureForm, input: LargeExpen
   });
 }
 
+/* ---------------------------------------------------------------- budget */
+
+/** The step label a budget's approver is shown with. */
+const BUDGET_STEP = "Budget Approver";
+
+/** The approver a budget is sent to: an active person in the hub, and not the person raising it. */
+async function budgetApprover(approverUserId: string, actor: ApprovalsUser) {
+  if (approverUserId === actor.id) throw new ApprovalsError("You cannot approve your own budget. Please pick someone else as the approver.");
+  const [approver] = await getDirectoryUsers([approverUserId]);
+  if (!approver?.active) throw new ApprovalsError("Pick the approver from the list of people in the hub.");
+  return approver;
+}
+
+/**
+ * A new budget for an event: sent to the one approver the requester picked, who approves or rejects it. Its number is BUD-<year>-0001, in
+ * the financial year the requester chose.
+ */
+export async function submitBudget(input: BudgetRequestInput, actor: ApprovalsUser) {
+  const department = await departmentById(input.departmentId);
+  if (!department?.active) throw new ApprovalsError("Pick a department from the list.");
+  const approver = await budgetApprover(input.approverUserId, actor);
+  const details: BudgetDetails = {
+    eventName: input.eventName, description: input.description, departmentId: department.id, departmentName: department.name,
+    financialYear: input.financialYear, income: input.income, vendors: input.vendors,
+  };
+  return createRequest(actor, {
+    type: "budget", requesterName: actor.name, requesterEmail: actor.email, requestedAt: new Date(), amountPaise: input.budgetPaise, overBudget: false,
+    files: [], customValues: [], insertDetails: async () => {},
+    approver: { userId: approver.id, stepLabel: BUDGET_STEP }, financialYear: input.financialYear, budgetDetails: details, emailApprover: true,
+    assignedNotice: (no) => ({ title: `Budget approval ${no} for ${input.eventName} is waiting for your approval`, body: `${actor.name}${moneyOf(input.budgetPaise)}` }),
+  });
+}
+
+/**
+ * A revision of an approved budget, asked for by the person who raised it when the budget is exceeded: a new request linked to the original,
+ * numbered Rev 1, Rev 2, ... (BUD-2026-27-0001-R1), that needs a fresh approval. The event, its description, department and year stay as
+ * approved; the amount, income, vendors and approver are what the person sends now. Only one revision can wait at a time, and until one is
+ * approved the budget approved before it stays in force. `requestId` may be the original or any revision of it.
+ */
+export async function reviseBudget(requestId: string, input: BudgetRevisionInput, actor: ApprovalsUser): Promise<{ id: string; requestNo: string }> {
+  const [asked] = await db.select().from(aprRequests).where(eq(aprRequests.id, requestId));
+  if (!asked || asked.type !== "budget" || asked.status === "draft" || !(await canSeeRequest(actor, requestId))) throw new ApprovalsError("That request does not exist.", 404);
+  const original = asked.parentRequestId ? (await db.select().from(aprRequests).where(eq(aprRequests.id, asked.parentRequestId)))[0] : asked;
+  if (!original?.requestNo) throw new ApprovalsError("That request does not exist.", 404);
+  const versions = await db
+    .select({ id: aprRequests.id, revisionNo: aprRequests.revisionNo, status: aprRequests.status, details: aprRequests.budgetDetails })
+    .from(aprRequests)
+    .where(sql`${aprRequests.id} = ${original.id} or ${aprRequests.parentRequestId} = ${original.id}`);
+  const blocked = revisionBlocker(original, versions, actor.id);
+  if (blocked) throw new ApprovalsError(blocked, original.requesterUserId === actor.id ? 409 : 403);
+  const approver = await budgetApprover(input.approverUserId, actor);
+
+  // The budget in force is the base: the event and its year stay as they were approved.
+  const base = (activeVersion(versions) ?? versions.find((v) => v.id === original.id))?.details ?? original.budgetDetails;
+  if (!base) throw new ApprovalsError("This budget has no details to revise.", 409);
+  const revisionNo = nextRevisionNo(versions);
+  const details: BudgetDetails = { ...base, income: input.income, vendors: input.vendors, revisionReason: input.reason };
+  return createRequest(actor, {
+    type: "budget", requesterName: original.requesterName, requesterEmail: original.requesterEmail, requestedAt: new Date(), amountPaise: input.budgetPaise, overBudget: false,
+    files: [], customValues: [], insertDetails: async () => {},
+    approver: { userId: approver.id, stepLabel: BUDGET_STEP }, financialYear: original.financialYear ?? base.financialYear,
+    requestNo: revisionRequestNo(original.requestNo, revisionNo), budgetDetails: details, revisionOf: { parentRequestId: original.id, revisionNo }, emailApprover: true,
+    assignedNotice: (no) => ({ title: `Budget revision requested for ${base.eventName}`, body: `${no} (Rev ${revisionNo}) · ${original.requesterName}${moneyOf(input.budgetPaise)} · ${input.reason.slice(0, 200)}` }),
+  });
+}
+
 /* ---------------------------------------------------------------- decide */
 
 const outcomeLabel = { approved: "approved", rejected: "rejected", withdrawn: "withdrawn", returned: "returned for corrections, so it is waiting for the person who raised it" } as const;
@@ -254,6 +354,8 @@ export async function decideRequest(requestId: string, input: { action: "approve
   if (!req || req.status === "draft" || !(await canSeeRequest(actor, requestId))) throw new ApprovalsError("That request does not exist.", 404);
   if (req.status !== "pending") throw new ApprovalsError(`This request has already been ${outcomeLabel[req.status as keyof typeof outcomeLabel] ?? req.status}, so it cannot be decided again.`, 409);
   if (req.requesterUserId === actor.id) throw new ApprovalsError("You cannot approve, reject or return your own request.", 403);
+  // A budget is approved or rejected (with a reason); there is no sending it back for corrections. A revision is asked for instead.
+  if (req.type === "budget" && input.action === "return") throw new ApprovalsError("A budget can only be approved or rejected.", 422);
 
   const [step] = await db.select().from(aprRequestSteps).where(and(eq(aprRequestSteps.requestId, requestId), eq(aprRequestSteps.stepNo, req.currentStep)));
   if (!step || step.approverUserId !== actor.id) throw new ApprovalsError("This request is not waiting for you.", 403);
@@ -328,6 +430,8 @@ export async function decideRequest(requestId: string, input: { action: "approve
   // The decision is made. What follows is history and messages: if one of them cannot be written the decision still stands and the
   // approver is told it worked (a failure here must not invite a second click), so it is logged.
   const no = req.requestNo ?? "";
+  // A budget's messages name its event: "Budget approval BUD-2026-27-0001 (Annual Summit)".
+  const what = `${req.type === "budget" && req.revisionNo ? "Budget revision" : TYPE_LABEL[req.type]} ${no}${req.budgetDetails?.eventName ? ` (${req.budgetDetails.eventName})` : ""}`;
   try {
     await addEvent({ requestId, action: decision === "approved" ? "approved" : decision === "rejected" ? "rejected" : "returned", stepNo: step.stepNo, actorUserId: actor.id, actorName: actor.name, fromStatus: "pending", toStatus: status, comment: input.comment });
     if (next) {
@@ -349,7 +453,7 @@ export async function decideRequest(requestId: string, input: { action: "approve
   } else {
     await notify({
       userId: req.requesterUserId, requestId, link: link(requestId, req.type), email: settings.notifyRequesterOnOutcome,
-      title: `Your ${TYPE_LABEL[req.type]} ${no} was ${decision}`, body: input.comment ?? undefined,
+      title: `Your ${what} was ${decision}`, body: input.comment ?? undefined,
     });
   }
   return { status };
@@ -368,6 +472,7 @@ export async function resubmitRequest(requestId: string, input: ResubmitInput, a
   const [req] = await db.select().from(aprRequests).where(eq(aprRequests.id, requestId));
   if (!req || req.status === "draft" || req.requesterUserId !== actor.id) throw new ApprovalsError("That request does not exist.", 404);
   if (req.status !== "returned") throw new ApprovalsError(`This request is ${req.status}, so it cannot be edited. Only a request that was returned for corrections can be.`, 409);
+  if (req.type === "budget") throw new ApprovalsError("A budget cannot be edited and resubmitted. Ask for a revision once it is approved.", 409);
   const expectedKind = req.type === "hr" ? "hr" : req.type === "expenditure_large" ? "large" : "small";
   if (input.kind !== expectedKind) throw new ApprovalsError("That form does not match this request.", 400);
   const [step] = await db.select().from(aprRequestSteps).where(and(eq(aprRequestSteps.requestId, requestId), eq(aprRequestSteps.stepNo, req.currentStep)));

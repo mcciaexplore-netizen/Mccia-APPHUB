@@ -4,10 +4,11 @@ import { and, asc, desc, eq, gte, ilike, inArray, lt, ne, or, sql, type SQL } fr
 import { db } from "@/db";
 import {
   aprApprovalEvents, aprAttachments, aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprPublicationTypes,
-  aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType,
+  aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType, type BudgetDetails,
 } from "@/db/approvals-schema";
+import { activeVersion, netBudget, revisionBlocker, totalIncome } from "./budget";
 import { decisionMode, type DecisionMode } from "./calc";
-import { REVIEW_KEYS, isDgOnly, type ReviewItem } from "./approvals.manifest";
+import { REVIEW_KEYS, isDgOnly, type ReviewItem, type ReviewKey } from "./approvals.manifest";
 import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
 import type { SortKey } from "./list-params";
 
@@ -85,7 +86,8 @@ export type RequestRow = {
   mineToDecide: boolean;
 };
 
-const categoryName = sql<string | null>`coalesce(${aprHrCategories.name}, ${aprCategories.name})`;
+/** The Category column: the HR or expense category, or for a budget its event. */
+const categoryName = sql<string | null>`coalesce(${aprHrCategories.name}, ${aprCategories.name}, ${aprRequests.budgetDetails}->>'eventName')`;
 /** The person who decided, or while it is pending the one it is waiting for. */
 const approverName = sql<string | null>`coalesce(
   (select s.approver_name from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.status in ('approved', 'rejected', 'returned') order by s.step_no desc limit 1),
@@ -142,6 +144,7 @@ function conditions(user: ApprovalsUser, f: ListFilter): SQL | undefined {
           ilike(aprCategories.name, `%${likeEscape(needle)}%`),
           ilike(aprHrCategories.name, `%${likeEscape(needle)}%`),
           ilike(aprBranches.name, `%${likeEscape(needle)}%`),
+          sql`${aprRequests.budgetDetails}->>'eventName' ilike ${`%${likeEscape(needle)}%`}`,
         )
       : undefined,
   );
@@ -240,16 +243,25 @@ export async function listMyDecisions(user: ApprovalsUser, page: number, pageSiz
  */
 export const reviewItemsFor = cache(async (user: ApprovalsUser): Promise<ReviewItem[]> => {
   const oversees = hasAnyRole(user, ["viewer", "approvals_admin"]);
-  const waiting = await db.select({ type: aprRequests.type, n: sql<number>`count(*)::int` }).from(aprRequests)
-    .where(and(eq(aprRequests.status, "pending"), eq(aprRequests.currentApproverUserId, user.id))).groupBy(aprRequests.type);
+  const [waiting, [budgets]] = await Promise.all([
+    db.select({ type: aprRequests.type, n: sql<number>`count(*)::int` }).from(aprRequests)
+      .where(and(eq(aprRequests.status, "pending"), eq(aprRequests.currentApproverUserId, user.id))).groupBy(aprRequests.type),
+    // Budget is the place of anyone a budget was ever sent to (the requester picks the approver, so it can be anybody in the hub): it stays
+    // after they have decided, so their Approved and Rejected lists can still be opened.
+    db.select({ id: aprRequestSteps.id }).from(aprRequestSteps).innerJoin(aprRequests, eq(aprRequests.id, aprRequestSteps.requestId))
+      .where(and(eq(aprRequestSteps.approverUserId, user.id), eq(aprRequests.type, "budget"))).limit(1),
+  ]);
   const named = new Set(user.place ? [user.place] : []);
-  const count = (k: "hr" | "expenditure") => waiting.filter((w) => (w.type === "hr") === (k === "hr")).reduce((a, w) => a + w.n, 0);
-  // The Director General has one place, what was recommended to them, with a tab each for HR and Expenditure.
+  const keyOf = (t: AprRequestType): ReviewKey => (t === "hr" ? "hr" : t === "budget" ? "budget" : "expenditure");
+  const count = (k: ReviewKey) => waiting.filter((w) => keyOf(w.type) === k).reduce((a, w) => a + w.n, 0);
+  const budgetPlace = oversees || !!budgets || count("budget") > 0;
+  // The Director General has one place, what was recommended to them, with a tab each for HR and Expenditure; and Budget, like anyone, when
+  // a budget was sent to them.
   if (isDgOnly(user.roles)) {
     const counts = { hr: count("hr"), expenditure: count("expenditure") };
-    return [{ key: "recommendation", waiting: counts.hr + counts.expenditure, counts }];
+    return [{ key: "recommendation", waiting: counts.hr + counts.expenditure, counts }, ...(budgetPlace ? [{ key: "budget" as const, waiting: count("budget") }] : [])];
   }
-  return REVIEW_KEYS.filter((k) => oversees || named.has(k) || count(k) > 0).map((key) => ({ key, waiting: count(key) }));
+  return REVIEW_KEYS.filter((k) => (k === "budget" ? budgetPlace : oversees || named.has(k) || count(k) > 0)).map((key) => ({ key, waiting: count(key) }));
 });
 
 /** How many requests are waiting for this person (all places together); for the count on the Approval System's card on the home page. */
@@ -304,6 +316,8 @@ export type RequestDetail = {
     publication: string | null;
     budget: BudgetView;
   } | null;
+  /** Budget requests: the event, its money, and the budget's whole history (the original and every revision). */
+  budget: BudgetRequestView | null;
   steps: StepRow[];
   events: EventRow[];
   attachments: AttachmentRow[];
@@ -318,6 +332,84 @@ export type RequestDetail = {
     mode: DecisionMode;
   };
 };
+
+/** One version of a budget, for its history: the original or a revision. */
+export type BudgetHistoryRow = {
+  id: string;
+  requestNo: string | null;
+  revisionNo: number | null;
+  amountPaise: number | null;
+  status: AprRequestStatus;
+  submittedAt: Date;
+  decidedAt: Date | null;
+  reason: string | null;
+  /** Who approved or rejected it, or while it waits, who it waits for. */
+  approverName: string | null;
+  /** Whether this person may open that version's own page. */
+  canOpen: boolean;
+};
+export type BudgetRequestView = {
+  details: BudgetDetails;
+  revisionNo: number | null;
+  totalIncomePaise: number;
+  netBudgetPaise: number;
+  /** The original first, then each revision in order. */
+  history: BudgetHistoryRow[];
+  /** The version in force (the latest approved), or null while none is approved. */
+  activeId: string | null;
+  /** The original budget's request, which a revision is asked for from. */
+  originalId: string;
+  /** The approver the current version went to, for the revision form to start with. */
+  approverUserId: string | null;
+  /** Whether this person may ask for a revision now, and if not, why (null reason: not theirs to revise). */
+  canRevise: boolean;
+  reviseBlocked: string | null;
+};
+
+/** The budget section of a budget request: its own figures and its history, with what this person may open and do. */
+async function budgetViewOf(req: typeof aprRequests.$inferSelect, user: ApprovalsUser, steps: (typeof aprRequestSteps.$inferSelect)[]): Promise<BudgetRequestView | null> {
+  if (req.type !== "budget" || !req.budgetDetails) return null;
+  const originalId = req.parentRequestId ?? req.id;
+  const chain = sql`(${aprRequests.id} = ${originalId} or ${aprRequests.parentRequestId} = ${originalId})`;
+  // Plain columns only: a correlated subquery in the select list of a one-table query would name the request's id without its table.
+  const [versions, visibleRows] = await Promise.all([
+    db
+      .select({
+        id: aprRequests.id, requestNo: aprRequests.requestNo, revisionNo: aprRequests.revisionNo, amountPaise: aprRequests.amountPaise, status: aprRequests.status,
+        requestedAt: aprRequests.requestedAt, decidedAt: aprRequests.decidedAt, details: aprRequests.budgetDetails, requesterUserId: aprRequests.requesterUserId,
+      })
+      .from(aprRequests)
+      .where(and(chain, ne(aprRequests.status, "draft")))
+      .orderBy(sql`coalesce(${aprRequests.revisionNo}, 0)`),
+    db.select({ id: aprRequests.id }).from(aprRequests).where(and(chain, visibility(user))),
+  ]);
+  // Each version has one step (a budget has one approver): who decided it, or who it waits for.
+  const versionSteps = versions.length
+    ? await db.select({ requestId: aprRequestSteps.requestId, approverName: aprRequestSteps.approverName }).from(aprRequestSteps).where(inArray(aprRequestSteps.requestId, versions.map((v) => v.id)))
+    : [];
+  const approverOf = new Map(versionSteps.map((x) => [x.requestId, x.approverName]));
+  const visible = new Set(visibleRows.map((v) => v.id));
+  const original = versions.find((v) => v.id === originalId);
+  const active = activeVersion(versions);
+  const blocked = original ? revisionBlocker(original, versions, user.id) : "Only an approved budget can be revised.";
+  const mineToRevise = original?.requesterUserId === user.id;
+  const d = req.budgetDetails;
+  return {
+    details: d,
+    revisionNo: req.revisionNo,
+    totalIncomePaise: totalIncome(d.income),
+    netBudgetPaise: netBudget(req.amountPaise ?? 0, d.income),
+    history: versions.map((v) => ({
+      id: v.id, requestNo: v.requestNo, revisionNo: v.revisionNo, amountPaise: v.amountPaise, status: v.status, submittedAt: v.requestedAt, decidedAt: v.decidedAt,
+      reason: v.details?.revisionReason ?? null, approverName: approverOf.get(v.id) ?? null, canOpen: visible.has(v.id),
+    })),
+    activeId: active?.id ?? null,
+    originalId,
+    approverUserId: steps[0]?.approverUserId ?? null,
+    canRevise: !blocked,
+    reviseBlocked: mineToRevise ? blocked : null,
+  };
+}
 
 export const canSeeRequest = async (user: ApprovalsUser, requestId: string): Promise<boolean> => {
   const [row] = await db.select({ id: aprRequests.id }).from(aprRequests).where(and(eq(aprRequests.id, requestId), visibility(user))).limit(1);
@@ -364,6 +456,7 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
     hr = { firstName: d.firstName, lastName: d.lastName, categoryName: hrRow.categoryName, description: d.description, budget: d.budgetAllocatedPaise != null ? budgetOf(d) : null };
   }
 
+  const budget = await budgetViewOf(req, user, steps);
   const pending = req.status === "pending";
   const returnedStep = req.status === "returned" ? steps.find((x) => x.stepNo === req.currentStep && x.status === "returned") : undefined;
   const mine = pending && req.currentApproverUserId === user.id && req.requesterUserId !== user.id;
@@ -372,7 +465,7 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
     requesterEmail: req.requesterEmail, requestedAt: req.requestedAt, financialYear: req.financialYear, amountPaise: req.amountPaise, overBudget: req.overBudget,
     decidedAt: req.decidedAt, decisionComment: req.decisionComment, currentApproverUserId: req.currentApproverUserId,
     custom: (req.customValues ?? []).map((c) => ({ label: c.label, value: c.value })),
-    hr, expenditure, steps, events, attachments,
+    hr, expenditure, budget, steps, events, attachments,
     returned: returnedStep ? { byName: returnedStep.approverName, comment: returnedStep.comment, at: returnedStep.decidedAt } : null,
     can: {
       decide: mine,

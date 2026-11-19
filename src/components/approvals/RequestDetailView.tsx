@@ -6,8 +6,9 @@ import { DecisionPanel, WithdrawButton } from "@/components/approvals/DecisionPa
 import { PrintButton, PrintedOn } from "@/components/approvals/PrintRequest";
 import { Timeline } from "@/components/approvals/Timeline";
 import { TYPE_LABEL } from "@/lib/approvals/calc";
+import { INCOME_LINES, versionLabel } from "@/lib/approvals/budget";
 import { formatDate, formatDateTime, formatINR, isoToDisplay } from "@/lib/approvals/format";
-import type { AttachmentRow, RequestDetail, StepRow } from "@/lib/approvals/request-queries";
+import type { AttachmentRow, BudgetRequestView, RequestDetail, StepRow } from "@/lib/approvals/request-queries";
 
 const SLOT_LABEL: Record<string, string> = {
   file_upload: "File upload", file_upload_2: "File upload (second)", tax_invoice: "Tax Invoice", quotation: "Quotation", supporting: "Tax Invoice/Supporting Documents",
@@ -58,6 +59,71 @@ function chainLine(s: StepRow, last: boolean): string | null {
   }
 }
 
+const VERSION_TONE: Record<string, string> = { pending: "badge-amber", approved: "badge-green", rejected: "badge-red", withdrawn: "badge-neutral", returned: "badge-amber" };
+const VERSION_STATUS: Record<string, string> = { pending: "Pending", approved: "Approved", rejected: "Rejected", withdrawn: "Withdrawn", returned: "Returned" };
+
+/** A budget's event, money and vendors, shown in the Request section's list. */
+function BudgetItems({ b, amountPaise }: { b: BudgetRequestView; amountPaise: number | null }) {
+  const d = b.details;
+  return (
+    <>
+      <Item label="Event name">{d.eventName}</Item>
+      <Item label="Description"><span className="whitespace-pre-wrap">{d.description}</span></Item>
+      <Item label="Department">{d.departmentName}</Item>
+      <Item label="Financial year">{d.financialYear}</Item>
+      {INCOME_LINES.map((l) => <Item key={l.key} label={l.label}>{money(d.income[l.key])}</Item>)}
+      <Item label="Total income"><b>{money(b.totalIncomePaise)}</b></Item>
+      <Item label="Vendors">{d.vendors.length ? <ul className="list-disc pl-5" data-testid="budget-vendor-list">{d.vendors.map((v, i) => <li key={i}>{v}</li>)}</ul> : null}</Item>
+      <Item label={b.revisionNo ? "Revised budget amount" : "Budget amount"}>{money(amountPaise)}</Item>
+      <Item label="Net budget"><b>{money(b.netBudgetPaise)}</b> <span className="text-xs text-[var(--z-muted)]">(budget amount − total income)</span></Item>
+      {d.revisionReason && <Item label="Reason for revision"><span className="whitespace-pre-wrap">{d.revisionReason}</span></Item>}
+    </>
+  );
+}
+
+/**
+ * The budget's history: the original and every revision, oldest first, with the version in force marked. On paper it is a plain table
+ * (printed only when there is at least one revision); on screen each version opens its own page when this person may see it.
+ */
+function BudgetHistory({ b, currentId }: { b: BudgetRequestView; currentId: string }) {
+  const revisions = b.history.filter((h) => h.revisionNo).length;
+  return (
+    <section aria-labelledby="budget-history" className={revisions ? "" : "apr-no-print"} data-testid="budget-history">
+      <h2 id="budget-history" className="mb-3 flex flex-wrap items-center gap-2">
+        Budget history
+        <span className="badge badge-neutral" data-testid="budget-revision-count">{revisions} {revisions === 1 ? "revision" : "revisions"}</span>
+      </h2>
+      <div className="table-wrap max-w-4xl">
+        <table className="apr-table">
+          <thead>
+            <tr><th>Version</th><th>Amount</th><th>Submitted</th><th>Decided</th><th>Status</th><th>Approver</th><th>Reason for revision</th></tr>
+          </thead>
+          <tbody>
+            {b.history.map((h) => {
+              const active = h.id === b.activeId;
+              return (
+                <tr key={h.id} className={active ? "apr-budget-active" : undefined} aria-current={h.id === currentId ? "true" : undefined} data-testid={`budget-version-${h.revisionNo ?? 0}`}>
+                  <td>
+                    {h.canOpen && h.id !== currentId ? <Link href={`/approvals/requests/${h.id}?app=hr`} className="apr-link">{versionLabel(h.revisionNo)}</Link> : <b>{versionLabel(h.revisionNo)}</b>}
+                    {active && <span className="badge badge-green ml-2" data-testid="budget-active-badge">Active budget</span>}
+                  </td>
+                  <td>{money(h.amountPaise)}</td>
+                  <td>{formatDate(h.submittedAt)}</td>
+                  <td>{h.decidedAt && h.status !== "pending" ? formatDate(h.decidedAt) : "—"}</td>
+                  <td><span className={`badge ${VERSION_TONE[h.status] ?? "badge-neutral"}`}>{VERSION_STATUS[h.status] ?? h.status}</span></td>
+                  <td>{h.approverName ?? "—"}</td>
+                  <td className="whitespace-pre-wrap">{h.reason ?? (h.revisionNo ? "—" : "")}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!b.activeId && <p className="mt-2 text-sm text-[var(--z-muted)]">No version is approved yet, so no budget is in force.</p>}
+    </section>
+  );
+}
+
 /** What the printed page says about the status: decided on a day, or the last thing that happened to it. */
 function statusDate(d: RequestDetail): string {
   if (d.decidedAt) return `on ${formatDateTime(d.decidedAt)}`;
@@ -70,6 +136,7 @@ function statusDate(d: RequestDetail): string {
  */
 export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDetail; submitter: { name: string; department: string | null }; viewerName: string }) {
   const e = d.expenditure;
+  const b = d.budget;
   const name = d.hr ? `${d.hr.firstName} ${d.hr.lastName}` : d.requesterName;
   const status = <StatusPill status={d.status} currentStepNo={d.steps.find((s) => s.status === "pending")?.stepNo} />;
 
@@ -77,7 +144,7 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
     <div className="apr-printable space-y-8">
       <div className="apr-print-only apr-print-head">
         <Image src="/mccia-logo.png" alt="MCCIA" width={134} height={36} loading="eager" className="h-10 w-auto" />
-        <h1>{d.requestNo ?? "Request"} · {TYPE_LABEL[d.type]}{(d.hr?.categoryName ?? e?.categoryName) ? ` — ${d.hr?.categoryName ?? e?.categoryName}` : ""}</h1>
+        <h1>{d.requestNo ?? "Request"} · {b?.revisionNo ? `Budget revision (${versionLabel(b.revisionNo)})` : TYPE_LABEL[d.type]}{(d.hr?.categoryName ?? e?.categoryName ?? b?.details.eventName) ? ` — ${d.hr?.categoryName ?? e?.categoryName ?? b?.details.eventName}` : ""}</h1>
         <dl className="zdl">
           <Item label="Submitted by">{submitter.name}</Item>
           <Item label="Department">{submitter.department}</Item>
@@ -88,13 +155,18 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
 
       <div className="apr-no-print flex flex-wrap items-center gap-3">
         <h2 className="!text-xl">{d.requestNo ?? "Request"}</h2>
-        <span className="text-[var(--z-muted)]">{TYPE_LABEL[d.type]}</span>
+        <span className="text-[var(--z-muted)]">{b?.revisionNo ? `Budget revision · ${versionLabel(b.revisionNo)}` : TYPE_LABEL[d.type]}</span>
         {status}
+        {b && b.history.length > 1 && <span className="badge badge-neutral">{b.history.length - 1} {b.history.length === 2 ? "revision" : "revisions"}</span>}
         <span className="ml-auto flex flex-wrap items-center gap-2">
+          {b?.canRevise && <Link href={`/approvals/requests/${d.id}/revise`} className="btn btn-primary btn-sm" data-testid="budget-revise">Revise Budget</Link>}
           <PrintButton />
           {d.can.withdraw && <WithdrawButton id={d.id} />}
         </span>
       </div>
+      {b?.reviseBlocked && b.reviseBlocked !== "Only an approved budget can be revised." && (
+        <p className="apr-no-print -mt-4 text-sm text-[var(--z-muted)]" data-testid="budget-revise-blocked">{b.reviseBlocked}</p>
+      )}
 
       {d.status === "returned" && (
         <div role="status" className="apr-notice max-w-3xl space-y-2">
@@ -108,19 +180,21 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
         </div>
       )}
 
-      {d.can.decide && <div className="apr-no-print"><DecisionPanel id={d.id} mode={d.can.mode} /></div>}
+      {d.can.decide && <div className="apr-no-print"><DecisionPanel id={d.id} mode={d.can.mode} canReturn={!b} /></div>}
 
       <section aria-labelledby="req-details">
         <h2 id="req-details" className="mb-3">Request</h2>
         <dl className="zdl">
           <Item label="Name">{name}</Item>
           <Item label="Email">{d.requesterEmail}</Item>
-          <Item label="Category">{d.hr?.categoryName ?? e?.categoryName}</Item>
+          {!b && <Item label="Category">{d.hr?.categoryName ?? e?.categoryName}</Item>}
           {e?.branchName && <Item label="Branch Name">{e.branchName}</Item>}
           {e && <Item label="Nature of Expenditure"><span className="whitespace-pre-wrap">{e.nature}</span></Item>}
           <Item label="Date of Request">{formatDateTime(d.requestedAt)}</Item>
-          <Item label="Financial year">{d.financialYear}</Item>
-          <Item label="Amount">{money(d.amountPaise)}</Item>
+          {b ? <BudgetItems b={b} amountPaise={d.amountPaise} /> : <>
+            <Item label="Financial year">{d.financialYear}</Item>
+            <Item label="Amount">{money(d.amountPaise)}</Item>
+          </>}
           {d.hr && <Item label="Description"><span className="whitespace-pre-wrap">{d.hr.description}</span></Item>}
           {e && <Item label="Vendor Name"><span className="whitespace-pre-wrap">{e.vendorName}</span></Item>}
           {e && (d.type === "expenditure_small" || e.expenseDate) && <Item label="Date of expense">{isoToDisplay(e.expenseDate)}</Item>}
@@ -132,10 +206,14 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
       </section>
 
 
-      <section aria-labelledby="req-files">
-        <h2 id="req-files" className="mb-3">Attachments</h2>
-        <div className="max-w-2xl"><Files items={d.attachments} /></div>
-      </section>
+      {b && <BudgetHistory b={b} currentId={d.id} />}
+
+      {!b && (
+        <section aria-labelledby="req-files">
+          <h2 id="req-files" className="mb-3">Attachments</h2>
+          <div className="max-w-2xl"><Files items={d.attachments} /></div>
+        </section>
+      )}
 
       <section className="apr-print-only apr-print-chain">
         <h2>Approval</h2>
