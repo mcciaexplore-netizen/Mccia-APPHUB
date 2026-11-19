@@ -8,7 +8,7 @@ import { useToast } from "@/components/Toast";
 import { FormActions, MoneyInput, Row, SearchSelect, TextArea, TextInput, type Option } from "@/components/approvals/FormFields";
 import { CustomRow, checkExtra, extraAnswers, labeller } from "@/components/approvals/RequestForms";
 import type { FormField } from "@/lib/approvals/form-fields";
-import { BALANCE_LABEL, budgetBalance, linesTotal, type BudgetLine } from "@/lib/approvals/budget";
+import { BALANCE_LABEL, INCOME_TYPES, budgetBalance, linesTotal, type BudgetLine } from "@/lib/approvals/budget";
 import { formatINR, parseINR } from "@/lib/approvals/format";
 
 type Errors = Record<string, string>;
@@ -18,22 +18,25 @@ type LineText = { name: string; amount: string };
 const EMPTY_ROW: LineText = { name: "", amount: "" };
 const show = (p: number) => formatINR(p, { symbol: true });
 const toText = (lines: BudgetLine[]): LineText[] => (lines.length ? lines.map((l) => ({ name: l.name, amount: formatINR(l.amountPaise) })) : [EMPTY_ROW]);
-/** The rows worth sending: blank ones (no name, no amount) are left out. */
-const filled = (rows: LineText[]) => rows.filter((r) => r.name.trim() || r.amount.trim());
+/**
+ * The rows that count: blank ones (no name, no amount) are left out, and an income row with no income type picked is left out whatever its
+ * amount (picking the type is optional, and a row without one is ignored).
+ */
+const filled = (rows: LineText[], kind?: Kind) => rows.filter((r) => (kind === "income" ? !!r.name.trim() : !!(r.name.trim() || r.amount.trim())));
 /** What the rows add up to so far: a row whose amount is not (yet) a sum counts as nothing. */
-const sumOf = (rows: LineText[]) => linesTotal(rows.map((r) => ({ amountPaise: (r.amount.trim() && parseINR(r.amount)) || 0 })));
+const sumOf = (rows: LineText[], kind?: Kind) => linesTotal(filled(rows, kind).map((r) => ({ amountPaise: (r.amount.trim() && parseINR(r.amount)) || 0 })));
 const BALANCE_TONE = { surplus: "text-green-700", deficit: "text-red-700", balanced: "text-[var(--z-muted)]" } as const;
 
 type Kind = "income" | "expense" | "vendor";
 const KIND = {
-  income: { noun: "income", name: "Income source name", total: "Total Income", missing: "Enter the income source name." },
+  income: { noun: "income", name: "Income type", total: "Total Income", missing: "Pick the income type." },
   expense: { noun: "expense", name: "Expense name", total: "Total Expense", missing: "Enter the expense name." },
   vendor: { noun: "vendor", name: "Vendor name", total: "Total Vendor Amount", missing: "Enter the vendor name." },
 } as const;
 const GRID = "grid grid-cols-1 items-start gap-2 sm:grid-cols-[minmax(12rem,1fr)_12rem_auto]";
 
 /**
- * Rows of a name and an amount (income sources, expenses, vendors): each row with its own Remove, "Add …" under them, and the total of
+ * Rows of a name and an amount (income, picked from the income types; expenses; vendors): each row with its own Remove, "Add …" under them, and the total of
  * the rows, read only, at the bottom.
  */
 function LineRows({ kind, rows, setRows, errors, total }: {
@@ -43,14 +46,24 @@ function LineRows({ kind, rows, setRows, errors, total }: {
   const set = (i: number, patch: Partial<LineText>) => setRows((list) => list.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   return (
     <>
-      {kind === "vendor" && (
-        <div className={`${GRID} label-xs mb-1 hidden sm:grid`} aria-hidden><span>Vendor name</span><span>Amount</span><span /></div>
+      {kind !== "expense" && (
+        <div className={`${GRID} label-xs mb-1 hidden sm:grid`} aria-hidden><span>{kind === "vendor" ? "Vendor name" : "Income type"}</span><span>Amount</span><span /></div>
       )}
       <ul className="apr-line-rows space-y-2" data-testid={kind === "vendor" ? "budget-vendors" : `budget-${kind}-rows`}>
         {rows.map((r, i) => (
           <li key={i}>
             <div className={GRID}>
-              <TextInput id={`bud-${kind}-name-${i}`} value={r.name} onChange={(v) => set(i, { name: v })} invalid={!!errors[`${kind}-${i}`]} maxLength={200} placeholder={name} />
+              {kind === "income" ? (
+                // The income type, from the list (optional: a row without one is ignored). A budget raised before the list keeps its own
+                // name, offered beside the list so it is not lost.
+                <select id={`bud-${kind}-name-${i}`} className={`input ${errors[`${kind}-${i}`] ? "zf-invalid" : ""}`} value={r.name} onChange={(e) => set(i, { name: e.target.value })} aria-label={`Income type ${i + 1}`}>
+                  <option value="">-Select income type-</option>
+                  {INCOME_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {r.name && !(INCOME_TYPES as readonly string[]).includes(r.name) && <option value={r.name}>{r.name}</option>}
+                </select>
+              ) : (
+                <TextInput id={`bud-${kind}-name-${i}`} value={r.name} onChange={(v) => set(i, { name: v })} invalid={!!errors[`${kind}-${i}`]} maxLength={200} placeholder={name} />
+              )}
               <MoneyInput id={`bud-${kind}-amount-${i}`} value={r.amount} onChange={(v) => set(i, { amount: v })} invalid={!!errors[`${kind}-${i}`]} />
               <button type="button" className="btn btn-ghost btn-sm shrink-0" aria-label={`Remove ${noun} ${i + 1}`} onClick={() => setRows((list) => (list.length === 1 ? [EMPTY_ROW] : list.filter((_, j) => j !== i)))}>
                 <X size={14} aria-hidden /> Remove
@@ -69,16 +82,19 @@ function LineRows({ kind, rows, setRows, errors, total }: {
   );
 }
 
-/** Problems with income, expense or vendor rows: a row needs a name, and its amount must be a sum of zero or more. */
+/**
+ * Problems with income, expense or vendor rows: a row needs a name, and its amount must be a sum of zero or more. An income row without an
+ * income type is ignored, so it is never a problem.
+ */
 function checkRows(kind: Kind, rows: LineText[], err: Errors) {
   rows.forEach((r, i) => {
-    if (!r.name.trim() && !r.amount.trim()) return;
+    if (!r.name.trim() && (kind === "income" || !r.amount.trim())) return;
     const p = parseINR(r.amount);
     if (!r.name.trim()) err[`${kind}-${i}`] = KIND[kind].missing;
     else if (!r.amount.trim() || p === null || p < 0) err[`${kind}-${i}`] = "Enter the amount: 0 or more, with at most 2 decimals.";
   });
 }
-const toLines = (rows: LineText[]): BudgetLine[] => filled(rows).map((r) => ({ name: r.name.trim(), amountPaise: parseINR(r.amount) ?? 0 }));
+const toLines = (rows: LineText[], kind?: Kind): BudgetLine[] => filled(rows, kind).map((r) => ({ name: r.name.trim(), amountPaise: parseINR(r.amount) ?? 0 }));
 
 /** What a revision starts from: the latest version of the budget still standing (waiting or approved), as it was sent. */
 export type BudgetRevisionStart = {
@@ -148,7 +164,7 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const totalIncome = sumOf(income);
+  const totalIncome = sumOf(income, "income");
   const totalExpense = sumOf(expenses);
   // The Total Budget Requested is the total of the expenses. Only when the Support Admin has hidden the Expenses section is it typed in.
   const fromExpenses = shown("expenses");
@@ -185,7 +201,7 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
     setFormError(null);
     // A section the Support Admin has hidden sends nothing.
     const common = {
-      incomeLines: shown("income") ? toLines(income) : [], expenseLines: shown("expenses") ? toLines(expenses) : [], vendorLines: shown("vendors") ? toLines(vendors) : [],
+      incomeLines: shown("income") ? toLines(income, "income") : [], expenseLines: shown("expenses") ? toLines(expenses) : [], vendorLines: shown("vendors") ? toLines(vendors) : [],
       budgetPaise, approverUserId: approverId, custom: extraAnswers(fields, custom), eventName, description, departmentId, financialYear,
     };
     const r = revision

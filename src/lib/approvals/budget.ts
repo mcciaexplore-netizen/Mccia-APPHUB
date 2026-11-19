@@ -43,13 +43,17 @@ export const linesTotal = (lines: readonly { amountPaise: number }[]): number =>
 export type BudgetBalance = { kind: "surplus" | "deficit" | "balanced"; amountPaise: number };
 /**
  * The budget summary: total income against what goes out (total expense plus total vendor amount, added up by the caller). More income is a surplus, more expense a deficit (the amount is how much, never
- * negative), the same is balanced (₹0).
+ * negative), the same is balanced (₹0, labelled Surplus).
  */
 export function budgetBalance(incomePaise: number, expensePaise: number): BudgetBalance {
   const diff = incomePaise - expensePaise;
   return { kind: diff > 0 ? "surplus" : diff < 0 ? "deficit" : "balanced", amountPaise: Math.abs(diff) };
 }
-export const BALANCE_LABEL: Record<BudgetBalance["kind"], string> = { surplus: "Surplus", deficit: "Deficit", balanced: "Balanced" };
+/** Always Surplus or Deficit with the amount: exactly equal reads "Surplus: ₹0.00" (shown in grey). */
+export const BALANCE_LABEL: Record<BudgetBalance["kind"], string> = { surplus: "Surplus", deficit: "Deficit", balanced: "Surplus" };
+
+/** The kinds of income a budget's income rows are picked from. The same kind may be picked on more than one row (two sponsors). */
+export const INCOME_TYPES = ["Stall Charges", "Sponsorship", "Business Support Service", "Participation Fee - Member", "Participation Fee - Non Member"] as const;
 
 /** "Original" for the first budget, "Rev 1", "Rev 2", ... for its revisions. */
 export const versionLabel = (revisionNo: number | null | undefined): string => (revisionNo ? `Rev ${revisionNo}` : "Original");

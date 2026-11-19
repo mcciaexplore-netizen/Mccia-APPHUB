@@ -1,6 +1,6 @@
 /**
  * End-to-end test of the Budget Approval form in a real browser: raising a budget (income and expense rows with live totals, the Budget
- * Summary's Surplus / Deficit / Balanced, vendors added and
+ * Summary's Surplus / Deficit (Surplus ₹0.00 when equal), vendors added and
  * removed, the approver picked by typing a name), the approver's Budget place (badge, list, Approve or Reject with a reason, no Return),
  * revisions (only the requester, only an approved budget, one pending at a time, a rejected one leaving the budget before it in force), the
  * budget history, who can see what, and the printed page (one A4 page, with the history).
@@ -140,7 +140,7 @@ try {
   const labels = (await f.locator(".zf-label").allInnerTexts()).map((l) => l.replace(/\s*\*$/, "").trim());
   check("its sections are in order: event, income, expenses, vendors, summary, total budget requested, approver", JSON.stringify(labels) === JSON.stringify(["Event name", "Description", "Department", "Financial year", "Income sources", "Expenses", "Vendor name", "Summary", "Total Budget Requested", "Approver"]), labels.join(" | "));
   check("the totals and the summary are worked out, not typed (no boxes for them)", (await R.page.locator("[data-testid=budget-total-income]").evaluate((e) => e.tagName)) === "OUTPUT" && (await R.page.locator("[data-testid=budget-balance]").evaluate((e) => e.tagName)) === "DD");
-  check("the rows have the placeholders asked for", (await R.page.locator("#bud-income-name-0").getAttribute("placeholder")) === "Income source name" && (await R.page.locator("#bud-expense-name-0").getAttribute("placeholder")) === "Expense name" && (await R.page.locator("#bud-income-amount-0").getAttribute("placeholder")) === "##,##,###.##");
+  check("income is picked from the five income types (blank allowed); the other rows have the placeholders asked for", JSON.stringify(await R.page.locator("#bud-income-name-0 option").allTextContents()) === JSON.stringify(["-Select income type-", "Stall Charges", "Sponsorship", "Business Support Service", "Participation Fee - Member", "Participation Fee - Non Member"]) && (await R.page.locator("#bud-expense-name-0").getAttribute("placeholder")) === "Expense name" && (await R.page.locator("#bud-income-amount-0").getAttribute("placeholder")) === "##,##,###.##");
   await R.page.getByRole("button", { name: "Submit", exact: true }).click();
   check("submitting it empty says what is missing", (await f.locator(".zf-error").count()) >= 5);
   await R.page.locator("#bud-event").fill(EVENT);
@@ -168,10 +168,10 @@ try {
   await pick(R.page, "bud-dept", "ZZ Budget Events");
   const totalOf = (k) => R.page.locator(`[data-testid=budget-total-${k}]`).textContent();
   const balance = async () => { const b = R.page.locator("[data-testid=budget-balance]"); return `${await b.getAttribute("data-kind")} ${await b.textContent()}`; };
-  await R.page.locator("#bud-income-name-0").fill("ZZ Sponsorship");
+  await R.page.locator("#bud-income-name-0").selectOption("Sponsorship");
   await R.page.locator("#bud-income-amount-0").fill("5000");
   await R.page.getByRole("button", { name: "Add income" }).click();
-  await R.page.locator("#bud-income-name-1").fill("ZZ Stalls");
+  await R.page.locator("#bud-income-name-1").selectOption("Stall Charges");
   await R.page.locator("#bud-income-amount-1").fill("2500");
   check("Total Income adds the income rows as you type (₹7,500.00)", (await totalOf("income")) === "₹7,500.00", await totalOf("income"));
   check("with income and no expenses the summary is a Surplus in green", (await balance()) === "surplus ₹7,500.00" && (await R.page.locator("[data-testid=budget-balance]").getAttribute("class")).includes("green"), await balance());
@@ -185,13 +185,14 @@ try {
   await R.page.locator("#bud-expense-amount-2").fill("1500");
   await R.page.getByRole("button", { name: "Remove expense 2" }).click();
   check("expense rows can be added and removed; Total Expense adds them (₹7,500.00)", (await totalOf("expense")) === "₹7,500.00" && (await R.page.locator("[data-testid=budget-expense-rows] li").count()) === 2, await totalOf("expense"));
-  check("income equal to expense is Balanced ₹0.00, in grey", (await balance()) === "balanced ₹0.00" && (await R.page.locator("[data-testid=budget-balance]").getAttribute("class")).includes("muted"), await balance());
+  const summaryText = await R.page.locator("[data-testid=budget-summary]").textContent();
+  check("income equal to expense reads Surplus ₹0.00, in grey (never Balanced)", (await balance()) === "balanced ₹0.00" && (await R.page.locator("[data-testid=budget-balance]").getAttribute("class")).includes("muted")
+    && summaryText.includes("Surplus") && !summaryText.includes("Balanced"), [await balance(), summaryText]);
   await R.page.locator("#bud-expense-amount-1").fill("4000");
   check("more expense than income is a Deficit in red (₹2,500.00)", (await balance()) === "deficit ₹2,500.00" && (await R.page.locator("[data-testid=budget-balance]").getAttribute("class")).includes("red"), await balance());
-  await R.page.locator("#bud-income-name-1").fill("");
-  await R.page.getByRole("button", { name: "Submit", exact: true }).click();
-  check("a row with an amount but no name is refused", (await f.locator("[data-testid=budget-income-rows] .zf-error").innerText().catch(() => "")).includes("income source name"));
-  await R.page.locator("#bud-income-name-1").fill("ZZ Stalls");
+  await R.page.locator("#bud-income-name-1").selectOption("");
+  check("an income row with no income type picked is ignored, whatever its amount (₹5,000.00)", (await totalOf("income")) === "₹5,000.00", await totalOf("income"));
+  await R.page.locator("#bud-income-name-1").selectOption("Stall Charges");
   check("Total Budget Requested is the Total Expense, worked out and not typed (₹10,000.00)", (await R.page.locator("[data-testid=budget-requested]").textContent()) === "₹10,000.00" && (await R.page.locator("input#bud-amount").count()) === 0, await R.page.locator("[data-testid=budget-requested]").textContent());
   await R.page.locator("#bud-vendor-name-0").fill("ZZ Sai Caterers");
   await R.page.locator("#bud-vendor-amount-0").fill("0");
@@ -217,12 +218,12 @@ try {
   check("it is saved as a pending budget with NO Budget ID yet (that comes with approval), waiting for the approver picked", orig?.type === "budget" && orig.status === "pending" && orig.request_no === null && orig.current_approver_user_id === approver.id && Number(orig.amount_paise) === 1000000, orig);
   const d = orig?.budget_details ?? {};
   check("its details are kept as JSON: event, department, year, the income and expense rows (names and paise) and vendors", d.eventName === EVENT && d.departmentName === "ZZ Budget Events" && d.financialYear === orig.financial_year
-    && JSON.stringify(d.incomeLines) === JSON.stringify([{ name: "ZZ Sponsorship", amountPaise: 500000 }, { name: "ZZ Stalls", amountPaise: 250000 }])
+    && JSON.stringify(d.incomeLines) === JSON.stringify([{ name: "Sponsorship", amountPaise: 500000 }, { name: "Stall Charges", amountPaise: 250000 }])
     && JSON.stringify(d.expenseLines) === JSON.stringify([{ name: "ZZ Venue", amountPaise: 600000 }, { name: "ZZ Catering", amountPaise: 400000 }])
     && d.income === undefined && JSON.stringify(d.vendors) === JSON.stringify(["ZZ Sai Caterers", "ZZ Pune Sound"]), d);
   const shown = await text(R.page);
   check("the page confirms it and shows each income and expense row, their totals, the Deficit and the Total Budget Requested", shown.includes("Budget submitted. Its Budget ID is given when it is approved.") && shown.includes(EVENT)
-    && ["ZZ Sponsorship", "ZZ Stalls", "ZZ Venue", "ZZ Catering", "Total Income", "₹7,500.00", "Total Expense", "₹10,000.00", "Deficit: ₹2,500.00", "Total Budget Requested"].every((t) => shown.includes(t)), shown.slice(0, 400));
+    && ["Sponsorship", "Stall Charges", "ZZ Venue", "ZZ Catering", "Total Income", "₹7,500.00", "Total Expense", "₹10,000.00", "Deficit: ₹2,500.00", "Total Budget Requested"].every((t) => shown.includes(t)), shown.slice(0, 400));
   check("the budget's own page is headed Budget Approval, and HR Approval appears nowhere on it", (await R.page.locator("h1").first().innerText()).trim() === "Budget Approval" && !(await R.page.locator("body").innerText()).includes("HR Approval"));
   const idOf = async (page, testId) => { const el = page.locator(`[data-testid=${testId}]`).first(); return { text: await el.textContent(), kind: await el.getAttribute("data-kind"), cls: await el.getAttribute("class") }; };
   const pendingId = await idOf(R.page, "budget-id");
@@ -309,7 +310,7 @@ try {
   check("once Rev 1 is approved it is the active budget, and the history counts 1 revision", (await R.page.locator("[data-testid=budget-version-1] [data-testid=budget-active-badge]").count()) === 1 && (await R.page.locator("[data-testid=budget-version-0] [data-testid=budget-active-badge]").count()) === 0 && (await R.page.locator("[data-testid=budget-revision-count]").textContent()) === "1 revision");
 
   // Rev 2, rejected: Rev 1 stays in force.
-  const r2 = await api(R.page, `/api/approvals/requests/${r1Id}/revise`, "POST", { budgetPaise: 99, reason: "Additional catering required", incomeLines: [{ name: "ZZ Sponsorship", amountPaise: 500000 }], expenseLines: [{ name: "ZZ Venue", amountPaise: 600000 }, { name: "ZZ Catering", amountPaise: 1200000 }], vendors: ["ZZ Sai Caterers"], approverUserId: approver.id });
+  const r2 = await api(R.page, `/api/approvals/requests/${r1Id}/revise`, "POST", { budgetPaise: 99, reason: "Additional catering required", incomeLines: [{ name: "Sponsorship", amountPaise: 500000 }], expenseLines: [{ name: "ZZ Venue", amountPaise: 600000 }, { name: "ZZ Catering", amountPaise: 1200000 }], vendors: ["ZZ Sai Caterers"], approverUserId: approver.id });
   check("the server keeps the Total Budget Requested to the expense total, whatever amount is sent", Number((await sql`select amount_paise from apr_requests where id = ${r2.body?.id}`)[0]?.amount_paise) === 1800000);
   check("a revision can be asked for from a revision's page too: Rev 2 shows the same Budget ID and is linked to the original", r2.status === 201 && r2.body?.requestNo === origNo && (await sql`select parent_request_id from apr_requests where id = ${r2.body?.id}`)[0]?.parent_request_id === origId, r2);
   await go(A.page, `/approvals/requests/${r2.body.id}`);
@@ -332,8 +333,8 @@ try {
     reason: await R.page.locator("[data-testid=changes-reason]").textContent().catch(() => ""),
   });
   const c12 = await changes();
-  check("on the original's page it starts on Revision 1 → Revision 2: ZZ Stalls and ZZ Pune Sound removed, catering changed, total up ₹3,000 (in red), Rejected, with its reason",
-    c12.pick === "Revision 1 → Revision 2" && c12.removed.some((t) => t.includes("ZZ Stalls")) && c12.removed.some((t) => t.includes("ZZ Pune Sound")) && c12.changed.some((t) => t.includes("ZZ Catering") && t.includes("₹9,000.00") && t.includes("₹12,000.00"))
+  check("on the original's page it starts on Revision 1 → Revision 2: Stall Charges and ZZ Pune Sound removed, catering changed, total up ₹3,000 (in red), Rejected, with its reason",
+    c12.pick === "Revision 1 → Revision 2" && c12.removed.some((t) => t.includes("Stall Charges")) && c12.removed.some((t) => t.includes("ZZ Pune Sound")) && c12.changed.some((t) => t.includes("ZZ Catering") && t.includes("₹9,000.00") && t.includes("₹12,000.00"))
     && c12.total === "Change: +₹3,000.00" && (await R.page.locator("[data-testid=changes-total]").getAttribute("class")).includes("red") && c12.status === "Rejected" && c12.reason.includes("Additional catering required"), c12);
   check("the picker offers every comparison", JSON.stringify(await R.page.locator("[data-testid=changes-pick] option").allTextContents()) === JSON.stringify(["Original → Revision 1", "Revision 1 → Revision 2", "Original → Revision 2"]));
   await R.page.locator("[data-testid=changes-pick]").selectOption({ label: "Original → Revision 1" });
@@ -357,7 +358,7 @@ try {
   check("the page has a Print button", (await R.page.getByRole("button", { name: "Print" }).count()) === 1);
   await R.page.emulateMedia({ media: "print" });
   const printed = (await R.page.locator(".apr-printable").innerText()).replace(/\s+/g, " ");
-  check("the printed page has the income and expense rows, their totals, the summary, the vendors and the revision history", ["ZZ Sponsorship", "ZZ Stalls", "Total Income", "ZZ Venue", "ZZ Catering", "Total Expense", "Deficit: ₹2,500.00", "Total Budget Requested", "ZZ Sai Caterers", "ZZ Pune Sound", "Budget History", "Revision 1", "Revision 2", "Venue cost increased"].every((t) => printed.includes(t)), printed.slice(0, 300));
+  check("the printed page has the income and expense rows, their totals, the summary, the vendors and the revision history", ["Sponsorship", "Stall Charges", "Total Income", "ZZ Venue", "ZZ Catering", "Total Expense", "Deficit: ₹2,500.00", "Total Budget Requested", "ZZ Sai Caterers", "ZZ Pune Sound", "Budget History", "Revision 1", "Revision 2", "Venue cost increased"].every((t) => printed.includes(t)), printed.slice(0, 300));
   check("the printed page shows the Budget ID", (await R.page.locator("[data-testid=budget-id-row]").textContent()) === origNo && printed.includes(`Budget ID ${origNo}`));
   check("…and leaves out the controls", !printed.includes("Revise Budget") && !printed.includes("Timeline"));
   await shot(R.page, "print");
