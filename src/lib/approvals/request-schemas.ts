@@ -156,9 +156,16 @@ export const budgetRequestInput = z.object({
 });
 export type BudgetRequestInput = z.output<typeof budgetRequestInput>;
 
-/** A revision of an approved budget: the new amount and why, with the income, expenses, vendors and approver as they now stand. */
+/**
+ * A revision of a budget: why, with every field as it now stands. The event, description, department and year may be left out, and are then
+ * kept as the version it starts from has them.
+ */
 export const budgetRevisionInput = z.object({
   custom,
+  eventName: requiredText("Event name", 200).optional(),
+  description: requiredText("Description", 4000).optional(),
+  departmentId: z.string().regex(/^(hub:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "Pick a department from the list").optional(),
+  financialYear: financialYear.optional(),
   budgetPaise: amountPaise,
   reason: requiredText("Reason for revision", 4000),
   incomeLines: lines("Income"),

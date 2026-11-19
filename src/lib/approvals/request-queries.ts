@@ -6,7 +6,7 @@ import {
   aprApprovalEvents, aprAttachments, aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprPublicationTypes,
   aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType, type BudgetDetails,
 } from "@/db/approvals-schema";
-import { activeVersion, budgetBalance, expenseLinesOf, incomeLinesOf, linesTotal, vendorLinesOf, revisionBlocker, type BudgetBalance, type BudgetLine } from "./budget";
+import { activeVersion, budgetBalance, expenseLinesOf, incomeLinesOf, linesTotal, vendorLinesOf, revisionBase, revisionBlocker, waitingRevision, type BudgetBalance, type BudgetLine } from "./budget";
 import { decisionMode, type DecisionMode } from "./calc";
 import { REVIEW_KEYS, isDgOnly, type ReviewItem, type ReviewKey } from "./approvals.manifest";
 import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
@@ -347,7 +347,25 @@ export type BudgetHistoryRow = {
   approverName: string | null;
   /** Whether this person may open that version's own page. */
   canOpen: boolean;
+  /** That version's own figures, as it was sent: for "View details" in the history. */
+  figures: BudgetFigures;
 };
+/** A version's event and money, worked out from its stored details. */
+export type BudgetFigures = {
+  details: BudgetDetails;
+  incomeLines: BudgetLine[];
+  expenseLines: BudgetLine[];
+  vendorLines: BudgetLine[];
+  totalIncomePaise: number;
+  totalExpensePaise: number;
+  totalVendorPaise: number;
+  balance: BudgetBalance;
+};
+function figuresOf(d: BudgetDetails): BudgetFigures {
+  const [incomeLines, expenseLines, vendorLines] = [incomeLinesOf(d), expenseLinesOf(d), vendorLinesOf(d)];
+  const [totalIncomePaise, totalExpensePaise, totalVendorPaise] = [linesTotal(incomeLines), linesTotal(expenseLines), linesTotal(vendorLines)];
+  return { details: d, incomeLines, expenseLines, vendorLines, totalIncomePaise, totalExpensePaise, totalVendorPaise, balance: budgetBalance(totalIncomePaise, totalExpensePaise + totalVendorPaise) };
+}
 export type BudgetRequestView = {
   details: BudgetDetails;
   revisionNo: number | null;
@@ -372,6 +390,10 @@ export type BudgetRequestView = {
   /** Whether this person may ask for a revision now, and if not, why (null reason: not theirs to revise). */
   canRevise: boolean;
   reviseBlocked: string | null;
+  /** The revision now waiting for approval, which a new revision would replace (null when none waits). */
+  waitingRevisionNo: number | null;
+  /** The version a revision starts from: the latest one still standing. */
+  baseId: string | null;
 };
 
 /** The budget section of a budget request: its own figures and its history, with what this person may open and do. */
@@ -399,25 +421,20 @@ async function budgetViewOf(req: typeof aprRequests.$inferSelect, user: Approval
   const visible = new Set(visibleRows.map((v) => v.id));
   const original = versions.find((v) => v.id === originalId);
   const active = activeVersion(versions);
-  const blocked = original ? revisionBlocker(original, versions, user.id) : "Only an approved budget can be revised.";
+  const blocked = original ? revisionBlocker(original, versions, user.id) : "This budget cannot be revised.";
+  const waiting = waitingRevision(versions);
   const mineToRevise = original?.requesterUserId === user.id;
-  const d = req.budgetDetails;
-  const [incomeLines, expenseLines, vendorLines] = [incomeLinesOf(d), expenseLinesOf(d), vendorLinesOf(d)];
-  const [totalIncomePaise, totalExpensePaise, totalVendorPaise] = [linesTotal(incomeLines), linesTotal(expenseLines), linesTotal(vendorLines)];
+  const { details: d, ...own } = figuresOf(req.budgetDetails);
   return {
     details: d,
     revisionNo: req.revisionNo,
-    incomeLines,
-    expenseLines,
-    vendorLines,
-    totalIncomePaise,
-    totalExpensePaise,
-    totalVendorPaise,
-    balance: budgetBalance(totalIncomePaise, totalExpensePaise + totalVendorPaise),
-    history: versions.map((v) => ({
+    ...own,
+    history: versions.filter((v) => v.details).map((v) => ({
       id: v.id, requestNo: v.requestNo, revisionNo: v.revisionNo, amountPaise: v.amountPaise, status: v.status, submittedAt: v.requestedAt, decidedAt: v.decidedAt,
-      reason: v.details?.revisionReason ?? null, approverName: approverOf.get(v.id) ?? null, canOpen: visible.has(v.id),
+      reason: v.details?.revisionReason ?? null, approverName: approverOf.get(v.id) ?? null, canOpen: visible.has(v.id), figures: figuresOf(v.details!),
     })),
+    waitingRevisionNo: waiting?.revisionNo ?? null,
+    baseId: revisionBase(versions)?.id ?? null,
     activeId: active?.id ?? null,
     originalId,
     customByKey: Object.fromEntries((req.customValues ?? []).map((c) => [c.key, c.value])),

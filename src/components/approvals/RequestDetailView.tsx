@@ -9,7 +9,7 @@ import { Timeline } from "@/components/approvals/Timeline";
 import { TYPE_LABEL } from "@/lib/approvals/calc";
 import { BALANCE_LABEL, versionLabel, type BudgetLine } from "@/lib/approvals/budget";
 import { formatDate, formatDateTime, formatINR, isoToDisplay } from "@/lib/approvals/format";
-import type { AttachmentRow, BudgetRequestView, RequestDetail, StepRow } from "@/lib/approvals/request-queries";
+import type { AttachmentRow, BudgetFigures, BudgetRequestView, RequestDetail, StepRow } from "@/lib/approvals/request-queries";
 
 const SLOT_LABEL: Record<string, string> = {
   file_upload: "File upload", file_upload_2: "File upload (second)", tax_invoice: "Tax Invoice", quotation: "Quotation", supporting: "Tax Invoice/Supporting Documents",
@@ -105,45 +105,72 @@ function BudgetItems({ b, amountPaise, requestNo, status }: { b: BudgetRequestVi
   );
 }
 
+/** What a version's status says in the history: the original "Under Review" while it waits, a revision "Pending". */
+const versionStatus = (status: string, revisionNo: number | null) => (status === "pending" ? (revisionNo ? "Pending" : "Under Review") : VERSION_STATUS[status] ?? status);
+
+/** One version's figures as it was sent: the event, income, expenses, vendors and summary. */
+function VersionDetails({ f, amountPaise }: { f: BudgetFigures; amountPaise: number | null }) {
+  const d = f.details;
+  return (
+    <dl className="apr-version-details mt-3 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-[12rem_1fr]">
+      <dt className="label-xs">Event name</dt><dd>{d.eventName}</dd>
+      <dt className="label-xs">Description</dt><dd className="whitespace-pre-wrap">{d.description}</dd>
+      <dt className="label-xs">Department</dt><dd>{d.departmentName}</dd>
+      <dt className="label-xs">Financial year</dt><dd>{d.financialYear}</dd>
+      <dt className="label-xs">Income</dt><dd><LinesTable kind="income" lines={f.incomeLines} total={f.totalIncomePaise} /></dd>
+      <dt className="label-xs">Expenses</dt><dd><LinesTable kind="expense" lines={f.expenseLines} total={f.totalExpensePaise} /></dd>
+      <dt className="label-xs">Vendors</dt><dd>{f.vendorLines.length ? <LinesTable kind="vendor" lines={f.vendorLines} total={f.totalVendorPaise} /> : "None"}</dd>
+      <dt className="label-xs">Budget summary</dt>
+      <dd><b className={BALANCE_TONE[f.balance.kind]}>{BALANCE_LABEL[f.balance.kind]}: {money(f.balance.amountPaise)}</b></dd>
+      <dt className="label-xs">Total Budget Requested</dt><dd><b>{money(amountPaise)}</b></dd>
+    </dl>
+  );
+}
+
 /**
- * The budget's history: the original and every revision, oldest first, with the version in force marked. On paper it is a plain table
- * (printed only when there is at least one revision); on screen each version opens its own page when this person may see it.
+ * The budget's history: the original and every revision, oldest first, each kept as it was sent, with its own status and the version in
+ * force marked. "View details" opens a version's figures right here, so the original and its revisions can be read on one page.
  */
 function BudgetHistory({ b, currentId }: { b: BudgetRequestView; currentId: string }) {
   const revisions = b.history.filter((h) => h.revisionNo).length;
   return (
     <section aria-labelledby="budget-history" className={revisions ? "" : "apr-no-print"} data-testid="budget-history">
       <h2 id="budget-history" className="mb-3 flex flex-wrap items-center gap-2">
-        Budget history
+        Budget History
         <span className="badge badge-neutral" data-testid="budget-revision-count">{revisions} {revisions === 1 ? "revision" : "revisions"}</span>
       </h2>
-      <div className="table-wrap">
-        <table className="apr-table">
-          <thead>
-            <tr><th>Version</th><th>Budget ID</th><th>Amount</th><th>Submitted</th><th>Decided</th><th>Status</th><th>Approver</th><th>Reason for revision</th></tr>
-          </thead>
-          <tbody>
-            {b.history.map((h) => {
-              const active = h.id === b.activeId;
-              return (
-                <tr key={h.id} className={active ? "apr-budget-active" : undefined} aria-current={h.id === currentId ? "true" : undefined} data-testid={`budget-version-${h.revisionNo ?? 0}`}>
-                  <td>
-                    {h.canOpen && h.id !== currentId ? <Link href={`/approvals/requests/${h.id}?app=hr`} className="apr-link">{versionLabel(h.revisionNo)}</Link> : <b>{versionLabel(h.revisionNo)}</b>}
-                    {active && <span className="badge badge-green ml-2" data-testid="budget-active-badge">Active budget</span>}
-                  </td>
-                  <td className="whitespace-nowrap"><BudgetId requestNo={h.requestNo} status={h.status} /></td>
-                  <td>{money(h.amountPaise)}</td>
-                  <td>{formatDate(h.submittedAt)}</td>
-                  <td>{h.decidedAt && h.status !== "pending" ? formatDate(h.decidedAt) : "—"}</td>
-                  <td><span className={`badge ${VERSION_TONE[h.status] ?? "badge-neutral"}`}>{VERSION_STATUS[h.status] ?? h.status}</span></td>
-                  <td>{h.approverName ?? "—"}</td>
-                  <td className="whitespace-pre-wrap">{h.reason ?? (h.revisionNo ? "—" : "")}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <ol className="apr-versions max-w-4xl divide-y divide-[var(--z-line)] rounded border border-[var(--z-line)]">
+        {b.history.map((h) => {
+          const active = h.id === b.activeId;
+          const title = h.revisionNo ? `Revision ${h.revisionNo}` : "Original Budget";
+          return (
+            <li key={h.id} className={`p-4 ${active ? "apr-budget-active" : ""}`} aria-current={h.id === currentId ? "true" : undefined} data-testid={`budget-version-${h.revisionNo ?? 0}`}>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="font-bold">
+                  {h.canOpen && h.id !== currentId ? <Link href={`/approvals/requests/${h.id}?app=hr`} className="apr-link">{title}</Link> : title}
+                  {h.id === currentId && <span className="ml-2 text-sm font-normal text-[var(--z-muted)]">(this page)</span>}
+                  {active && <span className="badge badge-green ml-2" data-testid="budget-active-badge">Active budget</span>}
+                </p>
+                <span className="text-sm text-[var(--z-muted)]">{formatDate(h.submittedAt)}</span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
+                <span>Amount: <b data-testid="budget-version-amount">{money(h.amountPaise)}</b></span>
+                <span>Status: <span className={`badge ${VERSION_TONE[h.status] ?? "badge-neutral"}`} data-testid="budget-version-status">{versionStatus(h.status, h.revisionNo)}</span></span>
+              </div>
+              <p className="mt-1 text-sm">
+                Budget ID: <BudgetId requestNo={h.requestNo} status={h.status} />
+                {h.approverName && <> · Approver: {h.approverName}</>}
+                {h.decidedAt && h.status !== "pending" && <> · Decided {formatDate(h.decidedAt)}</>}
+              </p>
+              {h.reason && <p className="mt-1 text-sm">Reason: <span className="whitespace-pre-wrap" data-testid="budget-version-reason">&ldquo;{h.reason}&rdquo;</span></p>}
+              <details className="mt-2" data-testid="budget-version-details">
+                <summary className="apr-link cursor-pointer text-sm font-semibold">View details</summary>
+                <VersionDetails f={h.figures} amountPaise={h.amountPaise} />
+              </details>
+            </li>
+          );
+        })}
+      </ol>
       {!b.activeId && <p className="mt-2 text-sm text-[var(--z-muted)]">No version is approved yet, so no budget is in force.</p>}
     </section>
   );
@@ -191,7 +218,10 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
           {d.can.withdraw && <WithdrawButton id={d.id} />}
         </span>
       </div>
-      {b?.reviseBlocked && b.reviseBlocked !== "Only an approved budget can be revised." && (
+      {b?.canRevise && b.waitingRevisionNo && (
+        <p className="apr-no-print -mt-4 text-sm text-[var(--z-muted)]" data-testid="budget-revise-replaces">Rev {b.waitingRevisionNo} is waiting for approval: a new revision replaces it.</p>
+      )}
+      {b?.reviseBlocked && (
         <p className="apr-no-print -mt-4 text-sm text-[var(--z-muted)]" data-testid="budget-revise-blocked">{b.reviseBlocked}</p>
       )}
 

@@ -223,7 +223,9 @@ try {
   const pendingId = await idOf(R.page, "budget-id");
   check("the request page's Budget ID says Pending approval, in grey italics, at the top and in its Budget ID row", pendingId.text === "Pending approval" && pendingId.kind === "pending" && pendingId.cls.includes("italic")
     && (await idOf(R.page, "budget-id-row")).text === "Pending approval" && (await R.page.locator("h2", { hasText: "Budget ID" }).count()) === 1, pendingId);
-  check("no Revise Budget while it is pending", (await R.page.locator("[data-testid=budget-revise]").count()) === 0);
+  check("Revise Budget is offered to the requester while it is still pending", (await R.page.locator("[data-testid=budget-revise]").count()) === 1);
+  check("the history lists the Original Budget as Under Review, with its amount", (await R.page.locator("[data-testid=budget-version-0] [data-testid=budget-version-status]").textContent()) === "Under Review"
+    && (await R.page.locator("[data-testid=budget-version-0] [data-testid=budget-version-amount]").textContent()) === "₹10,000.00");
   const n1 = await poll(async () => (await sql`select title from apr_notifications where user_id = ${approver.id} and request_id = ${origId}`)[0]);
   check("the approver gets a bell notification naming the event", n1?.title === `Budget approval for ${EVENT} is waiting for your approval`, n1?.title);
 
@@ -249,7 +251,7 @@ try {
   check("rejecting needs a reason", (await panel.locator(".zf-error").innerText().catch(() => "")).includes("comment"));
   // Its Budget ID is given now: the next number among the budgets of its year already approved.
   const shortFy = `${orig.financial_year.slice(2, 4)}${orig.financial_year.slice(5, 7)}`;
-  const approvedBefore = (await sql`select count(*)::int n from apr_requests where type = 'budget' and parent_request_id is null and status = 'approved' and request_no is not null and financial_year = ${orig.financial_year}`)[0].n;
+  const approvedBefore = (await sql`select count(*)::int n from apr_requests where type = 'budget' and parent_request_id is null and request_no is not null and financial_year = ${orig.financial_year}`)[0].n;
   const expectedNo = `BUD-${shortFy}-${String(approvedBefore + 1).padStart(4, "0")}`;
   await decide(A.page, "Approve");
   check("they approve it", await poll(async () => (await sql`select status from apr_requests where id = ${origId}`)[0].status === "approved"));
@@ -270,7 +272,7 @@ try {
   await R.page.waitForURL(/\/revise$/);
   check("the revision page is headed Revise Budget (not HR Approval), with a link back to the budget", (await R.page.locator("h1").first().innerText()).trim() === "Revise Budget" && !(await R.page.locator("body").innerText()).includes("HR Approval")
     && (await R.page.getByRole("link", { name: /Back to the budget/ }).getAttribute("href")) === `/approvals/requests/${origId}?app=hr`);
-  check("the revision form shows the budget in force and keeps its income and expense rows, vendors and approver", (await text(R.page)).includes("The budget in force is ₹10,000.00") && (await R.page.locator("#bud-income-amount-0").inputValue()) === "5,000.00"
+  check("the revision form shows the budget in force and keeps its income and expense rows, vendors and approver", (await text(R.page)).includes("starts from the original budget (₹10,000.00)") && (await R.page.locator("#bud-event").inputValue()) === EVENT && (await R.page.locator("#bud-income-amount-0").inputValue()) === "5,000.00"
     && (await R.page.locator("[data-testid=budget-income-rows] li").count()) === 2 && (await R.page.locator("[data-testid=budget-expense-rows] li").count()) === 2
     && (await R.page.locator("[data-testid=budget-vendors] input[id^=bud-vendor-name]").count()) === 2 && (await R.page.locator("#bud-approver").innerText()).includes("ZZ Bud Approver"));
   await R.page.getByRole("button", { name: "Submit revision" }).click();
@@ -285,11 +287,13 @@ try {
   check("Rev 1 is its own pending request, linked to the original, numbered <original>-R1, with the reason", r1?.parent_request_id === origId && r1.revision_no === 1 && r1.status === "pending" && r1.request_no === `${origNo}-R1` && r1.budget_details?.revisionReason === "Venue cost increased" && r1.budget_details?.eventName === EVENT, r1);
   const n3 = await poll(async () => (await sql`select title from apr_notifications where user_id = ${approver.id} and request_id = ${r1Id}`)[0]);
   check(`the approver is told "Budget revision requested for ${EVENT}"`, n3?.title === `Budget revision requested for ${EVENT}`, n3?.title);
-  check("a second revision while one is pending is refused (409)", (await api(R.page, `/api/approvals/requests/${origId}/revise`, "POST", { budgetPaise: 1600000, reason: "again", income: {}, vendors: [], approverUserId: approver.id })).status === 409);
   await go(R.page, `/approvals/requests/${origId}`);
-  check("…and the original says so instead of offering Revise Budget", (await R.page.locator("[data-testid=budget-revise]").count()) === 0 && (await R.page.locator("[data-testid=budget-revise-blocked]").innerText()).includes("already waiting"));
-  await go(R.page, `/approvals/requests/${origId}/revise`);
-  check("…and the revise page sends them back to the budget", new URL(R.page.url()).pathname === `/approvals/requests/${origId}`);
+  check("while Rev 1 waits, Revise Budget is still offered, saying a new revision replaces Rev 1", (await R.page.locator("[data-testid=budget-revise]").count()) === 1 && (await R.page.locator("[data-testid=budget-revise-replaces]").innerText()).includes("Rev 1"));
+  check("both versions are on the original's page: the original's details and Rev 1's open with View details", await (async () => {
+    await R.page.locator("[data-testid=budget-version-1] summary").click();
+    const t = await R.page.locator("[data-testid=budget-version-1] [data-testid=budget-version-details]").textContent();
+    return t.includes("₹9,000.00") && t.includes("₹15,000.00") && (await R.page.locator("[data-testid=budget-version-1] [data-testid=budget-version-reason]").textContent()).includes("Venue cost increased");
+  })());
   check("while Rev 1 waits, the Original stays the active budget", (await R.page.locator("[data-testid=budget-version-0] [data-testid=budget-active-badge]").count()) === 1 && (await R.page.locator("[data-testid=budget-version-1]").textContent()).includes("Pending"));
 
   await go(A.page, `/approvals/requests/${r1Id}`);
@@ -325,7 +329,7 @@ try {
   check("the page has a Print button", (await R.page.getByRole("button", { name: "Print" }).count()) === 1);
   await R.page.emulateMedia({ media: "print" });
   const printed = (await R.page.locator(".apr-printable").innerText()).replace(/\s+/g, " ");
-  check("the printed page has the income and expense rows, their totals, the summary, the vendors and the revision history", ["ZZ Sponsorship", "ZZ Stalls", "Total Income", "ZZ Venue", "ZZ Catering", "Total Expense", "Deficit: ₹2,500.00", "Total Budget Requested", "ZZ Sai Caterers", "ZZ Pune Sound", "Budget history", "Rev 1", "Rev 2", "Venue cost increased"].every((t) => printed.includes(t)), printed.slice(0, 300));
+  check("the printed page has the income and expense rows, their totals, the summary, the vendors and the revision history", ["ZZ Sponsorship", "ZZ Stalls", "Total Income", "ZZ Venue", "ZZ Catering", "Total Expense", "Deficit: ₹2,500.00", "Total Budget Requested", "ZZ Sai Caterers", "ZZ Pune Sound", "Budget History", "Revision 1", "Revision 2", "Venue cost increased"].every((t) => printed.includes(t)), printed.slice(0, 300));
   check("the printed page shows the Budget ID", (await R.page.locator("[data-testid=budget-id-row]").textContent()) === origNo && printed.includes(`Budget ID ${origNo}`));
   check("…and leaves out the controls", !printed.includes("Revise Budget") && !printed.includes("Timeline"));
   await shot(R.page, "print");
@@ -350,6 +354,26 @@ try {
   check("…and its page says Not assigned, in grey", rejectedId.text === "Not assigned" && rejectedId.kind === "none" && rejectedId.cls.includes("italic"), rejectedId);
   const n4 = await poll(async () => (await sql`select title from apr_notifications where user_id = ${requester.id} and request_id = ${third.id}`)[0]);
   check("…and the message about it names the event, with no number", n4?.title === "Your Budget approval (ZZ Order Rejected) was rejected", n4?.title);
+
+  section("Revising before any approval");
+  const pre = await raise("ZZ Revise Early");
+  const reviseEarly = (reason, venuePaise) => api(R.page, `/api/approvals/requests/${pre.id}/revise`, "POST", { reason, incomeLines: [], expenseLines: [{ name: "ZZ Venue", amountPaise: venuePaise }], vendors: [], budgetPaise: 1, approverUserId: approver.id, eventName: "ZZ Revise Early (bigger hall)" });
+  const e1 = await reviseEarly("Bigger hall", 60000);
+  check("the requester can revise a budget still under review; the revision has no number yet", e1.status === 201 && e1.body?.requestNo === null, e1);
+  const e2 = await reviseEarly("Even bigger hall", 70000);
+  const [e1Row] = await sql`select status, decision_comment from apr_requests where id = ${e1.body?.id}`;
+  check("revising again replaces the waiting Rev 1 (withdrawn, \"Replaced by Rev 2\"); the original stays under review", e2.status === 201 && e1Row?.status === "withdrawn" && e1Row.decision_comment === "Replaced by Rev 2"
+    && (await sql`select status from apr_requests where id = ${pre.id}`)[0].status === "pending", [e2, e1Row]);
+  check("the event name can be changed on a revision; the original keeps its own", (await sql`select budget_details->>'eventName' n from apr_requests where id = ${e2.body?.id}`)[0].n === "ZZ Revise Early (bigger hall)"
+    && (await sql`select budget_details->>'eventName' n from apr_requests where id = ${pre.id}`)[0].n === "ZZ Revise Early");
+  await go(R.page, `/approvals/requests/${pre.id}`);
+  check("every version shows Pending approval as its Budget ID while none is approved", (await R.page.locator("[data-testid=budget-history] [data-kind=pending]").allTextContents()).every((t) => t === "Pending approval")
+    && (await R.page.locator("[data-testid=budget-version-2] [data-testid=budget-version-status]").textContent()) === "Pending");
+  await api(A.page, `/api/approvals/requests/${e2.body.id}/decision`, "POST", { action: "approve" });
+  const fam = Object.fromEntries((await sql`select id, request_no from apr_requests where id in (${pre.id}, ${e1.body.id}, ${e2.body.id})`).map((r) => [r.id, r.request_no]));
+  check("the first approval (Rev 2) gives the budget its ID: the original BUD-…, each revision the same with -R1, -R2", /^BUD-\d{4}-\d{4}$/.test(fam[pre.id] ?? "") && fam[e1.body.id] === `${fam[pre.id]}-R1` && fam[e2.body.id] === `${fam[pre.id]}-R2`, fam);
+  await api(A.page, `/api/approvals/requests/${pre.id}/decision`, "POST", { action: "approve" });
+  check("approving the original later keeps that same ID", (await sql`select request_no from apr_requests where id = ${pre.id}`)[0].request_no === fam[pre.id]);
 
   section("Budgets raised before income and expenses were rows");
   const [old] = await sql`insert into apr_requests (request_no, type, status, requester_user_id, requester_name, requester_email, financial_year, current_step, total_steps, amount_paise, budget_details, decided_at)

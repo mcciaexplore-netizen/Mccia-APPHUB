@@ -7,6 +7,7 @@ import { departmentOptions } from "./departments";
 import { getFormFields } from "./form-config";
 import { listMaster, type MasterRow } from "./masters";
 import { financialYearOf, formatINR, recentFinancialYears } from "./format";
+import { versionLabel } from "./budget";
 import type { EditValues, RequestDetail } from "./request-queries";
 import { getSettings } from "./settings";
 
@@ -113,18 +114,29 @@ export async function budgetFormProps(user: ApprovalsUser): Promise<BudgetFormPr
 }
 
 /**
- * The revision form of a budget: it starts from the budget in force (`active`, the latest approved version), with the approver the current
- * request went to. `asked` is the request the person opened (the original or a revision).
+ * The revision form of a budget: it starts from `base`, the latest version still standing (waiting or approved), with every field
+ * editable, and the approver that version went to. `asked` is the request the person opened (the original or a revision).
  */
-export async function budgetRevisionProps(user: ApprovalsUser, asked: RequestDetail, active: RequestDetail): Promise<BudgetFormProps> {
-  const b = active.budget!;
-  const [people, fields] = await Promise.all([approverOptions(user), getFormFields("budget")]);
+export async function budgetRevisionProps(user: ApprovalsUser, asked: RequestDetail, base: RequestDetail): Promise<BudgetFormProps> {
+  const b = base.budget!;
+  const [departments, people, fields] = await Promise.all([departmentOptions(), approverOptions(user), getFormFields("budget")]);
+  // A hub department is stored by its own id; on the list it is "hub:<id>". One no longer on the list is offered as it was.
+  const d = b.details;
+  const dept = departments.find((o) => o.value === d.departmentId) ?? departments.find((o) => o.value === `hub:${d.departmentId}`);
+  const deptOptions = dept ? departments : [...departments, { value: d.departmentId, label: d.departmentName }];
+  const years = recentFinancialYears(4);
+  const history = asked.budget!.history;
   return {
     fields,
     people,
+    departments: deptOptions,
+    financialYears: years.includes(d.financialYear) ? years : [d.financialYear, ...years],
+    defaultFinancialYear: d.financialYear,
     revision: {
-      requestId: asked.id, requestNo: asked.budget!.history[0]?.requestNo ?? asked.requestNo ?? "", eventName: b.details.eventName, departmentName: b.details.departmentName,
-      financialYear: b.details.financialYear, budgetPaise: active.amountPaise ?? 0, incomeLines: b.incomeLines, expenseLines: b.expenseLines, vendorLines: b.vendorLines, approverUserId: asked.budget!.approverUserId, custom: b.customByKey,
+      requestId: asked.id, requestNo: history[0]?.requestNo ?? null, baseLabel: versionLabel(b.revisionNo),
+      eventName: d.eventName, description: d.description, departmentId: dept?.value ?? d.departmentId, departmentName: d.departmentName, financialYear: d.financialYear,
+      budgetPaise: base.amountPaise ?? 0, incomeLines: b.incomeLines, expenseLines: b.expenseLines, vendorLines: b.vendorLines,
+      approverUserId: b.approverUserId, custom: b.customByKey, replacesRevisionNo: b.waitingRevisionNo,
     },
   };
 }

@@ -2,10 +2,10 @@
  * The Budget Approval form's money and revision rules as plain functions: no database, no server-only imports, so the form (its live totals
  * and the Surplus/Deficit summary), the server, the request page and the unit tests run the same code. All amounts are integer paise.
  *
- * A budget is one request (type "budget") sent to one approver the requester picks. Once it is approved, the person who raised it can ask
- * for a revision: a new request of its own, linked to the original (parent_request_id) and numbered Rev 1, Rev 2, ... Each revision needs a
- * fresh approval, only one can be open at a time, and the budget in force is the latest approved version (a rejected revision changes
- * nothing).
+ * A budget is one request (type "budget") sent to one approver the requester picks. The person who raised it can ask
+ * for a revision at any stage: a new request of its own, linked to the original (parent_request_id) and numbered Rev 1, Rev 2, ... Each
+ * revision needs a fresh approval; only one can wait at a time (a new one replaces it); the budget in force is the latest approved version (a
+ * rejected revision changes nothing). The Budget ID is given when the first version is approved, and revisions carry it with -R1, -R2.
  */
 import type { AprRequestStatus } from "@/db/approvals-schema";
 
@@ -69,12 +69,27 @@ export function activeVersion<T extends BudgetVersion>(versions: readonly T[]): 
   return best;
 }
 
-/** Why a budget cannot be revised now, or null when it can. `versions`: the original and every revision of it. */
-export function revisionBlocker(original: { status: AprRequestStatus; requesterUserId: string }, versions: readonly BudgetVersion[], actorId: string): string | null {
+/**
+ * Why this person cannot revise the budget, or null when they can. Only the person who raised it may, at any stage: while the original
+ * still waits, once it is approved or rejected, and while a revision waits (the new revision then replaces the waiting one).
+ */
+export function revisionBlocker(original: { status: AprRequestStatus; requesterUserId: string }, _versions: readonly BudgetVersion[], actorId: string): string | null {
   if (original.requesterUserId !== actorId) return "Only the person who raised this budget can ask for a revision.";
-  if (original.status !== "approved") return "Only an approved budget can be revised.";
-  if (versions.some((v) => v.revisionNo && (v.status === "pending" || v.status === "draft"))) return "A revision of this budget is already waiting for approval. Wait for it to be decided before asking for another.";
+  if (original.status === "draft") return "This budget has not been submitted yet.";
   return null;
+}
+
+/** The revision a new one replaces: an earlier revision still waiting for its approver (at most one waits at a time). */
+export const waitingRevision = <T extends BudgetVersion>(versions: readonly T[]): T | null =>
+  versions.find((v) => v.revisionNo && (v.status === "pending" || v.status === "returned")) ?? null;
+
+/**
+ * The version a revision starts from: the latest one still standing (waiting or approved), or, when every version was rejected or
+ * withdrawn, the latest of them.
+ */
+export function revisionBase<T extends BudgetVersion>(versions: readonly T[]): T | null {
+  const byNo = [...versions].sort((a, b) => (b.revisionNo ?? 0) - (a.revisionNo ?? 0));
+  return byNo.find((v) => v.status === "pending" || v.status === "approved" || v.status === "returned") ?? byNo[0] ?? null;
 }
 
 /** The number the next revision gets: one more than the highest so far (1 for the first). */
@@ -89,9 +104,9 @@ export const budgetRequestNo = (financialYear: string, n: number): string =>
   `BUD-${financialYear.slice(2, 4)}${financialYear.slice(5, 7)}-${String(n).padStart(4, "0")}`;
 
 /**
- * What a budget's ID says, from its request number and status. The permanent ID of a budget is given when it is approved, so until then an
- * original budget has none: "Pending approval" while it waits, "Not assigned" once rejected or withdrawn. A revision's number (the
- * original's with -R1, -R2) is known from the start, as the original is already approved: shown with "(Pending)" until it is approved.
+ * What a budget's ID says, from its request number and status. The Budget ID is given when the first version of the budget is approved, so
+ * until then no version has one: "Pending approval" while it waits, "Not assigned" once rejected or withdrawn. Once the budget has its ID,
+ * a waiting version shows its number with "(Pending)".
  */
 export type BudgetIdView = { text: string; kind: "assigned" | "pending" | "none" };
 export function budgetIdView(r: { requestNo: string | null; status: AprRequestStatus }): BudgetIdView {

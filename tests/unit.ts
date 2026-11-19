@@ -27,7 +27,7 @@ import { safeNext } from "../src/lib/session";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
   FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, decidesIn, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
-import { activeVersion, budgetBalance, budgetIdView, budgetRequestNo, requestNoText, cleanVendors, expenseLinesOf, incomeLinesOf, linesTotal, nextRevisionNo, revisionBlocker, revisionRequestNo, versionLabel } from "../src/lib/approvals/budget";
+import { activeVersion, budgetBalance, budgetIdView, budgetRequestNo, requestNoText, cleanVendors, expenseLinesOf, incomeLinesOf, linesTotal, nextRevisionNo, revisionBase, revisionBlocker, revisionRequestNo, versionLabel, waitingRevision } from "../src/lib/approvals/budget";
 import { budgetRequestInput, budgetRevisionInput } from "../src/lib/approvals/request-schemas";
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
@@ -209,12 +209,17 @@ eq("budget: vendors are trimmed and blank ones dropped", cleanVendors(["  Sai Ca
     activeVersion([v("o", null, "pending")]),
   ], ["o", "r1", "o", "r3", null]);
   const orig = (status: "pending" | "approved" | "rejected") => ({ status, requesterUserId: "me" });
-  eq("budget: only the person who raised an approved budget can revise it, one revision at a time, as many times as needed", [
+  eq("budget: only the person who raised it can revise it, at any stage (waiting, approved, rejected, with a revision waiting)", [
     revisionBlocker(orig("approved"), [v("o", null, "approved")], "me"), revisionBlocker(orig("approved"), [v("o", null, "approved")], "someone-else")?.slice(0, 8),
-    revisionBlocker(orig("pending"), [v("o", null, "pending")], "me")?.slice(0, 30), revisionBlocker(orig("rejected"), [v("o", null, "rejected")], "me")?.slice(0, 30),
-    revisionBlocker(orig("approved"), [v("o", null, "approved"), v("r1", 1, "pending")], "me")?.slice(0, 15),
+    revisionBlocker(orig("pending"), [v("o", null, "pending")], "me"), revisionBlocker(orig("rejected"), [v("o", null, "rejected")], "me"),
+    revisionBlocker(orig("approved"), [v("o", null, "approved"), v("r1", 1, "pending")], "me"),
     revisionBlocker(orig("approved"), [v("o", null, "approved"), v("r1", 1, "rejected"), v("r2", 2, "approved"), v("r3", 3, "withdrawn")], "me"),
-  ], [null, "Only the", "Only an approved budget can be", "Only an approved budget can be", "A revision of t", null]);
+  ], [null, "Only the", null, null, null, null]);
+  eq("budget: a new revision replaces the one waiting (never the original); it starts from the latest version still standing", [
+    waitingRevision([v("o", null, "pending")]), waitingRevision([v("o", null, "pending"), v("r1", 1, "rejected"), v("r2", 2, "pending")])?.id,
+    revisionBase([v("o", null, "pending")])?.id, revisionBase([v("o", null, "approved"), v("r1", 1, "pending")])?.id,
+    revisionBase([v("o", null, "approved"), v("r1", 1, "rejected")])?.id, revisionBase([v("o", null, "rejected"), v("r1", 1, "withdrawn")])?.id,
+  ], [null, "r2", "o", "r1", "o", "r1"]);
   eq("budget: the next revision is one more than the highest so far", [nextRevisionNo([v("o", null, "approved")]), nextRevisionNo([v("o", null, "approved"), v("r1", 1, "rejected"), v("r2", 2, "approved")])], [1, 3]);
 }
 {

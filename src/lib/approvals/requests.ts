@@ -7,7 +7,7 @@ import {
 } from "@/db/approvals-schema";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
-import { activeVersion, budgetRequestNo, linesTotal, nextRevisionNo, revisionBlocker, revisionRequestNo, type BudgetLine } from "./budget";
+import { budgetRequestNo, linesTotal, nextRevisionNo, revisionBase, revisionBlocker, revisionRequestNo, waitingRevision, type BudgetLine } from "./budget";
 import { commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, TYPE_LABEL, wrongFormMessage, type ExpenditureForm } from "./calc";
 import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { resolveCustomAnswers } from "./form-config";
@@ -333,10 +333,11 @@ export async function submitBudget(input: BudgetRequestInput, actor: ApprovalsUs
 }
 
 /**
- * A revision of an approved budget, asked for by the person who raised it when the budget is exceeded: a new request linked to the original,
- * numbered Rev 1, Rev 2, ... (BUD-2026-27-0001-R1), that needs a fresh approval. The event, its description, department and year stay as
- * approved; the amount, income, vendors and approver are what the person sends now. Only one revision can wait at a time, and until one is
- * approved the budget approved before it stays in force. `requestId` may be the original or any revision of it.
+ * A revision of a budget, asked for by the person who raised it at any stage (while the original waits, once it is decided, or while an
+ * earlier revision waits): a new request linked to the original, Rev 1, Rev 2, ..., that needs a fresh approval. Every version stays as it
+ * was sent and is shown in the budget's history. It starts from the latest version still standing; any field may be changed. A revision
+ * still waiting is replaced by the new one (withdrawn, its approver told). Its number is the Budget ID with -R<n> once the budget has an
+ * ID; before that it has none, like the original (see assignBudgetIds). `requestId` may be the original or any revision of it.
  */
 export async function reviseBudget(requestId: string, input: BudgetRevisionInput, actor: ApprovalsUser): Promise<{ id: string; requestNo: string | null }> {
   const [asked] = await db.select().from(aprRequests).where(eq(aprRequests.id, requestId));
@@ -344,56 +345,107 @@ export async function reviseBudget(requestId: string, input: BudgetRevisionInput
   const original = asked.parentRequestId ? (await db.select().from(aprRequests).where(eq(aprRequests.id, asked.parentRequestId)))[0] : asked;
   if (!original) throw new ApprovalsError("That request does not exist.", 404);
   const versions = await db
-    .select({ id: aprRequests.id, revisionNo: aprRequests.revisionNo, status: aprRequests.status, details: aprRequests.budgetDetails })
+    .select({ id: aprRequests.id, revisionNo: aprRequests.revisionNo, status: aprRequests.status, details: aprRequests.budgetDetails, requestNo: aprRequests.requestNo, approverUserId: aprRequests.currentApproverUserId })
     .from(aprRequests)
-    .where(sql`${aprRequests.id} = ${original.id} or ${aprRequests.parentRequestId} = ${original.id}`);
+    .where(and(sql`${aprRequests.id} = ${original.id} or ${aprRequests.parentRequestId} = ${original.id}`, sql`${aprRequests.status} <> 'draft'`));
   const blocked = revisionBlocker(original, versions, actor.id);
   if (blocked) throw new ApprovalsError(blocked, original.requesterUserId === actor.id ? 409 : 403);
-  // An approved budget always has its Budget ID (given when it was approved); a revision's number is built from it.
-  if (!original.requestNo) throw new ApprovalsError("This budget has no Budget ID yet, so it cannot be revised.", 409);
   const approver = await budgetApprover(input.approverUserId, actor);
   const customValues = await resolveCustomAnswers("budget", input.custom);
 
-  // The budget in force is the base: the event and its year stay as they were approved.
-  const base = (activeVersion(versions) ?? versions.find((v) => v.id === original.id))?.details ?? original.budgetDetails;
+  const base = revisionBase(versions)?.details ?? original.budgetDetails;
   if (!base) throw new ApprovalsError("This budget has no details to revise.", 409);
+  const department = input.departmentId && input.departmentId !== base.departmentId ? await resolveDepartment(input.departmentId) : { id: base.departmentId, name: base.departmentName };
   const revisionNo = nextRevisionNo(versions);
   const amountPaise = requestedTotal(input);
   // The revision's own rows replace the base's (an older budget's fixed income lines are not carried over: they are now rows).
   const { income: _oldIncome, ...rest } = base;
   void _oldIncome;
-  const details: BudgetDetails = { ...rest, incomeLines: input.incomeLines, expenseLines: input.expenseLines, ...vendorsOf(input), revisionReason: input.reason };
-  return createRequest(actor, {
-    type: "budget", requesterName: original.requesterName, requesterEmail: original.requesterEmail, requestedAt: new Date(), amountPaise, overBudget: false,
-    files: [], customValues, insertDetails: async () => {},
-    approver: { userId: approver.id, stepLabel: BUDGET_STEP }, financialYear: original.financialYear ?? base.financialYear,
-    requestNo: revisionRequestNo(original.requestNo, revisionNo), budgetDetails: details, revisionOf: { parentRequestId: original.id, revisionNo }, emailApprover: true,
-    assignedNotice: (no) => ({ title: `Budget revision requested for ${base.eventName}`, body: `${no} (Rev ${revisionNo}) · ${original.requesterName}${moneyOf(amountPaise)} · ${input.reason.slice(0, 200)}` }),
-  });
+  const details: BudgetDetails = {
+    ...rest, eventName: input.eventName ?? base.eventName, description: input.description ?? base.description, departmentId: department.id, departmentName: department.name,
+    financialYear: input.financialYear ?? base.financialYear, incomeLines: input.incomeLines, expenseLines: input.expenseLines, ...vendorsOf(input), revisionReason: input.reason,
+  };
+
+  // Only one revision waits at a time: one still waiting is replaced by this one. If this one cannot be saved, it is put back as it was.
+  const replaced = waitingRevision(versions);
+  const putBack = replaced ? await replaceWaitingRevision(replaced, revisionNo) : null;
+  let made: { id: string; requestNo: string | null };
+  try {
+    made = await createRequest(actor, {
+      type: "budget", requesterName: original.requesterName, requesterEmail: original.requesterEmail, requestedAt: new Date(), amountPaise, overBudget: false,
+      files: [], customValues, insertDetails: async () => {},
+      approver: { userId: approver.id, stepLabel: BUDGET_STEP }, financialYear: original.financialYear ?? base.financialYear,
+      requestNo: original.requestNo ? revisionRequestNo(original.requestNo, revisionNo) : undefined, numberLater: true,
+      budgetDetails: details, revisionOf: { parentRequestId: original.id, revisionNo }, emailApprover: true,
+      assignedNotice: (no) => ({ title: `Budget revision requested for ${details.eventName}`, body: `${no ? `${no} ` : ""}(Rev ${revisionNo}) · ${original.requesterName}${moneyOf(amountPaise)} · ${input.reason.slice(0, 200)}` }),
+    });
+  } catch (e) {
+    if (putBack) await putBack().catch((err) => logError(`[approvals] could not put back budget revision ${replaced!.id} after a failed revision`, err));
+    throw e;
+  }
+  if (replaced) {
+    try {
+      await addEvent({ requestId: replaced.id, action: "withdrawn", actorUserId: actor.id, actorName: actor.name, fromStatus: replaced.status, toStatus: "withdrawn", comment: `Replaced by Rev ${revisionNo}` });
+      if (replaced.approverUserId) {
+        await notify({ userId: replaced.approverUserId, requestId: replaced.id, link: link(replaced.id, "budget"), title: `Budget revision Rev ${replaced.revisionNo} (${details.eventName}) was replaced`, body: `${original.requesterName} sent Rev ${revisionNo} instead.` });
+      }
+    } catch (e) {
+      logError(`[approvals] could not record that budget revision ${replaced.id} was replaced`, e);
+    }
+  }
+  return made;
+}
+
+/** Withdraws a waiting revision that a new one replaces, and returns how to put it back if the new one cannot be saved. */
+async function replaceWaitingRevision(r: { id: string; status: AprRequestStatus; approverUserId: string | null }, by: number): Promise<() => Promise<unknown>> {
+  const now = new Date();
+  const done = await db
+    .update(aprRequests)
+    .set({ status: "withdrawn", decidedAt: now, decisionComment: `Replaced by Rev ${by}`, currentApproverUserId: null, updatedAt: now })
+    .where(and(eq(aprRequests.id, r.id), inArray(aprRequests.status, ["pending", "returned"])))
+    .returning({ id: aprRequests.id });
+  if (done.length === 0) throw new ApprovalsError("The revision waiting for approval was just decided. Open the budget again and revise from there.", 409);
+  const skipped = await db.update(aprRequestSteps).set({ status: "skipped" }).where(and(eq(aprRequestSteps.requestId, r.id), inArray(aprRequestSteps.status, ["pending", "waiting"]))).returning({ id: aprRequestSteps.id });
+  return async () => {
+    await db.update(aprRequests).set({ status: r.status, decidedAt: null, decisionComment: null, currentApproverUserId: r.approverUserId, updatedAt: new Date() }).where(eq(aprRequests.id, r.id));
+    if (skipped.length) await db.update(aprRequestSteps).set({ status: "pending" }).where(inArray(aprRequestSteps.id, skipped.map((x) => x.id)));
+  };
 }
 
 /**
- * The permanent Budget ID an original budget gets as it is approved: BUD-<short year>-NNNN in its financial year, numbered in the order
- * budgets of that year are approved (how many already have an ID, plus one). The ID is written by the same update that approves the budget,
- * so an approved budget never lacks one; if two budgets of a year are approved at the same moment and reach for the same number, the
- * database refuses the second (request numbers are unique) and it takes the next one.
+ * The Budget ID, given when the first version of a budget (the original or any revision) is approved: BUD-<short year>-NNNN in the
+ * original's financial year, numbered in the order budgets of that year get one (how many already have one, plus one). The original takes
+ * it, and every revision takes it with -R<n>; it never changes after that. If two budgets of a year reach for the same number at the same
+ * moment, the database refuses the second (request numbers are unique) and it takes the next one. Returns the number of `versionId`.
  */
-async function approveBudgetWithId(req: typeof aprRequests.$inferSelect, set: Partial<typeof aprRequests.$inferInsert>, where: ReturnType<typeof and>): Promise<{ moved: boolean; requestNo: string }> {
-  const fy = req.financialYear ?? req.budgetDetails?.financialYear ?? financialYearOf(req.requestedAt);
-  const [{ n }] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(aprRequests)
-    .where(and(eq(aprRequests.type, "budget"), sql`${aprRequests.parentRequestId} is null`, eq(aprRequests.financialYear, fy), sql`${aprRequests.requestNo} is not null`, eq(aprRequests.status, "approved")));
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const requestNo = budgetRequestNo(fy, n + 1 + attempt);
-    try {
-      const moved = await db.update(aprRequests).set({ ...set, requestNo }).where(where).returning({ id: aprRequests.id });
-      return { moved: moved.length > 0, requestNo };
-    } catch (e) {
-      if (pgCode(e) !== "23505") throw e; // that number was just taken: try the next
+async function assignBudgetIds(originalId: string, versionId: string): Promise<string | null> {
+  const [original] = await db.select().from(aprRequests).where(eq(aprRequests.id, originalId));
+  if (!original) return null;
+  let base = original.requestNo;
+  if (!base) {
+    const fy = original.financialYear ?? original.budgetDetails?.financialYear ?? financialYearOf(original.requestedAt);
+    const [{ n }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(aprRequests)
+      .where(and(eq(aprRequests.type, "budget"), sql`${aprRequests.parentRequestId} is null`, eq(aprRequests.financialYear, fy), sql`${aprRequests.requestNo} is not null`));
+    for (let attempt = 0; attempt < 20 && !base; attempt++) {
+      const no = budgetRequestNo(fy, n + 1 + attempt);
+      try {
+        const set = await db.update(aprRequests).set({ requestNo: no }).where(and(eq(aprRequests.id, originalId), sql`${aprRequests.requestNo} is null`)).returning({ id: aprRequests.id });
+        // Nothing set: another approval in this budget gave it its ID at the same moment; use that one.
+        base = set.length ? no : (await db.select({ no: aprRequests.requestNo }).from(aprRequests).where(eq(aprRequests.id, originalId)))[0]?.no ?? null;
+      } catch (e) {
+        if (pgCode(e) !== "23505") throw e; // that number was just taken: try the next
+      }
     }
+    if (!base) throw new ApprovalsError("Could not give this budget its Budget ID. Please try approving it again.", 500);
   }
-  throw new ApprovalsError("Could not give this budget its Budget ID. Please try approving it again.", 500);
+  await db
+    .update(aprRequests)
+    .set({ requestNo: sql`${base} || '-R' || ${aprRequests.revisionNo}` })
+    .where(and(eq(aprRequests.parentRequestId, originalId), sql`${aprRequests.requestNo} is null`, sql`${aprRequests.revisionNo} is not null`));
+  if (versionId === originalId) return base;
+  return (await db.select({ no: aprRequests.requestNo }).from(aprRequests).where(eq(aprRequests.id, versionId)))[0]?.no ?? null;
 }
 
 /* ---------------------------------------------------------------- decide */
@@ -472,15 +524,11 @@ export async function decideRequest(requestId: string, input: { action: "approve
         status = "pending";
       } else {
         const approve = { status: "approved" as const, decidedAt: now, decisionComment: input.comment, currentApproverUserId: null, updatedAt: now };
-        if (req.type === "budget" && !req.requestNo) {
-          // An original budget gets its permanent Budget ID now, as it is approved.
-          const given = await approveBudgetWithId(req, approve, stillPending);
-          if (!given.moved) throw withdrawn();
-          assignedNo = given.requestNo;
-        } else {
-          const moved = await db.update(aprRequests).set(approve).where(stillPending).returning({ id: aprRequests.id });
-          if (moved.length === 0) throw withdrawn();
-        }
+        const moved = await db.update(aprRequests).set(approve).where(stillPending).returning({ id: aprRequests.id });
+        if (moved.length === 0) throw withdrawn();
+        undo.unshift(() => db.update(aprRequests).set({ status: "pending", decidedAt: null, decisionComment: null, currentApproverUserId: actor.id }).where(eq(aprRequests.id, requestId)));
+        // The first approval in a budget gives it its Budget ID (the original's, and each revision's with -R<n>).
+        if (req.type === "budget" && !req.requestNo) assignedNo = await assignBudgetIds(req.parentRequestId ?? req.id, req.id);
         status = "approved";
       }
     }
