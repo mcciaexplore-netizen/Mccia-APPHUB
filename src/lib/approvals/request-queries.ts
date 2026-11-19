@@ -6,7 +6,7 @@ import {
   aprApprovalEvents, aprAttachments, aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprPublicationTypes,
   aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType, type BudgetDetails,
 } from "@/db/approvals-schema";
-import { activeVersion, netBudget, revisionBlocker, totalIncome } from "./budget";
+import { activeVersion, budgetBalance, expenseLinesOf, incomeLinesOf, linesTotal, revisionBlocker, type BudgetBalance, type BudgetLine } from "./budget";
 import { decisionMode, type DecisionMode } from "./calc";
 import { REVIEW_KEYS, isDgOnly, type ReviewItem, type ReviewKey } from "./approvals.manifest";
 import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
@@ -351,8 +351,12 @@ export type BudgetHistoryRow = {
 export type BudgetRequestView = {
   details: BudgetDetails;
   revisionNo: number | null;
+  incomeLines: BudgetLine[];
+  expenseLines: BudgetLine[];
   totalIncomePaise: number;
-  netBudgetPaise: number;
+  totalExpensePaise: number;
+  /** Total income against total expense: a surplus, a deficit, or balanced. */
+  balance: BudgetBalance;
   /** The original first, then each revision in order. */
   history: BudgetHistoryRow[];
   /** The version in force (the latest approved), or null while none is approved. */
@@ -397,8 +401,11 @@ async function budgetViewOf(req: typeof aprRequests.$inferSelect, user: Approval
   return {
     details: d,
     revisionNo: req.revisionNo,
-    totalIncomePaise: totalIncome(d.income),
-    netBudgetPaise: netBudget(req.amountPaise ?? 0, d.income),
+    incomeLines: incomeLinesOf(d),
+    expenseLines: expenseLinesOf(d),
+    totalIncomePaise: linesTotal(incomeLinesOf(d)),
+    totalExpensePaise: linesTotal(expenseLinesOf(d)),
+    balance: budgetBalance(linesTotal(incomeLinesOf(d)), linesTotal(expenseLinesOf(d))),
     history: versions.map((v) => ({
       id: v.id, requestNo: v.requestNo, revisionNo: v.revisionNo, amountPaise: v.amountPaise, status: v.status, submittedAt: v.requestedAt, decidedAt: v.decidedAt,
       reason: v.details?.revisionReason ?? null, approverName: approverOf.get(v.id) ?? null, canOpen: visible.has(v.id),

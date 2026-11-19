@@ -120,7 +120,7 @@ export async function budgetRevisionProps(user: ApprovalsUser, asked: RequestDet
     people: await approverOptions(user),
     revision: {
       requestId: asked.id, requestNo: asked.budget!.history[0]?.requestNo ?? asked.requestNo ?? "", eventName: b.details.eventName, departmentName: b.details.departmentName,
-      financialYear: b.details.financialYear, budgetPaise: active.amountPaise ?? 0, income: b.details.income, vendors: b.details.vendors, approverUserId: asked.budget!.approverUserId,
+      financialYear: b.details.financialYear, budgetPaise: active.amountPaise ?? 0, incomeLines: b.incomeLines, expenseLines: b.expenseLines, vendors: b.details.vendors, approverUserId: asked.budget!.approverUserId,
     },
   };
 }

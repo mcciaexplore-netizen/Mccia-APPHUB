@@ -27,7 +27,7 @@ import { safeNext } from "../src/lib/session";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
   FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, decidesIn, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
-import { activeVersion, cleanVendors, netBudget, nextRevisionNo, revisionBlocker, revisionRequestNo, totalIncome, versionLabel } from "../src/lib/approvals/budget";
+import { activeVersion, budgetBalance, cleanVendors, expenseLinesOf, incomeLinesOf, linesTotal, nextRevisionNo, revisionBlocker, revisionRequestNo, versionLabel } from "../src/lib/approvals/budget";
 import { budgetRequestInput, budgetRevisionInput } from "../src/lib/approvals/request-schemas";
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
@@ -190,8 +190,9 @@ eq("review: anyone in the hub works Budget as their own queue (they may be picke
 eq("budget: a budget belongs to HR Approval, and its lists resolve (with no category filter)", [appForType("budget"), screenFor(["budget", "all"])?.types, screenFor(["budget", "pending"])?.statuses, screenFor(["budget", "all"])?.categories], ["hr", ["budget"], ["pending"], "none"]);
 
 // Approvals: the Budget form's money and its revisions.
-const inc = (s: number | null, st: number | null, p: number | null, o: number | null) => ({ sponsorshipPaise: s, stallPaise: st, participantsPaise: p, otherPaise: o });
-eq("budget: total income adds the lines filled in (an empty one is nothing); net = budget − total income, below zero when income is more", [totalIncome(inc(500000, null, 250000, 0)), netBudget(1000000, inc(500000, null, 250000, 0)), totalIncome(inc(null, null, null, null)), netBudget(100000, inc(300000, null, null, null))], [750000, 250000, 0, -200000]);
+const L = (name: string, amountPaise: number) => ({ name, amountPaise });
+eq("budget: totals add the rows; more income is a surplus, more expense a deficit (by how much), the same is balanced ₹0", [linesTotal([L("Sponsor", 500000), L("Stalls", 250000)]), linesTotal([]), budgetBalance(750000, 500000), budgetBalance(300000, 500000), budgetBalance(400000, 400000)], [750000, 0, { kind: "surplus", amountPaise: 250000 }, { kind: "deficit", amountPaise: 200000 }, { kind: "balanced", amountPaise: 0 }]);
+eq("budget: an older budget's four fixed income lines read back as rows (empty ones left out); new budgets keep their own rows; no expenses on old ones", [incomeLinesOf({ income: { sponsorshipPaise: 500000, stallPaise: null, participantsPaise: 250000, otherPaise: 0 } }), incomeLinesOf({ incomeLines: [L("Grant", 100)], income: { sponsorshipPaise: 9, stallPaise: null, participantsPaise: null, otherPaise: null } }), expenseLinesOf({}), incomeLinesOf({})], [[L("Sponsorship income", 500000), L("Participants income", 250000), L("Other income", 0)], [L("Grant", 100)], [], []]);
 eq("budget: versions read Original, Rev 1, Rev 2; a revision's number is the original's with -R1, -R2", [versionLabel(null), versionLabel(0), versionLabel(1), versionLabel(2), revisionRequestNo("BUD-2026-27-0004", 2)], ["Original", "Original", "Rev 1", "Rev 2", "BUD-2026-27-0004-R2"]);
 eq("budget: vendors are trimmed and blank ones dropped", cleanVendors(["  Sai Caterers ", "", "   ", "Pune Sound"]), ["Sai Caterers", "Pune Sound"]);
 {
@@ -211,12 +212,12 @@ eq("budget: vendors are trimmed and blank ones dropped", cleanVendors(["  Sai Ca
   eq("budget: the next revision is one more than the highest so far", [nextRevisionNo([v("o", null, "approved")]), nextRevisionNo([v("o", null, "approved"), v("r1", 1, "rejected"), v("r2", 2, "approved")])], [1, 3]);
 }
 {
-  const ok = { eventName: " Annual Summit ", description: "Two days", departmentId: "11111111-1111-4111-8111-111111111111", financialYear: "2026-27", income: { sponsorshipPaise: 500000 }, vendors: [" A ", ""], budgetPaise: 1000000, approverUserId: "22222222-2222-4222-8222-222222222222" };
+  const ok = { eventName: " Annual Summit ", description: "Two days", departmentId: "11111111-1111-4111-8111-111111111111", financialYear: "2026-27", incomeLines: [{ name: " Sponsorship ", amountPaise: 500000 }], expenseLines: [{ name: "Venue", amountPaise: 0 }], vendors: [" A ", ""], budgetPaise: 1000000, approverUserId: "22222222-2222-4222-8222-222222222222" };
   const parsed = budgetRequestInput.safeParse(ok);
-  eq("budget form: names trimmed, empty income lines null, blank vendors dropped", parsed.success ? [parsed.data.eventName, parsed.data.income, parsed.data.vendors] : parsed.error.issues, ["Annual Summit", { sponsorshipPaise: 500000, stallPaise: null, participantsPaise: null, otherPaise: null }, ["A"]]);
+  eq("budget form: names trimmed (event and rows), a zero expense allowed, blank vendors dropped", parsed.success ? [parsed.data.eventName, parsed.data.incomeLines, parsed.data.expenseLines, parsed.data.vendors] : parsed.error.issues, ["Annual Summit", [{ name: "Sponsorship", amountPaise: 500000 }], [{ name: "Venue", amountPaise: 0 }], ["A"]]);
   const bad = (patch: object) => budgetRequestInput.safeParse({ ...ok, ...patch }).success;
-  eq("budget form: event, description, department, year, budget and approver are required; a year like 2026-28 and a negative income are refused", [bad({ eventName: " " }), bad({ description: "" }), bad({ departmentId: "x" }), bad({ financialYear: "2026-28" }), bad({ budgetPaise: 0 }), bad({ approverUserId: "" }), bad({ income: { stallPaise: -1 } }), bad({ income: {}, vendors: [] })], [false, false, false, false, false, false, false, true]);
-  eq("budget revision: the new amount and a reason are required; income and vendors may be left as they were", [budgetRevisionInput.safeParse({ budgetPaise: 1500000, reason: "Venue cost increased", income: {}, approverUserId: ok.approverUserId }).success, budgetRevisionInput.safeParse({ budgetPaise: 1500000, reason: " ", income: {}, approverUserId: ok.approverUserId }).success], [true, false]);
+  eq("budget form: event, description, department, year, budget and approver are required; a year like 2026-28, a negative amount and a row with no name are refused; no rows at all is fine", [bad({ eventName: " " }), bad({ description: "" }), bad({ departmentId: "x" }), bad({ financialYear: "2026-28" }), bad({ budgetPaise: 0 }), bad({ approverUserId: "" }), bad({ incomeLines: [{ name: "Stalls", amountPaise: -1 }] }), bad({ expenseLines: [{ name: " ", amountPaise: 100 }] }), bad({ incomeLines: [], expenseLines: [], vendors: [] })], [false, false, false, false, false, false, false, false, true]);
+  eq("budget revision: the new amount and a reason are required; the rows and vendors may be left empty", [budgetRevisionInput.safeParse({ budgetPaise: 1500000, reason: "Venue cost increased", approverUserId: ok.approverUserId }).success, budgetRevisionInput.safeParse({ budgetPaise: 1500000, reason: " ", approverUserId: ok.approverUserId }).success], [true, false]);
 }
 
 // Approvals: the form layout the Support Admin sets (names, order, hidden fields, extra fields) and the answers to the extra fields.

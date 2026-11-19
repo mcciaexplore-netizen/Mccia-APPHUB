@@ -6,7 +6,7 @@ import { DecisionPanel, WithdrawButton } from "@/components/approvals/DecisionPa
 import { PrintButton, PrintedOn } from "@/components/approvals/PrintRequest";
 import { Timeline } from "@/components/approvals/Timeline";
 import { TYPE_LABEL } from "@/lib/approvals/calc";
-import { INCOME_LINES, versionLabel } from "@/lib/approvals/budget";
+import { BALANCE_LABEL, versionLabel, type BudgetLine } from "@/lib/approvals/budget";
 import { formatDate, formatDateTime, formatINR, isoToDisplay } from "@/lib/approvals/format";
 import type { AttachmentRow, BudgetRequestView, RequestDetail, StepRow } from "@/lib/approvals/request-queries";
 
@@ -62,7 +62,22 @@ function chainLine(s: StepRow, last: boolean): string | null {
 const VERSION_TONE: Record<string, string> = { pending: "badge-amber", approved: "badge-green", rejected: "badge-red", withdrawn: "badge-neutral", returned: "badge-amber" };
 const VERSION_STATUS: Record<string, string> = { pending: "Pending", approved: "Approved", rejected: "Rejected", withdrawn: "Withdrawn", returned: "Returned" };
 
-/** A budget's event, money and vendors, shown in the Request section's list. */
+const BALANCE_TONE = { surplus: "text-green-700", deficit: "text-red-700", balanced: "text-[var(--z-muted)]" } as const;
+
+/** Income or expense rows as a small table, with their total under them. */
+function LinesTable({ kind, lines, total }: { kind: "income" | "expense"; lines: BudgetLine[]; total: number }) {
+  if (lines.length === 0) return <span className="text-[var(--z-muted)]">None</span>;
+  return (
+    <table className="apr-budget-lines w-full max-w-xl" data-testid={`budget-${kind}-lines`}>
+      <tbody>
+        {lines.map((l, i) => <tr key={i}><td className="py-0.5 pr-4">{l.name}</td><td className="py-0.5 text-right">{money(l.amountPaise)}</td></tr>)}
+        <tr className="border-t border-[var(--z-line)] font-bold"><td className="pt-1 pr-4">Total {kind === "income" ? "Income" : "Expense"}</td><td className="pt-1 text-right">{money(total)}</td></tr>
+      </tbody>
+    </table>
+  );
+}
+
+/** A budget's event, income and expenses, summary, amount and vendors, shown in the Request section's list. */
 function BudgetItems({ b, amountPaise }: { b: BudgetRequestView; amountPaise: number | null }) {
   const d = b.details;
   return (
@@ -71,11 +86,16 @@ function BudgetItems({ b, amountPaise }: { b: BudgetRequestView; amountPaise: nu
       <Item label="Description"><span className="whitespace-pre-wrap">{d.description}</span></Item>
       <Item label="Department">{d.departmentName}</Item>
       <Item label="Financial year">{d.financialYear}</Item>
-      {INCOME_LINES.map((l) => <Item key={l.key} label={l.label}>{money(d.income[l.key])}</Item>)}
-      <Item label="Total income"><b>{money(b.totalIncomePaise)}</b></Item>
+      <Item label="Income"><LinesTable kind="income" lines={b.incomeLines} total={b.totalIncomePaise} /></Item>
+      <Item label="Expenses"><LinesTable kind="expense" lines={b.expenseLines} total={b.totalExpensePaise} /></Item>
+      <Item label="Budget summary">
+        <span data-testid="budget-summary-line">
+          Total Income {money(b.totalIncomePaise)} · Total Expense {money(b.totalExpensePaise)} ·{" "}
+          <b className={BALANCE_TONE[b.balance.kind]} data-kind={b.balance.kind}>{BALANCE_LABEL[b.balance.kind]}: {money(b.balance.amountPaise)}</b>
+        </span>
+      </Item>
+      <Item label={b.revisionNo ? "Revised total budget requested" : "Total Budget Requested"}><b>{money(amountPaise)}</b></Item>
       <Item label="Vendors">{d.vendors.length ? <ul className="list-disc pl-5" data-testid="budget-vendor-list">{d.vendors.map((v, i) => <li key={i}>{v}</li>)}</ul> : null}</Item>
-      <Item label={b.revisionNo ? "Revised budget amount" : "Budget amount"}>{money(amountPaise)}</Item>
-      <Item label="Net budget"><b>{money(b.netBudgetPaise)}</b> <span className="text-xs text-[var(--z-muted)]">(budget amount − total income)</span></Item>
       {d.revisionReason && <Item label="Reason for revision"><span className="whitespace-pre-wrap">{d.revisionReason}</span></Item>}
     </>
   );

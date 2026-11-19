@@ -236,8 +236,9 @@ export const aprRequests = pgTable(
 );
 
 /**
- * What a budget request holds besides its amount (apr_requests.amount_paise is the budget asked for). Money is integer paise; income lines
- * left empty are null. `financialYear` is the year the event's budget belongs to, as the requester chose it ("2026-27").
+ * What a budget request holds besides its amount (apr_requests.amount_paise is the total budget requested). Money is integer paise.
+ * `financialYear` is the year the event's budget belongs to, as the requester chose it ("2026-27"). Income and expenses are lists of named
+ * rows; budgets raised before that have the four fixed income lines in `income` instead (read them with incomeLinesOf in budget.ts).
  */
 export type BudgetDetails = {
   eventName: string;
@@ -246,7 +247,10 @@ export type BudgetDetails = {
   /** The department's name when the request was raised, so it still reads right if the department is renamed or removed. */
   departmentName: string;
   financialYear: string;
-  income: { sponsorshipPaise: number | null; stallPaise: number | null; participantsPaise: number | null; otherPaise: number | null };
+  incomeLines?: { name: string; amountPaise: number }[];
+  expenseLines?: { name: string; amountPaise: number }[];
+  /** Budgets raised before income became rows (read only, never written now). */
+  income?: { sponsorshipPaise: number | null; stallPaise: number | null; participantsPaise: number | null; otherPaise: number | null };
   vendors: string[];
   /** Revisions only: why the budget had to change. */
   revisionReason?: string | null;

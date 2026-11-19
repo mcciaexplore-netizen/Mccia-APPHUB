@@ -129,14 +129,11 @@ export type LargeExpenditureInput = z.output<typeof largeExpenditureInput>;
 
 /* ---------------------------------------------------------------- budget */
 
-/** An income line: empty, or a sum of zero or more. */
-const incomePaise = (what: string) => budgetPaise(what).nullish().transform((v) => v ?? null);
-const income = z.object({
-  sponsorshipPaise: incomePaise("Sponsorship income"),
-  stallPaise: incomePaise("Stall income"),
-  participantsPaise: incomePaise("Participants income"),
-  otherPaise: incomePaise("Other income"),
-});
+/** Income or expense rows: each a name and a sum of zero or more; as many as needed (the form leaves blank rows out). */
+const lines = (what: string) => z.array(z.object({
+  name: requiredText(`${what} name`, 200),
+  amountPaise: budgetPaise(`${what} amount`),
+})).max(200, `That is too many ${what.toLowerCase()} rows for one budget`).default([]);
 /** Vendor names: as many as needed; blank ones are dropped. */
 const vendors = z.array(z.string().max(300, "Keep each vendor name under 300 characters")).max(200, "That is too many vendors for one budget").default([])
   .transform((list) => list.map((v) => v.trim()).filter(Boolean));
@@ -148,18 +145,20 @@ export const budgetRequestInput = z.object({
   description: requiredText("Description", 4000),
   departmentId: idSchema,
   financialYear,
-  income,
+  incomeLines: lines("Income"),
+  expenseLines: lines("Expense"),
   vendors,
   budgetPaise: amountPaise,
   approverUserId: idSchema,
 });
 export type BudgetRequestInput = z.output<typeof budgetRequestInput>;
 
-/** A revision of an approved budget: the new amount and why, with the income, vendors and approver as they now stand. */
+/** A revision of an approved budget: the new amount and why, with the income, expenses, vendors and approver as they now stand. */
 export const budgetRevisionInput = z.object({
   budgetPaise: amountPaise,
   reason: requiredText("Reason for revision", 4000),
-  income,
+  incomeLines: lines("Income"),
+  expenseLines: lines("Expense"),
   vendors,
   approverUserId: idSchema,
 });

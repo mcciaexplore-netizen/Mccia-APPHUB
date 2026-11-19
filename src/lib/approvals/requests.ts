@@ -301,7 +301,7 @@ export async function submitBudget(input: BudgetRequestInput, actor: ApprovalsUs
   const approver = await budgetApprover(input.approverUserId, actor);
   const details: BudgetDetails = {
     eventName: input.eventName, description: input.description, departmentId: department.id, departmentName: department.name,
-    financialYear: input.financialYear, income: input.income, vendors: input.vendors,
+    financialYear: input.financialYear, incomeLines: input.incomeLines, expenseLines: input.expenseLines, vendors: input.vendors,
   };
   return createRequest(actor, {
     type: "budget", requesterName: actor.name, requesterEmail: actor.email, requestedAt: new Date(), amountPaise: input.budgetPaise, overBudget: false,
@@ -334,7 +334,10 @@ export async function reviseBudget(requestId: string, input: BudgetRevisionInput
   const base = (activeVersion(versions) ?? versions.find((v) => v.id === original.id))?.details ?? original.budgetDetails;
   if (!base) throw new ApprovalsError("This budget has no details to revise.", 409);
   const revisionNo = nextRevisionNo(versions);
-  const details: BudgetDetails = { ...base, income: input.income, vendors: input.vendors, revisionReason: input.reason };
+  // The revision's own rows replace the base's (an older budget's fixed income lines are not carried over: they are now rows).
+  const { income: _oldIncome, ...rest } = base;
+  void _oldIncome;
+  const details: BudgetDetails = { ...rest, incomeLines: input.incomeLines, expenseLines: input.expenseLines, vendors: input.vendors, revisionReason: input.reason };
   return createRequest(actor, {
     type: "budget", requesterName: original.requesterName, requesterEmail: original.requesterEmail, requestedAt: new Date(), amountPaise: input.budgetPaise, overBudget: false,
     files: [], customValues: [], insertDetails: async () => {},

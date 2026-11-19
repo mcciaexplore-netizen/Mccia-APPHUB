@@ -40,6 +40,8 @@
 .apr-root .zf-req { color: var(--z-red); margin-left: 0.15rem; }
 .apr-root .zf-field { flex: 1 1 auto; min-width: 0; max-width: 21rem; }
 .apr-root .zf-field-wide { max-width: 28rem; }
+/* The Budget form's income and expense rows: a name, an amount and Remove side by side need more room than one box. */
+.apr-root .zf-field:has(> .apr-line-rows) { max-width: 44rem; }
 .apr-root .zf-control { display: flex; align-items: stretch; width: 100%; }
 .apr-root .zf-control > .zf-addon {
   flex: 0 0 auto; display: grid; place-items: center; min-width: 2.4rem; padding: 0 0.6rem; border: 1px solid var(--z-border); border-left: 0;

@@ -1,6 +1,6 @@
 /**
- * The Budget Approval form's money and revision rules as plain functions: no database, no server-only imports, so the form (its live Total
- * income and Net budget boxes), the server and the unit tests run the same code. All amounts are integer paise.
+ * The Budget Approval form's money and revision rules as plain functions: no database, no server-only imports, so the form (its live totals
+ * and the Surplus/Deficit summary), the server, the request page and the unit tests run the same code. All amounts are integer paise.
  *
  * A budget is one request (type "budget") sent to one approver the requester picks. Once it is approved, the person who raised it can ask
  * for a revision: a new request of its own, linked to the original (parent_request_id) and numbered Rev 1, Rev 2, ... Each revision needs a
@@ -9,21 +9,43 @@
  */
 import type { AprRequestStatus } from "@/db/approvals-schema";
 
-export type BudgetIncome = { sponsorshipPaise: number | null; stallPaise: number | null; participantsPaise: number | null; otherPaise: number | null };
+/** One line of a budget's income or of its expenses: what it is, and how much (paise, zero or more). */
+export type BudgetLine = { name: string; amountPaise: number };
 
-/** The four income lines, in the order the form and the printed page show them. */
-export const INCOME_LINES: { key: keyof BudgetIncome; label: string }[] = [
-  { key: "sponsorshipPaise", label: "Sponsorship income" },
-  { key: "stallPaise", label: "Stall income" },
-  { key: "participantsPaise", label: "Participants income" },
-  { key: "otherPaise", label: "Other income" },
+/**
+ * The four fixed income lines the form had before income became a list of named rows. Budgets raised then keep them as they were stored
+ * ({ sponsorshipPaise, ... }); they are read back as rows (see incomeLinesOf), so old and new budgets show and print the same way.
+ */
+export type LegacyIncome = { sponsorshipPaise: number | null; stallPaise: number | null; participantsPaise: number | null; otherPaise: number | null };
+const LEGACY_INCOME: { key: keyof LegacyIncome; name: string }[] = [
+  { key: "sponsorshipPaise", name: "Sponsorship income" },
+  { key: "stallPaise", name: "Stall income" },
+  { key: "participantsPaise", name: "Participants income" },
+  { key: "otherPaise", name: "Other income" },
 ];
 
-/** Total income: the lines that were filled in, added up (an empty line counts as nothing). */
-export const totalIncome = (i: BudgetIncome): number => INCOME_LINES.reduce((sum, l) => sum + (i[l.key] ?? 0), 0);
+/** A budget's income rows: the named rows it was raised with, or an older budget's fixed lines turned into rows (empty ones left out). */
+export function incomeLinesOf(d: { incomeLines?: BudgetLine[] | null; income?: LegacyIncome | null }): BudgetLine[] {
+  if (d.incomeLines) return d.incomeLines;
+  const old = d.income;
+  return old ? LEGACY_INCOME.flatMap((l) => (old[l.key] == null ? [] : [{ name: l.name, amountPaise: old[l.key]! }])) : [];
+}
+/** A budget's expense rows (budgets raised before expenses were asked for have none). */
+export const expenseLinesOf = (d: { expenseLines?: BudgetLine[] | null }): BudgetLine[] => d.expenseLines ?? [];
 
-/** Net budget = budget amount − total income. Below zero when the income is more than the budget. */
-export const netBudget = (budgetPaise: number, i: BudgetIncome): number => budgetPaise - totalIncome(i);
+/** The rows added up. */
+export const linesTotal = (lines: readonly { amountPaise: number }[]): number => lines.reduce((sum, l) => sum + l.amountPaise, 0);
+
+export type BudgetBalance = { kind: "surplus" | "deficit" | "balanced"; amountPaise: number };
+/**
+ * The budget summary: total income against total expense. More income is a surplus, more expense a deficit (the amount is how much, never
+ * negative), the same is balanced (₹0).
+ */
+export function budgetBalance(incomePaise: number, expensePaise: number): BudgetBalance {
+  const diff = incomePaise - expensePaise;
+  return { kind: diff > 0 ? "surplus" : diff < 0 ? "deficit" : "balanced", amountPaise: Math.abs(diff) };
+}
+export const BALANCE_LABEL: Record<BudgetBalance["kind"], string> = { surplus: "Surplus", deficit: "Deficit", balanced: "Balanced" };
 
 /** "Original" for the first budget, "Rev 1", "Rev 2", ... for its revisions. */
 export const versionLabel = (revisionNo: number | null | undefined): string => (revisionNo ? `Rev ${revisionNo}` : "Original");
