@@ -353,6 +353,7 @@ try {
   check("…and leaves out the controls", !printed.includes("Revise Budget") && !printed.includes("Timeline"));
   await shot(R.page, "print");
   const pdf = await R.page.pdf({ preferCSSPageSize: true, printBackground: true });
+  if (process.env.E2E_SHOTS) (await import("node:fs")).writeFileSync(`${process.env.E2E_SHOTS}/budget-print.pdf`, pdf);
   const pages = (pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
   check("it prints on one A4 page", pages === 1, `${pages} pages`);
   await R.page.emulateMedia({ media: "screen" });
