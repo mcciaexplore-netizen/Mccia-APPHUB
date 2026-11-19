@@ -219,6 +219,7 @@ try {
   const shown = await text(R.page);
   check("the page confirms it and shows each income and expense row, their totals, the Deficit and the Total Budget Requested", shown.includes("Budget submitted. Its Budget ID is given when it is approved.") && shown.includes(EVENT)
     && ["ZZ Sponsorship", "ZZ Stalls", "ZZ Venue", "ZZ Catering", "Total Income", "₹7,500.00", "Total Expense", "₹10,000.00", "Deficit: ₹2,500.00", "Total Budget Requested"].every((t) => shown.includes(t)), shown.slice(0, 400));
+  check("the budget's own page is headed Budget Approval, and HR Approval appears nowhere on it", (await R.page.locator("h1").first().innerText()).trim() === "Budget Approval" && !(await R.page.locator("body").innerText()).includes("HR Approval"));
   const idOf = async (page, testId) => { const el = page.locator(`[data-testid=${testId}]`).first(); return { text: await el.textContent(), kind: await el.getAttribute("data-kind"), cls: await el.getAttribute("class") }; };
   const pendingId = await idOf(R.page, "budget-id");
   check("the request page's Budget ID says Pending approval, in grey italics, at the top and in its Budget ID row", pendingId.text === "Pending approval" && pendingId.kind === "pending" && pendingId.cls.includes("italic")

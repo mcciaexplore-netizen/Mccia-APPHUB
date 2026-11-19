@@ -20,7 +20,10 @@ export function ModuleHeader({ roles, unread }: { roles: ApprovalsRole[]; unread
   // The Budget pages sit in HR Approval's menu but are not HR: they are headed with their own name.
   const revise = /^\/approvals\/requests\/([^/]+)\/revise$/.exec(pathname);
   const budget = pathname === "/approvals/budget" || pathname.startsWith("/approvals/budget/");
-  const title = revise ? "Revise Budget" : budget ? "Budget Approval" : review ? REVIEW_LABEL[review.key] : parseRecommendationPath(parts) ? REVIEW_LABEL.recommendation : app.title;
+  // A request's own page names its form from the request itself (a budget is "Budget Approval" whichever menu it was opened from): see
+  // requests/[id]/page.tsx. The header then has only the way back and the bell.
+  const requestPage = /^\/approvals\/requests\/[^/]+$/.test(pathname);
+  const title = requestPage ? null : revise ? "Revise Budget" : budget ? "Budget Approval" : review ? REVIEW_LABEL[review.key] : parseRecommendationPath(parts) ? REVIEW_LABEL.recommendation : app.title;
   // Where "← Back" goes: a request back to the list it was opened from; its correction form to the request; the settings screens to
   // Administrator (where they are opened from); every other page to Approval Forms.
   const edit = /^\/approvals\/requests\/([^/]+)\/edit$/.exec(pathname);
@@ -33,7 +36,7 @@ export function ModuleHeader({ roles, unread }: { roles: ApprovalsRole[]; unread
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <BackLink {...back} />
-        <h1 className="mt-1 text-2xl text-ink sm:text-3xl">{title}</h1>
+        {title && <h1 className="mt-1 text-2xl text-ink sm:text-3xl">{title}</h1>}
       </div>
       <NotificationBell initialUnread={unread} />
     </div>
