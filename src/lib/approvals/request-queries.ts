@@ -6,7 +6,7 @@ import {
   aprApprovalEvents, aprAttachments, aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprPublicationTypes,
   aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType, type BudgetDetails,
 } from "@/db/approvals-schema";
-import { activeVersion, budgetBalance, expenseLinesOf, incomeLinesOf, linesTotal, revisionBlocker, type BudgetBalance, type BudgetLine } from "./budget";
+import { activeVersion, budgetBalance, expenseLinesOf, incomeLinesOf, linesTotal, vendorLinesOf, revisionBlocker, type BudgetBalance, type BudgetLine } from "./budget";
 import { decisionMode, type DecisionMode } from "./calc";
 import { REVIEW_KEYS, isDgOnly, type ReviewItem, type ReviewKey } from "./approvals.manifest";
 import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
@@ -353,9 +353,11 @@ export type BudgetRequestView = {
   revisionNo: number | null;
   incomeLines: BudgetLine[];
   expenseLines: BudgetLine[];
+  vendorLines: BudgetLine[];
   totalIncomePaise: number;
   totalExpensePaise: number;
-  /** Total income against total expense: a surplus, a deficit, or balanced. */
+  totalVendorPaise: number;
+  /** Total income against total expense plus total vendor amount: a surplus, a deficit, or balanced. */
   balance: BudgetBalance;
   /** The original first, then each revision in order. */
   history: BudgetHistoryRow[];
@@ -400,14 +402,18 @@ async function budgetViewOf(req: typeof aprRequests.$inferSelect, user: Approval
   const blocked = original ? revisionBlocker(original, versions, user.id) : "Only an approved budget can be revised.";
   const mineToRevise = original?.requesterUserId === user.id;
   const d = req.budgetDetails;
+  const [incomeLines, expenseLines, vendorLines] = [incomeLinesOf(d), expenseLinesOf(d), vendorLinesOf(d)];
+  const [totalIncomePaise, totalExpensePaise, totalVendorPaise] = [linesTotal(incomeLines), linesTotal(expenseLines), linesTotal(vendorLines)];
   return {
     details: d,
     revisionNo: req.revisionNo,
-    incomeLines: incomeLinesOf(d),
-    expenseLines: expenseLinesOf(d),
-    totalIncomePaise: linesTotal(incomeLinesOf(d)),
-    totalExpensePaise: linesTotal(expenseLinesOf(d)),
-    balance: budgetBalance(linesTotal(incomeLinesOf(d)), linesTotal(expenseLinesOf(d))),
+    incomeLines,
+    expenseLines,
+    vendorLines,
+    totalIncomePaise,
+    totalExpensePaise,
+    totalVendorPaise,
+    balance: budgetBalance(totalIncomePaise, totalExpensePaise + totalVendorPaise),
     history: versions.map((v) => ({
       id: v.id, requestNo: v.requestNo, revisionNo: v.revisionNo, amountPaise: v.amountPaise, status: v.status, submittedAt: v.requestedAt, decidedAt: v.decidedAt,
       reason: v.details?.revisionReason ?? null, approverName: approverOf.get(v.id) ?? null, canOpen: visible.has(v.id),

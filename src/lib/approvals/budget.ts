@@ -33,12 +33,16 @@ export function incomeLinesOf(d: { incomeLines?: BudgetLine[] | null; income?: L
 /** A budget's expense rows (budgets raised before expenses were asked for have none). */
 export const expenseLinesOf = (d: { expenseLines?: BudgetLine[] | null }): BudgetLine[] => d.expenseLines ?? [];
 
+/** A budget's vendor rows: each vendor with its amount. Budgets raised when vendors were names only read back with ₹0 against each. */
+export const vendorLinesOf = (d: { vendorLines?: BudgetLine[] | null; vendors?: string[] | null }): BudgetLine[] =>
+  d.vendorLines ?? (d.vendors ?? []).map((name) => ({ name, amountPaise: 0 }));
+
 /** The rows added up. */
 export const linesTotal = (lines: readonly { amountPaise: number }[]): number => lines.reduce((sum, l) => sum + l.amountPaise, 0);
 
 export type BudgetBalance = { kind: "surplus" | "deficit" | "balanced"; amountPaise: number };
 /**
- * The budget summary: total income against total expense. More income is a surplus, more expense a deficit (the amount is how much, never
+ * The budget summary: total income against what goes out (total expense plus total vendor amount, added up by the caller). More income is a surplus, more expense a deficit (the amount is how much, never
  * negative), the same is balanced (₹0).
  */
 export function budgetBalance(incomePaise: number, expensePaise: number): BudgetBalance {

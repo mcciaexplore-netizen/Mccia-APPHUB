@@ -268,7 +268,10 @@ export type BudgetDetails = {
   expenseLines?: { name: string; amountPaise: number }[];
   /** Budgets raised before income became rows (read only, never written now). */
   income?: { sponsorshipPaise: number | null; stallPaise: number | null; participantsPaise: number | null; otherPaise: number | null };
+  /** The vendors' names (kept for older readers and exports; vendorLines has the names with their amounts). */
   vendors: string[];
+  /** Each vendor with its amount. Budgets raised before vendors had amounts have none (read them with vendorLinesOf in budget.ts). */
+  vendorLines?: { name: string; amountPaise: number }[];
   /** Revisions only: why the budget had to change. */
   revisionReason?: string | null;
 };

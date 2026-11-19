@@ -8,7 +8,7 @@ import { useToast } from "@/components/Toast";
 import { FormActions, MoneyInput, Row, SearchSelect, TextArea, TextInput, type Option } from "@/components/approvals/FormFields";
 import { CustomRow, checkExtra, extraAnswers, labeller } from "@/components/approvals/RequestForms";
 import type { FormField } from "@/lib/approvals/form-fields";
-import { BALANCE_LABEL, budgetBalance, cleanVendors, linesTotal, type BudgetLine } from "@/lib/approvals/budget";
+import { BALANCE_LABEL, budgetBalance, linesTotal, type BudgetLine } from "@/lib/approvals/budget";
 import { formatINR, parseINR } from "@/lib/approvals/format";
 
 type Errors = Record<string, string>;
@@ -24,22 +24,33 @@ const filled = (rows: LineText[]) => rows.filter((r) => r.name.trim() || r.amoun
 const sumOf = (rows: LineText[]) => linesTotal(rows.map((r) => ({ amountPaise: (r.amount.trim() && parseINR(r.amount)) || 0 })));
 const BALANCE_TONE = { surplus: "text-green-700", deficit: "text-red-700", balanced: "text-[var(--z-muted)]" } as const;
 
+type Kind = "income" | "expense" | "vendor";
+const KIND = {
+  income: { noun: "income", name: "Income source name", total: "Total Income", missing: "Enter the income source name." },
+  expense: { noun: "expense", name: "Expense name", total: "Total Expense", missing: "Enter the expense name." },
+  vendor: { noun: "vendor", name: "Vendor name", total: "Total Vendor Amount", missing: "Enter the vendor name." },
+} as const;
+const GRID = "grid grid-cols-1 items-start gap-2 sm:grid-cols-[minmax(12rem,1fr)_12rem_auto]";
+
 /**
- * Rows of a name and an amount (income sources, expenses), laid out like the vendors: each row with its own Remove, "Add …" under them,
- * and the total of the rows, read only, at the bottom.
+ * Rows of a name and an amount (income sources, expenses, vendors): each row with its own Remove, "Add …" under them, and the total of
+ * the rows, read only, at the bottom.
  */
 function LineRows({ kind, rows, setRows, errors, total }: {
-  kind: "income" | "expense"; rows: LineText[]; setRows: (f: (rows: LineText[]) => LineText[]) => void; errors: Errors; total: number;
+  kind: Kind; rows: LineText[]; setRows: (f: (rows: LineText[]) => LineText[]) => void; errors: Errors; total: number;
 }) {
-  const noun = kind === "income" ? "income" : "expense";
+  const { noun, name, total: totalLabel } = KIND[kind];
   const set = (i: number, patch: Partial<LineText>) => setRows((list) => list.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   return (
     <>
-      <ul className="apr-line-rows space-y-2" data-testid={`budget-${kind}-rows`}>
+      {kind === "vendor" && (
+        <div className={`${GRID} label-xs mb-1 hidden sm:grid`} aria-hidden><span>Vendor name</span><span>Amount</span><span /></div>
+      )}
+      <ul className="apr-line-rows space-y-2" data-testid={kind === "vendor" ? "budget-vendors" : `budget-${kind}-rows`}>
         {rows.map((r, i) => (
           <li key={i}>
-            <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-[minmax(12rem,1fr)_12rem_auto]">
-              <TextInput id={`bud-${kind}-name-${i}`} value={r.name} onChange={(v) => set(i, { name: v })} invalid={!!errors[`${kind}-${i}`]} maxLength={200} placeholder={kind === "income" ? "Income source name" : "Expense name"} />
+            <div className={GRID}>
+              <TextInput id={`bud-${kind}-name-${i}`} value={r.name} onChange={(v) => set(i, { name: v })} invalid={!!errors[`${kind}-${i}`]} maxLength={200} placeholder={name} />
               <MoneyInput id={`bud-${kind}-amount-${i}`} value={r.amount} onChange={(v) => set(i, { amount: v })} invalid={!!errors[`${kind}-${i}`]} />
               <button type="button" className="btn btn-ghost btn-sm shrink-0" aria-label={`Remove ${noun} ${i + 1}`} onClick={() => setRows((list) => (list.length === 1 ? [EMPTY_ROW] : list.filter((_, j) => j !== i)))}>
                 <X size={14} aria-hidden /> Remove
@@ -51,19 +62,19 @@ function LineRows({ kind, rows, setRows, errors, total }: {
       </ul>
       <button type="button" className="btn btn-ghost btn-sm mt-2" onClick={() => setRows((list) => [...list, EMPTY_ROW])}><Plus size={14} aria-hidden /> Add {noun}</button>
       <p className="mt-3 flex items-center justify-between border-t border-[var(--z-line)] pt-2">
-        <span className="font-bold">Total {kind === "income" ? "Income" : "Expense"}</span>
+        <span className="font-bold">{totalLabel}</span>
         <output className="font-bold" data-testid={`budget-total-${kind}`} aria-live="polite">{show(total)}</output>
       </p>
     </>
   );
 }
 
-/** Problems with income or expense rows: a row needs a name, and its amount must be a sum of zero or more. */
-function checkRows(kind: "income" | "expense", rows: LineText[], err: Errors) {
+/** Problems with income, expense or vendor rows: a row needs a name, and its amount must be a sum of zero or more. */
+function checkRows(kind: Kind, rows: LineText[], err: Errors) {
   rows.forEach((r, i) => {
     if (!r.name.trim() && !r.amount.trim()) return;
     const p = parseINR(r.amount);
-    if (!r.name.trim()) err[`${kind}-${i}`] = kind === "income" ? "Enter the income source name." : "Enter the expense name.";
+    if (!r.name.trim()) err[`${kind}-${i}`] = KIND[kind].missing;
     else if (!r.amount.trim() || p === null || p < 0) err[`${kind}-${i}`] = "Enter the amount: 0 or more, with at most 2 decimals.";
   });
 }
@@ -81,7 +92,7 @@ export type BudgetRevisionStart = {
   budgetPaise: number;
   incomeLines: BudgetLine[];
   expenseLines: BudgetLine[];
-  vendors: string[];
+  vendorLines: BudgetLine[];
   approverUserId: string | null;
   /** The answers the budget in force gave to the form's extra fields, by field key. */
   custom: Record<string, string>;
@@ -102,7 +113,8 @@ export type BudgetFormProps = {
 
 /**
  * The Budget Approval form, and the same form for a revision of an approved budget. In order: the event, its income (named rows), its
- * expenses (named rows), the vendors, the Budget Summary (Surplus, Deficit or Balanced: total income against total expense), the Total
+ * expenses (named rows), the vendors (names and amounts), the Budget Summary (Surplus or Deficit: total income against total expense plus
+ * total vendor amount), the Total
  * Budget Requested, and the approver. The totals and the summary are worked out as the person types and cannot be edited. The approver is one
  * person, picked from everyone in the hub by typing their name.
  */
@@ -114,7 +126,6 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
   const router = useRouter();
   const toast = useToast();
   const startApprover = revision?.approverUserId && people.some((p) => p.value === revision.approverUserId) ? revision.approverUserId : "";
-  const startVendors = revision?.vendors.length ? revision.vendors : [""];
 
   const [eventName, setEventName] = useState("");
   const [description, setDescription] = useState("");
@@ -122,7 +133,7 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
   const [financialYear, setFinancialYear] = useState(defaultFinancialYear);
   const [income, setIncome] = useState<LineText[]>(revision ? toText(revision.incomeLines) : [EMPTY_ROW]);
   const [expenses, setExpenses] = useState<LineText[]>(revision ? toText(revision.expenseLines) : [EMPTY_ROW]);
-  const [vendors, setVendors] = useState<string[]>(startVendors);
+  const [vendors, setVendors] = useState<LineText[]>(revision ? toText(revision.vendorLines) : [EMPTY_ROW]);
   const [budget, setBudget] = useState("");
   const [reason, setReason] = useState("");
   const [approverId, setApproverId] = useState(startApprover);
@@ -133,11 +144,12 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
   const budgetPaise = budget.trim() ? parseINR(budget) : null;
   const totalIncome = sumOf(income);
   const totalExpense = sumOf(expenses);
-  const balance = budgetBalance(totalIncome, totalExpense);
+  const totalVendor = sumOf(vendors);
+  const balance = budgetBalance(totalIncome, totalExpense + totalVendor);
 
   const reset = () => {
     if (revision) { router.push(`/approvals/requests/${revision.requestId}?app=hr`); return; }
-    setEventName(""); setDescription(""); setDepartmentId(""); setFinancialYear(defaultFinancialYear); setIncome([EMPTY_ROW]); setExpenses([EMPTY_ROW]); setVendors([""]);
+    setEventName(""); setDescription(""); setDepartmentId(""); setFinancialYear(defaultFinancialYear); setIncome([EMPTY_ROW]); setExpenses([EMPTY_ROW]); setVendors([EMPTY_ROW]);
     setBudget(""); setApproverId(""); setCustom({}); setErrors({}); setFormError(null);
   };
 
@@ -152,6 +164,7 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
     } else if (!reason.trim()) err.reason = "Say why the budget has to be revised.";
     if (shown("income")) checkRows("income", income, err);
     if (shown("expenses")) checkRows("expense", expenses, err);
+    if (shown("vendors")) checkRows("vendor", vendors, err);
     checkExtra(fields, custom, err);
     if (budgetPaise === null || budgetPaise <= 0) err.budget = "Enter the total budget requested, above 0, with at most 2 decimals.";
     if (!approverId) err.approver = "Choose the approver.";
@@ -162,7 +175,7 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
     setFormError(null);
     // A section the Support Admin has hidden sends nothing.
     const common = {
-      incomeLines: shown("income") ? toLines(income) : [], expenseLines: shown("expenses") ? toLines(expenses) : [], vendors: shown("vendors") ? cleanVendors(vendors) : [],
+      incomeLines: shown("income") ? toLines(income) : [], expenseLines: shown("expenses") ? toLines(expenses) : [], vendorLines: shown("vendors") ? toLines(vendors) : [],
       budgetPaise, approverUserId: approverId, custom: extraAnswers(fields, custom),
     };
     const r = revision
@@ -219,19 +232,10 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
       </fieldset>
     ),
     vendors: (
-      <Row label={lab("vendors", "Vendor name")} htmlFor="bud-vendor-0">
-        <ul className="max-w-xl space-y-2" data-testid="budget-vendors">
-          {vendors.map((v, i) => (
-            <li key={i} className="flex items-center gap-2">
-              <TextInput id={`bud-vendor-${i}`} value={v} onChange={(x) => setVendors((list) => list.map((y, j) => (j === i ? x : y)))} maxLength={300} placeholder={`Vendor ${i + 1}`} />
-              <button type="button" className="btn btn-ghost btn-sm shrink-0" aria-label={`Remove vendor ${i + 1}`} onClick={() => setVendors((list) => (list.length === 1 ? [""] : list.filter((_, j) => j !== i)))}>
-                <X size={14} aria-hidden /> Remove
-              </button>
-            </li>
-          ))}
-        </ul>
-        <button type="button" className="btn btn-ghost btn-sm mt-2" onClick={() => setVendors((list) => [...list, ""])}><Plus size={14} aria-hidden /> Add vendor</button>
-      </Row>
+      <fieldset className="mb-4" aria-labelledby="bud-vendor-title">
+        <h3 id="bud-vendor-title" className="mb-2 text-base font-bold">Vendors</h3>
+        <Row label={lab("vendors", "Vendor name")} htmlFor="bud-vendor-name-0"><LineRows kind="vendor" rows={vendors} setRows={setVendors} errors={errors} total={totalVendor} /></Row>
+      </fieldset>
     ),
     summary: (
       <section className="mb-4" aria-labelledby="bud-summary-title" data-testid="budget-summary">
@@ -240,6 +244,7 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
           <dl className="grid max-w-sm grid-cols-[1fr_auto] gap-x-6 gap-y-1">
             <dt>Total Income</dt><dd className="text-right">{show(totalIncome)}</dd>
             <dt>Total Expense</dt><dd className="text-right">{show(totalExpense)}</dd>
+            <dt>Total Vendor Amount</dt><dd className="text-right" data-testid="budget-summary-vendor">{show(totalVendor)}</dd>
             <dt className={`border-t border-[var(--z-line)] pt-1 font-bold ${BALANCE_TONE[balance.kind]}`}>{BALANCE_LABEL[balance.kind]}</dt>
             <dd className={`border-t border-[var(--z-line)] pt-1 text-right font-bold ${BALANCE_TONE[balance.kind]}`} data-testid="budget-balance" data-kind={balance.kind}>{show(balance.amountPaise)}</dd>
           </dl>

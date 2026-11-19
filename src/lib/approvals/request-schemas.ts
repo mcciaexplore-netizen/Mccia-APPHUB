@@ -134,7 +134,7 @@ const lines = (what: string) => z.array(z.object({
   name: requiredText(`${what} name`, 200),
   amountPaise: budgetPaise(`${what} amount`),
 })).max(200, `That is too many ${what.toLowerCase()} rows for one budget`).default([]);
-/** Vendor names: as many as needed; blank ones are dropped. */
+/** Vendor names only, as older clients send them (each read as a vendor with ₹0); blank ones are dropped. vendorLines has names with amounts. */
 const vendors = z.array(z.string().max(300, "Keep each vendor name under 300 characters")).max(200, "That is too many vendors for one budget").default([])
   .transform((list) => list.map((v) => v.trim()).filter(Boolean));
 const financialYear = z.string().refine(isFinancialYear, "Choose the financial year");
@@ -150,6 +150,7 @@ export const budgetRequestInput = z.object({
   incomeLines: lines("Income"),
   expenseLines: lines("Expense"),
   vendors,
+  vendorLines: lines("Vendor"),
   budgetPaise: amountPaise,
   approverUserId: idSchema,
 });
@@ -163,6 +164,7 @@ export const budgetRevisionInput = z.object({
   incomeLines: lines("Income"),
   expenseLines: lines("Expense"),
   vendors,
+  vendorLines: lines("Vendor"),
   approverUserId: idSchema,
 });
 export type BudgetRevisionInput = z.output<typeof budgetRevisionInput>;

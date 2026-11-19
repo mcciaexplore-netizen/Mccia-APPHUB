@@ -7,7 +7,7 @@ import {
 } from "@/db/approvals-schema";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
-import { activeVersion, budgetRequestNo, nextRevisionNo, revisionBlocker, revisionRequestNo } from "./budget";
+import { activeVersion, budgetRequestNo, nextRevisionNo, revisionBlocker, revisionRequestNo, type BudgetLine } from "./budget";
 import { commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, TYPE_LABEL, wrongFormMessage, type ExpenditureForm } from "./calc";
 import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { resolveCustomAnswers } from "./form-config";
@@ -294,6 +294,12 @@ async function budgetApprover(approverUserId: string, actor: ApprovalsUser) {
   return approver;
 }
 
+/** The vendors as stored: each with its amount, and their names alone. A client that sends names only gets ₹0 against each. */
+function vendorsOf(input: { vendors: string[]; vendorLines: BudgetLine[] }): Pick<BudgetDetails, "vendors" | "vendorLines"> {
+  const vendorLines = input.vendorLines.length ? input.vendorLines : input.vendors.map((name) => ({ name, amountPaise: 0 }));
+  return { vendorLines, vendors: vendorLines.map((v) => v.name) };
+}
+
 /**
  * A new budget for an event: sent to the one approver the requester picked, who approves or rejects it. It has no number while it waits: its
  * permanent Budget ID (BUD-2627-0001 style, in the financial year the requester chose) is given when it is approved (see assignBudgetId).
@@ -304,7 +310,7 @@ export async function submitBudget(input: BudgetRequestInput, actor: ApprovalsUs
   const customValues = await resolveCustomAnswers("budget", input.custom);
   const details: BudgetDetails = {
     eventName: input.eventName, description: input.description, departmentId: department.id, departmentName: department.name,
-    financialYear: input.financialYear, incomeLines: input.incomeLines, expenseLines: input.expenseLines, vendors: input.vendors,
+    financialYear: input.financialYear, incomeLines: input.incomeLines, expenseLines: input.expenseLines, ...vendorsOf(input),
   };
   return createRequest(actor, {
     type: "budget", requesterName: actor.name, requesterEmail: actor.email, requestedAt: new Date(), amountPaise: input.budgetPaise, overBudget: false,
@@ -343,7 +349,7 @@ export async function reviseBudget(requestId: string, input: BudgetRevisionInput
   // The revision's own rows replace the base's (an older budget's fixed income lines are not carried over: they are now rows).
   const { income: _oldIncome, ...rest } = base;
   void _oldIncome;
-  const details: BudgetDetails = { ...rest, incomeLines: input.incomeLines, expenseLines: input.expenseLines, vendors: input.vendors, revisionReason: input.reason };
+  const details: BudgetDetails = { ...rest, incomeLines: input.incomeLines, expenseLines: input.expenseLines, ...vendorsOf(input), revisionReason: input.reason };
   return createRequest(actor, {
     type: "budget", requesterName: original.requesterName, requesterEmail: original.requesterEmail, requestedAt: new Date(), amountPaise: input.budgetPaise, overBudget: false,
     files: [], customValues, insertDetails: async () => {},

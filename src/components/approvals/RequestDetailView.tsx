@@ -65,20 +65,22 @@ const VERSION_STATUS: Record<string, string> = { pending: "Pending", approved: "
 
 const BALANCE_TONE = { surplus: "text-green-700", deficit: "text-red-700", balanced: "text-[var(--z-muted)]" } as const;
 
-/** Income or expense rows as a small table, with their total under them. */
-function LinesTable({ kind, lines, total }: { kind: "income" | "expense"; lines: BudgetLine[]; total: number }) {
+const LINES_TOTAL = { income: "Total Income", expense: "Total Expense", vendor: "Total Vendor Amount" } as const;
+
+/** Income, expense or vendor rows as a small table, with their total under them. */
+function LinesTable({ kind, lines, total }: { kind: keyof typeof LINES_TOTAL; lines: BudgetLine[]; total: number }) {
   if (lines.length === 0) return <span className="text-[var(--z-muted)]">None</span>;
   return (
     <table className="apr-budget-lines w-full max-w-xl" data-testid={`budget-${kind}-lines`}>
       <tbody>
         {lines.map((l, i) => <tr key={i}><td className="py-0.5 pr-4">{l.name}</td><td className="py-0.5 text-right">{money(l.amountPaise)}</td></tr>)}
-        <tr className="border-t border-[var(--z-line)] font-bold"><td className="pt-1 pr-4">Total {kind === "income" ? "Income" : "Expense"}</td><td className="pt-1 text-right">{money(total)}</td></tr>
+        <tr className="border-t border-[var(--z-line)] font-bold"><td className="pt-1 pr-4">{LINES_TOTAL[kind]}</td><td className="pt-1 text-right">{money(total)}</td></tr>
       </tbody>
     </table>
   );
 }
 
-/** A budget's event, income and expenses, summary, amount and vendors, shown in the Request section's list. */
+/** A budget's event, income and expenses, vendors (each with its amount), summary and amount, shown in the Request section's list. */
 function BudgetItems({ b, amountPaise, requestNo, status }: { b: BudgetRequestView; amountPaise: number | null; requestNo: string | null; status: RequestDetail["status"] }) {
   const d = b.details;
   return (
@@ -90,14 +92,14 @@ function BudgetItems({ b, amountPaise, requestNo, status }: { b: BudgetRequestVi
       <Item label="Financial year">{d.financialYear}</Item>
       <Item label="Income"><LinesTable kind="income" lines={b.incomeLines} total={b.totalIncomePaise} /></Item>
       <Item label="Expenses"><LinesTable kind="expense" lines={b.expenseLines} total={b.totalExpensePaise} /></Item>
+      <Item label="Vendors">{b.vendorLines.length ? <LinesTable kind="vendor" lines={b.vendorLines} total={b.totalVendorPaise} /> : null}</Item>
       <Item label="Budget summary">
         <span data-testid="budget-summary-line">
-          Total Income {money(b.totalIncomePaise)} · Total Expense {money(b.totalExpensePaise)} ·{" "}
+          Total Income {money(b.totalIncomePaise)} · Total Expense {money(b.totalExpensePaise)} · Total Vendor Amount {money(b.totalVendorPaise)} ·{" "}
           <b className={BALANCE_TONE[b.balance.kind]} data-kind={b.balance.kind}>{BALANCE_LABEL[b.balance.kind]}: {money(b.balance.amountPaise)}</b>
         </span>
       </Item>
       <Item label={b.revisionNo ? "Revised total budget requested" : "Total Budget Requested"}><b>{money(amountPaise)}</b></Item>
-      <Item label="Vendors">{d.vendors.length ? <ul className="list-disc pl-5" data-testid="budget-vendor-list">{d.vendors.map((v, i) => <li key={i}>{v}</li>)}</ul> : null}</Item>
       {d.revisionReason && <Item label="Reason for revision"><span className="whitespace-pre-wrap">{d.revisionReason}</span></Item>}
     </>
   );
