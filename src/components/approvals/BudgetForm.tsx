@@ -106,7 +106,8 @@ export type BudgetFormProps = {
  * Budget Requested, and the approver. The totals and the summary are worked out as the person types and cannot be edited. The approver is one
  * person, picked from everyone in the hub by typing their name.
  */
-export function BudgetForm({ fields, people, departments = [], financialYears = [], defaultFinancialYear = "", revision }: BudgetFormProps) {
+export function BudgetForm({ fields, people, departments: initialDepartments = [], financialYears = [], defaultFinancialYear = "", revision }: BudgetFormProps) {
+  const [departments, setDepartments] = useState(initialDepartments);
   const lab = labeller(fields);
   const shown = (key: string) => fields.some((f) => f.key === key && !f.hidden);
   const [custom, setCustom] = useState<Record<string, string>>(revision?.custom ?? {});
@@ -173,6 +174,18 @@ export function BudgetForm({ fields, people, departments = [], financialYears = 
     router.refresh();
   };
 
+  // "Add department: …": saved for everyone, then chosen. A name already on the list comes back as that one.
+  const addDepartmentQuick = {
+    noun: "department",
+    onAdd: async (name: string) => {
+      const r = await api<{ item: Option }>("POST", "/api/approvals/departments", { name });
+      if (!r.ok) { toast.error(r.error); return null; }
+      setDepartments((list) => (list.some((d) => d.value === r.data.item.value) ? list : [...list, r.data.item].sort((a, b) => a.label.localeCompare(b.label))));
+      toast.success(`Department "${r.data.item.label}" added`);
+      return r.data.item;
+    },
+  };
+
   // Each built-in field of the form, by key; they are shown in the order, with the names, the Support Admin set (hidden ones left out), with
   // the extra fields among them. On a revision the event is shown, not asked again.
   const rows: Record<string, React.ReactNode> = {
@@ -182,7 +195,7 @@ export function BudgetForm({ fields, people, departments = [], financialYears = 
     description: revision ? null : <Row label={lab("description", "Description")} required htmlFor="bud-desc" error={errors.description}><TextArea id="bud-desc" value={description} onChange={setDescription} /></Row>,
     department: revision
       ? <Row label={lab("department", "Department")}><p className="py-2">{revision.departmentName}</p></Row>
-      : <Row label={lab("department", "Department")} required htmlFor="bud-dept" error={errors.department}><SearchSelect id="bud-dept" options={departments} value={departmentId} onChange={setDepartmentId} invalid={!!errors.department} /></Row>,
+      : <Row label={lab("department", "Department")} required htmlFor="bud-dept" error={errors.department}><SearchSelect id="bud-dept" options={departments} value={departmentId} onChange={setDepartmentId} invalid={!!errors.department} placeholder="Type to search, or add a department" quickAdd={addDepartmentQuick} /></Row>,
     financialYear: revision
       ? <Row label={lab("financialYear", "Financial year")}><p className="py-2">{revision.financialYear}</p></Row>
       : (

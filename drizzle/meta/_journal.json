@@ -288,6 +288,13 @@
       "when": 1795069291449,
       "tag": "0040_approvals_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795073756609,
+      "tag": "0041_approvals_departments",
+      "breakpoints": true
     }
   ]
 }

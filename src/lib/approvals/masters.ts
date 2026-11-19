@@ -3,7 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 import { db } from "@/db";
 import {
-  aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprPublicationTypes, aprPublications,
+  aprBranches, aprCategories, aprDepartments, aprExpenditureDetails, aprHrCategories, aprPublicationTypes, aprPublications,
 } from "@/db/approvals-schema";
 import { recordAudit, type AuditEntity } from "./audit";
 import { ApprovalsError } from "./errors";
@@ -35,14 +35,16 @@ const META: Record<MasterKind, { entity: AuditEntity; label: string }> = {
   branches: { entity: "branch", label: "branch" },
   "publication-types": { entity: "publication_type", label: "publication type" },
   publications: { entity: "publication", label: "publication" },
+  departments: { entity: "department", label: "department" },
 };
 
-/** These three tables share one column shape (id, name, active, sort), so one set of queries serves them all. */
+/** These tables share one column shape (id, name, active, sort), so one set of queries serves them all. */
 type Simple = typeof aprHrCategories;
-const SIMPLE: Record<"hr-categories" | "branches" | "publication-types", Simple> = {
+const SIMPLE: Record<"hr-categories" | "branches" | "publication-types" | "departments", Simple> = {
   "hr-categories": aprHrCategories,
   branches: aprBranches as unknown as Simple,
   "publication-types": aprPublicationTypes as unknown as Simple,
+  departments: aprDepartments as unknown as Simple,
 };
 
 const simpleRow = (r: Simple["$inferSelect"]): MasterRow => ({ id: r.id, name: r.name, active: r.active, sort: r.sort });

@@ -125,9 +125,15 @@ export type AddNew = {
 };
 
 /** "-Select-" with a caret; opens a box with a search field, the list, and (for admins) a "+ Add New" footer. */
+/**
+ * "Add <noun>: <typed text>" as the last line of the list, when what was typed matches nothing exactly: picking it saves the new item (through
+ * `onAdd`, which returns it, or null when it could not be added) and selects it. For lists everyone may grow, like the Budget form's departments.
+ */
+export type QuickAdd = { noun: string; onAdd: (name: string) => Promise<Option | null> };
+
 export function SearchSelect({
-  options, value, onChange, id, invalid, add, placeholder = "-Select-", disabled,
-}: { options: Option[]; value: string; onChange: (v: string) => void; id?: string; invalid?: boolean; add?: AddNew; placeholder?: string; disabled?: boolean }) {
+  options, value, onChange, id, invalid, add, placeholder = "-Select-", disabled, quickAdd,
+}: { options: Option[]; value: string; onChange: (v: string) => void; id?: string; invalid?: boolean; add?: AddNew; placeholder?: string; disabled?: boolean; quickAdd?: QuickAdd }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [hot, setHot] = useState(0);
@@ -140,6 +146,18 @@ export function SearchSelect({
   const needle = q.trim().toLowerCase();
   const shown = options.filter((o) => !needle || o.label.toLowerCase().includes(needle));
   const current = options.find((o) => o.value === value);
+  const [quickBusy, setQuickBusy] = useState(false);
+  // The typed text as a new item: offered when it matches no item exactly. It is the line after the last shown item.
+  const quickName = q.trim().replace(/\s+/g, " ");
+  const canQuickAdd = !!quickAdd && !!quickName && !options.some((o) => o.label.toLowerCase() === quickName.toLowerCase());
+  const lineCount = shown.length + (canQuickAdd ? 1 : 0);
+  const addTyped = async () => {
+    if (!quickAdd || !canQuickAdd || quickBusy) return;
+    setQuickBusy(true);
+    const made = await quickAdd.onAdd(quickName);
+    setQuickBusy(false);
+    if (made) pick(made);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -152,9 +170,9 @@ export function SearchSelect({
   const openBox = () => { if (disabled) return; setQ(""); setHot(Math.max(0, options.findIndex((o) => o.value === value))); setOpen(true); };
   const pick = (o: Option) => { onChange(o.value); setOpen(false); trigger.current?.focus(); };
   const key = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); setHot((h) => Math.min(h + 1, shown.length - 1)); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setHot((h) => Math.min(h + 1, lineCount - 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setHot((h) => Math.max(h - 1, 0)); }
-    else if (e.key === "Enter") { e.preventDefault(); if (shown[hot]) pick(shown[hot]); }
+    else if (e.key === "Enter") { e.preventDefault(); if (shown[hot]) pick(shown[hot]); else if (canQuickAdd && hot >= shown.length) void addTyped(); }
     else if (e.key === "Escape") { e.preventDefault(); setOpen(false); trigger.current?.focus(); }
   };
 
@@ -174,12 +192,18 @@ export function SearchSelect({
             <input ref={search} value={q} onChange={(e) => { setQ(e.target.value); setHot(0); }} placeholder="Search" aria-label="Search" aria-controls={list} />
           </div>
           <div className="zd-list" id={list} role="listbox">
-            {shown.length === 0 && <p className="zd-empty">Nothing matches.</p>}
+            {shown.length === 0 && !canQuickAdd && <p className="zd-empty">Nothing matches.</p>}
             {shown.map((o, i) => (
               <button key={o.value} type="button" role="option" aria-selected={o.value === value} data-hot={i === hot} className="zd-opt" onMouseEnter={() => setHot(i)} onClick={() => pick(o)}>
                 {o.label}
               </button>
             ))}
+            {canQuickAdd && (
+              <button type="button" role="option" aria-selected={false} data-hot={hot === shown.length} className="zd-opt zd-quick-add" disabled={quickBusy}
+                onMouseEnter={() => setHot(shown.length)} onClick={() => void addTyped()}>
+                <Plus size={14} aria-hidden className="mr-1 inline" />{quickBusy ? "Adding…" : <>Add {quickAdd!.noun}: <b>{quickName}</b></>}
+              </button>
+            )}
           </div>
           {add && (
             <div className="zd-foot">

@@ -144,7 +144,8 @@ export const budgetRequestInput = z.object({
   custom,
   eventName: requiredText("Event name", 200),
   description: requiredText("Description", 4000),
-  departmentId: idSchema,
+  // An Approval System department's id, or "hub:<id>" for one of the hub's (see departments.ts).
+  departmentId: z.string().regex(/^(hub:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "Pick a department from the list"),
   financialYear,
   incomeLines: lines("Income"),
   expenseLines: lines("Expense"),

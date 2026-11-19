@@ -34,7 +34,7 @@ const playwright = req("playwright-core");
 const launch = () => playwright.chromium.launch({ channel: process.env.E2E_CHROME_CHANNEL || "chrome", headless: true }).catch(() => playwright.chromium.launch({ headless: true }));
 
 const results = [];
-const check = (name, ok, extra = "") => { results.push([name, !!ok]); console.log(`${ok ? "PASS" : "FAIL"}  ${name}${!ok && extra !== "" ? "  -> " + String(typeof extra === "string" ? extra : JSON.stringify(extra)).slice(0, 300) : ""}`); };
+const check = (name, ok, extra = "") => { results.push([name, !!ok]); console.log(`${ok ? "PASS" : "FAIL"}  ${name}${!ok && extra !== "" ? "  -> " + String(typeof extra === "string" ? extra : JSON.stringify(extra)).slice(0, 1500) : ""}`); };
 const section = (t) => console.log(`\n== ${t} ==`);
 const poll = async (fn, ms = 15000) => { const end = Date.now() + ms; let v; while (Date.now() < end) { v = await fn(); if (v) return v; await new Promise((r) => setTimeout(r, 300)); } return v; };
 const hash = (pw) => { const salt = randomBytes(16); return `scrypt$16384$${salt.toString("base64")}$${scryptSync(pw, salt, 32, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }).toString("base64")}`; };
@@ -63,6 +63,8 @@ const removeData = async () => {
   }
   await sql`delete from users where email like 'zz-bud-%'`;
   await sql`delete from departments where name like 'ZZ Budget%'`;
+  await sql`delete from apr_departments where name like 'ZZ%'`;
+  await sql`delete from apr_admin_audit where entity = 'department' and summary like '%ZZ%'`;
   // The Budget form's layout, as this test sets it (it starts and ends with the defaults: no rows).
   await sql`delete from apr_form_fields where form = 'budget'`;
   await sql`delete from apr_admin_audit where entity = 'form_fields' and summary like '%Budget%'`;
@@ -78,9 +80,17 @@ const approver = await person("ZZ Bud Approver", "zz-bud-approver@example.com");
 await person("ZZ Bud Outsider", "zz-bud-outsider@example.com");
 
 const browser = await launch();
+/** Every page the suite opens, so a failure can leave a screenshot of each behind (E2E_SHOTS). */
+const openPages = [];
+/** The hub's "Download the MCCIA App Hub" prompt opens over the page after a while; a test browser says it has seen it (as dismissing it does). */
+const noInstallPrompt = (ctx) => ctx.addInitScript(() => {
+  try { localStorage.setItem("mccia-install-popup-seen", "1"); localStorage.setItem("mccia-install-snoozed-until", String(Date.now() + 864e5)); } catch { /* none */ }
+});
 const signedIn = async (email) => {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 1000 } });
+  await noInstallPrompt(ctx);
   const page = await ctx.newPage();
+  openPages.push(page);
   await page.goto(BASE + "/login");
   await page.locator("input[name=email]").fill(email); await page.locator("input[name=password]").fill(PW);
   await page.getByRole("button", { name: "Sign in" }).click();
@@ -93,7 +103,12 @@ const api = (page, url, method = "GET", body) => page.evaluate(async ([u, m, b])
   let j = null; try { j = await r.json(); } catch { /* not JSON */ }
   return { status: r.status, body: j };
 }, [url, method, body]);
-const pick = async (page, id, text) => { await page.locator(`#${id}`).click(); await page.locator(".zd-pop input[aria-label=Search]").fill(text); await page.locator(".zd-pop .zd-opt").first().click(); };
+/** Opens a searchable dropdown, types, and takes the first match with Enter (as a person can; a toast can cover the list, never the keyboard). */
+const pick = async (page, id, text) => {
+  if ((await page.locator(".zd-pop").count()) === 0) await page.locator(`#${id}`).click();
+  await page.locator(".zd-pop input[aria-label=Search]").fill(text);
+  await page.locator(".zd-pop input[aria-label=Search]").press("Enter");
+};
 const text = async (page) => (await page.locator("main").innerText()).replace(/\s+/g, " ");
 /** E2E_SHOTS=<folder>: also save screenshots of the form, the history and the printed page there. */
 const shot = async (page, name, opts = {}) => { if (process.env.E2E_SHOTS) await page.screenshot({ path: `${process.env.E2E_SHOTS}/budget-${name}.png`, fullPage: true, ...opts }); };
@@ -126,6 +141,26 @@ try {
   check("submitting it empty says what is missing", (await f.locator(".zf-error").count()) >= 5);
   await R.page.locator("#bud-event").fill(EVENT);
   await R.page.locator("#bud-desc").fill("Two-day member summit at the Pune centre.");
+  // Department: the Approval System's departments (seeded) and the hub's, searchable, and a new one can be added by typing it.
+  await R.page.locator("#bud-dept").click();
+  const deptOptions = await R.page.locator(".zd-pop .zd-opt").allInnerTexts();
+  check("the Department dropdown lists the default departments and the hub's own", ["Finance", "HR", "Operations", "Marketing", "IT / AI Studio", "Administration", "Membership", "Events", "Research (ERU)", "Design Team", "ZZ Budget Events"].every((d) => deptOptions.includes(d)), deptOptions.join(" | "));
+  await R.page.locator(".zd-pop input[aria-label=Search]").fill("fin");
+  check("typing filters it", JSON.stringify(await R.page.locator(".zd-pop .zd-opt").allInnerTexts()) === JSON.stringify(["Finance", "Add department: fin"]), await R.page.locator(".zd-pop .zd-opt").allInnerTexts());
+  await R.page.locator(".zd-pop input[aria-label=Search]").fill("finance");
+  check("a name already on the list (any capitals) is not offered as new", (await R.page.locator(".zd-pop .zd-quick-add").count()) === 0);
+  await R.page.locator(".zd-pop input[aria-label=Search]").fill("ZZ  Expo   Cell");
+  check('a new name is offered as "Add department: ZZ Expo Cell"', (await R.page.locator(".zd-pop .zd-quick-add").innerText()).replace(/\s+/g, " ").trim() === "Add department: ZZ Expo Cell");
+  await R.page.locator(".zd-pop .zd-quick-add").click();
+  await R.page.waitForFunction(() => document.querySelector("#bud-dept")?.textContent?.includes("ZZ Expo Cell"), null, { timeout: 15000 }).catch(() => {});
+  const added = await sql`select id, name from apr_departments where name = 'ZZ Expo Cell'`;
+  check("clicking it saves the department and selects it", added.length === 1 && (await R.page.locator("#bud-dept").innerText()).includes("ZZ Expo Cell"), added);
+  const again = await api(R.page, "/api/approvals/departments", "POST", { name: "zz expo cell" });
+  check("adding the same name again gives back the same department, not a copy", again.body?.item?.value === added[0]?.id && (await sql`select count(*)::int n from apr_departments where lower(name) = 'zz expo cell'`)[0].n === 1, again.body);
+  check("adding a hub department's name gives back the hub's", (await api(R.page, "/api/approvals/departments", "POST", { name: "zz budget events" })).body?.item?.value === `hub:${dept.id}`);
+  await go(O.page, "/approvals/budget/new");
+  await O.page.locator("#bud-dept").click();
+  check("the added department is there for everyone afterwards", (await O.page.locator(".zd-pop .zd-opt").allInnerTexts()).includes("ZZ Expo Cell"));
   await pick(R.page, "bud-dept", "ZZ Budget Events");
   const totalOf = (k) => R.page.locator(`[data-testid=budget-total-${k}]`).textContent();
   const balance = async () => { const b = R.page.locator("[data-testid=budget-balance]"); return `${await b.getAttribute("data-kind")} ${await b.textContent()}`; };
@@ -194,7 +229,7 @@ try {
   check("…nor ask for a revision of it (404)", (await api(O.page, `/api/approvals/requests/${origId}/revise`, "POST", { budgetPaise: 100, reason: "x", income: {}, vendors: [], approverUserId: approver.id })).status === 404);
   check("…nor open the Budget place (404)", (await go(O.page, "/approvals/review/budget/pending"))?.status() === 404);
   check("a plain requester cannot open the All Budgets list (404)", (await go(R.page, "/approvals/budget/all"))?.status() === 404);
-  check("you cannot pick yourself as the approver", (await api(R.page, "/api/approvals/requests", "POST", { kind: "budget", eventName: "ZZ Self", description: "x", departmentId: dept.id, financialYear: orig.financial_year, income: {}, vendors: [], budgetPaise: 100, approverUserId: requester.id })).status === 400);
+  check("you cannot pick yourself as the approver", (await api(R.page, "/api/approvals/requests", "POST", { kind: "budget", eventName: "ZZ Self", description: "x", departmentId: `hub:${dept.id}`, financialYear: orig.financial_year, income: {}, vendors: [], budgetPaise: 100, approverUserId: requester.id })).status === 400);
 
   section("The approver");
   await go(A.page, "/approvals");
@@ -295,7 +330,7 @@ try {
   await R.page.emulateMedia({ media: "screen" });
 
   section("Budget IDs follow the order of approval");
-  const raise = async (eventName) => (await api(R.page, "/api/approvals/requests", "POST", { kind: "budget", eventName, description: "x", departmentId: dept.id, financialYear: orig.financial_year, incomeLines: [], expenseLines: [], vendors: [], budgetPaise: 50000, approverUserId: approver.id })).body;
+  const raise = async (eventName) => (await api(R.page, "/api/approvals/requests", "POST", { kind: "budget", eventName, description: "x", departmentId: `hub:${dept.id}`, financialYear: orig.financial_year, incomeLines: [], expenseLines: [], vendors: [], budgetPaise: 50000, approverUserId: approver.id })).body;
   const first = await raise("ZZ Order First"), second = await raise("ZZ Order Second"), third = await raise("ZZ Order Rejected");
   check("a budget gets no number when it is submitted", first?.requestNo === null && second?.requestNo === null && third?.requestNo === null, [first, second, third]);
   const seq = (no) => Number(String(no).slice(-4));
@@ -326,6 +361,7 @@ try {
   const ADMIN_EMAIL = (process.env.HEAD_ADMIN_EMAIL || "").trim().toLowerCase(), ADMIN_PW = process.env.HEAD_ADMIN_PASSWORD || "";
   if (ADMIN_EMAIL && ADMIN_PW) {
     const ctx = await browser.newContext({ viewport: { width: 1366, height: 1000 } });
+    await noInstallPrompt(ctx);
     const H = await ctx.newPage();
     await H.goto(BASE + "/login"); await H.locator("input[name=email]").fill(ADMIN_EMAIL); await H.locator("input[name=password]").fill(ADMIN_PW);
     await H.getByRole("button", { name: "Sign in" }).click(); await H.waitForFunction(() => location.pathname !== "/login", null, { timeout: 30000 });
@@ -378,6 +414,7 @@ try {
   for (const s of [R, A, O]) await s.ctx.close();
 } catch (e) {
   failed = e;
+  if (process.env.E2E_SHOTS) for (const [i, p] of openPages.entries()) await p.screenshot({ path: `${process.env.E2E_SHOTS}/budget-failure-${i}.png`, fullPage: true }).catch(() => {});
   check("the suite ran to the end without an unexpected error", false, String(e?.stack ?? e));
 } finally {
   await browser.close();

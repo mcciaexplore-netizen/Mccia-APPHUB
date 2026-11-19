@@ -79,6 +79,9 @@
 .apr-root .zd-opt { display: block; width: 100%; text-align: left; padding: 0.45rem 0.8rem; font-size: 0.9rem; cursor: pointer; }
 .apr-root .zd-opt[data-hot="true"] { background: var(--c-primary); color: #fff; }
 .apr-root .zd-opt[aria-selected="true"]:not([data-hot="true"]) { background: var(--z-tint); font-weight: 600; }
+/* "Add department: …" at the bottom of a list: set apart from the items above it. */
+.apr-root .zd-quick-add { border-top: 1px solid var(--z-line); color: var(--c-primary); }
+.apr-root .zd-quick-add[data-hot="true"] { color: #fff; }
 .apr-root .zd-empty { padding: 0.6rem 0.8rem; color: var(--z-muted); font-size: 0.88rem; }
 .apr-root .zd-foot { border-top: 1px solid var(--z-line); background: var(--c-alt); }
 .apr-root .zd-add { display: flex; align-items: center; gap: 0.4rem; width: 100%; padding: 0.55rem 0.8rem; font-size: 0.88rem; font-weight: 600; color: var(--c-primary); }

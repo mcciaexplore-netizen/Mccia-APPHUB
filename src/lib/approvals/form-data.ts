@@ -2,7 +2,8 @@ import "server-only";
 import { z } from "zod";
 import type { EditInfo, ExpenditureFormProps, HrFormProps } from "@/components/approvals/RequestForms";
 import type { BudgetFormProps } from "@/components/approvals/BudgetForm";
-import { hasRole, listDepartments, listUsers, type ApprovalsUser } from "./host-adapter";
+import { hasRole, listUsers, type ApprovalsUser } from "./host-adapter";
+import { departmentOptions } from "./departments";
 import { getFormFields } from "./form-config";
 import { listMaster, type MasterRow } from "./masters";
 import { financialYearOf, formatINR, recentFinancialYears } from "./format";
@@ -101,11 +102,11 @@ async function approverOptions(user: ApprovalsUser) {
 
 /** The Budget Approval form: the hub's departments, the financial years (this one first, the next one too, and the last few), and the approvers. */
 export async function budgetFormProps(user: ApprovalsUser): Promise<BudgetFormProps> {
-  const [departments, people, fields] = await Promise.all([listDepartments(), approverOptions(user), getFormFields("budget")]);
+  const [departments, people, fields] = await Promise.all([departmentOptions(), approverOptions(user), getFormFields("budget")]);
   return {
     fields,
     people,
-    departments: departments.map((d) => ({ value: d.id, label: d.name })),
+    departments,
     financialYears: recentFinancialYears(4),
     defaultFinancialYear: financialYearOf(),
   };

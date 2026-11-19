@@ -9,7 +9,7 @@ const nameSchema = z
 export const idSchema = z.string().uuid("Invalid id");
 const sortSchema = z.number().int().min(0).max(100000);
 
-const masterKinds = ["categories", "hr-categories", "branches", "publication-types", "publications"] as const;
+const masterKinds = ["categories", "hr-categories", "branches", "publication-types", "publications", "departments"] as const;
 export type MasterKind = (typeof masterKinds)[number];
 export const kindSchema = z.enum(masterKinds);
 

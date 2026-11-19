@@ -73,6 +73,23 @@ export const aprHrCategories = pgTable(
   (t) => [uniqueIndex("apr_hr_categories_name_uq").on(sql`lower(${t.name})`)],
 );
 
+/**
+ * The Budget form's Department list, kept by the Approval System itself (the hub's own departments are offered beside these, and never
+ * changed from here). Seeded with the usual MCCIA departments; anyone filling in a budget can add one by typing it, and the Support Admin can
+ * rename or retire them in Approval System → Setup & Configuration → Departments.
+ */
+export const aprDepartments = pgTable(
+  "apr_departments",
+  {
+    id: id(),
+    name: text("name").notNull(),
+    active: boolean("active").notNull().default(true),
+    sort: integer("sort").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("apr_departments_name_uq").on(sql`lower(${t.name})`)],
+);
+
 export const aprBranches = pgTable(
   "apr_branches",
   {

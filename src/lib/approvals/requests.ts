@@ -13,7 +13,8 @@ import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { resolveCustomAnswers } from "./form-config";
 import type { CustomAnswers } from "./form-fields";
 import { financialYearOf, formatINR, todayIST } from "./format";
-import { departmentById, getDirectoryUsers, listUsers, roleApprovers, type ApprovalsUser } from "./host-adapter";
+import { getDirectoryUsers, listUsers, roleApprovers, type ApprovalsUser } from "./host-adapter";
+import { resolveDepartment } from "./departments";
 import { notify } from "./notify";
 import { canSeeRequest } from "./request-queries";
 import type { BudgetRequestInput, BudgetRevisionInput, HrRequestInput, LargeExpenditureInput, ResubmitInput, SmallExpenditureInput } from "./request-schemas";
@@ -298,8 +299,7 @@ async function budgetApprover(approverUserId: string, actor: ApprovalsUser) {
  * permanent Budget ID (BUD-2627-0001 style, in the financial year the requester chose) is given when it is approved (see assignBudgetId).
  */
 export async function submitBudget(input: BudgetRequestInput, actor: ApprovalsUser) {
-  const department = await departmentById(input.departmentId);
-  if (!department?.active) throw new ApprovalsError("Pick a department from the list.");
+  const department = await resolveDepartment(input.departmentId);
   const approver = await budgetApprover(input.approverUserId, actor);
   const customValues = await resolveCustomAnswers("budget", input.custom);
   const details: BudgetDetails = {
