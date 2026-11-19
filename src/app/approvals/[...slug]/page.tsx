@@ -4,7 +4,7 @@ import { ListScreenView } from "@/components/approvals/ListScreenView";
 import { RecommendationTabs } from "@/components/approvals/RecommendationTabs";
 import { RetiredBudgets } from "@/components/approvals/RetiredBudgets";
 import { TableSkeleton } from "@/components/approvals/Skeletons";
-import { FULL_ACCESS_ROLES, REVIEW_LABEL, REVIEW_TAB_LABEL, allNavItems, canSee, decidesIn, parseRecommendationPath, parseReviewPath } from "@/lib/approvals/approvals.manifest";
+import { FULL_ACCESS_ROLES, PERSONAL_PAGES, REVIEW_LABEL, REVIEW_TAB_LABEL, allNavItems, canSee, decidesIn, parseRecommendationPath, parseReviewPath } from "@/lib/approvals/approvals.manifest";
 import { canDeleteBudgets } from "@/lib/approvals/budget-delete";
 import { requirePage } from "@/lib/approvals/guard";
 import { hasRole } from "@/lib/approvals/host-adapter";
@@ -55,7 +55,9 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     const screen = { ...resolveScreen(slug, decidesIn(review.key, user.roles))!, title: `${REVIEW_TAB_LABEL[review.tab]} ${REVIEW_LABEL[review.key]} Approvals` };
     return <div className="page-enter"><Streamed><ListScreenView slug={slug.join("/")} screen={screen} params={parseListParams(await searchParams)} user={user} /></Streamed></div>;
   }
-  const screen = resolveScreen(slug, false);
+  const listed = resolveScreen(slug, false);
+  // A personal list (My Approved Requests) is named by the heading above it, so its own title is left out.
+  const screen = listed && PERSONAL_PAGES[path] ? { ...listed, title: "" } : listed;
   if (screen) {
     return (
       <div className="page-enter">

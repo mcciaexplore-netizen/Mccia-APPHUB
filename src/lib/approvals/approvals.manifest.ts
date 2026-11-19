@@ -256,3 +256,46 @@ const parseApp = (v: string | null | undefined): AppKey | null => (v === "hr" ||
 export function resolveApp(pathname: string, appParam: string | null, roles: readonly ApprovalsRole[]): AppKey {
   return appOwning(pathname) ?? parseApp(appParam) ?? (roles.some((r) => r === "approvals_admin" || r === "dg" || r === "viewer") ? "hr" : roles.includes("approver") ? "exp" : "hr");
 }
+
+/* ---------------------------------------------------------------- page headings */
+
+/** The Approval System's name, for pages that mix every kind of request (and its set-up pages). */
+export const SYSTEM_HEADING = "Approval System";
+
+/** The heading of a request's kind: "HR Approval", "Expenditure Approval" (both expense forms) or "Budget Approval". */
+export const typeHeading = (type: "hr" | "expenditure_large" | "expenditure_small" | "budget"): string =>
+  type === "budget" ? "Budget Approval" : type === "hr" ? "HR Approval" : "Expenditure Approval";
+
+/**
+ * A person's own lists, each headed with its name in the sidebar and "Approval System" under it: they mix HR, expenditure and budget
+ * requests, and have no filter by kind.
+ */
+export const PERSONAL_PAGES: Record<string, string> = {
+  "/approvals/my-requests": "My Submitted Requests",
+  "/approvals/my/approved": "My Approved Requests",
+  "/approvals/decided/approved": "My Approved Requests",
+  "/approvals/my-pending-approvals": "Pending My Approval",
+  "/approvals/my-approval-history": "My Approval History",
+  "/approvals/my-approvals": "My Approval History",
+};
+
+/**
+ * The main heading of an Approval System page, from its path alone: a personal list its own name (with "Approval System" under it); an HR,
+ * expenditure or budget page its kind; a request's own pages null (they head themselves from the request's kind, which the path does not
+ * say); everything else, mixed lists and set-up, "Approval System".
+ */
+export function pageHeading(pathname: string): { title: string; subtitle?: string } | null {
+  if (/^\/approvals\/requests\/[^/]+(\/edit)?$/.test(pathname)) return null;
+  if (/^\/approvals\/requests\/[^/]+\/revise$/.test(pathname)) return { title: "Revise Budget" };
+  const personal = PERSONAL_PAGES[pathname];
+  if (personal) return { title: personal, subtitle: SYSTEM_HEADING };
+  const parts = pathname.split("/").filter(Boolean).slice(1);
+  const review = parseReviewPath(parts);
+  if (review) return { title: `${REVIEW_LABEL[review.key]} Approval` };
+  if (parseRecommendationPath(parts)) return { title: REVIEW_LABEL.recommendation };
+  const section = parts[0];
+  if (section === "hr") return { title: typeHeading("hr") };
+  if (section === "expenditures" || section === "expenses") return { title: typeHeading("expenditure_large") };
+  if (section === "budget") return { title: typeHeading("budget") };
+  return { title: SYSTEM_HEADING };
+}

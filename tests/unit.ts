@@ -26,7 +26,7 @@ import { appInput } from "../src/lib/validation";
 import { safeNext } from "../src/lib/session";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
-  FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, decidesIn, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
+  FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, decidesIn, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, pageHeading, typeHeading, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
 import { activeVersion, budgetBalance, budgetIdOf, compareVersions, comparisonPairs, deleteConfirmed, diffLines, nextBudgetSerial, budgetIdView, budgetRequestNo, requestNoText, cleanVendors, expenseLinesOf, incomeLinesOf, linesTotal, nextRevisionNo, revisionBase, revisionBlocker, revisionRequestNo, versionLabel, waitingRevision } from "../src/lib/approvals/budget";
 import { budgetRequestInput, budgetRevisionInput } from "../src/lib/approvals/request-schemas";
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
@@ -193,6 +193,18 @@ eq("budget: a budget belongs to HR Approval, and its lists resolve (with no cate
 const L = (name: string, amountPaise: number) => ({ name, amountPaise });
 eq("budget: totals add the rows; more income is a surplus, more expense a deficit (by how much), the same is balanced ₹0", [linesTotal([L("Sponsor", 500000), L("Stalls", 250000)]), linesTotal([]), budgetBalance(750000, 500000), budgetBalance(300000, 500000), budgetBalance(400000, 400000)], [750000, 0, { kind: "surplus", amountPaise: 250000 }, { kind: "deficit", amountPaise: 200000 }, { kind: "balanced", amountPaise: 0 }]);
 eq("budget: an older budget's four fixed income lines read back as rows (empty ones left out); new budgets keep their own rows; no expenses on old ones", [incomeLinesOf({ income: { sponsorshipPaise: 500000, stallPaise: null, participantsPaise: 250000, otherPaise: 0 } }), incomeLinesOf({ incomeLines: [L("Grant", 100)], income: { sponsorshipPaise: 9, stallPaise: null, participantsPaise: null, otherPaise: null } }), expenseLinesOf({}), incomeLinesOf({})], [[L("Sponsorship income", 500000), L("Participants income", 250000), L("Other income", 0)], [L("Grant", 100)], [], []]);
+eq("headings: each page names its kind (HR, Expenditure, Budget), personal lists their own name over Approval System, mixed and set-up pages Approval System; a request's own page heads itself", [
+  "/approvals/hr/new", "/approvals/hr/all", "/approvals/expenditures/new", "/approvals/expenses/approved", "/approvals/budget/new", "/approvals/budget/all",
+  "/approvals/review/hr/pending", "/approvals/review/expenditure/approved", "/approvals/review/budget/rejected",
+  "/approvals/my-requests", "/approvals/my/approved", "/approvals/decided/approved", "/approvals/my-pending-approvals", "/approvals/my-approvals",
+  "/approvals/timeline", "/approvals/inbox", "/approvals/admin/settings", "/approvals/requests/11111111-1111-4111-8111-111111111111", "/approvals/requests/x/edit", "/approvals/requests/x/revise",
+].map((p) => { const h = pageHeading(p); return h ? `${h.title}${h.subtitle ? ` / ${h.subtitle}` : ""}` : null; }), [
+  "HR Approval", "HR Approval", "Expenditure Approval", "Expenditure Approval", "Budget Approval", "Budget Approval",
+  "HR Approval", "Expenditure Approval", "Budget Approval",
+  "My Submitted Requests / Approval System", "My Approved Requests / Approval System", "My Approved Requests / Approval System", "Pending My Approval / Approval System", "My Approval History / Approval System",
+  "Approval System", "Approval System", "Approval System", null, null, "Revise Budget",
+]);
+eq("headings: a request's kind", (["hr", "expenditure_large", "expenditure_small", "budget"] as const).map(typeHeading), ["HR Approval", "Expenditure Approval", "Expenditure Approval", "Budget Approval"]);
 eq("budget: versions read Original, Rev 1, Rev 2; a revision's number is the original's with -R1, -R2", [versionLabel(null), versionLabel(0), versionLabel(1), versionLabel(2), revisionRequestNo("BUD-2026-27-0004", 2)], ["Original", "Original", "Rev 1", "Rev 2", "BUD-2026-27-0004-R2"]);
 eq("budget: a budget's ID is BUD-<short year>-<number>, counted per year; a revision adds -R1, -R2; it can never look like an HR or expenditure number", [budgetRequestNo("2026-27", 1), budgetRequestNo("2026-27", 42), budgetRequestNo("2027-28", 1), budgetRequestNo("2099-00", 7), revisionRequestNo(budgetRequestNo("2026-27", 1), 2), /^(HR|EXP|EXB)-/.test(budgetRequestNo("2026-27", 1))], ["BUD-2627-0001", "BUD-2627-0042", "BUD-2728-0001", "BUD-9900-0007", "BUD-2627-0001-R2", false]);
 eq("budget: the ID shown: one Budget ID for every version once the budget has it (never with -R1/-R2); Pending approval while none; Not assigned after a rejection or withdrawal", [
