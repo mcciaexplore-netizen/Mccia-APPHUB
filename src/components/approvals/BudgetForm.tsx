@@ -27,16 +27,15 @@ const filled = (rows: LineText[], kind?: Kind) => rows.filter((r) => (kind === "
 const sumOf = (rows: LineText[], kind?: Kind) => linesTotal(filled(rows, kind).map((r) => ({ amountPaise: (r.amount.trim() && parseINR(r.amount)) || 0 })));
 const BALANCE_TONE = { surplus: "text-green-700", deficit: "text-red-700", balanced: "text-[var(--z-muted)]" } as const;
 
-type Kind = "income" | "expense" | "vendor";
+type Kind = "income" | "expense";
 const KIND = {
   income: { noun: "income", name: "Income type", total: "Total Income", missing: "Pick the income type." },
   expense: { noun: "expense", name: "Expense name", total: "Total Expense", missing: "Enter the expense name." },
-  vendor: { noun: "vendor", name: "Vendor name", total: "Total Vendor Amount", missing: "Enter the vendor name." },
 } as const;
 const GRID = "grid grid-cols-1 items-start gap-2 sm:grid-cols-[minmax(12rem,1fr)_12rem_auto]";
 
 /**
- * Rows of a name and an amount (income, picked from the income types; expenses; vendors): each row with its own Remove, "Add …" under them, and the total of
+ * Rows of a name and an amount (income, picked from the income types; expenses): each row with its own Remove, "Add …" under them, and the total of
  * the rows, read only, at the bottom.
  */
 function LineRows({ kind, rows, setRows, errors, total }: {
@@ -46,10 +45,10 @@ function LineRows({ kind, rows, setRows, errors, total }: {
   const set = (i: number, patch: Partial<LineText>) => setRows((list) => list.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   return (
     <>
-      {kind !== "expense" && (
-        <div className={`${GRID} label-xs mb-1 hidden sm:grid`} aria-hidden><span>{kind === "vendor" ? "Vendor name" : "Income type"}</span><span>Amount</span><span /></div>
+      {kind === "income" && (
+        <div className={`${GRID} label-xs mb-1 hidden sm:grid`} aria-hidden><span>Income type</span><span>Amount</span><span /></div>
       )}
-      <ul className="apr-line-rows space-y-2" data-testid={kind === "vendor" ? "budget-vendors" : `budget-${kind}-rows`}>
+      <ul className="apr-line-rows space-y-2" data-testid={`budget-${kind}-rows`}>
         {rows.map((r, i) => (
           <li key={i}>
             <div className={GRID}>
@@ -83,7 +82,7 @@ function LineRows({ kind, rows, setRows, errors, total }: {
 }
 
 /**
- * Problems with income, expense or vendor rows: a row needs a name, and its amount must be a sum of zero or more. An income row without an
+ * Problems with income or expense rows: a row needs a name, and its amount must be a sum of zero or more. An income row without an
  * income type is ignored, so it is never a problem.
  */
 function checkRows(kind: Kind, rows: LineText[], err: Errors) {
@@ -114,7 +113,6 @@ export type BudgetRevisionStart = {
   replacesRevisionNo: number | null;
   incomeLines: BudgetLine[];
   expenseLines: BudgetLine[];
-  vendorLines: BudgetLine[];
   approverUserId: string | null;
   /** The answers the budget in force gave to the form's extra fields, by field key. */
   custom: Record<string, string>;
@@ -135,8 +133,7 @@ export type BudgetFormProps = {
 
 /**
  * The Budget Approval form, and the same form for a revision of an approved budget. In order: the event, its income (named rows), its
- * expenses (named rows), the vendors (names and amounts), the Budget Summary (Surplus or Deficit: total income against total expense plus
- * total vendor amount), the Total
+ * expenses (named rows), the Budget Summary (Surplus or Deficit: total income against total expense), the Total
  * Budget Requested (the total of the expenses), and the approver. The totals and the summary are worked out as the person types and cannot be edited. The approver is one
  * person, picked from everyone in the hub by typing their name.
  */
@@ -156,7 +153,6 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
   const [financialYear, setFinancialYear] = useState(revision?.financialYear ?? defaultFinancialYear);
   const [income, setIncome] = useState<LineText[]>(revision ? toText(revision.incomeLines) : [EMPTY_ROW]);
   const [expenses, setExpenses] = useState<LineText[]>(revision ? toText(revision.expenseLines) : [EMPTY_ROW]);
-  const [vendors, setVendors] = useState<LineText[]>(revision ? toText(revision.vendorLines) : [EMPTY_ROW]);
   const [budget, setBudget] = useState("");
   const [reason, setReason] = useState("");
   const [approverId, setApproverId] = useState(startApprover);
@@ -169,12 +165,11 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
   // The Total Budget Requested is the total of the expenses. Only when the Support Admin has hidden the Expenses section is it typed in.
   const fromExpenses = shown("expenses");
   const budgetPaise = fromExpenses ? totalExpense : budget.trim() ? parseINR(budget) : null;
-  const totalVendor = sumOf(vendors);
-  const balance = budgetBalance(totalIncome, totalExpense + totalVendor);
+  const balance = budgetBalance(totalIncome, totalExpense);
 
   const reset = () => {
     if (revision) { router.push(`/approvals/requests/${revision.requestId}?app=hr`); return; }
-    setEventName(""); setDescription(""); setDepartmentId(""); setFinancialYear(defaultFinancialYear); setIncome([EMPTY_ROW]); setExpenses([EMPTY_ROW]); setVendors([EMPTY_ROW]);
+    setEventName(""); setDescription(""); setDepartmentId(""); setFinancialYear(defaultFinancialYear); setIncome([EMPTY_ROW]); setExpenses([EMPTY_ROW]);
     setBudget(""); setApproverId(""); setCustom({}); setErrors({}); setFormError(null);
   };
 
@@ -188,7 +183,6 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
     if (revision && !reason.trim()) err.reason = "Say why the budget has to be revised.";
     if (shown("income")) checkRows("income", income, err);
     if (shown("expenses")) checkRows("expense", expenses, err);
-    if (shown("vendors")) checkRows("vendor", vendors, err);
     checkExtra(fields, custom, err);
     if (budgetPaise === null || budgetPaise <= 0) {
       err.budget = fromExpenses ? "Add the expenses: the Total Budget Requested is their total, and must be above 0." : "Enter the total budget requested, above 0, with at most 2 decimals.";
@@ -201,7 +195,7 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
     setFormError(null);
     // A section the Support Admin has hidden sends nothing.
     const common = {
-      incomeLines: shown("income") ? toLines(income, "income") : [], expenseLines: shown("expenses") ? toLines(expenses) : [], vendorLines: shown("vendors") ? toLines(vendors) : [],
+      incomeLines: shown("income") ? toLines(income, "income") : [], expenseLines: shown("expenses") ? toLines(expenses) : [],
       budgetPaise, approverUserId: approverId, custom: extraAnswers(fields, custom), eventName, description, departmentId, financialYear,
     };
     const r = revision
@@ -251,12 +245,6 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
         <Row label={lab("expenses", "Expenses")} htmlFor="bud-expense-name-0"><LineRows kind="expense" rows={expenses} setRows={setExpenses} errors={errors} total={totalExpense} /></Row>
       </fieldset>
     ),
-    vendors: (
-      <fieldset className="mb-4" aria-labelledby="bud-vendor-title">
-        <h3 id="bud-vendor-title" className="mb-2 text-base font-bold">Vendors</h3>
-        <Row label={lab("vendors", "Vendor name")} htmlFor="bud-vendor-name-0"><LineRows kind="vendor" rows={vendors} setRows={setVendors} errors={errors} total={totalVendor} /></Row>
-      </fieldset>
-    ),
     summary: (
       <section className="mb-4" aria-labelledby="bud-summary-title" data-testid="budget-summary">
         <h3 id="bud-summary-title" className="mb-2 text-base font-bold">Budget Summary</h3>
@@ -264,7 +252,6 @@ export function BudgetForm({ fields, people, departments: initialDepartments = [
           <dl className="grid max-w-sm grid-cols-[1fr_auto] gap-x-6 gap-y-1">
             <dt>Total Income</dt><dd className="text-right">{show(totalIncome)}</dd>
             <dt>Total Expense</dt><dd className="text-right">{show(totalExpense)}</dd>
-            <dt>Total Vendor Amount</dt><dd className="text-right" data-testid="budget-summary-vendor">{show(totalVendor)}</dd>
             <dt className={`border-t border-[var(--z-line)] pt-1 font-bold ${BALANCE_TONE[balance.kind]}`}>{BALANCE_LABEL[balance.kind]}</dt>
             <dd className={`border-t border-[var(--z-line)] pt-1 text-right font-bold ${BALANCE_TONE[balance.kind]}`} data-testid="budget-balance" data-kind={balance.kind}>{show(balance.amountPaise)}</dd>
           </dl>

@@ -55,7 +55,7 @@ export const BUILTIN: Record<FormKey, readonly BuiltinDef[]> = {
     { key: "invoiceDate", label: "Date of Tax Invoice", hideable: true },
     { key: "amount", label: "Amount", hideable: false },
   ],
-  // The Budget form: what a budget cannot do without (the event, the amount, the approver) cannot be hidden; income, expenses, vendors and
+  // The Budget form: what a budget cannot do without (the event, the amount, the approver) cannot be hidden; income, expenses and
   // the summary can. Income and expenses each stand for their rows and their total, and move as one.
   budget: [
     { key: "eventName", label: "Event name", hideable: false },
@@ -64,7 +64,6 @@ export const BUILTIN: Record<FormKey, readonly BuiltinDef[]> = {
     { key: "financialYear", label: "Financial year", hideable: false },
     { key: "income", label: "Income sources", hideable: true },
     { key: "expenses", label: "Expenses", hideable: true },
-    { key: "vendors", label: "Vendor name", hideable: true },
     { key: "summary", label: "Summary", hideable: true },
     { key: "amount", label: "Total Budget Requested", hideable: false },
     { key: "approver", label: "Approver", hideable: false },

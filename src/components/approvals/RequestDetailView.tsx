@@ -82,7 +82,7 @@ function LinesTable({ kind, lines, total }: { kind: keyof typeof LINES_TOTAL; li
   );
 }
 
-/** A budget's event, income and expenses, vendors (each with its amount), summary and amount, shown in the Request section's list. */
+/** A budget's event, income and expenses, summary and amount, shown in the Request section's list (and the vendors of a budget raised when the form still had them). */
 function BudgetItems({ b, amountPaise, requestNo, status }: { b: BudgetRequestView; amountPaise: number | null; requestNo: string | null; status: RequestDetail["status"] }) {
   const d = b.details;
   return (
@@ -94,10 +94,10 @@ function BudgetItems({ b, amountPaise, requestNo, status }: { b: BudgetRequestVi
       <Item label="Financial year">{d.financialYear}</Item>
       <Item label="Income"><LinesTable kind="income" lines={b.incomeLines} total={b.totalIncomePaise} /></Item>
       <Item label="Expenses"><LinesTable kind="expense" lines={b.expenseLines} total={b.totalExpensePaise} /></Item>
-      <Item label="Vendors">{b.vendorLines.length ? <LinesTable kind="vendor" lines={b.vendorLines} total={b.totalVendorPaise} /> : null}</Item>
+      {b.vendorLines.length > 0 && <Item label="Vendors"><LinesTable kind="vendor" lines={b.vendorLines} total={b.totalVendorPaise} /></Item>}
       <Item label="Budget summary">
         <span data-testid="budget-summary-line">
-          Total Income {money(b.totalIncomePaise)} · Total Expense {money(b.totalExpensePaise)} · Total Vendor Amount {money(b.totalVendorPaise)} ·{" "}
+          Total Income {money(b.totalIncomePaise)} · Total Expense {money(b.totalExpensePaise)} ·{" "}{b.vendorLines.length > 0 && <>Total Vendor Amount {money(b.totalVendorPaise)} ·{" "}</>}
           <b className={BALANCE_TONE[b.balance.kind]} data-kind={b.balance.kind}>{BALANCE_LABEL[b.balance.kind]}: {money(b.balance.amountPaise)}</b>
         </span>
       </Item>
@@ -121,7 +121,7 @@ function VersionDetails({ f, amountPaise }: { f: BudgetFigures; amountPaise: num
       <dt className="label-xs">Financial year</dt><dd>{d.financialYear}</dd>
       <dt className="label-xs">Income</dt><dd><LinesTable kind="income" lines={f.incomeLines} total={f.totalIncomePaise} /></dd>
       <dt className="label-xs">Expenses</dt><dd><LinesTable kind="expense" lines={f.expenseLines} total={f.totalExpensePaise} /></dd>
-      <dt className="label-xs">Vendors</dt><dd>{f.vendorLines.length ? <LinesTable kind="vendor" lines={f.vendorLines} total={f.totalVendorPaise} /> : "None"}</dd>
+      {f.vendorLines.length > 0 && <><dt className="label-xs">Vendors</dt><dd><LinesTable kind="vendor" lines={f.vendorLines} total={f.totalVendorPaise} /></dd></>}
       <dt className="label-xs">Budget summary</dt>
       <dd><b className={BALANCE_TONE[f.balance.kind]}>{BALANCE_LABEL[f.balance.kind]}: {money(f.balance.amountPaise)}</b></dd>
       <dt className="label-xs">Total Budget Requested</dt><dd><b>{money(amountPaise)}</b></dd>

@@ -102,7 +102,8 @@ export function RevisionChanges({ versions, currentId }: { versions: ChangeVersi
       <div className="mt-4 space-y-4 border-t border-[var(--z-line)] pt-4">
         <Section title="Income" changes={c.income} />
         <Section title="Expenses" changes={c.expenses} />
-        <Section title="Vendors" changes={c.vendors} />
+        {/* Vendors are no longer asked for: shown only when a version compared still has some. */}
+        {c.vendors.length > 0 && <Section title="Vendors" changes={c.vendors} />}
 
         <section className="space-y-2 text-sm" data-testid="changes-summary">
           <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--z-muted)]">Budget Summary</h4>

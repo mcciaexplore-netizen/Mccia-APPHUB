@@ -1,6 +1,6 @@
 /**
  * End-to-end test of the Budget Approval form in a real browser: raising a budget (income and expense rows with live totals, the Budget
- * Summary's Surplus / Deficit (Surplus ₹0.00 when equal), vendors added and
+ * Summary's Surplus / Deficit (Surplus ₹0.00 when equal), no vendors, and
  * removed, the approver picked by typing a name), the approver's Budget place (badge, list, Approve or Reject with a reason, no Return),
  * revisions (only the requester, only an approved budget, one pending at a time, a rejected one leaving the budget before it in force), the
  * budget history, who can see what, and the printed page (one A4 page, with the history).
@@ -138,7 +138,7 @@ try {
   check("its main heading is Budget Approval, and HR Approval appears nowhere on it", (await R.page.locator("h1").first().innerText()).trim() === "Budget Approval" && !(await R.page.locator("body").innerText()).includes("HR Approval") && headings.filter((h) => h === "Budget Approval").length === 1, headings.join(" | "));
   check("its back link is Back to Approval Forms", (await R.page.getByRole("link", { name: /Back to Approval Forms/ }).getAttribute("href")) === "/approvals");
   const labels = (await f.locator(".zf-label").allInnerTexts()).map((l) => l.replace(/\s*\*$/, "").trim());
-  check("its sections are in order: event, income, expenses, vendors, summary, total budget requested, approver", JSON.stringify(labels) === JSON.stringify(["Event name", "Description", "Department", "Financial year", "Income sources", "Expenses", "Vendor name", "Summary", "Total Budget Requested", "Approver"]), labels.join(" | "));
+  check("its sections are in order: event, income, expenses, summary, total budget requested, approver (no Vendors)", (await R.page.locator("[data-testid=budget-vendors], #bud-vendor-name-0").count()) === 0 && JSON.stringify(labels) === JSON.stringify(["Event name", "Description", "Department", "Financial year", "Income sources", "Expenses", "Summary", "Total Budget Requested", "Approver"]), labels.join(" | "));
   check("the totals and the summary are worked out, not typed (no boxes for them)", (await R.page.locator("[data-testid=budget-total-income]").evaluate((e) => e.tagName)) === "OUTPUT" && (await R.page.locator("[data-testid=budget-balance]").evaluate((e) => e.tagName)) === "DD");
   check("income is picked from the five income types (blank allowed); the other rows have the placeholders asked for", JSON.stringify(await R.page.locator("#bud-income-name-0 option").allTextContents()) === JSON.stringify(["-Select income type-", "Stall Charges", "Sponsorship", "Business Support Service", "Participation Fee - Member", "Participation Fee - Non Member"]) && (await R.page.locator("#bud-expense-name-0").getAttribute("placeholder")) === "Expense name" && (await R.page.locator("#bud-income-amount-0").getAttribute("placeholder")) === "##,##,###.##");
   await R.page.getByRole("button", { name: "Submit", exact: true }).click();
@@ -194,17 +194,7 @@ try {
   check("an income row with no income type picked is ignored, whatever its amount (₹5,000.00)", (await totalOf("income")) === "₹5,000.00", await totalOf("income"));
   await R.page.locator("#bud-income-name-1").selectOption("Stall Charges");
   check("Total Budget Requested is the Total Expense, worked out and not typed (₹10,000.00)", (await R.page.locator("[data-testid=budget-requested]").textContent()) === "₹10,000.00" && (await R.page.locator("input#bud-amount").count()) === 0, await R.page.locator("[data-testid=budget-requested]").textContent());
-  await R.page.locator("#bud-vendor-name-0").fill("ZZ Sai Caterers");
-  await R.page.locator("#bud-vendor-amount-0").fill("0");
-  await R.page.getByRole("button", { name: "Add vendor" }).click();
-  await R.page.locator("#bud-vendor-name-1").fill("ZZ Wrong Vendor");
-  await R.page.locator("#bud-vendor-amount-1").fill("0");
-  await R.page.getByRole("button", { name: "Add vendor" }).click();
-  await R.page.locator("#bud-vendor-name-2").fill("ZZ Pune Sound");
-  await R.page.locator("#bud-vendor-amount-2").fill("0");
-  await R.page.getByRole("button", { name: "Remove vendor 2" }).click();
-  const vendorValues = await R.page.locator("[data-testid=budget-vendors] input[id^=bud-vendor-name]").evaluateAll((els) => els.map((e) => e.value));
-  check("vendors can be added without limit and removed one by one", JSON.stringify(vendorValues) === JSON.stringify(["ZZ Sai Caterers", "ZZ Pune Sound"]), vendorValues);
+  check("the summary has no vendor line", !(await R.page.locator("[data-testid=budget-summary]").textContent()).includes("Vendor"));
   await R.page.locator("#bud-approver").click();
   await R.page.locator(".zd-pop input[aria-label=Search]").fill("ZZ Bud");
   const offered = await R.page.locator(".zd-pop .zd-opt").allInnerTexts();
@@ -217,10 +207,10 @@ try {
   const [orig] = await sql`select request_no, type, status, amount_paise, financial_year, budget_details, current_approver_user_id from apr_requests where id = ${origId}`;
   check("it is saved as a pending budget with NO Budget ID yet (that comes with approval), waiting for the approver picked", orig?.type === "budget" && orig.status === "pending" && orig.request_no === null && orig.current_approver_user_id === approver.id && Number(orig.amount_paise) === 1000000, orig);
   const d = orig?.budget_details ?? {};
-  check("its details are kept as JSON: event, department, year, the income and expense rows (names and paise) and vendors", d.eventName === EVENT && d.departmentName === "ZZ Budget Events" && d.financialYear === orig.financial_year
+  check("its details are kept as JSON: event, department, year, the income and expense rows (names and paise), and no vendors", d.eventName === EVENT && d.departmentName === "ZZ Budget Events" && d.financialYear === orig.financial_year
     && JSON.stringify(d.incomeLines) === JSON.stringify([{ name: "Sponsorship", amountPaise: 500000 }, { name: "Stall Charges", amountPaise: 250000 }])
     && JSON.stringify(d.expenseLines) === JSON.stringify([{ name: "ZZ Venue", amountPaise: 600000 }, { name: "ZZ Catering", amountPaise: 400000 }])
-    && d.income === undefined && JSON.stringify(d.vendors) === JSON.stringify(["ZZ Sai Caterers", "ZZ Pune Sound"]), d);
+    && d.income === undefined && JSON.stringify(d.vendors) === "[]", d);
   const shown = await text(R.page);
   check("the page confirms it and shows each income and expense row, their totals, the Deficit and the Total Budget Requested", shown.includes("Budget submitted. Its Budget ID is given when it is approved.") && shown.includes(EVENT)
     && ["Sponsorship", "Stall Charges", "ZZ Venue", "ZZ Catering", "Total Income", "₹7,500.00", "Total Expense", "₹10,000.00", "Deficit: ₹2,500.00", "Total Budget Requested"].every((t) => shown.includes(t)), shown.slice(0, 400));
@@ -279,9 +269,9 @@ try {
   await R.page.waitForURL(/\/revise$/);
   check("the revision page is headed Revise Budget (not HR Approval), with a link back to the budget", (await R.page.locator("h1").first().innerText()).trim() === "Revise Budget" && !(await R.page.locator("body").innerText()).includes("HR Approval")
     && (await R.page.getByRole("link", { name: /Back to the budget/ }).getAttribute("href")) === `/approvals/requests/${origId}?app=hr`);
-  check("the revision form shows the budget in force and keeps its income and expense rows, vendors and approver", (await text(R.page)).includes("starts from the original budget (₹10,000.00)") && (await R.page.locator("#bud-event").inputValue()) === EVENT && (await R.page.locator("#bud-income-amount-0").inputValue()) === "5,000.00"
+  check("the revision form shows the budget in force and keeps its income and expense rows and approver", (await text(R.page)).includes("starts from the original budget (₹10,000.00)") && (await R.page.locator("#bud-event").inputValue()) === EVENT && (await R.page.locator("#bud-income-amount-0").inputValue()) === "5,000.00"
     && (await R.page.locator("[data-testid=budget-income-rows] li").count()) === 2 && (await R.page.locator("[data-testid=budget-expense-rows] li").count()) === 2
-    && (await R.page.locator("[data-testid=budget-vendors] input[id^=bud-vendor-name]").count()) === 2 && (await R.page.locator("#bud-approver").innerText()).includes("ZZ Bud Approver"));
+    && (await R.page.locator("#bud-approver").innerText()).includes("ZZ Bud Approver"));
   await R.page.getByRole("button", { name: "Submit revision" }).click();
   check("a reason is required", (await R.page.locator("[data-testid=budget-form] .zf-error").allInnerTexts()).some((e) => e.includes("why the budget")));
   await R.page.locator("#bud-expense-amount-1").fill("9000");
@@ -310,7 +300,7 @@ try {
   check("once Rev 1 is approved it is the active budget, and the history counts 1 revision", (await R.page.locator("[data-testid=budget-version-1] [data-testid=budget-active-badge]").count()) === 1 && (await R.page.locator("[data-testid=budget-version-0] [data-testid=budget-active-badge]").count()) === 0 && (await R.page.locator("[data-testid=budget-revision-count]").textContent()) === "1 revision");
 
   // Rev 2, rejected: Rev 1 stays in force.
-  const r2 = await api(R.page, `/api/approvals/requests/${r1Id}/revise`, "POST", { budgetPaise: 99, reason: "Additional catering required", incomeLines: [{ name: "Sponsorship", amountPaise: 500000 }], expenseLines: [{ name: "ZZ Venue", amountPaise: 600000 }, { name: "ZZ Catering", amountPaise: 1200000 }], vendors: ["ZZ Sai Caterers"], approverUserId: approver.id });
+  const r2 = await api(R.page, `/api/approvals/requests/${r1Id}/revise`, "POST", { budgetPaise: 99, reason: "Additional catering required", incomeLines: [{ name: "Sponsorship", amountPaise: 500000 }], expenseLines: [{ name: "ZZ Venue", amountPaise: 600000 }, { name: "ZZ Catering", amountPaise: 1200000 }], approverUserId: approver.id });
   check("the server keeps the Total Budget Requested to the expense total, whatever amount is sent", Number((await sql`select amount_paise from apr_requests where id = ${r2.body?.id}`)[0]?.amount_paise) === 1800000);
   check("a revision can be asked for from a revision's page too: Rev 2 shows the same Budget ID and is linked to the original", r2.status === 201 && r2.body?.requestNo === origNo && (await sql`select parent_request_id from apr_requests where id = ${r2.body?.id}`)[0]?.parent_request_id === origId, r2);
   await go(A.page, `/approvals/requests/${r2.body.id}`);
@@ -333,8 +323,8 @@ try {
     reason: await R.page.locator("[data-testid=changes-reason]").textContent().catch(() => ""),
   });
   const c12 = await changes();
-  check("on the original's page it starts on Revision 1 → Revision 2: Stall Charges and ZZ Pune Sound removed, catering changed, total up ₹3,000 (in red), Rejected, with its reason",
-    c12.pick === "Revision 1 → Revision 2" && c12.removed.some((t) => t.includes("Stall Charges")) && c12.removed.some((t) => t.includes("ZZ Pune Sound")) && c12.changed.some((t) => t.includes("ZZ Catering") && t.includes("₹9,000.00") && t.includes("₹12,000.00"))
+  check("on the original's page it starts on Revision 1 → Revision 2: Stall Charges removed, catering changed, total up ₹3,000 (in red), Rejected, with its reason",
+    c12.pick === "Revision 1 → Revision 2" && c12.removed.some((t) => t.includes("Stall Charges")) && (await R.page.locator("[data-testid=changes-vendors]").count()) === 0 && c12.changed.some((t) => t.includes("ZZ Catering") && t.includes("₹9,000.00") && t.includes("₹12,000.00"))
     && c12.total === "Change: +₹3,000.00" && (await R.page.locator("[data-testid=changes-total]").getAttribute("class")).includes("red") && c12.status === "Rejected" && c12.reason.includes("Additional catering required"), c12);
   check("the picker offers every comparison", JSON.stringify(await R.page.locator("[data-testid=changes-pick] option").allTextContents()) === JSON.stringify(["Original → Revision 1", "Revision 1 → Revision 2", "Original → Revision 2"]));
   await R.page.locator("[data-testid=changes-pick]").selectOption({ label: "Original → Revision 1" });
@@ -358,7 +348,7 @@ try {
   check("the page has a Print button", (await R.page.getByRole("button", { name: "Print" }).count()) === 1);
   await R.page.emulateMedia({ media: "print" });
   const printed = (await R.page.locator(".apr-printable").innerText()).replace(/\s+/g, " ");
-  check("the printed page has the income and expense rows, their totals, the summary, the vendors and the revision history", ["Sponsorship", "Stall Charges", "Total Income", "ZZ Venue", "ZZ Catering", "Total Expense", "Deficit: ₹2,500.00", "Total Budget Requested", "ZZ Sai Caterers", "ZZ Pune Sound", "Budget History", "Revision 1", "Revision 2", "Venue cost increased"].every((t) => printed.includes(t)), printed.slice(0, 300));
+  check("the printed page has the income and expense rows, their totals, the summary and the revision history (no vendors)", !printed.includes("Vendor") && ["Sponsorship", "Stall Charges", "Total Income", "ZZ Venue", "ZZ Catering", "Total Expense", "Deficit: ₹2,500.00", "Total Budget Requested", "Budget History", "Revision 1", "Revision 2", "Venue cost increased"].every((t) => printed.includes(t)), printed.slice(0, 300));
   check("the printed page shows the Budget ID", (await R.page.locator("[data-testid=budget-id-row]").textContent()) === origNo && printed.includes(`Budget ID ${origNo}`));
   check("…and leaves out the controls", !printed.includes("Revise Budget") && !printed.includes("Timeline"));
   await shot(R.page, "print");
@@ -479,25 +469,25 @@ try {
     check("…and Budget is in the Administrator sidebar after HR and Expenditure", (await H.locator('a[href="/administrator/approval-forms/budget"]').count()) >= 2);
     await card.click(); await H.waitForURL(/approval-forms\/budget$/); await H.waitForLoadState("networkidle").catch(() => {});
     const listed = await H.locator('ol[aria-label="Fields of the Budget form"] input[aria-label^="Name of field"]').evaluateAll((els) => els.map((e) => e.value));
-    check("its editor lists the Budget form's fields in order", JSON.stringify(listed) === JSON.stringify(["Event name", "Description", "Department", "Financial year", "Income sources", "Expenses", "Vendor name", "Summary", "Total Budget Requested", "Approver"]), listed.join(" | "));
-    // A layout like the editor saves: "Event name" renamed, Vendors hidden, and a required extra dropdown after the event.
+    check("its editor lists the Budget form's fields in order", JSON.stringify(listed) === JSON.stringify(["Event name", "Description", "Department", "Financial year", "Income sources", "Expenses", "Summary", "Total Budget Requested", "Approver"]), listed.join(" | "));
+    // A layout like the editor saves: "Event name" renamed, the Summary hidden, and a required extra dropdown after the event.
     const saved = await H.evaluate(async () => (await fetch("/api/approvals/form-fields/budget", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: [
       { key: "eventName", label: "Programme name" }, { key: "description", label: "Description" }, { key: "department", label: "Department" }, { key: "financialYear", label: "Financial year" },
       { label: "ZZ Venue type", kind: "select", required: true, options: ["Hall", "Outdoor"] },
-      { key: "income", label: "Income sources" }, { key: "expenses", label: "Expenses" }, { key: "vendors", label: "Vendor name", hidden: true }, { key: "summary", label: "Summary" },
+      { key: "income", label: "Income sources" }, { key: "expenses", label: "Expenses" }, { key: "summary", label: "Summary", hidden: true },
       { key: "amount", label: "Total Budget Requested" }, { key: "approver", label: "Approver" },
     ] }) })).status);
     check("the Support Admin can save the Budget form's layout", saved === 200, saved);
     check("the event, amount and approver cannot be hidden", (await H.evaluate(async () => (await fetch("/api/approvals/form-fields/budget", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: [
       { key: "eventName", label: "Event name" }, { key: "description", label: "Description" }, { key: "department", label: "Department" }, { key: "financialYear", label: "Financial year" },
-      { key: "income", label: "Income sources" }, { key: "expenses", label: "Expenses" }, { key: "vendors", label: "Vendor name" }, { key: "summary", label: "Summary" },
+      { key: "income", label: "Income sources" }, { key: "expenses", label: "Expenses" }, { key: "summary", label: "Summary" },
       { key: "amount", label: "Total Budget Requested", hidden: true }, { key: "approver", label: "Approver" },
     ] }) })).status)) !== 200);
     await ctx.close();
 
     await go(R.page, "/approvals/budget/new");
     const labels2 = (await R.page.locator("[data-testid=budget-form] .zf-label").allInnerTexts()).map((l) => l.replace(/\s*\*$/, "").trim());
-    check("the form follows it: the renamed field, the extra field in its place, and no Vendors", JSON.stringify(labels2) === JSON.stringify(["Programme name", "Description", "Department", "Financial year", "ZZ Venue type", "Income sources", "Expenses", "Summary", "Total Budget Requested", "Approver"]), labels2.join(" | "));
+    check("the form follows it: the renamed field, the extra field in its place, and no Summary", JSON.stringify(labels2) === JSON.stringify(["Programme name", "Description", "Department", "Financial year", "ZZ Venue type", "Income sources", "Expenses", "Total Budget Requested", "Approver"]), labels2.join(" | "));
     await R.page.locator("#bud-event").fill("ZZ Layout Event");
     await R.page.locator("#bud-desc").fill("x");
     await pick(R.page, "bud-dept", "ZZ Budget Events");

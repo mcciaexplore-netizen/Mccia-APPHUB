@@ -135,7 +135,7 @@ export async function budgetRevisionProps(user: ApprovalsUser, asked: RequestDet
     revision: {
       requestId: asked.id, requestNo: history[0]?.requestNo ?? null, baseLabel: versionLabel(b.revisionNo),
       eventName: d.eventName, description: d.description, departmentId: dept?.value ?? d.departmentId, departmentName: d.departmentName, financialYear: d.financialYear,
-      budgetPaise: base.amountPaise ?? 0, incomeLines: b.incomeLines, expenseLines: b.expenseLines, vendorLines: b.vendorLines,
+      budgetPaise: base.amountPaise ?? 0, incomeLines: b.incomeLines, expenseLines: b.expenseLines,
       approverUserId: b.approverUserId, custom: b.customByKey, replacesRevisionNo: b.waitingRevisionNo,
     },
   };
