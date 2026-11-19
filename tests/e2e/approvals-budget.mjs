@@ -113,7 +113,7 @@ try {
   const f = R.page.locator("[data-testid=budget-form]");
   check("a plain requester opens the Budget Approval form", (await f.count()) === 1);
   const labels = (await f.locator(".zf-label").allInnerTexts()).map((l) => l.replace(/\s*\*$/, "").trim());
-  check("its sections are in order: event, income, expenses, summary, total budget requested, vendors, approver", JSON.stringify(labels) === JSON.stringify(["Event name", "Description", "Department", "Financial year", "Income sources", "Expenses", "Summary", "Total Budget Requested", "Vendor name", "Approver"]), labels.join(" | "));
+  check("its sections are in order: event, income, expenses, vendors, summary, total budget requested, approver", JSON.stringify(labels) === JSON.stringify(["Event name", "Description", "Department", "Financial year", "Income sources", "Expenses", "Vendor name", "Summary", "Total Budget Requested", "Approver"]), labels.join(" | "));
   check("the totals and the summary are worked out, not typed (no boxes for them)", (await R.page.locator("[data-testid=budget-total-income]").evaluate((e) => e.tagName)) === "OUTPUT" && (await R.page.locator("[data-testid=budget-balance]").evaluate((e) => e.tagName)) === "DD");
   check("the rows have the placeholders asked for", (await R.page.locator("#bud-income-name-0").getAttribute("placeholder")) === "Income source name" && (await R.page.locator("#bud-expense-name-0").getAttribute("placeholder")) === "Expense name" && (await R.page.locator("#bud-income-amount-0").getAttribute("placeholder")) === "##,##,###.##");
   await R.page.getByRole("button", { name: "Submit", exact: true }).click();

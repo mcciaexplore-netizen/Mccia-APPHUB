@@ -96,8 +96,8 @@ export type BudgetFormProps = {
 
 /**
  * The Budget Approval form, and the same form for a revision of an approved budget. In order: the event, its income (named rows), its
- * expenses (named rows), the Budget Summary (Surplus, Deficit or Balanced: total income against total expense), the Total Budget Requested,
- * the vendors, and the approver. The totals and the summary are worked out as the person types and cannot be edited. The approver is one
+ * expenses (named rows), the vendors, the Budget Summary (Surplus, Deficit or Balanced: total income against total expense), the Total
+ * Budget Requested, and the approver. The totals and the summary are worked out as the person types and cannot be edited. The approver is one
  * person, picked from everyone in the hub by typing their name.
  */
 export function BudgetForm({ people, departments = [], financialYears = [], defaultFinancialYear = "", revision }: BudgetFormProps) {
@@ -195,6 +195,20 @@ export function BudgetForm({ people, departments = [], financialYears = [], defa
         <Row label="Expenses" htmlFor="bud-expense-name-0"><LineRows kind="expense" rows={expenses} setRows={setExpenses} errors={errors} total={totalExpense} /></Row>
       </fieldset>
 
+      <Row label="Vendor name" htmlFor="bud-vendor-0">
+        <ul className="max-w-xl space-y-2" data-testid="budget-vendors">
+          {vendors.map((v, i) => (
+            <li key={i} className="flex items-center gap-2">
+              <TextInput id={`bud-vendor-${i}`} value={v} onChange={(x) => setVendors((list) => list.map((y, j) => (j === i ? x : y)))} maxLength={300} placeholder={`Vendor ${i + 1}`} />
+              <button type="button" className="btn btn-ghost btn-sm shrink-0" aria-label={`Remove vendor ${i + 1}`} onClick={() => setVendors((list) => (list.length === 1 ? [""] : list.filter((_, j) => j !== i)))}>
+                <X size={14} aria-hidden /> Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+        <button type="button" className="btn btn-ghost btn-sm mt-2" onClick={() => setVendors((list) => [...list, ""])}><Plus size={14} aria-hidden /> Add vendor</button>
+      </Row>
+
       <section className="mb-4" aria-labelledby="bud-summary-title" data-testid="budget-summary">
         <h3 id="bud-summary-title" className="mb-2 text-base font-bold">Budget Summary</h3>
         <Row label="Summary">
@@ -211,19 +225,6 @@ export function BudgetForm({ people, departments = [], financialYears = [], defa
         <MoneyInput id="bud-amount" value={budget} onChange={setBudget} invalid={!!errors.budget} />
       </Row>
 
-      <Row label="Vendor name" htmlFor="bud-vendor-0">
-        <ul className="max-w-xl space-y-2" data-testid="budget-vendors">
-          {vendors.map((v, i) => (
-            <li key={i} className="flex items-center gap-2">
-              <TextInput id={`bud-vendor-${i}`} value={v} onChange={(x) => setVendors((list) => list.map((y, j) => (j === i ? x : y)))} maxLength={300} placeholder={`Vendor ${i + 1}`} />
-              <button type="button" className="btn btn-ghost btn-sm shrink-0" aria-label={`Remove vendor ${i + 1}`} onClick={() => setVendors((list) => (list.length === 1 ? [""] : list.filter((_, j) => j !== i)))}>
-                <X size={14} aria-hidden /> Remove
-              </button>
-            </li>
-          ))}
-        </ul>
-        <button type="button" className="btn btn-ghost btn-sm mt-2" onClick={() => setVendors((list) => [...list, ""])}><Plus size={14} aria-hidden /> Add vendor</button>
-      </Row>
       {revision && (
         <Row label="Reason for revision" required htmlFor="bud-reason" error={errors.reason}><TextArea id="bud-reason" value={reason} onChange={setReason} /></Row>
       )}
