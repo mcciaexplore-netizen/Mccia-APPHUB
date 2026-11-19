@@ -7,7 +7,7 @@ import {
 } from "@/db/approvals-schema";
 import { ApprovalsError } from "./errors";
 import { appForType } from "./approvals.manifest";
-import { activeVersion, nextRevisionNo, revisionBlocker, revisionRequestNo } from "./budget";
+import { activeVersion, budgetRequestNo, nextRevisionNo, revisionBlocker, revisionRequestNo } from "./budget";
 import { commentRequired, escalationApprover, formatRequestNo, planProblemMessage, planSteps, TYPE_LABEL, wrongFormMessage, type ExpenditureForm } from "./calc";
 import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { resolveCustomAnswers } from "./form-config";
@@ -54,6 +54,8 @@ type Prepared = {
   financialYear?: string;
   /** A request number given by the caller (a budget revision: the original's number with -R1, -R2, ...), instead of the next serial. */
   requestNo?: string;
+  /** How the next serial is written (a budget: BUD-2627-0001); by default <prefix>-<year>-0001. The serial is still counted per prefix and year. */
+  formatNo?: (financialYear: string, n: number) => string;
   budgetDetails?: BudgetDetails;
   /** A budget revision: the original budget request, and which revision this is. */
   revisionOf?: { parentRequestId: string; revisionNo: number };
@@ -162,7 +164,8 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
         return { requestId: draft.id, slot: f.slot, fileName: meta.fileName, mime: meta.mime, size: meta.size, storageKey: meta.id, uploadedBy: actor.id };
       }));
     }
-    requestNo = p.requestNo ?? formatRequestNo(REQUEST_PREFIX[p.type], fy, await nextSerial(REQUEST_PREFIX[p.type], fy));
+    const writeNo = p.formatNo ?? ((y: string, n: number) => formatRequestNo(REQUEST_PREFIX[p.type], y, n));
+    requestNo = p.requestNo ?? writeNo(fy, await nextSerial(REQUEST_PREFIX[p.type], fy));
     // The last write: from here on the request is visible and waiting for the first approver.
     const flipped = await db
       .update(aprRequests)
@@ -292,8 +295,8 @@ async function budgetApprover(approverUserId: string, actor: ApprovalsUser) {
 }
 
 /**
- * A new budget for an event: sent to the one approver the requester picked, who approves or rejects it. Its number is BUD-<year>-0001, in
- * the financial year the requester chose.
+ * A new budget for an event: sent to the one approver the requester picked, who approves or rejects it. Its ID is BUD-2627-0001 style, in
+ * the financial year the requester chose (counted per year, so the first budget of 2027-28 is BUD-2728-0001).
  */
 export async function submitBudget(input: BudgetRequestInput, actor: ApprovalsUser) {
   const department = await departmentById(input.departmentId);
@@ -307,7 +310,7 @@ export async function submitBudget(input: BudgetRequestInput, actor: ApprovalsUs
   return createRequest(actor, {
     type: "budget", requesterName: actor.name, requesterEmail: actor.email, requestedAt: new Date(), amountPaise: input.budgetPaise, overBudget: false,
     files: [], customValues, insertDetails: async () => {},
-    approver: { userId: approver.id, stepLabel: BUDGET_STEP }, financialYear: input.financialYear, budgetDetails: details, emailApprover: true,
+    approver: { userId: approver.id, stepLabel: BUDGET_STEP }, financialYear: input.financialYear, budgetDetails: details, emailApprover: true, formatNo: budgetRequestNo,
     assignedNotice: (no) => ({ title: `Budget approval ${no} for ${input.eventName} is waiting for your approval`, body: `${actor.name}${moneyOf(input.budgetPaise)}` }),
   });
 }

@@ -76,5 +76,13 @@ export function revisionBlocker(original: { status: AprRequestStatus; requesterU
 /** The number the next revision gets: one more than the highest so far (1 for the first). */
 export const nextRevisionNo = (versions: readonly { revisionNo: number | null }[]): number => Math.max(0, ...versions.map((v) => v.revisionNo ?? 0)) + 1;
 
+/**
+ * A budget's own ID: BUD-<year>-<number>, the year written short ("2026-27" → "2627") and the number counted per financial year:
+ * BUD-2627-0001, BUD-2627-0002, ..., then BUD-2728-0001. HR and expenditure numbers spell the year out ("HR-2026-27-0001") and start
+ * with other letters, so a budget ID can never be one of theirs.
+ */
+export const budgetRequestNo = (financialYear: string, n: number): string =>
+  `BUD-${financialYear.slice(2, 4)}${financialYear.slice(5, 7)}-${String(n).padStart(4, "0")}`;
+
 /** A revision's request number: the original's with "-R1", "-R2", ... after it. */
 export const revisionRequestNo = (originalNo: string, revisionNo: number): string => `${originalNo}-R${revisionNo}`;

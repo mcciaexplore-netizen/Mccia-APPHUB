@@ -65,7 +65,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
         <table className="apr-table">
           <thead>
             <tr>
-              {th("Request No.", "requestNo")}
+              {th(screen.categories === "none" ? "Budget ID" : "Request No.", "requestNo")}
               {mixed && <th className="hidden md:table-cell">Type</th>}
               {th("Name", "name")}
               {th(screen.categories === "none" ? "Event" : "Category", "category", "hidden md:table-cell")}

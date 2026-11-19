@@ -166,6 +166,7 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
         <Image src="/mccia-logo.png" alt="MCCIA" width={134} height={36} loading="eager" className="h-10 w-auto" />
         <h1>{d.requestNo ?? "Request"} · {b?.revisionNo ? `Budget revision (${versionLabel(b.revisionNo)})` : TYPE_LABEL[d.type]}{(d.hr?.categoryName ?? e?.categoryName ?? b?.details.eventName) ? ` — ${d.hr?.categoryName ?? e?.categoryName ?? b?.details.eventName}` : ""}</h1>
         <dl className="zdl">
+          {b && <Item label="Budget ID"><b data-testid="budget-id-print">{d.requestNo}</b></Item>}
           <Item label="Submitted by">{submitter.name}</Item>
           <Item label="Department">{submitter.department}</Item>
           <Item label="Submitted on">{formatDateTime(d.requestedAt)}</Item>
@@ -174,7 +175,9 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
       </div>
 
       <div className="apr-no-print flex flex-wrap items-center gap-3">
-        <h2 className="!text-xl">{d.requestNo ?? "Request"}</h2>
+        {b ? (
+          <h2 className="!text-xl"><span className="mr-2 align-middle text-xs font-semibold uppercase tracking-wide text-[var(--z-muted)]">Budget ID</span><span data-testid="budget-id">{d.requestNo}</span></h2>
+        ) : <h2 className="!text-xl">{d.requestNo ?? "Request"}</h2>}
         <span className="text-[var(--z-muted)]">{b?.revisionNo ? `Budget revision · ${versionLabel(b.revisionNo)}` : TYPE_LABEL[d.type]}</span>
         {status}
         {b && b.history.length > 1 && <span className="badge badge-neutral">{b.history.length - 1} {b.history.length === 2 ? "revision" : "revisions"}</span>}

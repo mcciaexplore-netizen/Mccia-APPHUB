@@ -172,7 +172,8 @@ try {
   await R.page.waitForURL(/\/approvals\/requests\/[0-9a-f-]{36}/, { timeout: 30000 });
   const origId = R.page.url().match(/requests\/([0-9a-f-]{36})/)[1];
   const [orig] = await sql`select request_no, type, status, amount_paise, financial_year, budget_details, current_approver_user_id from apr_requests where id = ${origId}`;
-  check("it is saved as a pending budget, numbered BUD-<year>-0001 style, waiting for the approver picked", orig?.type === "budget" && orig.status === "pending" && /^BUD-\d{4}-\d{2}-\d{4}$/.test(orig.request_no) && orig.current_approver_user_id === approver.id && Number(orig.amount_paise) === 1000000, orig);
+  const shortFy = `${orig?.financial_year?.slice(2, 4)}${orig?.financial_year?.slice(5, 7)}`;
+  check("it is saved as a pending budget with its own Budget ID, BUD-<short year>-NNNN (BUD-2627-0001 for 2026-27), waiting for the approver picked", orig?.type === "budget" && orig.status === "pending" && new RegExp(`^BUD-${shortFy}-\\d{4}$`).test(orig.request_no) && orig.current_approver_user_id === approver.id && Number(orig.amount_paise) === 1000000, orig);
   const d = orig?.budget_details ?? {};
   check("its details are kept as JSON: event, department, year, the income and expense rows (names and paise) and vendors", d.eventName === EVENT && d.departmentName === "ZZ Budget Events" && d.financialYear === orig.financial_year
     && JSON.stringify(d.incomeLines) === JSON.stringify([{ name: "ZZ Sponsorship", amountPaise: 500000 }, { name: "ZZ Stalls", amountPaise: 250000 }])
@@ -181,6 +182,7 @@ try {
   const shown = await text(R.page);
   check("the page confirms it and shows each income and expense row, their totals, the Deficit and the Total Budget Requested", shown.includes(`Request submitted: ${orig.request_no}`) && shown.includes(EVENT)
     && ["ZZ Sponsorship", "ZZ Stalls", "ZZ Venue", "ZZ Catering", "Total Income", "₹7,500.00", "Total Expense", "₹10,000.00", "Deficit: ₹2,500.00", "Total Budget Requested"].every((t) => shown.includes(t)), shown.slice(0, 400));
+  check("the request page shows the Budget ID prominently", (await R.page.locator("[data-testid=budget-id]").textContent()) === orig.request_no && (await R.page.locator("h2", { hasText: "Budget ID" }).count()) === 1);
   check("no Revise Budget while it is pending", (await R.page.locator("[data-testid=budget-revise]").count()) === 0);
   const n1 = await poll(async () => (await sql`select title from apr_notifications where user_id = ${approver.id} and request_id = ${origId}`)[0]);
   check("the approver gets a bell notification naming the event", n1?.title === `Budget approval ${orig.request_no} for ${EVENT} is waiting for your approval`, n1?.title);
@@ -197,6 +199,7 @@ try {
   const place = A.page.locator(`nav[aria-label="Approval System"] a[href="/approvals/review/budget/pending"]`).first();
   check("a plain hub user picked as approver gets the Budget place in the sidebar, with a red badge of 1", (await place.count()) === 1 && (await place.innerText()).includes("1"), await place.innerText().catch(() => "none"));
   await go(A.page, "/approvals/review/budget/pending");
+  check("the Budget list's first column is the Budget ID", /\bbudget id\b/i.test((await A.page.locator("main table thead th").first().textContent()) ?? ""));
   check("their Pending Budget list holds it, with the event in the Event column", (await text(A.page)).includes(orig.request_no) && (await text(A.page)).includes(EVENT) && /\bevent\b/i.test(await text(A.page)), (await text(A.page)).split("Waiting for your decision")[1] ?? await text(A.page));
   await go(A.page, `/approvals/requests/${origId}`);
   const panel = A.page.locator("section[aria-label='Your decision']");
@@ -272,6 +275,7 @@ try {
   await R.page.emulateMedia({ media: "print" });
   const printed = (await R.page.locator(".apr-printable").innerText()).replace(/\s+/g, " ");
   check("the printed page has the income and expense rows, their totals, the summary, the vendors and the revision history", ["ZZ Sponsorship", "ZZ Stalls", "Total Income", "ZZ Venue", "ZZ Catering", "Total Expense", "Deficit: ₹2,500.00", "Total Budget Requested", "ZZ Sai Caterers", "ZZ Pune Sound", "Budget history", "Rev 1", "Rev 2", "Venue cost increased"].every((t) => printed.includes(t)), printed.slice(0, 300));
+  check("the printed page shows the Budget ID", (await R.page.locator("[data-testid=budget-id-print]").textContent()) === orig.request_no && printed.includes(`Budget ID ${orig.request_no}`));
   check("…and leaves out the controls", !printed.includes("Revise Budget") && !printed.includes("Timeline"));
   await shot(R.page, "print");
   const pdf = await R.page.pdf({ preferCSSPageSize: true, printBackground: true });
