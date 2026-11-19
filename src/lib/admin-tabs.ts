@@ -21,6 +21,7 @@ export function adminTabsFor(a: Pick<Actor, "role" | "adminAreas">): AdminTab[] 
       { href: "/administrator/approval-forms", label: "Approval Forms", group: "settings", exact: true },
       { href: "/administrator/approval-forms/hr", label: "HR", group: "settings" },
       { href: "/administrator/approval-forms/expenditure", label: "Expenditure", group: "settings" },
+      { href: "/administrator/approval-forms/budget", label: "Budget", group: "settings" },
     );
   }
   tabs.push({ href: "/administrator/notifications", label: "Notification Panel", group: "settings" });

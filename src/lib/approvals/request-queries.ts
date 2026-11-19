@@ -363,6 +363,8 @@ export type BudgetRequestView = {
   activeId: string | null;
   /** The original budget's request, which a revision is asked for from. */
   originalId: string;
+  /** The answers this version gave to the Budget form's extra fields, by field key (for a revision to start from). */
+  customByKey: Record<string, string>;
   /** The approver the current version went to, for the revision form to start with. */
   approverUserId: string | null;
   /** Whether this person may ask for a revision now, and if not, why (null reason: not theirs to revise). */
@@ -412,6 +414,7 @@ async function budgetViewOf(req: typeof aprRequests.$inferSelect, user: Approval
     })),
     activeId: active?.id ?? null,
     originalId,
+    customByKey: Object.fromEntries((req.customValues ?? []).map((c) => [c.key, c.value])),
     approverUserId: steps[0]?.approverUserId ?? null,
     canRevise: !blocked,
     reviseBlocked: mineToRevise ? blocked : null,

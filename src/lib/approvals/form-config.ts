@@ -17,7 +17,7 @@ export async function getFormFields(form: FormKey): Promise<FormField[]> {
   return mergeFields(form, await db.select().from(aprFormFields).where(eq(aprFormFields.form, form)));
 }
 
-/** All three forms at once, for the editor. */
+/** All the forms at once, for the editor. */
 export async function getAllFormFields(): Promise<Record<FormKey, FormField[]>> {
   const rows = await db.select().from(aprFormFields);
   return Object.fromEntries(FORM_KEYS.map((f) => [f, mergeFields(f, rows)])) as Record<FormKey, FormField[]>;
@@ -30,7 +30,7 @@ export async function resolveCustomAnswers(form: FormKey, given: Readonly<Record
   return checked.values;
 }
 
-export const formKeyInput = z.enum(["hr", "large", "small"]);
+export const formKeyInput = z.enum(["hr", "large", "small", "budget"]);
 
 const trimmed = z.string().transform((s) => s.trim().replace(/\s+/g, " "));
 const fieldInput = z.object({

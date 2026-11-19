@@ -141,6 +141,7 @@ const financialYear = z.string().refine(isFinancialYear, "Choose the financial y
 
 /** The Budget Approval form. The approver is one person the requester picks from everyone in the hub. */
 export const budgetRequestInput = z.object({
+  custom,
   eventName: requiredText("Event name", 200),
   description: requiredText("Description", 4000),
   departmentId: idSchema,
@@ -155,6 +156,7 @@ export type BudgetRequestInput = z.output<typeof budgetRequestInput>;
 
 /** A revision of an approved budget: the new amount and why, with the income, expenses, vendors and approver as they now stand. */
 export const budgetRevisionInput = z.object({
+  custom,
   budgetPaise: amountPaise,
   reason: requiredText("Reason for revision", 4000),
   incomeLines: lines("Income"),

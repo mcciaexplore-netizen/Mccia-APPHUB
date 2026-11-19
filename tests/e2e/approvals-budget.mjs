@@ -63,6 +63,9 @@ const removeData = async () => {
   }
   await sql`delete from users where email like 'zz-bud-%'`;
   await sql`delete from departments where name like 'ZZ Budget%'`;
+  // The Budget form's layout, as this test sets it (it starts and ends with the defaults: no rows).
+  await sql`delete from apr_form_fields where form = 'budget'`;
+  await sql`delete from apr_admin_audit where entity = 'form_fields' and summary like '%Budget%'`;
 };
 
 await removeData();
@@ -286,6 +289,58 @@ try {
   check("an older budget still opens, its fixed income lines shown as rows (empty ones left out), no expenses, a Surplus", oldResp?.status() === 200 && oldText.includes("Sponsorship income") && oldText.includes("Participants income") && !oldText.includes("Stall income") && oldText.includes("Surplus: ₹1,500.00"), oldText.slice(0, 300));
   await go(R.page, `/approvals/requests/${old.id}/revise`);
   check("…and its revision form starts from those rows", (await R.page.locator("#bud-income-name-0").inputValue()) === "Sponsorship income" && (await R.page.locator("#bud-income-amount-1").inputValue()) === "500.00");
+
+  section("Administrator: the Budget form's layout");
+  const ADMIN_EMAIL = (process.env.HEAD_ADMIN_EMAIL || "").trim().toLowerCase(), ADMIN_PW = process.env.HEAD_ADMIN_PASSWORD || "";
+  if (ADMIN_EMAIL && ADMIN_PW) {
+    const ctx = await browser.newContext({ viewport: { width: 1366, height: 1000 } });
+    const H = await ctx.newPage();
+    await H.goto(BASE + "/login"); await H.locator("input[name=email]").fill(ADMIN_EMAIL); await H.locator("input[name=password]").fill(ADMIN_PW);
+    await H.getByRole("button", { name: "Sign in" }).click(); await H.waitForFunction(() => location.pathname !== "/login", null, { timeout: 30000 });
+    await H.goto(BASE + "/administrator/approval-forms");
+    if (new URL(H.url()).pathname === "/unlock") { await H.locator("input[name=password]").fill(ADMIN_PW); await H.getByRole("button", { name: "Unlock" }).click(); await H.waitForURL((u) => u.pathname !== "/unlock", { timeout: 20000 }).catch(() => {}); await H.goto(BASE + "/administrator/approval-forms"); }
+    const card = H.locator('a[href="/administrator/approval-forms/budget"]').filter({ hasText: "Budget form" }).first();
+    check("Administrator → Approval Forms has a Budget form card beside HR and Expenditure, with its description and Edit form", (await card.count()) === 1 && (await card.innerText()).includes("The budget approval form for events, with income, expenses and revision tracking.") && (await card.innerText()).includes("Edit form")
+      && (await H.locator('a[href="/administrator/approval-forms/hr"]').count()) >= 1 && (await H.locator('a[href="/administrator/approval-forms/expenditure"]').count()) >= 1);
+    check("…and Budget is in the Administrator sidebar after HR and Expenditure", (await H.locator('a[href="/administrator/approval-forms/budget"]').count()) >= 2);
+    await card.click(); await H.waitForURL(/approval-forms\/budget$/); await H.waitForLoadState("networkidle").catch(() => {});
+    const listed = await H.locator('ol[aria-label="Fields of the Budget form"] input[aria-label^="Name of field"]').evaluateAll((els) => els.map((e) => e.value));
+    check("its editor lists the Budget form's fields in order", JSON.stringify(listed) === JSON.stringify(["Event name", "Description", "Department", "Financial year", "Income sources", "Expenses", "Vendor name", "Summary", "Total Budget Requested", "Approver"]), listed.join(" | "));
+    // A layout like the editor saves: "Event name" renamed, Vendors hidden, and a required extra dropdown after the event.
+    const saved = await H.evaluate(async () => (await fetch("/api/approvals/form-fields/budget", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: [
+      { key: "eventName", label: "Programme name" }, { key: "description", label: "Description" }, { key: "department", label: "Department" }, { key: "financialYear", label: "Financial year" },
+      { label: "ZZ Venue type", kind: "select", required: true, options: ["Hall", "Outdoor"] },
+      { key: "income", label: "Income sources" }, { key: "expenses", label: "Expenses" }, { key: "vendors", label: "Vendor name", hidden: true }, { key: "summary", label: "Summary" },
+      { key: "amount", label: "Total Budget Requested" }, { key: "approver", label: "Approver" },
+    ] }) })).status);
+    check("the Support Admin can save the Budget form's layout", saved === 200, saved);
+    check("the event, amount and approver cannot be hidden", (await H.evaluate(async () => (await fetch("/api/approvals/form-fields/budget", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: [
+      { key: "eventName", label: "Event name" }, { key: "description", label: "Description" }, { key: "department", label: "Department" }, { key: "financialYear", label: "Financial year" },
+      { key: "income", label: "Income sources" }, { key: "expenses", label: "Expenses" }, { key: "vendors", label: "Vendor name" }, { key: "summary", label: "Summary" },
+      { key: "amount", label: "Total Budget Requested", hidden: true }, { key: "approver", label: "Approver" },
+    ] }) })).status)) !== 200);
+    await ctx.close();
+
+    await go(R.page, "/approvals/budget/new");
+    const labels2 = (await R.page.locator("[data-testid=budget-form] .zf-label").allInnerTexts()).map((l) => l.replace(/\s*\*$/, "").trim());
+    check("the form follows it: the renamed field, the extra field in its place, and no Vendors", JSON.stringify(labels2) === JSON.stringify(["Programme name", "Description", "Department", "Financial year", "ZZ Venue type", "Income sources", "Expenses", "Summary", "Total Budget Requested", "Approver"]), labels2.join(" | "));
+    await R.page.locator("#bud-event").fill("ZZ Layout Event");
+    await R.page.locator("#bud-desc").fill("x");
+    await pick(R.page, "bud-dept", "ZZ Budget Events");
+    await R.page.locator("#bud-amount").fill("1000");
+    await pick(R.page, "bud-approver", "ZZ Bud Approver");
+    await R.page.getByRole("button", { name: "Submit", exact: true }).click();
+    check("the required extra field must be answered", (await R.page.locator("[data-testid=budget-form] .zf-error").allInnerTexts()).some((e) => e.includes("ZZ Venue type")));
+    await R.page.locator("#cf-" + (await sql`select key from apr_form_fields where form = 'budget' and not builtin`)[0].key).click();
+    await R.page.locator(".zd-pop .zd-opt", { hasText: "Outdoor" }).click();
+    await R.page.getByRole("button", { name: "Submit", exact: true }).click();
+    await R.page.waitForURL((u) => /\/approvals\/requests\/[0-9a-f-]{36}/.test(u.pathname), { timeout: 30000 });
+    const [lay] = await sql`select custom_values, budget_details from apr_requests where id = ${R.page.url().match(/requests\/([0-9a-f-]{36})/)[1]}`;
+    check("the answer is kept with the request, under its name, and shown on its page", JSON.stringify(lay?.custom_values?.map((c) => [c.label, c.value])) === JSON.stringify([["ZZ Venue type", "Outdoor"]]) && (await text(R.page)).includes("ZZ Venue type") && (await text(R.page)).includes("Outdoor"), lay?.custom_values);
+    await sql`delete from apr_form_fields where form = 'budget'`;
+  } else {
+    check("Administrator checks need HEAD_ADMIN_EMAIL and HEAD_ADMIN_PASSWORD", false);
+  }
 
   check("no other request was touched", (await sql`select count(*)::int n from apr_requests where requester_user_id not in (select id from users where email like 'zz-bud-%')`)[0].n === otherBefore);
   for (const s of [R, A, O]) await s.ctx.close();

@@ -101,8 +101,9 @@ async function approverOptions(user: ApprovalsUser) {
 
 /** The Budget Approval form: the hub's departments, the financial years (this one first, the next one too, and the last few), and the approvers. */
 export async function budgetFormProps(user: ApprovalsUser): Promise<BudgetFormProps> {
-  const [departments, people] = await Promise.all([listDepartments(), approverOptions(user)]);
+  const [departments, people, fields] = await Promise.all([listDepartments(), approverOptions(user), getFormFields("budget")]);
   return {
+    fields,
     people,
     departments: departments.map((d) => ({ value: d.id, label: d.name })),
     financialYears: recentFinancialYears(4),
@@ -116,11 +117,13 @@ export async function budgetFormProps(user: ApprovalsUser): Promise<BudgetFormPr
  */
 export async function budgetRevisionProps(user: ApprovalsUser, asked: RequestDetail, active: RequestDetail): Promise<BudgetFormProps> {
   const b = active.budget!;
+  const [people, fields] = await Promise.all([approverOptions(user), getFormFields("budget")]);
   return {
-    people: await approverOptions(user),
+    fields,
+    people,
     revision: {
       requestId: asked.id, requestNo: asked.budget!.history[0]?.requestNo ?? asked.requestNo ?? "", eventName: b.details.eventName, departmentName: b.details.departmentName,
-      financialYear: b.details.financialYear, budgetPaise: active.amountPaise ?? 0, incomeLines: b.incomeLines, expenseLines: b.expenseLines, vendors: b.details.vendors, approverUserId: asked.budget!.approverUserId,
+      financialYear: b.details.financialYear, budgetPaise: active.amountPaise ?? 0, incomeLines: b.incomeLines, expenseLines: b.expenseLines, vendors: b.details.vendors, approverUserId: asked.budget!.approverUserId, custom: b.customByKey,
     },
   };
 }

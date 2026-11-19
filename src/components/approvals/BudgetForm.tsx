@@ -1,11 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { api } from "@/components/approvals/api";
 import { useToast } from "@/components/Toast";
 import { FormActions, MoneyInput, Row, SearchSelect, TextArea, TextInput, type Option } from "@/components/approvals/FormFields";
+import { CustomRow, checkExtra, extraAnswers, labeller } from "@/components/approvals/RequestForms";
+import type { FormField } from "@/lib/approvals/form-fields";
 import { BALANCE_LABEL, budgetBalance, cleanVendors, linesTotal, type BudgetLine } from "@/lib/approvals/budget";
 import { formatINR, parseINR } from "@/lib/approvals/format";
 
@@ -81,9 +83,13 @@ export type BudgetRevisionStart = {
   expenseLines: BudgetLine[];
   vendors: string[];
   approverUserId: string | null;
+  /** The answers the budget in force gave to the form's extra fields, by field key. */
+  custom: Record<string, string>;
 };
 
 export type BudgetFormProps = {
+  /** The form's fields as the Support Admin has set them (Administrator → Approval Forms → Budget): names, order, what is hidden, extra fields. */
+  fields: FormField[];
   /** Everyone in the hub who can approve it (the person filling it in is left out: nobody approves their own budget). */
   people: Option[];
   /** New budgets: the hub's departments and the financial years to choose from. */
@@ -100,7 +106,10 @@ export type BudgetFormProps = {
  * Budget Requested, and the approver. The totals and the summary are worked out as the person types and cannot be edited. The approver is one
  * person, picked from everyone in the hub by typing their name.
  */
-export function BudgetForm({ people, departments = [], financialYears = [], defaultFinancialYear = "", revision }: BudgetFormProps) {
+export function BudgetForm({ fields, people, departments = [], financialYears = [], defaultFinancialYear = "", revision }: BudgetFormProps) {
+  const lab = labeller(fields);
+  const shown = (key: string) => fields.some((f) => f.key === key && !f.hidden);
+  const [custom, setCustom] = useState<Record<string, string>>(revision?.custom ?? {});
   const router = useRouter();
   const toast = useToast();
   const startApprover = revision?.approverUserId && people.some((p) => p.value === revision.approverUserId) ? revision.approverUserId : "";
@@ -128,7 +137,7 @@ export function BudgetForm({ people, departments = [], financialYears = [], defa
   const reset = () => {
     if (revision) { router.push(`/approvals/requests/${revision.requestId}?app=hr`); return; }
     setEventName(""); setDescription(""); setDepartmentId(""); setFinancialYear(defaultFinancialYear); setIncome([EMPTY_ROW]); setExpenses([EMPTY_ROW]); setVendors([""]);
-    setBudget(""); setApproverId(""); setErrors({}); setFormError(null);
+    setBudget(""); setApproverId(""); setCustom({}); setErrors({}); setFormError(null);
   };
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -140,8 +149,9 @@ export function BudgetForm({ people, departments = [], financialYears = [], defa
       if (!departmentId) err.department = "Choose the department.";
       if (!financialYear) err.financialYear = "Choose the financial year.";
     } else if (!reason.trim()) err.reason = "Say why the budget has to be revised.";
-    checkRows("income", income, err);
-    checkRows("expense", expenses, err);
+    if (shown("income")) checkRows("income", income, err);
+    if (shown("expenses")) checkRows("expense", expenses, err);
+    checkExtra(fields, custom, err);
     if (budgetPaise === null || budgetPaise <= 0) err.budget = "Enter the total budget requested, above 0, with at most 2 decimals.";
     if (!approverId) err.approver = "Choose the approver.";
     setErrors(err);
@@ -149,7 +159,11 @@ export function BudgetForm({ people, departments = [], financialYears = [], defa
 
     setSubmitting(true);
     setFormError(null);
-    const common = { incomeLines: toLines(income), expenseLines: toLines(expenses), vendors: cleanVendors(vendors), budgetPaise, approverUserId: approverId };
+    // A section the Support Admin has hidden sends nothing.
+    const common = {
+      incomeLines: shown("income") ? toLines(income) : [], expenseLines: shown("expenses") ? toLines(expenses) : [], vendors: shown("vendors") ? cleanVendors(vendors) : [],
+      budgetPaise, approverUserId: approverId, custom: extraAnswers(fields, custom),
+    };
     const r = revision
       ? await api<{ id: string; requestNo: string }>("POST", `/api/approvals/requests/${revision.requestId}/revise`, { ...common, reason })
       : await api<{ id: string; requestNo: string }>("POST", "/api/approvals/requests", { kind: "budget", ...common, eventName, description, departmentId, financialYear });
@@ -159,43 +173,40 @@ export function BudgetForm({ people, departments = [], financialYears = [], defa
     router.refresh();
   };
 
-  return (
-    <form className="zf" onSubmit={onSubmit} noValidate data-testid="budget-form">
-      {revision ? (
-        <>
-          <div className="apr-notice mb-4 max-w-3xl" role="status">
-            <p><b>Revising {revision.requestNo}: {revision.eventName}.</b> The budget in force is {show(revision.budgetPaise)}. The revision needs a fresh approval; until it is approved, {show(revision.budgetPaise)} stays in force.</p>
-          </div>
-          <Row label="Event name"><p className="py-2">{revision.eventName}</p></Row>
-          <Row label="Department"><p className="py-2">{revision.departmentName}</p></Row>
-          <Row label="Financial year"><p className="py-2">{revision.financialYear}</p></Row>
-          <Row label="Current budget"><p className="py-2">{show(revision.budgetPaise)}</p></Row>
-        </>
-      ) : (
-        <>
-          <Row label="Event name" required htmlFor="bud-event" error={errors.eventName}><TextInput id="bud-event" value={eventName} onChange={setEventName} invalid={!!errors.eventName} maxLength={200} /></Row>
-          <Row label="Description" required htmlFor="bud-desc" error={errors.description}><TextArea id="bud-desc" value={description} onChange={setDescription} /></Row>
-          <Row label="Department" required htmlFor="bud-dept" error={errors.department}><SearchSelect id="bud-dept" options={departments} value={departmentId} onChange={setDepartmentId} invalid={!!errors.department} /></Row>
-          <Row label="Financial year" required htmlFor="bud-fy" error={errors.financialYear}>
-            <select id="bud-fy" className={`input ${errors.financialYear ? "zf-invalid" : ""}`} value={financialYear} onChange={(e) => setFinancialYear(e.target.value)}>
-              <option value="">-Select-</option>
-              {financialYears.map((fy) => <option key={fy} value={fy}>{fy}</option>)}
-            </select>
-          </Row>
-        </>
-      )}
-
+  // Each built-in field of the form, by key; they are shown in the order, with the names, the Support Admin set (hidden ones left out), with
+  // the extra fields among them. On a revision the event is shown, not asked again.
+  const rows: Record<string, React.ReactNode> = {
+    eventName: revision
+      ? <Row label={lab("eventName", "Event name")}><p className="py-2">{revision.eventName}</p></Row>
+      : <Row label={lab("eventName", "Event name")} required htmlFor="bud-event" error={errors.eventName}><TextInput id="bud-event" value={eventName} onChange={setEventName} invalid={!!errors.eventName} maxLength={200} /></Row>,
+    description: revision ? null : <Row label={lab("description", "Description")} required htmlFor="bud-desc" error={errors.description}><TextArea id="bud-desc" value={description} onChange={setDescription} /></Row>,
+    department: revision
+      ? <Row label={lab("department", "Department")}><p className="py-2">{revision.departmentName}</p></Row>
+      : <Row label={lab("department", "Department")} required htmlFor="bud-dept" error={errors.department}><SearchSelect id="bud-dept" options={departments} value={departmentId} onChange={setDepartmentId} invalid={!!errors.department} /></Row>,
+    financialYear: revision
+      ? <Row label={lab("financialYear", "Financial year")}><p className="py-2">{revision.financialYear}</p></Row>
+      : (
+        <Row label={lab("financialYear", "Financial year")} required htmlFor="bud-fy" error={errors.financialYear}>
+          <select id="bud-fy" className={`input ${errors.financialYear ? "zf-invalid" : ""}`} value={financialYear} onChange={(e) => setFinancialYear(e.target.value)}>
+            <option value="">-Select-</option>
+            {financialYears.map((fy) => <option key={fy} value={fy}>{fy}</option>)}
+          </select>
+        </Row>
+      ),
+    income: (
       <fieldset className="mb-4" aria-labelledby="bud-income-title">
         <h3 id="bud-income-title" className="mb-2 text-base font-bold">Income</h3>
-        <Row label="Income sources" htmlFor="bud-income-name-0"><LineRows kind="income" rows={income} setRows={setIncome} errors={errors} total={totalIncome} /></Row>
+        <Row label={lab("income", "Income sources")} htmlFor="bud-income-name-0"><LineRows kind="income" rows={income} setRows={setIncome} errors={errors} total={totalIncome} /></Row>
       </fieldset>
-
+    ),
+    expenses: (
       <fieldset className="mb-4" aria-labelledby="bud-expense-title">
         <h3 id="bud-expense-title" className="mb-2 text-base font-bold">Expenses</h3>
-        <Row label="Expenses" htmlFor="bud-expense-name-0"><LineRows kind="expense" rows={expenses} setRows={setExpenses} errors={errors} total={totalExpense} /></Row>
+        <Row label={lab("expenses", "Expenses")} htmlFor="bud-expense-name-0"><LineRows kind="expense" rows={expenses} setRows={setExpenses} errors={errors} total={totalExpense} /></Row>
       </fieldset>
-
-      <Row label="Vendor name" htmlFor="bud-vendor-0">
+    ),
+    vendors: (
+      <Row label={lab("vendors", "Vendor name")} htmlFor="bud-vendor-0">
         <ul className="max-w-xl space-y-2" data-testid="budget-vendors">
           {vendors.map((v, i) => (
             <li key={i} className="flex items-center gap-2">
@@ -208,10 +219,11 @@ export function BudgetForm({ people, departments = [], financialYears = [], defa
         </ul>
         <button type="button" className="btn btn-ghost btn-sm mt-2" onClick={() => setVendors((list) => [...list, ""])}><Plus size={14} aria-hidden /> Add vendor</button>
       </Row>
-
+    ),
+    summary: (
       <section className="mb-4" aria-labelledby="bud-summary-title" data-testid="budget-summary">
         <h3 id="bud-summary-title" className="mb-2 text-base font-bold">Budget Summary</h3>
-        <Row label="Summary">
+        <Row label={lab("summary", "Summary")}>
           <dl className="grid max-w-sm grid-cols-[1fr_auto] gap-x-6 gap-y-1">
             <dt>Total Income</dt><dd className="text-right">{show(totalIncome)}</dd>
             <dt>Total Expense</dt><dd className="text-right">{show(totalExpense)}</dd>
@@ -220,17 +232,35 @@ export function BudgetForm({ people, departments = [], financialYears = [], defa
           </dl>
         </Row>
       </section>
+    ),
+    amount: (
+      <>
+        {revision && <Row label="Current budget"><p className="py-2">{show(revision.budgetPaise)}</p></Row>}
+        <Row label={revision ? `New ${lab("amount", "Total Budget Requested").toLowerCase()}` : lab("amount", "Total Budget Requested")} required htmlFor="bud-amount" error={errors.budget}>
+          <MoneyInput id="bud-amount" value={budget} onChange={setBudget} invalid={!!errors.budget} />
+        </Row>
+      </>
+    ),
+    approver: (
+      <>
+        {revision && <Row label="Reason for revision" required htmlFor="bud-reason" error={errors.reason}><TextArea id="bud-reason" value={reason} onChange={setReason} /></Row>}
+        <Row label={lab("approver", "Approver")} required htmlFor="bud-approver" error={errors.approver}>
+          <SearchSelect id="bud-approver" options={people} value={approverId} onChange={setApproverId} invalid={!!errors.approver} placeholder="Type a name to search" />
+        </Row>
+      </>
+    ),
+  };
 
-      <Row label={revision ? "New total budget requested" : "Total Budget Requested"} required htmlFor="bud-amount" error={errors.budget}>
-        <MoneyInput id="bud-amount" value={budget} onChange={setBudget} invalid={!!errors.budget} />
-      </Row>
-
+  return (
+    <form className="zf" onSubmit={onSubmit} noValidate data-testid="budget-form">
       {revision && (
-        <Row label="Reason for revision" required htmlFor="bud-reason" error={errors.reason}><TextArea id="bud-reason" value={reason} onChange={setReason} /></Row>
+        <div className="apr-notice mb-4 max-w-3xl" role="status">
+          <p><b>Revising {revision.requestNo}: {revision.eventName}.</b> The budget in force is {show(revision.budgetPaise)}. The revision needs a fresh approval; until it is approved, {show(revision.budgetPaise)} stays in force.</p>
+        </div>
       )}
-      <Row label="Approver" required htmlFor="bud-approver" error={errors.approver}>
-        <SearchSelect id="bud-approver" options={people} value={approverId} onChange={setApproverId} invalid={!!errors.approver} placeholder="Type a name to search" />
-      </Row>
+      {fields.filter((f) => !f.hidden).map((f) => (f.builtin
+        ? <Fragment key={f.key}>{rows[f.key]}</Fragment>
+        : <CustomRow key={f.key} field={f} value={custom[f.key] ?? ""} onChange={(v) => setCustom((c) => ({ ...c, [f.key]: v }))} error={errors[`custom_${f.key}`]} />))}
 
       {formError && <p className="zf-error mb-3" role="alert">{formError}</p>}
       <FormActions submitting={submitting} onReset={reset} label={revision ? "Submit revision" : "Submit"} resetLabel={revision ? "Cancel" : "Reset"} />

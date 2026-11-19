@@ -299,13 +299,14 @@ export async function submitBudget(input: BudgetRequestInput, actor: ApprovalsUs
   const department = await departmentById(input.departmentId);
   if (!department?.active) throw new ApprovalsError("Pick a department from the list.");
   const approver = await budgetApprover(input.approverUserId, actor);
+  const customValues = await resolveCustomAnswers("budget", input.custom);
   const details: BudgetDetails = {
     eventName: input.eventName, description: input.description, departmentId: department.id, departmentName: department.name,
     financialYear: input.financialYear, incomeLines: input.incomeLines, expenseLines: input.expenseLines, vendors: input.vendors,
   };
   return createRequest(actor, {
     type: "budget", requesterName: actor.name, requesterEmail: actor.email, requestedAt: new Date(), amountPaise: input.budgetPaise, overBudget: false,
-    files: [], customValues: [], insertDetails: async () => {},
+    files: [], customValues, insertDetails: async () => {},
     approver: { userId: approver.id, stepLabel: BUDGET_STEP }, financialYear: input.financialYear, budgetDetails: details, emailApprover: true,
     assignedNotice: (no) => ({ title: `Budget approval ${no} for ${input.eventName} is waiting for your approval`, body: `${actor.name}${moneyOf(input.budgetPaise)}` }),
   });
@@ -329,6 +330,7 @@ export async function reviseBudget(requestId: string, input: BudgetRevisionInput
   const blocked = revisionBlocker(original, versions, actor.id);
   if (blocked) throw new ApprovalsError(blocked, original.requesterUserId === actor.id ? 409 : 403);
   const approver = await budgetApprover(input.approverUserId, actor);
+  const customValues = await resolveCustomAnswers("budget", input.custom);
 
   // The budget in force is the base: the event and its year stay as they were approved.
   const base = (activeVersion(versions) ?? versions.find((v) => v.id === original.id))?.details ?? original.budgetDetails;
@@ -340,7 +342,7 @@ export async function reviseBudget(requestId: string, input: BudgetRevisionInput
   const details: BudgetDetails = { ...rest, incomeLines: input.incomeLines, expenseLines: input.expenseLines, vendors: input.vendors, revisionReason: input.reason };
   return createRequest(actor, {
     type: "budget", requesterName: original.requesterName, requesterEmail: original.requesterEmail, requestedAt: new Date(), amountPaise: input.budgetPaise, overBudget: false,
-    files: [], customValues: [], insertDetails: async () => {},
+    files: [], customValues, insertDetails: async () => {},
     approver: { userId: approver.id, stepLabel: BUDGET_STEP }, financialYear: original.financialYear ?? base.financialYear,
     requestNo: revisionRequestNo(original.requestNo, revisionNo), budgetDetails: details, revisionOf: { parentRequestId: original.id, revisionNo }, emailApprover: true,
     assignedNotice: (no) => ({ title: `Budget revision requested for ${base.eventName}`, body: `${no} (Rev ${revisionNo}) · ${original.requesterName}${moneyOf(input.budgetPaise)} · ${input.reason.slice(0, 200)}` }),

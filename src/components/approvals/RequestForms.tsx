@@ -15,10 +15,10 @@ const ref = (f: UploadedFile | null) => (f ? { fileId: f.fileId } : null);
 type Errors = Record<string, string>;
 
 /** The name the Support Admin gave a built-in field of this form (or its default, where nothing was changed). */
-const labeller = (fields: FormField[]) => (key: string, fallback: string) => fields.find((f) => f.key === key)?.label ?? fallback;
+export const labeller = (fields: FormField[]) => (key: string, fallback: string) => fields.find((f) => f.key === key)?.label ?? fallback;
 
 /** One extra field the Support Admin added to the form, as a row, in the place they put it. */
-function CustomRow({ field, value, onChange, error }: { field: FormField; value: string; onChange: (v: string) => void; error?: string }) {
+export function CustomRow({ field, value, onChange, error }: { field: FormField; value: string; onChange: (v: string) => void; error?: string }) {
   const id = `cf-${field.key}`;
   return (
     <Row label={field.label} required={field.required} htmlFor={id} error={error}>
@@ -38,7 +38,7 @@ function ordered(fields: FormField[], rows: Record<string, React.ReactNode>, cus
 }
 
 /** Problems with the extra fields (a required one left empty, a number that is not one), added to the form's own. */
-function checkExtra(fields: FormField[], custom: Record<string, string>, err: Errors) {
+export function checkExtra(fields: FormField[], custom: Record<string, string>, err: Errors) {
   for (const f of fields) {
     if (f.builtin || f.hidden) continue;
     const v = (custom[f.key] ?? "").trim();
@@ -48,7 +48,7 @@ function checkExtra(fields: FormField[], custom: Record<string, string>, err: Er
 }
 
 /** What is sent for the extra fields: only those that are shown, and only the ones answered. */
-const extraAnswers = (fields: FormField[], custom: Record<string, string>) =>
+export const extraAnswers = (fields: FormField[], custom: Record<string, string>) =>
   Object.fromEntries(fields.filter((f) => !f.builtin && !f.hidden).map((f) => [f.key, (custom[f.key] ?? "").trim()] as const).filter(([, v]) => v));
 
 /** What the correction form needs to know about a request that was returned for corrections. */

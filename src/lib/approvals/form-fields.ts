@@ -1,17 +1,18 @@
 /**
- * The fields of the three request forms, and how the Support Admin's settings change them. Pure: nothing here touches the database, so the
+ * The fields of the request forms (HR, Expenditure, Budget), and how the Support Admin's settings change them. Pure: nothing here touches the database, so the
  * forms (in the browser), the server and the tests all use the same rules.
  *
  * Every form has built-in fields. For those the Support Admin can rename them, move them, and hide the optional ones; the ones the request
  * cannot do without (the person, the category, the amount, ...) cannot be hidden. The Support Admin can also add extra fields
  * of their own (text, long text, number, date or a dropdown), which can be required, and can remove them again.
  */
-export type FormKey = "hr" | "large" | "small";
-export const FORM_KEYS: readonly FormKey[] = ["hr", "large", "small"];
+export type FormKey = "hr" | "large" | "small" | "budget";
+export const FORM_KEYS: readonly FormKey[] = ["hr", "large", "small", "budget"];
 export const FORM_TITLE: Record<FormKey, string> = {
   hr: "HR form",
   small: "Expenditure form",
   large: "Expenditure form (old ₹10,000+ layout, no longer used)",
+  budget: "Budget form",
 };
 
 export type BuiltinDef = { key: string; label: string; hideable: boolean };
@@ -53,6 +54,20 @@ export const BUILTIN: Record<FormKey, readonly BuiltinDef[]> = {
     { key: "quotation", label: "Quotation", hideable: true },
     { key: "invoiceDate", label: "Date of Tax Invoice", hideable: true },
     { key: "amount", label: "Amount", hideable: false },
+  ],
+  // The Budget form: what a budget cannot do without (the event, the amount, the approver) cannot be hidden; income, expenses, vendors and
+  // the summary can. Income and expenses each stand for their rows and their total, and move as one.
+  budget: [
+    { key: "eventName", label: "Event name", hideable: false },
+    { key: "description", label: "Description", hideable: false },
+    { key: "department", label: "Department", hideable: false },
+    { key: "financialYear", label: "Financial year", hideable: false },
+    { key: "income", label: "Income sources", hideable: true },
+    { key: "expenses", label: "Expenses", hideable: true },
+    { key: "vendors", label: "Vendor name", hideable: true },
+    { key: "summary", label: "Summary", hideable: true },
+    { key: "amount", label: "Total Budget Requested", hideable: false },
+    { key: "approver", label: "Approver", hideable: false },
   ],
 };
 
