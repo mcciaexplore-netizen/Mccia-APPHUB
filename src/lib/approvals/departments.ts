@@ -19,7 +19,9 @@ export const DEPARTMENT_VALUE = /^(hub:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 
 export async function departmentOptions(): Promise<DepartmentOption[]> {
   const [own, hub] = await Promise.all([
-    db.select({ id: aprDepartments.id, name: aprDepartments.name }).from(aprDepartments).where(eq(aprDepartments.active, true)),
+    // Until migration 0041 has been run on a database (apr_departments missing), the form still works with the hub's departments alone.
+    db.select({ id: aprDepartments.id, name: aprDepartments.name }).from(aprDepartments).where(eq(aprDepartments.active, true))
+      .catch((e) => { if ((e as { code?: string; cause?: { code?: string } })?.code === "42P01" || (e as { cause?: { code?: string } })?.cause?.code === "42P01") return []; throw e; }),
     listDepartments(),
   ]);
   const seen = new Set(own.map((d) => key(d.name)));
