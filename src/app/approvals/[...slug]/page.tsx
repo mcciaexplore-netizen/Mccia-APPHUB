@@ -11,8 +11,8 @@ import { hasRole } from "@/lib/approvals/host-adapter";
 import { parseListParams } from "@/lib/approvals/list-params";
 import { reviewItemsFor } from "@/lib/approvals/request-queries";
 import { resolveScreen } from "@/lib/approvals/screens";
-import { watchedForms } from "@/lib/approvals/watchers";
-import { parseWatchingPath } from "@/lib/approvals/watching";
+import { watchRules } from "@/lib/approvals/watchers";
+import { isWatchingPath } from "@/lib/approvals/watching";
 
 /**
  * The list screens (Approved HR requests, Pending Expenditure Requests, the DG's inbox, ...) all live here: each is the same table with
@@ -32,17 +32,18 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const path = `/approvals/${slug.join("/")}`;
   const review = parseReviewPath(slug);
   const recommended = parseRecommendationPath(slug);
-  const watching = parseWatchingPath(slug);
+  const watching = isWatchingPath(slug);
   const item = allNavItems().find((i) => i.href === path);
   if (!item && !review && !recommended && !resolveScreen(slug, false)) notFound();
   // A list open to every requester (their own Approved Forms) needs no more than being signed in, and so does the Budget place (anyone in the
   // hub can be picked to approve a budget; whether they have that place is checked below). Every other list needs full access.
-  // A Watching list needs only that the person watches that form (checked below): watchers are often plain hub users.
+  // All Approvals needs only that the person has watching rules (checked below): watchers are often plain hub users.
   const user = await (item?.roles?.includes("requester") || review?.key === "budget" || watching ? requirePage() : requirePage(...FULL_ACCESS_ROLES));
   if (watching) {
-    // Every request of a form this person watches, read only. Someone who does not watch it gets a 404, whatever else they may see.
-    if (!(await watchedForms(user.id)).includes(watching)) notFound();
-    return <div className="page-enter"><Streamed><ListScreenView slug={slug.join("/")} screen={resolveScreen(slug, false)!} params={parseListParams(await searchParams)} user={user} /></Streamed></div>;
+    // Everything this person's watching rules match, read only. Someone with no rules gets a 404, whatever else they may see.
+    if (!(await watchRules(user.id)).length) notFound();
+    // Named by the heading above it (All Approvals, Approval System), so the list's own title is left out.
+    return <div className="page-enter"><Streamed><ListScreenView slug={slug.join("/")} screen={{ ...resolveScreen(slug, false)!, title: "" }} params={parseListParams(await searchParams)} user={user} /></Streamed></div>;
   }
   if (item && !canSee(item, user.roles)) notFound();
   if (recommended) {

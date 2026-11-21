@@ -197,12 +197,12 @@ eq("budget: an older budget's four fixed income lines read back as rows (empty o
 eq("headings: each page names its kind (HR, Expenditure, Budget), personal lists their own name over Approval System, mixed and set-up pages Approval System; a request's own page heads itself", [
   "/approvals/hr/new", "/approvals/hr/all", "/approvals/expenditures/new", "/approvals/expenses/approved", "/approvals/budget/new", "/approvals/budget/all",
   "/approvals/review/hr/pending", "/approvals/review/expenditure/approved", "/approvals/review/budget/rejected",
-  "/approvals/my-requests", "/approvals/my/approved", "/approvals/decided/approved", "/approvals/my-pending-approvals", "/approvals/my-approvals",
+  "/approvals/my-requests", "/approvals/my/approved", "/approvals/decided/approved", "/approvals/my-pending-approvals", "/approvals/my-approvals", "/approvals/watching/all",
   "/approvals/timeline", "/approvals/inbox", "/approvals/admin/settings", "/approvals/requests/11111111-1111-4111-8111-111111111111", "/approvals/requests/x/edit", "/approvals/requests/x/revise",
 ].map((p) => { const h = pageHeading(p); return h ? `${h.title}${h.subtitle ? ` / ${h.subtitle}` : ""}` : null; }), [
   "HR Approval", "HR Approval", "Expenditure Approval", "Expenditure Approval", "Budget Approval", "Budget Approval",
   "HR Approval", "Expenditure Approval", "Budget Approval",
-  "My Submitted Requests / Approval System", "My Approved Requests / Approval System", "My Approved Requests / Approval System", "Pending My Approval / Approval System", "My Approval History / Approval System",
+  "My Submitted Requests / Approval System", "My Approved Requests / Approval System", "My Approved Requests / Approval System", "Pending My Approval / Approval System", "My Approval History / Approval System", "All Approvals / Approval System",
   "Approval System", "Approval System", "Approval System", null, null, "Revise Budget",
 ]);
 eq("headings: a request's kind", (["hr", "expenditure_large", "expenditure_small", "budget"] as const).map(typeHeading), ["HR Approval", "Expenditure Approval", "Expenditure Approval", "Budget Approval"]);
@@ -210,17 +210,21 @@ eq("headings: a request's kind", (["hr", "expenditure_large", "expenditure_small
   eq("watchers: each form covers its request types (Expenditure both expense forms, Budget its budgets and revisions)",
     [W.typesOfForm("hr"), W.typesOfForm("expenditure"), W.typesOfForm("budget"), W.formOfType("expenditure_small"), W.formOfType("expenditure_large"), W.formOfType("hr"), W.formOfType("budget")],
     [["hr"], ["expenditure_large", "expenditure_small"], ["budget"], "expenditure", "expenditure", "hr", "budget"]);
-  eq("watchers: a watcher sees only the forms they watch", [
-    W.watchesType(["expenditure"], "expenditure_small"), W.watchesType(["expenditure"], "hr"), W.watchesType(["expenditure"], "budget"),
-    W.watchesType(["hr", "budget"], "budget"), W.watchesType([], "hr"),
-  ], [true, false, false, true, false]);
+  const HR = { form: "hr", categoryId: null } as const, BUD = { form: "budget", categoryId: null } as const;
+  const EXP_ALL = { form: "expenditure", categoryId: null } as const, EXP_ADMIN = { form: "expenditure", categoryId: "cat-admin" } as const, EXP_EVENT = { form: "expenditure", categoryId: "cat-event" } as const;
+  eq("watchers: a watcher sees only what their rules match: HR and Budget all of them; Expenditure all, or only the categories named", [
+    W.rulesMatch([HR], "hr", null), W.rulesMatch([HR], "budget", null), W.rulesMatch([BUD], "budget", null),
+    W.rulesMatch([EXP_ALL], "expenditure_small", "cat-x"), W.rulesMatch([EXP_ALL], "expenditure_large", null),
+    W.rulesMatch([EXP_ADMIN, EXP_EVENT], "expenditure_large", "cat-event"), W.rulesMatch([EXP_ADMIN, EXP_EVENT], "expenditure_small", "cat-admin"),
+    W.rulesMatch([EXP_ADMIN], "expenditure_large", "cat-other"), W.rulesMatch([EXP_ADMIN], "expenditure_large", null), W.rulesMatch([EXP_ADMIN], "hr", null), W.rulesMatch([], "hr", null),
+  ], [true, false, true, true, true, true, true, false, false, false, false]);
+  eq("watchers: only Expenditure rules have categories", W.WATCH_FORMS.map(W.formHasCategories), [false, true, false]);
   eq("watchers: a new request tells each watcher once, never the person who raised it nor the approver already told", [
     W.watcherRecipients(["a", "b", "a", "r", "x"], "r", ["x"]), W.watcherRecipients([], "r", ["x"]), W.watcherRecipients(["x"], "r", ["x"]),
   ], [["a", "b"], [], []]);
   eq("watchers: the notice names the person and the form", [W.watcherNoticeTitle("Asha Rao", "expenditure_large"), W.watcherNoticeTitle("Asha Rao", "hr"), W.watcherNoticeTitle("Asha Rao", "budget")],
     ["Asha Rao submitted a new Expenditure request", "Asha Rao submitted a new HR request", "Asha Rao submitted a new Budget request"]);
-  eq("watchers: the Watching lists' paths", [W.parseWatchingPath(["watching", "hr"]), W.parseWatchingPath(["watching", "expenditure"]), W.parseWatchingPath(["watching", "other"]), W.parseWatchingPath(["watching"]), W.watchingHref("budget")],
-    ["hr", "expenditure", null, null, "/approvals/watching/budget"]);
+  eq("watchers: All Approvals is one list", [W.isWatchingPath(["watching", "all"]), W.isWatchingPath(["watching", "hr"]), W.isWatchingPath(["watching"]), W.WATCHING_HREF], [true, false, false, "/approvals/watching/all"]);
 }
 eq("budget: versions read Original, Rev 1, Rev 2; a revision's number is the original's with -R1, -R2", [versionLabel(null), versionLabel(0), versionLabel(1), versionLabel(2), revisionRequestNo("BUD-2026-27-0004", 2)], ["Original", "Original", "Rev 1", "Rev 2", "BUD-2026-27-0004-R2"]);
 eq("budget: a budget's ID is BUD-<short year>-<number>, counted per year; a revision adds -R1, -R2; it can never look like an HR or expenditure number", [budgetRequestNo("2026-27", 1), budgetRequestNo("2026-27", 42), budgetRequestNo("2027-28", 1), budgetRequestNo("2099-00", 7), revisionRequestNo(budgetRequestNo("2026-27", 1), 2), /^(HR|EXP|EXB)-/.test(budgetRequestNo("2026-27", 1))], ["BUD-2627-0001", "BUD-2627-0042", "BUD-2728-0001", "BUD-9900-0007", "BUD-2627-0001-R2", false]);

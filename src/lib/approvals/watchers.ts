@@ -1,88 +1,111 @@
 import "server-only";
 import { cache } from "react";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { aprWatchers, type AprWatcherForm } from "@/db/approvals-schema";
+import { aprCategories, aprWatchers, type AprRequestType, type AprWatcherForm } from "@/db/approvals-schema";
 import { recordAudit } from "./audit";
 import { ApprovalsError } from "./errors";
 import { getDirectoryUsers, type ApprovalsUser } from "./host-adapter";
-import { WATCH_FORM_LABEL } from "./watching";
+import { WATCH_FORM_TITLE, formHasCategories, formOfType, rulesMatch, type WatchRule } from "./watching";
 
 /**
- * Watchers, stored in apr_watchers (migration 0042): who watches which form. Managed by the Support Admin in Administrator > Approval Forms;
- * what a watcher may then see is decided where every request's visibility is (request-queries.ts), with the rules in watching.ts.
+ * Watching rules, stored in apr_watchers (migrations 0042 and 0043): which approval types, and which expense categories, a person watches.
+ * Set by the Support Admin on the person's page in Administrator > Users. What a watcher may then see is decided where every request's
+ * visibility is (request-queries.ts), from the rules in watching.ts.
  */
-export type WatcherRow = { id: string; formType: AprWatcherForm; userId: string; name: string; email: string; active: boolean; addedAt: Date };
+export type WatchRuleRow = WatchRule & { id: string; categoryName: string | null };
 
-/** The table is missing: migration 0042 has not been run on this database. Until then nobody watches anything. */
-const tableMissing = (e: unknown) => {
+/** The table or its category column is missing: migrations 0042/0043 have not been run here. Until then nobody watches anything. */
+const notMigrated = (e: unknown) => {
   const x = e as { code?: string; cause?: { code?: string } };
-  return x?.code === "42P01" || x?.cause?.code === "42P01";
+  return ["42P01", "42703"].includes(x?.code ?? "") || ["42P01", "42703"].includes(x?.cause?.code ?? "");
 };
+const notYet = () => new ApprovalsError("Watching cannot be set yet: the database update for watchers (apply-0043) has not been run. Ask the Support Admin.", 503);
 
-/** The forms this person watches (asked once per page). */
-export const watchedForms = cache(async (userId: string): Promise<AprWatcherForm[]> => {
+/** This person's rules (asked once per page). */
+export const watchRules = cache(async (userId: string): Promise<WatchRule[]> => {
   try {
-    return (await db.select({ form: aprWatchers.formType }).from(aprWatchers).where(eq(aprWatchers.userId, userId))).map((r) => r.form);
+    return (await db.select({ form: aprWatchers.formType, categoryId: aprWatchers.category }).from(aprWatchers).where(eq(aprWatchers.userId, userId)));
   } catch (e) {
-    if (tableMissing(e)) return [];
+    if (notMigrated(e)) return [];
     throw e;
   }
 });
 
-/** The people watching a form, by id (for notices). */
-export async function watcherIdsOf(form: AprWatcherForm): Promise<string[]> {
+/** The people whose rules match a new request (its type, and an expenditure's category). */
+export async function watcherIdsFor(type: AprRequestType, categoryId: string | null): Promise<string[]> {
+  const form = formOfType(type);
+  let rows: { userId: string; categoryId: string | null }[];
   try {
-    return (await db.select({ userId: aprWatchers.userId }).from(aprWatchers).where(eq(aprWatchers.formType, form))).map((r) => r.userId);
+    rows = await db.select({ userId: aprWatchers.userId, categoryId: aprWatchers.category }).from(aprWatchers).where(eq(aprWatchers.formType, form));
   } catch (e) {
-    if (tableMissing(e)) return [];
+    if (notMigrated(e)) return [];
     throw e;
   }
+  return [...new Set(rows.filter((r) => rulesMatch([{ form, categoryId: r.categoryId }], type, categoryId)).map((r) => r.userId))];
 }
 
-/** Every watcher of every form, with their names, for Administrator > Approval Forms. */
-export async function listWatchers(): Promise<WatcherRow[]> {
-  let rows: (typeof aprWatchers.$inferSelect)[];
+/** A person's rules with the names of their categories, for their page in Administrator > Users (HR first, then Expenditure, then Budget). */
+export async function listRulesOf(userId: string): Promise<WatchRuleRow[] | null> {
+  let rows: { id: string; form: AprWatcherForm; categoryId: string | null }[];
   try {
-    rows = await db.select().from(aprWatchers).orderBy(asc(aprWatchers.createdAt));
+    rows = await db.select({ id: aprWatchers.id, form: aprWatchers.formType, categoryId: aprWatchers.category }).from(aprWatchers).where(eq(aprWatchers.userId, userId)).orderBy(asc(aprWatchers.createdAt));
   } catch (e) {
-    if (tableMissing(e)) return [];
+    if (notMigrated(e)) return null; // the page then says watching cannot be set yet
     throw e;
   }
-  const people = new Map((await getDirectoryUsers([...new Set(rows.map((r) => r.userId))])).map((u) => [u.id, u]));
+  const ids = rows.flatMap((r) => (r.categoryId ? [r.categoryId] : []));
+  const names = new Map(ids.length ? (await db.select({ id: aprCategories.id, name: aprCategories.name }).from(aprCategories).where(inArray(aprCategories.id, ids))).map((c) => [c.id, c.name]) : []);
+  const order = { hr: 0, expenditure: 1, budget: 2 } as const;
   return rows
-    .map((r) => {
-      const p = people.get(r.userId);
-      return { id: r.id, formType: r.formType, userId: r.userId, name: p?.name ?? "Removed user", email: p?.email ?? "", active: !!p?.active, addedAt: r.createdAt };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .map((r) => ({ ...r, categoryName: r.categoryId ? names.get(r.categoryId) ?? "Removed category" : null }))
+    .sort((a, b) => order[a.form] - order[b.form] || (a.categoryName ?? "").localeCompare(b.categoryName ?? ""));
 }
 
-const notYet = () => new ApprovalsError("Watchers cannot be added yet: the database update for watchers (apply-0042) has not been run. Ask the Support Admin.", 503);
+/** The expense categories an Expenditure rule can name. */
+export async function watchableCategories(): Promise<{ id: string; name: string }[]> {
+  return db.select({ id: aprCategories.id, name: aprCategories.name }).from(aprCategories).where(eq(aprCategories.active, true)).orderBy(asc(aprCategories.name));
+}
 
-/** Adds a hub user as a watcher of a form. Adding someone who already watches it changes nothing. */
-export async function addWatcher(form: AprWatcherForm, userId: string, actor: ApprovalsUser): Promise<void> {
+const ruleText = (form: AprWatcherForm, categoryName: string | null) => `${WATCH_FORM_TITLE[form]} (${categoryName ?? "All"})`;
+
+/**
+ * Adds a rule for a hub user. HR and Budget rules are always "All"; an Expenditure rule names an active expense category or none (all). The
+ * same rule twice changes nothing.
+ */
+export async function addRule(userId: string, form: AprWatcherForm, categoryId: string | null, actor: ApprovalsUser): Promise<void> {
   const [person] = await getDirectoryUsers([userId]);
-  if (!person?.active) throw new ApprovalsError("Pick an active hub user.", 422);
+  if (!person?.active) throw new ApprovalsError("That person is not an active hub user.", 422);
+  const category = formHasCategories(form) ? categoryId : null;
+  let categoryName: string | null = null;
+  if (category) {
+    const [c] = await db.select({ name: aprCategories.name, active: aprCategories.active }).from(aprCategories).where(eq(aprCategories.id, category));
+    if (!c?.active) throw new ApprovalsError("Pick an expense category from the list.", 422);
+    categoryName = c.name;
+  }
   try {
-    const added = await db.insert(aprWatchers).values({ formType: form, userId, addedById: actor.id }).onConflictDoNothing().returning({ id: aprWatchers.id });
-    if (added.length) await recordAudit(actor, "watcher", added[0].id, "grant", `${person.name} now watches the ${WATCH_FORM_LABEL[form]} form`, null, { form, userId, name: person.name });
+    const added = await db.insert(aprWatchers).values({ formType: form, userId, category, addedById: actor.id }).onConflictDoNothing().returning({ id: aprWatchers.id });
+    if (added.length) await recordAudit(actor, "watcher", added[0].id, "grant", `${person.name} now watches ${ruleText(form, categoryName)}`, null, { userId, form, category, categoryName });
   } catch (e) {
-    if (tableMissing(e)) throw notYet();
+    if (notMigrated(e)) throw notYet();
     throw e;
   }
 }
 
-/** Removes one watcher (by the row's id) from the form given. */
-export async function removeWatcher(form: AprWatcherForm, id: string, actor: ApprovalsUser): Promise<void> {
+/** Removes one of a person's rules. */
+export async function removeRule(userId: string, id: string, actor: ApprovalsUser): Promise<void> {
   let gone: (typeof aprWatchers.$inferSelect)[];
   try {
-    gone = await db.delete(aprWatchers).where(and(eq(aprWatchers.id, id), eq(aprWatchers.formType, form))).returning();
+    gone = await db.delete(aprWatchers).where(and(eq(aprWatchers.id, id), eq(aprWatchers.userId, userId))).returning();
   } catch (e) {
-    if (tableMissing(e)) throw notYet();
+    if (notMigrated(e)) throw notYet();
     throw e;
   }
-  if (!gone.length) return;
-  const [person] = await getDirectoryUsers([gone[0].userId]);
-  await recordAudit(actor, "watcher", id, "revoke", `${person?.name ?? "A user"} no longer watches the ${WATCH_FORM_LABEL[form]} form`, { form, userId: gone[0].userId, name: person?.name ?? null }, null);
+  const rule = gone[0];
+  if (!rule) return;
+  const [[person], cat] = await Promise.all([
+    getDirectoryUsers([userId]),
+    rule.category ? db.select({ name: aprCategories.name }).from(aprCategories).where(eq(aprCategories.id, rule.category)).then((r) => r[0]?.name ?? null) : null,
+  ]);
+  await recordAudit(actor, "watcher", id, "revoke", `${person?.name ?? "A user"} no longer watches ${ruleText(rule.formType, cat)}`, { userId, form: rule.formType, category: rule.category }, null);
 }

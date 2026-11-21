@@ -277,6 +277,7 @@ export const PERSONAL_PAGES: Record<string, string> = {
   "/approvals/my-pending-approvals": "Pending My Approval",
   "/approvals/my-approval-history": "My Approval History",
   "/approvals/my-approvals": "My Approval History",
+  "/approvals/watching/all": "All Approvals",
 };
 
 /**

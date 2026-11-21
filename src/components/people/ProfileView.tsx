@@ -32,13 +32,15 @@ function describe(a: AuditLine): string {
 }
 
 /** One person, everything about them on one screen: who they are, where they sit, what they can open, and what changed recently. */
-export function ProfileView({ base, person, caps, options, catalog, templates, otherApps, audit, meId, accessEditable, responsibilities }: {
+export function ProfileView({ base, person, caps, options, catalog, templates, otherApps, audit, meId, accessEditable, responsibilities, watching }: {
   base: string; person: PersonDetail; caps: ProfileCaps; options: { branches: Option[]; teams: Option[]; managers: Manager[]; roleHolders?: RoleHolder[] };
   catalog: Catalog; templates: Template[]; otherApps: number; audit: AuditLine[] | null; meId: string;
   /** Whether the viewer may change this person's access; when not (for example their own profile), it is shown read only. */
   accessEditable: boolean; appNames: string[];
   /** What this person does in the Approval System, worked out from their role (empty for most people). */
   responsibilities: string[];
+  /** The Approval System's Watching section for this person (the Support Admin only), under the overview. */
+  watching?: React.ReactNode;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -127,6 +129,7 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+        <div className="min-w-0 space-y-6">
         <form className="glass !rounded-md space-y-4 p-5 sm:p-6" onSubmit={saveDetails} aria-label="Details and organisation">
           <h3 className="text-lg">User overview</h3>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -148,6 +151,8 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
           {caps.changeRole && isHeadAdmin && <p className="text-xs text-subtle">A Support Admin&apos;s role cannot be changed here.</p>}
           {caps.editPerson && <button className="btn btn-primary btn-sm" disabled={pending}>Save details</button>}
         </form>
+        {watching}
+        </div>
 
         <aside className="space-y-6">
           <section className="glass !rounded-md p-5" aria-label="Account">

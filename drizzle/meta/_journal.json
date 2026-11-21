@@ -302,6 +302,13 @@
       "when": 1795243878030,
       "tag": "0042_approvals_watchers",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795246271463,
+      "tag": "0043_approvals_watching_category",
+      "breakpoints": true
     }
   ]
 }

@@ -194,9 +194,10 @@ export const aprUserRoles = pgTable(
 );
 
 /**
- * Watchers: hub users who may read every request of one form (HR, Expenditure: both expense types, Budget: budgets and their revisions),
- * print and export them, and are told of each new one, but never decide anything. Managed by the Support Admin in Administrator > Approval
- * Forms. One row per person per form.
+ * Watching rules: hub users who may read requests of one approval type (HR, Expenditure: both expense types, Budget: budgets and their
+ * revisions), print and export them, and are told of each new one, but never decide anything. A person may have several rules; an
+ * Expenditure rule may be limited to one expense category (`category`: the apr_categories id; null = every category). Set by the Support
+ * Admin on the person's page in Administrator > Users. Migrations 0042 (table) and 0043 (category).
  */
 export const aprWatcherForm = ["hr", "expenditure", "budget"] as const;
 export type AprWatcherForm = (typeof aprWatcherForm)[number];
@@ -206,10 +207,11 @@ export const aprWatchers = pgTable(
     id: id(),
     formType: text("form_type").notNull().$type<AprWatcherForm>(),
     userId: uuid("user_id").notNull(),
+    category: text("category"),
     addedById: uuid("added_by_id"),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex("apr_watchers_form_user_uq").on(t.formType, t.userId), index("apr_watchers_user_idx").on(t.userId)],
+  (t) => [uniqueIndex("apr_watchers_rule_uq").on(t.formType, t.userId, sql`coalesce(${t.category}, '')`), index("apr_watchers_user_idx").on(t.userId)],
 );
 
 /** Serial numbers: one row per prefix and financial year, for example "EXP-2026-27". Bumped with a single atomic statement. */

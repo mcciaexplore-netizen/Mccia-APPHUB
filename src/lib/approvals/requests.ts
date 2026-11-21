@@ -16,8 +16,8 @@ import { financialYearOf, formatINR, todayIST } from "./format";
 import { getDirectoryUsers, listUsers, roleApprovers, type ApprovalsUser } from "./host-adapter";
 import { resolveDepartment } from "./departments";
 import { retiredBudgetIds } from "./budget-delete";
-import { watcherIdsOf } from "./watchers";
-import { formOfType, watcherNoticeTitle, watcherRecipients } from "./watching";
+import { watcherIdsFor } from "./watchers";
+import { watcherNoticeTitle, watcherRecipients } from "./watching";
 import { notify } from "./notify";
 import { canSeeRequest } from "./request-queries";
 import type { BudgetRequestInput, BudgetRevisionInput, HrRequestInput, LargeExpenditureInput, ResubmitInput, SmallExpenditureInput } from "./request-schemas";
@@ -196,10 +196,12 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
     userId: first.approverUserId, requestId: draft.id, link: link(draft.id, p.type), email: p.emailApprover || settings.notifyApproverOnAssignment,
     title: notice.title, body: notice.body,
   });
-  // The watchers of its form are told too (each once; not the person who raised it, nor the approver just told). A failure here never
-  // undoes the request.
+  // The people whose watching rules match it are told too (each once; not the person who raised it, nor the approver just told). An
+  // expenditure is matched by its expense category. A failure here never undoes the request.
   try {
-    const watchers = watcherRecipients(await watcherIdsOf(formOfType(p.type)), actor.id, [first.approverUserId]);
+    const categoryId = p.type === "hr" || p.type === "budget" ? null
+      : (await db.select({ c: aprExpenditureDetails.categoryId }).from(aprExpenditureDetails).where(eq(aprExpenditureDetails.requestId, draft.id)))[0]?.c ?? null;
+    const watchers = watcherRecipients(await watcherIdsFor(p.type, categoryId), actor.id, [first.approverUserId]);
     for (const userId of watchers) {
       await notify({
         userId, requestId: draft.id, link: link(draft.id, p.type), email: settings.notifyWatchersByEmail,

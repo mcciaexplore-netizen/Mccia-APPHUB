@@ -248,7 +248,7 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
       {d.can.decide && <div className="apr-no-print"><DecisionPanel id={d.id} mode={d.can.mode} canReturn={!b} /></div>}
       {d.watching && (
         <p className="apr-notice apr-no-print max-w-3xl" role="note" data-testid="watching-note">
-          <b>You are watching the {d.watching} form.</b> You can read, print and export its requests; you cannot approve, reject or change them.
+          <b>You have view-only access to this request.</b> You can read, print and export it; you cannot approve, reject or change it.
         </p>
       )}
 

@@ -1,5 +1,5 @@
-import type { AprRequestStatus, AprRequestType, AprWatcherForm } from "@/db/approvals-schema";
-import { WATCH_FORM_LABEL, parseWatchingPath, typesOfForm } from "./watching";
+import type { AprRequestStatus, AprRequestType } from "@/db/approvals-schema";
+import { isWatchingPath } from "./watching";
 import { parseRecommendationPath, parseReviewPath, type RecommendationKey, type ReviewKey, type ReviewTab } from "./approvals.manifest";
 
 /**
@@ -36,6 +36,10 @@ export type ListScreen = {
   categories: "hr" | "expense" | "all" | "none";
   /** The form to open for a new request, shown as a button. */
   newHref?: string;
+  /** Only what this person's watching rules match (All Approvals). */
+  watchedOnly?: boolean;
+  /** A Type filter (HR / Expenditure / Budget) on the filter bar, for a list that mixes them. */
+  typeFilter?: boolean;
 };
 
 /** How many requests a list screen shows per page. */
@@ -118,15 +122,12 @@ export function recommendationScreen(key: RecommendationKey): ListScreen {
   };
 }
 
-/** What a watcher of a form reads: every request of it, any status (filtered on the page), read only. */
-export function watchingScreen(form: AprWatcherForm): ListScreen {
-  const label = WATCH_FORM_LABEL[form];
-  return {
-    title: `Watched ${label} requests`,
-    intro: `Every ${label} request, as a watcher of the ${label} form: open, print or export any of them. Watching never lets you approve or reject.`,
-    types: typesOfForm(form), categories: form === "hr" ? "hr" : form === "expenditure" ? "expense" : "none", branch: form === "expenditure" || undefined,
-  };
-}
+/** All Approvals: everything a watcher's rules match, every type and status together (filtered on the page), read only. */
+export const WATCHING_SCREEN: ListScreen = {
+  title: "All Approvals",
+  intro: "Every request you have view-only access to, the most recent first. Open, print or export any of them; you cannot approve or reject them.",
+  types: ["hr", "expenditure_large", "expenditure_small", "budget"], categories: "all", watchedOnly: true, typeFilter: true,
+};
 
 /** The screen for a path, whichever kind it is: one of the fixed lists, or one of the Pending / Approved / Rejected lists of HR and Expenditure. */
 export function resolveScreen(slug: string[], decides: boolean): ListScreen | undefined {
@@ -134,6 +135,5 @@ export function resolveScreen(slug: string[], decides: boolean): ListScreen | un
   if (review) return reviewScreen(review.key, review.tab, decides);
   const recommended = parseRecommendationPath(slug);
   if (recommended) return recommendationScreen(recommended);
-  const watched = parseWatchingPath(slug);
-  return watched ? watchingScreen(watched) : screenFor(slug);
+  return isWatchingPath(slug) ? WATCHING_SCREEN : screenFor(slug);
 }

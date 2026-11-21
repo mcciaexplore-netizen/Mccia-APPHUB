@@ -12,9 +12,10 @@ import { formatDate, formatDateTime, formatINR, isoToDisplay } from "@/lib/appro
 import { toQueryString, type ListParams, type SortKey } from "@/lib/approvals/list-params";
 import { listMasterCached } from "@/lib/approvals/masters";
 import { listRequests } from "@/lib/approvals/request-queries";
+import { typesOfForm } from "@/lib/approvals/watching";
 import { PAGE_SIZE, type ListScreen } from "@/lib/approvals/screens";
 import { hasRole, type ApprovalsUser } from "@/lib/approvals/host-adapter";
-import type { AprRequestStatus } from "@/db/approvals-schema";
+import type { AprRequestStatus, AprWatcherForm } from "@/db/approvals-schema";
 import { decisionMode } from "@/lib/approvals/calc";
 
 const TYPE_SHORT = { hr: "HR", expenditure_large: "Expenditure", expenditure_small: "Expense", budget: "Budget" } as const;
@@ -24,7 +25,8 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
   const path = `/approvals/${slug}`;
   const [{ rows, total, page, pageSize }, hrCats, expCats, branches] = await Promise.all([
     listRequests(user, {
-      types: screen.types, statuses: params.status ? [params.status as AprRequestStatus] : screen.statuses, mine: screen.mine, waitingForMe: screen.waitingForMe, decidedByMe: screen.decidedByMe, recommendedByMe: screen.recommendedByMe, rejectedByMe: screen.rejectedByMe, approvedByMe: screen.approvedByMe, reachedMe: screen.reachedMe,
+      types: screen.typeFilter && params.type ? typesOfForm(params.type as AprWatcherForm) : screen.types, watchedOnly: screen.watchedOnly,
+      statuses: params.status ? [params.status as AprRequestStatus] : screen.statuses, mine: screen.mine, waitingForMe: screen.waitingForMe, decidedByMe: screen.decidedByMe, recommendedByMe: screen.recommendedByMe, rejectedByMe: screen.rejectedByMe, approvedByMe: screen.approvedByMe, reachedMe: screen.reachedMe,
       q: params.q, from: params.from, to: params.to, categoryId: params.categoryId, branchId: params.branchId, sort: params.sort, dir: params.dir, page: params.page, pageSize: PAGE_SIZE,
     }),
     screen.categories === "hr" || screen.categories === "all" ? listMasterCached("hr-categories", true) : Promise.resolve([]),
@@ -59,7 +61,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
         title={screen.title} intro={screen.intro}
         actions={screen.newHref ? <Link href={screen.newHref} className="btn btn-primary btn-sm"><Plus size={14} /> New request</Link> : undefined}
       />
-      <ListFilters params={params} categories={categories} branches={branches.map((b) => ({ id: b.id, name: b.name }))} showStatus={!screen.statuses} showBranch={!!screen.branch} showCategory={screen.categories !== "none"} exportHref={exportHref}
+      <ListFilters params={params} categories={categories} branches={branches.map((b) => ({ id: b.id, name: b.name }))} showStatus={!screen.statuses} showBranch={!!screen.branch} showCategory={screen.categories !== "none"} showType={!!screen.typeFilter} exportHref={exportHref}
         addCategory={hasRole(user, "approvals_admin") && screen.categories !== "none" ? (screen.categories === "hr" ? { kind: "hr-categories", noun: "HR request type" } : { kind: "categories", noun: "expense type" }) : undefined} />
 
       {rows.length === 0 ? <EmptyState kind={empty} /> : (

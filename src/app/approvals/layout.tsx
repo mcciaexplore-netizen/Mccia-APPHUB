@@ -4,15 +4,15 @@ import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { HubShell } from "@/components/HubShell";
 import { ApprovalsSidebar, type SideLink } from "@/components/approvals/ApprovalsSidebar";
 import { ModuleHeader } from "@/components/approvals/ModuleHeader";
-import { watchedForms } from "@/lib/approvals/watchers";
-import { WATCH_FORMS, WATCH_FORM_LABEL, typesOfForm, watchingHref } from "@/lib/approvals/watching";
+import { watchRules } from "@/lib/approvals/watchers";
+import { WATCHING_HREF } from "@/lib/approvals/watching";
 import { MobileMenu } from "@/components/MobileMenu";
 import { MY_APPROVALS_ROLES, REVIEW_KEYS, REVIEW_LABEL, REVIEW_TABS, REVIEW_TAB_LABEL, decidesIn, type ReviewKey } from "@/lib/approvals/approvals.manifest";
 import { requirePage } from "@/lib/approvals/guard";
 import { hasAnyRole, hasRole, type ApprovalsUser } from "@/lib/approvals/host-adapter";
 import { unreadCount } from "@/lib/approvals/notify";
 import { countRequests, reviewItemsFor, type ListFilter } from "@/lib/approvals/request-queries";
-import { reviewScreen, screenFor, type ListScreen } from "@/lib/approvals/screens";
+import { WATCHING_SCREEN, reviewScreen, screenFor, type ListScreen } from "@/lib/approvals/screens";
 import { requireUser } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
@@ -40,11 +40,11 @@ async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
   // the same query, with the filters their pages list by.
   const mineToo = hasAnyRole(user, MY_APPROVALS_ROLES);
   const mineFilters: ListFilter[] = [{ mine: true, statuses: ["pending", "returned"] },...(mineToo ? [{ statuses: ["pending"], waitingForMe: true }, { decidedByMe: true }] satisfies ListFilter[] : [])];
-  // Watching: every request of each form this person watches (read only), counted with the same filter as its list.
-  const watched = await watchedForms(user.id);
-  const [items, got, watchedCounts] = await Promise.all([
+  // All Approvals: everything this person's watching rules match (read only), counted with the same filter as its list.
+  const watching = (await watchRules(user.id)).length > 0;
+  const [items, got, [watchedCount = 0]] = await Promise.all([
     reviewItemsFor(user), countRequests(user, [...screens.flatMap((s) => (s ? [filterOf(s)] : [])), ...mineFilters]),
-    countRequests(user, watched.map((f) => ({ types: typesOfForm(f) }))),
+    watching ? countRequests(user, [{ types: WATCHING_SCREEN.types, watchedOnly: true }]) : Promise.resolve([]),
   ]);
   const keys: ReviewKey[] = dg || hasRole(user, "approvals_admin") ? [...REVIEW_KEYS] : REVIEW_KEYS.filter((k) => items.some((i) => i.key === k));
   let next = 0;
@@ -69,12 +69,7 @@ async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
           { label: "My Approval History", href: "/approvals/my-approvals", count: myDecided },
         ]
       : []),
-    ...(watched.length
-      ? [{
-          label: "Watching", href: watchingHref(WATCH_FORMS.find((f) => watched.includes(f))!),
-          children: WATCH_FORMS.filter((f) => watched.includes(f)).map((f) => ({ label: WATCH_FORM_LABEL[f], href: watchingHref(f), count: watchedCounts[watched.indexOf(f)] })),
-        }]
-      : []),
+    ...(watching ? [{ label: "All Approvals", href: WATCHING_HREF, count: watchedCount }] : []),
   ];
 }
 

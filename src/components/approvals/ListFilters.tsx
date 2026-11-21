@@ -3,7 +3,8 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Download, Search } from "lucide-react";
-import { STATUS_FILTERS, toQueryString, type ListParams } from "@/lib/approvals/list-params";
+import { STATUS_FILTERS, TYPE_FILTERS, toQueryString, type ListParams } from "@/lib/approvals/list-params";
+import { WATCH_FORM_LABEL } from "@/lib/approvals/watching";
 import { STATUS_LABEL } from "@/lib/approvals/calc";
 import { AddNewDialog } from "@/components/approvals/FormFields";
 
@@ -12,11 +13,13 @@ const ADD = "__add__";
 
 /** Search, date range and filters above a list. The state lives in the address, so a filtered view can be shared and exported. */
 export function ListFilters({
-  params, categories, branches, showStatus, showBranch, exportHref, addCategory, showCategory = true,
+  params, categories, branches, showStatus, showBranch, exportHref, addCategory, showCategory = true, showType = false,
 }: {
   params: ListParams; categories: Opt[]; branches: Opt[]; showStatus: boolean; showBranch: boolean; exportHref: string;
   /** Off for budget lists: a budget has an event, not a category. */
   showCategory?: boolean;
+  /** A Type filter (HR / Expenditure / Budget), for a list that mixes them (All Approvals). */
+  showType?: boolean;
   /** For the Approvals admin: "+ Add category" at the bottom of the Category list, adding to this kind of list. */
   addCategory?: { kind: "categories" | "hr-categories"; noun: string };
 }) {
@@ -31,7 +34,7 @@ export function ListFilters({
   const clear = () => { setQ(""); start(() => router.replace(path)); };
   useEffect(() => () => clearTimeout(timer.current), []);
   const typed = (v: string) => { setQ(v); clearTimeout(timer.current); timer.current = setTimeout(() => apply({ q: v }), 350); };
-  const dirty = !!(params.q || params.from || params.to || params.status || params.categoryId || params.branchId);
+  const dirty = !!(params.q || params.from || params.to || params.status || params.categoryId || params.branchId || params.type);
 
   return (
     <div className="mb-4 flex flex-wrap items-end gap-3" aria-busy={pending}>
@@ -58,6 +61,15 @@ export function ListFilters({
           <select className="input w-40" value={params.branchId} onChange={(e) => apply({ branchId: e.target.value })}>
             <option value="">All</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </label>
+      )}
+      {showType && (
+        <label className="block">
+          <span className="label-xs block">Type</span>
+          <select className="input w-36" value={params.type} onChange={(e) => apply({ type: e.target.value })} data-testid="filter-type">
+            <option value="">All</option>
+            {TYPE_FILTERS.map((t) => <option key={t} value={t}>{WATCH_FORM_LABEL[t]}</option>)}
           </select>
         </label>
       )}

@@ -7,8 +7,9 @@ import { formatDateTime, formatINR } from "@/lib/approvals/format";
 import { parseListParams } from "@/lib/approvals/list-params";
 import { listRequests, reviewItemsFor, type RequestRow } from "@/lib/approvals/request-queries";
 import { resolveScreen } from "@/lib/approvals/screens";
-import { watchedForms } from "@/lib/approvals/watchers";
-import { parseWatchingPath } from "@/lib/approvals/watching";
+import { watchRules } from "@/lib/approvals/watchers";
+import { isWatchingPath, typesOfForm } from "@/lib/approvals/watching";
+import type { AprWatcherForm } from "@/db/approvals-schema";
 import { STATUS_LABEL, TYPE_LABEL } from "@/lib/approvals/calc";
 import { requestNoText } from "@/lib/approvals/budget";
 
@@ -31,10 +32,9 @@ export const GET = route({}, async ({ req, user }) => {
   // The Budget place is anyone's who was sent a budget (as its pages are); every other list needs full access, and the Director General
   // works from the Recommended Queue.
   const review = parseReviewPath(slug);
-  const watching = parseWatchingPath(slug);
-  if (watching) {
-    // A Watching list: for the watchers of that form only.
-    if (!(await watchedForms(user.id)).includes(watching)) return NextResponse.json({ error: "Not allowed." }, { status: 403 });
+  if (isWatchingPath(slug)) {
+    // All Approvals: for people with watching rules only (and it holds only what their rules match).
+    if (!(await watchRules(user.id)).length) return NextResponse.json({ error: "Not allowed." }, { status: 403 });
   } else if (review?.key === "budget") {
     if (!(await reviewItemsFor(user)).some((i) => i.key === "budget") && !hasAnyRole(user, ["dg"])) return NextResponse.json({ error: "Not allowed." }, { status: 403 });
   } else if (!hasAnyRole(user, FULL_ACCESS_ROLES) || isDgOnly(user.roles)) {
@@ -47,7 +47,8 @@ export const GET = route({}, async ({ req, user }) => {
   const rows: RequestRow[] = [];
   for (let page = 1; page <= 25; page++) {
     const r = await listRequests(user, {
-      types: screen.types, statuses: p.status ? [p.status as never] : screen.statuses, mine: screen.mine, waitingForMe: screen.waitingForMe, decidedByMe: screen.decidedByMe, recommendedByMe: screen.recommendedByMe, rejectedByMe: screen.rejectedByMe, approvedByMe: screen.approvedByMe, reachedMe: screen.reachedMe,
+      types: screen.typeFilter && p.type ? typesOfForm(p.type as AprWatcherForm) : screen.types, watchedOnly: screen.watchedOnly,
+      statuses: p.status ? [p.status as never] : screen.statuses, mine: screen.mine, waitingForMe: screen.waitingForMe, decidedByMe: screen.decidedByMe, recommendedByMe: screen.recommendedByMe, rejectedByMe: screen.rejectedByMe, approvedByMe: screen.approvedByMe, reachedMe: screen.reachedMe,
       q: p.q, from: p.from, to: p.to, categoryId: p.categoryId, branchId: p.branchId, sort: p.sort, dir: p.dir, page, pageSize: 200,
     });
     rows.push(...r.rows);

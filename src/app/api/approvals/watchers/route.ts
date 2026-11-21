@@ -3,28 +3,27 @@ import { aprWatcherForm } from "@/db/approvals-schema";
 import { ok, readJson, route } from "@/lib/approvals/guard";
 import { rateLimit } from "@/lib/approvals/ratelimit";
 import { idSchema } from "@/lib/approvals/validation";
-import { addWatcher, removeWatcher } from "@/lib/approvals/watchers";
+import { addRule, removeRule } from "@/lib/approvals/watchers";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Watchers of the HR, Expenditure and Budget forms, managed by the Support Admin from Administrator > Approval Forms (approvals_admin, with
- * Administrator unlocked, as for every change to the module). A watcher reads every request of the form and decides nothing.
+ * A person's watching rules, set by the Support Admin on their page in Administrator > Users (approvals_admin, with Administrator unlocked,
+ * as for every change to the module). A watcher reads what their rules match and decides nothing.
  */
-const form = z.enum(aprWatcherForm);
 
-/** Adds a hub user as a watcher of a form. */
+/** Adds a rule: an approval type, and for Expenditure an expense category (none: all of them). */
 export const POST = route({ roles: ["approvals_admin"] }, async ({ req, user }) => {
   await rateLimit("admin", user.id, 120, 600);
-  const input = await readJson(req, z.object({ form, userId: idSchema }));
-  await addWatcher(input.form, input.userId, user);
+  const input = await readJson(req, z.object({ userId: idSchema, form: z.enum(aprWatcherForm), categoryId: idSchema.nullish() }));
+  await addRule(input.userId, input.form, input.categoryId ?? null, user);
   return ok({ ok: true }, 201);
 });
 
-/** Removes a watcher of a form. */
+/** Removes one of a person's rules. */
 export const DELETE = route({ roles: ["approvals_admin"] }, async ({ req, user }) => {
   await rateLimit("admin", user.id, 120, 600);
-  const input = await readJson(req, z.object({ form, id: idSchema }));
-  await removeWatcher(input.form, input.id, user);
+  const input = await readJson(req, z.object({ userId: idSchema, id: idSchema }));
+  await removeRule(input.userId, input.id, user);
   return ok({ ok: true });
 });

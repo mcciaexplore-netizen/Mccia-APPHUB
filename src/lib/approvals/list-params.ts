@@ -11,6 +11,9 @@ export type SortKey = (typeof SORT_KEYS)[number];
 
 export const STATUS_FILTERS = ["pending", "returned", "approved", "rejected", "withdrawn"] as const satisfies readonly AprRequestStatus[];
 
+/** The Type filter of a mixed list: an approval type (see watching.ts). */
+export const TYPE_FILTERS = ["hr", "expenditure", "budget"] as const;
+
 export type ListParams = {
   q: string;
   from: string;
@@ -18,12 +21,14 @@ export type ListParams = {
   status: string;
   categoryId: string;
   branchId: string;
+  /** Lists that mix kinds of request (All Approvals): only HR, Expenditure or Budget. */
+  type: string;
   sort: SortKey;
   dir: "asc" | "desc";
   page: number;
 };
 
-const DEFAULT_PARAMS: ListParams = { q: "", from: "", to: "", status: "", categoryId: "", branchId: "", sort: "requestedAt", dir: "desc", page: 1 };
+const DEFAULT_PARAMS: ListParams = { q: "", from: "", to: "", status: "", categoryId: "", branchId: "", type: "", sort: "requestedAt", dir: "desc", page: 1 };
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const uuid = z.string().uuid();
@@ -41,6 +46,7 @@ export function parseListParams(sp: Record<string, string | string[] | undefined
     status: (STATUS_FILTERS as readonly string[]).includes(status) ? status : "",
     categoryId: uuid.safeParse(first(sp.categoryId)).success ? first(sp.categoryId) : "",
     branchId: uuid.safeParse(first(sp.branchId)).success ? first(sp.branchId) : "",
+    type: (TYPE_FILTERS as readonly string[]).includes(first(sp.type)) ? first(sp.type) : "",
     sort: (SORT_KEYS as readonly string[]).includes(sort) ? (sort as SortKey) : DEFAULT_PARAMS.sort,
     dir: first(sp.dir) === "asc" ? "asc" : "desc",
     page: Number.isInteger(page) && page > 0 ? Math.min(page, 100_000) : 1, // a huge page number would overflow the database offset
