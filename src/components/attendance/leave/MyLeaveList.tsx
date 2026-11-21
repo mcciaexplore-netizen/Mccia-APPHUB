@@ -37,7 +37,7 @@ export function MyLeaveList({ items }: { items: MyLeave[] }) {
                 {r.startDate === r.endDate ? formatDay(r.startDate) : `${formatDay(r.startDate)} – ${formatDay(r.endDate)}`}
                 {r.halfDay !== "none" && <span className="att-muted"> ({r.halfDay} half)</span>}
                 {r.hasAttachment && (
-                  <a href={`/api/attendance/files/${r.id}`} className="ml-2 text-xs font-semibold text-[var(--att-blue)]" target="_blank" rel="noreferrer">
+                  <a href={`/api/attendance/files/${r.id}`} className="ml-2 text-xs font-semibold text-[var(--att-primary)]" target="_blank" rel="noreferrer">
                     Document
                   </a>
                 )}

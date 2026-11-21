@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import type { TimesheetStatus } from "@/db/attendance-schema";
 import { addTimeAction, deleteTimeAction, submitWeekAction } from "@/lib/attendance/actions/staff";
 import { canEditWeek, weekDays } from "@/lib/attendance/timesheet";
@@ -47,7 +47,7 @@ export function TimeView({ week, today, projects, logs, status, remark, total }:
             return (
               <li key={d} className="px-5 py-2.5">
                 <div className="flex items-center justify-between text-sm">
-                  <span className={`font-semibold ${d === today ? "text-[var(--att-blue)]" : "text-ink"}`}>{formatDayShort(d)}</span>
+                  <span className={`font-semibold ${d === today ? "text-[var(--att-primary)]" : "text-ink"}`}>{formatDayShort(d)}</span>
                   <span className="tabular-nums att-muted">{sum ? formatHours(sum) : "—"}</span>
                 </div>
                 {dayLogs.length > 0 && (
@@ -73,7 +73,7 @@ export function TimeView({ week, today, projects, logs, status, remark, total }:
       </Card>
 
       {editable && (
-        <Card title="Log time">
+        <Card title="Log time" icon={Plus} iconTone="green">
           {projects.length === 0 ? (
             <Empty title="No projects yet">HR adds the projects time is logged against in Attendance Admin → Time Tracker.</Empty>
           ) : (

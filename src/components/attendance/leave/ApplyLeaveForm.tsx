@@ -101,7 +101,7 @@ export function ApplyLeaveForm({ types, today, approver }: { types: ApplyType[];
                   if (!t.allowHalfDay) setHalf("none");
                 }}
                 aria-pressed={t.id === typeId}
-                className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left text-sm ${t.id === typeId ? "border-[var(--att-blue)] bg-[var(--att-blue-tint)]" : "border-[var(--att-line)]"}`}
+                className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left text-sm ${t.id === typeId ? "border-[var(--att-primary)] bg-[var(--att-primary-tint)]" : "border-[var(--att-line)]"}`}
               >
                 <span className="flex items-center gap-2 font-semibold">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: leaveColor(t.color) }} aria-hidden />
@@ -220,7 +220,7 @@ function CcPicker({ cc, setCc }: { cc: { id: string; name: string }[]; setCc: (v
       <p className="mb-1 text-xs font-semibold att-muted">CC colleagues (optional): they are told about the leave</p>
       <div className="flex flex-wrap gap-1.5">
         {cc.map((c) => (
-          <span key={c.id} className="att-badge att-tone-blue">
+          <span key={c.id} className="att-badge att-tone-primary">
             {c.name}
             <button type="button" onClick={() => setCc(cc.filter((x) => x.id !== c.id))} aria-label={`Remove ${c.name}`}>
               <X size={12} />
@@ -239,7 +239,7 @@ function CcPicker({ cc, setCc }: { cc: { id: string; name: string }[]; setCc: (v
                   <li key={h.id}>
                     <button
                       type="button"
-                      className="block w-full px-3 py-2 text-left text-sm hover:bg-[var(--att-blue-tint)]"
+                      className="block w-full px-3 py-2 text-left text-sm hover:bg-[var(--att-primary-tint)]"
                       onClick={() => {
                         setCc([...cc, { id: h.id, name: h.name }]);
                         setQ("");

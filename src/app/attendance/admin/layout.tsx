@@ -14,7 +14,7 @@ export default async function Layout({ children }: { children: React.ReactNode }
   return (
     <HubShell user={{ name: user.name, role: user.hubRole }} unread={unread}>
       <div className="att-root flex flex-col gap-6 lg:flex-row lg:items-start">
-        <aside className="w-full shrink-0 lg:sticky lg:top-20 lg:w-60">
+        <aside className="w-full shrink-0 lg:sticky lg:top-20 lg:w-64">
           <MobileMenu label="Attendance Admin menu">
             <AttSidebar section="admin" roles={user.roles} badges={{ "/attendance/admin/approvals": waiting }} />
           </MobileMenu>

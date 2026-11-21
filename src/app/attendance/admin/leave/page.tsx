@@ -1,3 +1,4 @@
+import { History, SlidersHorizontal, Wallet } from "lucide-react";
 import Link from "next/link";
 import { Card, PageHeader, RequestStatus } from "@/components/attendance/ui";
 import { LeaveTrackerView } from "@/components/attendance/admin/LeaveTrackerView";
@@ -23,7 +24,7 @@ export default async function AdminLeavePage({ searchParams }: PageProps<"/atten
         actions={
           <div className="inline-flex gap-1">
             {[thisYear - 1, thisYear, thisYear + 1].map((yr) => (
-              <Link key={yr} href={`/attendance/admin/leave?year=${yr}`} className={`att-badge ${yr === year ? "att-tone-blue" : "att-tone-neutral"}`}>
+              <Link key={yr} href={`/attendance/admin/leave?year=${yr}`} className={`att-badge ${yr === year ? "att-tone-primary" : "att-tone-neutral"}`}>
                 {yr}
               </Link>
             ))}
@@ -31,10 +32,10 @@ export default async function AdminLeavePage({ searchParams }: PageProps<"/atten
         }
       />
       <div className="flex flex-col gap-5">
-        <Card title={`Balances ${year}`} pad={false}>
+        <Card title={`Balances ${year}`} icon={Wallet} iconTone="green" pad={false}>
           <LeaveTrackerView year={year} types={tracker.types.map((t) => ({ id: t.id, name: t.name, color: t.color, isCompoff: t.isCompoff }))} rows={tracker.rows} />
         </Card>
-        <Card title="Adjustments" pad={false}>
+        <Card title="Adjustments" icon={SlidersHorizontal} iconTone="orange" pad={false}>
           {adjustments.length === 0 ? (
             <p className="px-5 py-4 text-sm att-muted">No adjustments yet.</p>
           ) : (
@@ -68,7 +69,7 @@ export default async function AdminLeavePage({ searchParams }: PageProps<"/atten
             </div>
           )}
         </Card>
-        <Card title={`Leave history ${year}`} actions={<a className="btn btn-ghost btn-sm" href={`/api/attendance/export?report=history&from=${year}-01-01&to=${year}-12-31`}>CSV</a>} pad={false}>
+        <Card title={`Leave history ${year}`} icon={History} iconTone="grey" actions={<a className="btn btn-ghost btn-sm" href={`/api/attendance/export?report=history&from=${year}-01-01&to=${year}-12-31`}>CSV</a>} pad={false}>
           {history.length === 0 ? (
             <p className="px-5 py-4 text-sm att-muted">No leave this year yet.</p>
           ) : (

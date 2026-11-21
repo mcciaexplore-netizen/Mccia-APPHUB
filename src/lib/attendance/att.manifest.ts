@@ -46,7 +46,8 @@ export const ATT_NAV: Record<AttSection, { title: string; items: AttNavItem[] }>
   staff: {
     title: "Attendance",
     items: [
-      { label: "Home", href: "/attendance", icon: "home" },
+      { label: "Dashboard", href: "/attendance", icon: "home" },
+      { label: "Attendance", href: "/attendance/more/summary", icon: "attendance" },
       { label: "Leave", href: "/attendance/leave", icon: "leave" },
       { label: "Time", href: "/attendance/time", icon: "time" },
       { label: "More", href: "/attendance/more", icon: "more" },

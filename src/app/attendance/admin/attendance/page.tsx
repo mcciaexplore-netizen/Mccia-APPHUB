@@ -96,7 +96,7 @@ export default async function AdminAttendancePage({ searchParams }: PageProps<"/
                         <td className="text-xs">
                           {r?.checkInMethod ? METHOD[r.checkInMethod] : ""}
                           {r?.checkInLat != null && (
-                            <a className="ml-1 text-[var(--att-blue)]" href={`https://www.openstreetmap.org/?mlat=${r.checkInLat}&mlon=${r.checkInLng}#map=18/${r.checkInLat}/${r.checkInLng}`} target="_blank" rel="noreferrer">
+                            <a className="ml-1 text-[var(--att-primary)]" href={`https://www.openstreetmap.org/?mlat=${r.checkInLat}&mlon=${r.checkInLng}#map=18/${r.checkInLat}/${r.checkInLng}`} target="_blank" rel="noreferrer">
                               map
                             </a>
                           )}

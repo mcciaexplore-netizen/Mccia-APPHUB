@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Inbox } from "lucide-react";
+import { Inbox, type LucideIcon } from "lucide-react";
 import { initials } from "@/lib/attendance/att.manifest";
 import { STATUS_LABEL, STATUS_TONE, type DayView } from "@/lib/attendance/calendar";
 
@@ -8,26 +8,61 @@ import { STATUS_LABEL, STATUS_TONE, type DayView } from "@/lib/attendance/calend
 
 export function PageHeader({ title, subtitle, actions }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
-        <h1 className="text-[clamp(1.6rem,3vw,2.1rem)] text-ink">{title}</h1>
-        {subtitle && <p className="mt-1 max-w-2xl text-[0.9rem] att-muted">{subtitle}</p>}
+        <h1 className="text-[clamp(1.6rem,3vw,2rem)] font-bold leading-tight text-gray-900">{title}</h1>
+        {subtitle && <p className="mt-1 max-w-2xl text-[0.92rem] text-gray-500">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }
 
-export function Card({ title, actions, children, className = "", pad = true }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; pad?: boolean }) {
+export type IconTone = "green" | "blue" | "purple" | "orange" | "grey";
+
+/** A round icon badge (light colour behind, the colour in front), as on the Home cards. */
+export function IconBadge({ icon: I, tone = "green", size = 18 }: { icon: LucideIcon; tone?: IconTone; size?: number }) {
+  return (
+    <span className={`att-icon att-icon-${tone}`} aria-hidden>
+      <I size={size} />
+    </span>
+  );
+}
+
+export function Card({
+  title,
+  subtitle,
+  icon,
+  iconTone,
+  actions,
+  children,
+  className = "",
+  pad = true,
+}: {
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  icon?: LucideIcon;
+  iconTone?: IconTone;
+  actions?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  pad?: boolean;
+}) {
   return (
     <section className={`att-card ${className}`}>
       {(title || actions) && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--att-line)] px-5 py-3.5">
-          {title && <h2 className="text-[1.02rem] font-bold text-ink">{title}</h2>}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--att-line)] px-6 py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            {icon && <IconBadge icon={icon} tone={iconTone} />}
+            <div className="min-w-0">
+              {title && <h2 className="text-base font-bold text-gray-900">{title}</h2>}
+              {subtitle && <p className="text-[0.8rem] text-gray-500">{subtitle}</p>}
+            </div>
+          </div>
           {actions}
         </div>
       )}
-      <div className={pad ? "p-5" : ""}>{children}</div>
+      <div className={pad ? "p-6" : ""}>{children}</div>
     </section>
   );
 }
@@ -55,8 +90,9 @@ export function Avatar({ name, size = 28 }: { name: string; size?: number }) {
   );
 }
 
-export function Kpi({ label, value, tone, href }: { label: string; value: ReactNode; tone?: "green" | "red" | "amber" | "blue" | "teal"; href?: string }) {
-  const color = { green: "#15803d", red: "var(--att-red)", amber: "#b45309", blue: "var(--att-blue)", teal: "#0f766e" }[tone ?? "blue"];
+export function Kpi({ label, value, tone, href }: { label: string; value: ReactNode; tone?: "green" | "red" | "amber" | "blue" | "teal" | "dark"; href?: string }) {
+  const colors: Record<string, string> = { green: "var(--att-primary-2)", red: "var(--att-red)", amber: "#b45309", blue: "var(--att-info)", teal: "#0f766e" };
+  const color = colors[tone ?? "dark"] ?? "#111827";
   const body = (
     <>
       <span className="att-label">{label}</span>
@@ -65,9 +101,9 @@ export function Kpi({ label, value, tone, href }: { label: string; value: ReactN
       </span>
     </>
   );
-  const cls = "att-card flex flex-col gap-1 px-5 py-4";
+  const cls = "att-card flex flex-col gap-1 px-6 py-5";
   return href ? (
-    <Link href={href} className={`${cls} hover:bg-[var(--att-blue-tint)]`}>
+    <Link href={href} className={`${cls} hover:bg-[var(--att-primary-tint)]`}>
       {body}
     </Link>
   ) : (
@@ -78,7 +114,7 @@ export function Kpi({ label, value, tone, href }: { label: string; value: ReactN
 export function Empty({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="grid place-items-center gap-2 px-6 py-10 text-center">
-      <span className="grid h-11 w-11 place-items-center rounded-xl bg-[var(--att-blue-tint)] text-[var(--att-blue)]">
+      <span className="grid h-11 w-11 place-items-center rounded-full bg-gray-100 text-gray-400">
         <Inbox size={20} />
       </span>
       <p className="text-base font-bold text-ink">{title}</p>

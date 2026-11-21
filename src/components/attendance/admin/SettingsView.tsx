@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { CalendarDays, Clock, HardDrive, Info, MapPin, Trash2, Wifi } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 import type { LeaveType, Shift, Holiday } from "@/db/attendance-schema";
@@ -28,7 +28,7 @@ export function IpEditor({ settings }: { settings: AttSettings }) {
   const [ip, setIp] = useState("");
   const save = (officeIps: string[]) => act(() => saveSettingsAction({ ...settings, officeIps }));
   return (
-    <Card title="Office IPs (laptop check-in)">
+    <Card title="Office IPs (laptop check-in)" icon={Wifi} iconTone="blue">
       <p className="mb-3 text-sm att-muted">
         Anyone whose connection comes from one of these addresses can check in from a laptop, without location. Enter the office&apos;s public IP (ask IT, or open “what is my IP” on the office Wi-Fi), or an IPv4 range like 203.0.113.0/28.
       </p>
@@ -51,7 +51,7 @@ export function IpEditor({ settings }: { settings: AttSettings }) {
       <ul className="mt-3 flex flex-wrap gap-2">
         {settings.officeIps.length === 0 && <li className="text-sm att-muted">None yet: only phone location (GPS) check-in works until one is added.</li>}
         {settings.officeIps.map((x) => (
-          <li key={x} className="att-badge att-tone-blue font-mono">
+          <li key={x} className="att-badge att-tone-primary font-mono">
             {x}
             <button type="button" aria-label={`Remove ${x}`} disabled={pending} onClick={() => save(settings.officeIps.filter((y) => y !== x))}>
               <Trash2 size={12} />
@@ -68,7 +68,7 @@ export function SettingsView({ settings, shifts, leaveTypes, holidays, year, set
   return (
     <div className="flex flex-col gap-5">
       {(!setup.user || !setup.admin) && (
-        <Card title="Setup">
+        <Card title="Setup" icon={Info} iconTone="orange">
           <p className="text-sm">
             Add {!setup.user && <strong>“Attendance” (URL /attendance)</strong>}
             {!setup.user && !setup.admin && " and "}
@@ -89,7 +89,7 @@ export function SettingsView({ settings, shifts, leaveTypes, holidays, year, set
 function General({ settings: s }: { settings: AttSettings }) {
   const { act, pending } = useAct();
   return (
-    <Card title="Office, rules and reminders">
+    <Card title="Office, rules and reminders" icon={MapPin} iconTone="green">
       <form
         className="grid gap-5"
         action={async (f) => {
@@ -125,7 +125,7 @@ function General({ settings: s }: { settings: AttSettings }) {
             <input name="radius" type="number" min={25} max={5000} className="input" defaultValue={s.office.radiusM} required />
           </Field>
           <div className="flex items-end">
-            <a className="text-sm font-semibold text-[var(--att-blue)]" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${s.office.lat}&mlon=${s.office.lng}#map=17/${s.office.lat}/${s.office.lng}`}>
+            <a className="text-sm font-semibold text-[var(--att-primary)]" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${s.office.lat}&mlon=${s.office.lng}#map=17/${s.office.lat}/${s.office.lng}`}>
               Check on a map →
             </a>
           </div>
@@ -187,7 +187,7 @@ function Shifts({ shifts }: { shifts: Shift[] }) {
   const confirm = useConfirm();
   const [editing, setEditing] = useState<Partial<Shift> | null>(null);
   return (
-    <Card title="Shifts" actions={<button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing({})}>Add shift</button>} pad={false}>
+    <Card title="Shifts" icon={Clock} iconTone="purple" actions={<button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing({})}>Add shift</button>} pad={false}>
       <ul className="divide-y divide-[var(--att-line)]">
         {shifts.map((s) => (
           <li key={s.id} className="flex flex-wrap items-center gap-2 px-5 py-3 text-sm">
@@ -288,7 +288,7 @@ function LeaveTypes({ types }: { types: LeaveType[] }) {
   const confirm = useConfirm();
   const [editing, setEditing] = useState<Partial<LeaveType> | null>(null);
   return (
-    <Card title="Leave types" actions={<button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing({})}>Add leave type</button>} pad={false}>
+    <Card title="Leave types" icon={CalendarDays} iconTone="blue" actions={<button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing({})}>Add leave type</button>} pad={false}>
       <ul className="divide-y divide-[var(--att-line)]">
         {types.map((t) => (
           <li key={t.id} className={`flex flex-wrap items-center gap-2 px-5 py-3 text-sm ${t.isActive ? "" : "opacity-60"}`}>
@@ -536,7 +536,7 @@ function StorageCheck() {
   const { act, pending } = useAct();
   const [msg, setMsg] = useState<{ ok: boolean; message: string } | null>(null);
   return (
-    <Card title="Document storage">
+    <Card title="Document storage" icon={HardDrive} iconTone="grey">
       <p className="text-sm att-muted">Leave documents (sick notes) are kept in the private Supabase Storage bucket “attendance-files”.</p>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <button

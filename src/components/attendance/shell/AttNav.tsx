@@ -1,10 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeft, BarChart3, CalendarCheck, CalendarDays, CheckSquare, Clock, Home, LayoutGrid, Settings, Sun, Users, Wallet, type LucideIcon } from "lucide-react";
-import { HubBackLink } from "@/components/BackLink";
-import { useSlidingIndicator } from "@/components/SlidingIndicator";
 import { ATT_NAV, navFor, type AttNavItem, type AttRole, type AttSection } from "@/lib/attendance/att.manifest";
 
 const ICONS: Record<AttNavItem["icon"], LucideIcon> = {
@@ -29,31 +28,30 @@ function activeHref(pathname: string, items: AttNavItem[], section: AttSection):
   return hits.sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
 }
 
-const row = (active: boolean) =>
-  `flex min-h-10 items-center gap-2.5 border-l-2 pl-4 pr-3 text-sm font-semibold transition-colors ${
-    active ? "border-[var(--att-blue)] bg-[var(--att-blue-tint)] text-[var(--att-blue)]" : "border-transparent text-ink hover:bg-alt"
-  }`;
-
-/** The section's sidebar (laptop and up; on a phone the staff app uses the bottom bar, the admin app the menu button). */
+/**
+ * The section's sidebar (laptop and up; on a phone the staff app uses the bottom bar, the admin app the menu button): the MCCIA logo (back
+ * to the App Hub), "APP HUB", the section's pages as pills (the current one light green), and a soft green blob at the bottom.
+ */
 export function AttSidebar({ section, roles, badges = {} }: { section: AttSection; roles: AttRole[]; badges?: Record<string, number> }) {
   const pathname = usePathname();
-  const { navRef, indicator } = useSlidingIndicator();
   const items = navFor(section, roles);
   const on = activeHref(pathname, items, section);
   return (
-    <nav ref={navRef} aria-label={ATT_NAV[section].title} className="relative rounded-[12px] border border-gray-200 bg-white py-3">
-      {indicator}
-      <HubBackLink />
-      <p className="px-4 pb-2 text-[0.66rem] font-bold uppercase tracking-widest text-subtle">{ATT_NAV[section].title}</p>
-      <ul>
+    <nav aria-label={ATT_NAV[section].title} className="att-side">
+      <Link href="/" className="mb-6 block px-3" title="Back to the App Hub">
+        <Image src="/mccia-logo.png" alt="MCCIA" width={134} height={36} className="h-8 w-auto" />
+        <span className="mt-2 block text-[0.68rem] font-bold uppercase tracking-[0.18em] text-gray-400">App Hub</span>
+      </Link>
+      <p className="px-4 pb-2 text-[0.66rem] font-bold uppercase tracking-widest text-gray-400">{ATT_NAV[section].title}</p>
+      <ul className="relative z-10 flex flex-col gap-1">
         {items.map((i) => {
           const I = ICONS[i.icon];
           const n = badges[i.href] ?? 0;
           return (
             <li key={i.href}>
-              <Link href={i.href} aria-current={on === i.href ? "page" : undefined} className={row(on === i.href)}>
-                <I size={16} aria-hidden />
-                <span className="flex-1 py-2">{i.label}</span>
+              <Link href={i.href} aria-current={on === i.href ? "page" : undefined} className="att-side-item">
+                <I size={18} aria-hidden />
+                <span className="flex-1">{i.label}</span>
                 {n > 0 && <span className="rounded-full bg-[var(--att-amber)] px-2 py-0.5 text-[0.7rem] font-bold text-white">{n}</span>}
               </Link>
             </li>
@@ -64,7 +62,7 @@ export function AttSidebar({ section, roles, badges = {} }: { section: AttSectio
   );
 }
 
-/** The staff app's bottom bar on a phone: Home, Leave, Time, More. */
+/** The staff app's bottom bar on a phone. */
 export function AttBottomNav({ roles, badges = {} }: { roles: AttRole[]; badges?: Record<string, number> }) {
   const pathname = usePathname();
   const items = navFor("staff", roles).filter((i) => !i.adminOnly);
@@ -78,7 +76,7 @@ export function AttBottomNav({ roles, badges = {} }: { roles: AttRole[]; badges?
           <Link key={i.href} href={i.href} aria-current={on === i.href ? "page" : undefined} className="relative">
             <I size={20} aria-hidden />
             {i.label}
-            {n > 0 && <span className="absolute right-[28%] top-1 h-2 w-2 rounded-full bg-[var(--att-amber)]" aria-label={`${n} waiting`} />}
+            {n > 0 && <span className="absolute right-[26%] top-1 h-2 w-2 rounded-full bg-[var(--att-amber)]" aria-label={`${n} waiting`} />}
           </Link>
         );
       })}

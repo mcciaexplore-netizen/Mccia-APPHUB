@@ -29,6 +29,8 @@ export function attendanceUnit(eq: Eq): void {
   eq("att time: parseHm accepts HH:MM and HH:MM:SS, rejects 24:00", [T.parseHm("10:00"), T.parseHm("17:30:00"), T.parseHm("24:00"), T.parseHm("9:5")], [600, 1050, null, null]);
   eq("att time: isDay rejects 31 November", [T.isDay("2026-11-30"), T.isDay("2026-11-31"), T.isDay("2026-1-1")], [true, false, false]);
   eq("att time: formatHours", [T.formatHours(7.25), T.formatHours(0), T.formatHours(null)], ["7h 15m", "0h", "—"]);
+  eq("att time: greeting by IST time (5–12 morning, 12–17 afternoon, 17–21 evening, else night)", [299, 300, 719, 720, 1019, 1020, 1259, 1260, 0].map(T.greetingFor), ["Good night", "Good morning", "Good morning", "Good afternoon", "Good afternoon", "Good evening", "Good evening", "Good night", "Good night"]);
+  eq("att time: long date and capital short date", [T.formatLongDate("2025-06-24"), T.formatDayCaps("2026-11-21")], ["Tuesday, 24 June 2025", "SAT 21 NOV"]);
   eq("att time: formatClockDuration", T.formatClockDuration(7 * 3600 + 15 * 60 + 3), "07:15:03");
 
   // ── Settings ────────────────────────────────────────────────────────────
@@ -183,7 +185,7 @@ export function attendanceUnit(eq: Eq): void {
     attRolesFor({ hubRole: "super_admin", access: false, adminAppAdmin: false }),
   ], [["attendance_member"], ["attendance_member", "attendance_admin"], ["attendance_member", "attendance_admin", "attendance_super_admin"], []]);
   eq("att roles: isMember / isAdmin", [isMember(["attendance_admin"]), isAdmin(["attendance_member"])], [true, false]);
-  eq("att roles: staff menu (HR also see Attendance Admin); admin menu only for HR", [navFor("staff", ["attendance_member"]).map((i) => i.label), navFor("staff", ["attendance_member", "attendance_admin"]).length, navFor("admin", ["attendance_member"]).length, navFor("admin", ["attendance_admin"])[0].label], [["Home", "Leave", "Time", "More"], 5, 0, "Today"]);
+  eq("att roles: staff menu (HR also see Attendance Admin); admin menu only for HR", [navFor("staff", ["attendance_member"]).map((i) => i.label), navFor("staff", ["attendance_member", "attendance_admin"]).length, navFor("admin", ["attendance_member"]).length, navFor("admin", ["attendance_admin"])[0].label], [["Dashboard", "Attendance", "Leave", "Time", "More"], 6, 0, "Today"]);
   eq("att approvals: to the active manager; no manager, inactive manager or self → HR (null)", [approverFor({ id: "u", managerId: "m" }, true), approverFor({ id: "u", managerId: null }, true), approverFor({ id: "u", managerId: "m" }, false), approverFor({ id: "u", managerId: "u" }, true)], ["m", null, null, null]);
   eq("att approvals: who decides: the manager it went to; HR anything; nobody their own; another manager no", [
     canDecide({ id: "m", hr: false }, { userId: "u", approverId: "m" }),

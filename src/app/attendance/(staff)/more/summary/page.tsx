@@ -133,7 +133,7 @@ export default async function SummaryPage({ searchParams }: PageProps<"/attendan
         </Card>
       )}
       <p className="mt-4 text-xs att-muted">
-        A missed check-out counts as absent until it is regularized. <Link href="/attendance/more/regularization" className="font-semibold text-[var(--att-blue)]">Regularize a day →</Link>
+        A missed check-out counts as absent until it is regularized. <Link href="/attendance/more/regularization" className="font-semibold text-[var(--att-primary)]">Regularize a day →</Link>
       </p>
     </>
   );

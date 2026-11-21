@@ -1,3 +1,4 @@
+import { Users } from "lucide-react";
 import { Card, PageHeader } from "@/components/attendance/ui";
 import { requireMember } from "@/lib/attendance/dal";
 import { profileOf } from "@/lib/attendance/config";
@@ -41,10 +42,10 @@ export default async function ProfilePage() {
           </dl>
         </Card>
         {reports.length > 0 && (
-          <Card title={`People who report to you (${reports.length})`}>
+          <Card title={`People who report to you (${reports.length})`} icon={Users} iconTone="green">
             <ul className="flex flex-wrap gap-2">
               {reports.map((r) => (
-                <li key={r.id} className="att-badge att-tone-blue">
+                <li key={r.id} className="att-badge att-tone-primary">
                   {r.name}
                 </li>
               ))}

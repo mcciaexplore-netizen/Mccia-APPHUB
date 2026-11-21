@@ -113,18 +113,21 @@ try {
   const s = await signedIn(asha.email);
   await go(s.page, "/attendance/admin");
   check("staff: Attendance Admin sends them back to /attendance", pathOf(s.page) === "/attendance", pathOf(s.page));
-  check("staff: sidebar is Home, Leave, Time, More (no Attendance Admin)", (await s.page.locator('nav[aria-label="Attendance"] >> nth=0').innerText()).includes("More") && !(await s.page.locator("aside").innerText()).includes("Attendance Admin"));
+  check("staff: sidebar is Dashboard, Attendance, Leave, Time, More (no Attendance Admin)", /Dashboard[\s\S]*Attendance[\s\S]*Leave[\s\S]*Time[\s\S]*More/.test(await s.page.locator("aside nav").innerText()) && !(await s.page.locator("aside").innerText()).includes("Attendance Admin"));
 
   section("Check in and out");
   await go(s.page, "/attendance");
-  await s.page.getByRole("button", { name: "CHECK IN" }).click();
+  const head = await mainText(s.page);
+  check("home: time-of-day greeting with the first name, the subtitle and the long date", /Good (morning|afternoon|evening|night), ZZA/.test(head) && head.includes("Here's your attendance overview.") && /(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day, \d{1,2} [A-Z][a-z]+ \d{4}/.test(head));
+  check("home: Work Schedule, Today, Coming up and Announcements cards", ["Work Schedule – Next 7 Days", "View Calendar", "Today", "Coming up (next 30 days)", "Announcements", "TIME WORKED TODAY"].every((t) => head.toUpperCase().includes(t.toUpperCase())));
+  await s.page.getByRole("button", { name: "Login", exact: true }).click();
   check("check in: from the office network (no location asked)", await toast(s.page, /Checked in on the office network/));
-  await s.page.getByRole("button", { name: "CHECK OUT" }).waitFor();
+  await s.page.getByRole("button", { name: "Logout", exact: true }).waitFor();
   const t1 = await s.page.locator(".att-timer").innerText();
   await s.page.waitForTimeout(2200);
   const t2 = await s.page.locator(".att-timer").innerText();
-  check("check in: the CHECK OUT button and a ticking HH:MM:SS timer", /^\d\d:\d\d:\d\d$/.test(t1) && t1 !== t2, [t1, t2]);
-  await s.page.getByRole("button", { name: "CHECK OUT" }).click();
+  check("check in: the Logout button and a ticking HH:MM:SS timer", /^\d\d:\d\d:\d\d$/.test(t1) && t1 !== t2, [t1, t2]);
+  await s.page.getByRole("button", { name: "Logout", exact: true }).click();
   check("check out: done for today", await s.page.getByText("Done for").waitFor({ timeout: 20000 }).then(() => true, () => false));
   const [rec] = await sql`select check_in_method, check_out_time from att_attendance where user_id = ${asha.id} and date = ${istDay()}`;
   check("check out: one row today, method ip, with a check-out", rec?.check_in_method === "ip" && !!rec.check_out_time, rec);

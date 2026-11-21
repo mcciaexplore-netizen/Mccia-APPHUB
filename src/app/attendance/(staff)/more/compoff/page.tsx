@@ -1,3 +1,4 @@
+import { ClipboardList } from "lucide-react";
 import { Card, PageHeader } from "@/components/attendance/ui";
 import { CompoffForm, RequestList } from "@/components/attendance/requests/RequestForms";
 import { requireMember } from "@/lib/attendance/dal";
@@ -18,7 +19,7 @@ export default async function CompoffPage() {
       <PageHeader title="Comp-off" subtitle={`Balance: ${co.balance} day${co.balance === 1 ? "" : "s"}. Take it as "Comp-off" leave on the Leave page; the oldest is used first.`} />
       <div className="flex flex-col gap-5">
         <CompoffForm days={days} approver={approver} expiryDays={settings.compoffExpiryDays} />
-        <Card title="My comp-offs" pad={false}>
+        <Card title="My comp-offs" icon={ClipboardList} iconTone="grey" pad={false}>
           <RequestList
             kind="compoff"
             rows={rows.map((r) => {

@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MapPin, Wifi, Home as HomeIcon } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock, Home as HomeIcon, LogIn, LogOut, MapPin, Wifi } from "lucide-react";
 import type { TodayCard } from "@/lib/attendance/checkin";
 import { checkInAction, checkOutAction } from "@/lib/attendance/actions/staff";
-import { formatClockDuration, formatDayShort, formatHours, istClock } from "@/lib/attendance/time";
-import { Badge } from "../ui";
+import { formatClockDuration, formatDayCaps, formatHours, istClock } from "@/lib/attendance/time";
+import { Badge, IconBadge } from "../ui";
 import { useAct } from "../use-act";
 
 /** Asks the browser where it is (10 s at most). Null when it cannot or will not say: the office network may still work. */
@@ -27,7 +27,10 @@ const METHOD: Record<string, { label: string; icon: typeof Wifi }> = {
   manual: { label: "Regularized", icon: MapPin },
 };
 
-/** The check-in card: the big button, today's time worked (ticking while checked in), the shift and today's marks. */
+/**
+ * The check-in card, in three parts: today and the shift (left), time worked today, ticking while checked in (middle), and Login (check in)
+ * or Logout (check out) (right). The rules (office network, 150 m of the office, WFH, one punch each per day) are on the server.
+ */
 export function CheckInCard({ card }: { card: TodayCard }) {
   const { act, pending } = useAct();
   const [locating, setLocating] = useState(false);
@@ -53,62 +56,72 @@ export function CheckInCard({ card }: { card: TodayCard }) {
   };
 
   const m = r?.method ? METHOD[r.method] : null;
+  const marks = [
+    card.kind !== "working" && <Badge key="k" tone="purple">{card.holidayName ?? "Weekly off"}</Badge>,
+    card.wfhApproved && <Badge key="w" tone="teal">WFH approved</Badge>,
+    card.leaveToday && <Badge key="l" tone="blue">{card.leaveToday === "none" ? "On leave" : `Leave: ${card.leaveToday} half`}</Badge>,
+    r?.isLate && <Badge key="la" tone="amber">Late</Badge>,
+    r?.isEarlyOut && <Badge key="e" tone="amber">Early out</Badge>,
+    r?.isExtraWork && <Badge key="x" tone="purple">Extra work</Badge>,
+  ].filter(Boolean);
+
   return (
-    <section className="att-card overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--att-line)] px-5 py-3">
-        <div>
-          <p className="att-label">{formatDayShort(card.today)}</p>
-          <p className="text-sm font-semibold text-ink">
-            {card.shift.name} shift · {card.shift.startTime}–{card.shift.endTime} <span className="att-muted font-normal">(grace {card.shift.graceMinutes} min)</span>
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {card.kind !== "working" && <Badge tone="purple">{card.holidayName ?? "Weekly off"}</Badge>}
-          {card.wfhApproved && <Badge tone="teal">WFH approved</Badge>}
-          {card.leaveToday && <Badge tone="blue">{card.leaveToday === "none" ? "On leave" : `Leave: ${card.leaveToday} half`}</Badge>}
-          {r?.isLate && <Badge tone="amber">Late</Badge>}
-          {r?.isEarlyOut && <Badge tone="amber">Early out</Badge>}
-          {r?.isExtraWork && <Badge tone="purple">Extra work</Badge>}
-        </div>
-      </div>
-      <div className="flex flex-col items-center gap-4 px-5 py-7 sm:flex-row sm:justify-around">
-        <div className="text-center">
-          <p className="att-label">Time worked today</p>
-          <p className="att-timer" aria-live="off">
-            {formatClockDuration(seconds)}
-          </p>
-          {r?.checkIn && (
-            <p className="mt-1 text-sm att-muted">
-              In {istClock(r.checkIn)}
-              {r.checkOut && ` · Out ${istClock(r.checkOut)} · ${formatHours(r.hoursWorked)}`}
+    <section className="att-card">
+      <div className="grid gap-6 p-6 md:grid-cols-[1.3fr_1fr_auto] md:items-center">
+        <div className="flex items-start gap-4">
+          <IconBadge icon={CalendarDays} tone="green" size={20} />
+          <div className="min-w-0">
+            <p className="text-lg font-extrabold tracking-wide text-[var(--att-primary)]">{formatDayCaps(card.today)}</p>
+            <p className="text-sm text-gray-500">
+              {card.shift.name} shift · {card.shift.startTime}–{card.shift.endTime} (grace {card.shift.graceMinutes} min)
             </p>
-          )}
-          {m && (
-            <p className="mt-1 inline-flex items-center gap-1 text-xs att-muted">
-              <m.icon size={13} aria-hidden /> {m.label}
-            </p>
-          )}
-        </div>
-        {done ? (
-          <div className="grid h-[11rem] w-[11rem] place-items-center rounded-full border-2 border-dashed border-[var(--att-line)] text-center text-sm font-semibold att-muted">
-            Done for
-            <br />
-            today
+            {marks.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{marks}</div>}
           </div>
-        ) : (
-          <button type="button" onClick={punch} disabled={busy || onLeave} className={`att-punch ${open ? "att-punch-out" : "att-punch-in"}`}>
-            {locating ? "Locating…" : pending ? "Saving…" : open ? "CHECK OUT" : "CHECK IN"}
-          </button>
-        )}
+        </div>
+
+        <div className="flex items-start gap-4 md:border-l md:border-[var(--att-line)] md:pl-6">
+          <IconBadge icon={Clock} tone="grey" size={20} />
+          <div>
+            <p className="text-[0.7rem] font-bold uppercase tracking-[0.12em] text-gray-500">Time worked today</p>
+            <p className="att-timer">{formatClockDuration(seconds)}</p>
+            {r?.checkIn && (
+              <p className="mt-0.5 text-xs text-gray-500">
+                In {istClock(r.checkIn)}
+                {r.checkOut && ` · Out ${istClock(r.checkOut)} · ${formatHours(r.hoursWorked)}`}
+                {m && (
+                  <span className="ml-1 inline-flex items-center gap-1">
+                    · <m.icon size={12} aria-hidden /> {m.label}
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex md:justify-end">
+          {done ? (
+            <span className="inline-flex items-center gap-2 rounded-xl bg-[var(--att-primary-tint)] px-5 py-3 text-sm font-bold text-[var(--att-primary-2)]">
+              <CheckCircle2 size={18} aria-hidden /> Done for today
+            </span>
+          ) : open ? (
+            <button type="button" onClick={punch} disabled={busy} className="att-btn-out" title="Check out">
+              <LogOut size={18} aria-hidden /> {locating ? "Locating…" : pending ? "Saving…" : "Logout"}
+            </button>
+          ) : (
+            <button type="button" onClick={punch} disabled={busy || onLeave} className="att-btn-in" title="Check in">
+              <LogIn size={18} aria-hidden /> {locating ? "Locating…" : pending ? "Saving…" : "Login"}
+            </button>
+          )}
+        </div>
       </div>
-      <p className="border-t border-[var(--att-line)] bg-[var(--att-grey-tint)] px-5 py-2.5 text-xs att-muted">
+      <p className="rounded-b-2xl border-t border-[var(--att-line)] bg-gray-50 px-6 py-3 text-xs text-gray-500">
         {onLeave
           ? "You are on leave today. Cancel the leave on the Leave page if you are working."
           : card.kind !== "working" && !r
-            ? "Today is not a working day: checking in records extra work, which you can claim as a comp-off."
+            ? "Today is not a working day: logging in records extra work, which you can claim as a comp-off."
             : card.wfhApproved && !r
-              ? "Work from home is approved for today: you can check in from anywhere."
-              : "Check in from the office: on the office network, or with your phone's location within the office."}
+              ? "Work from home is approved for today: you can log in from anywhere."
+              : "Log in from the office: on the office network, or with your phone's location within the office."}
       </p>
     </section>
   );

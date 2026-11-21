@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Megaphone, Trash2 } from "lucide-react";
 import { deleteAnnouncementAction, postAnnouncementAction } from "@/lib/attendance/actions/admin";
 import { formatMoment } from "@/lib/attendance/time";
 import { Card, Field } from "../ui";
@@ -13,7 +13,7 @@ export function Announcements({ items }: { items: { id: string; title: string; c
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   return (
-    <Card title="Announcements on everyone's Home">
+    <Card title="Announcements on everyone's Home" icon={Megaphone} iconTone="orange">
       <form
         className="grid gap-2"
         onSubmit={async (e) => {

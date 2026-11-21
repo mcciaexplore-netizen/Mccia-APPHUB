@@ -1,3 +1,4 @@
+import { CalendarDays, ClipboardList, Gift, PartyPopper } from "lucide-react";
 import Link from "next/link";
 import { Badge, Card, PageHeader } from "@/components/attendance/ui";
 import { MyLeaveList } from "@/components/attendance/leave/MyLeaveList";
@@ -54,11 +55,11 @@ export default async function LeavePage({ searchParams }: PageProps<"/attendance
       </div>
 
       <div className="flex flex-col gap-5">
-        <Card title="My leave requests" pad={false}>
+        <Card title="My leave requests" icon={ClipboardList} iconTone="green" pad={false}>
           <MyLeaveList items={requests} />
         </Card>
 
-        <Card title={`Comp-off balance: ${co.balance} day${co.balance === 1 ? "" : "s"}`} actions={<Link href="/attendance/more/compoff" className="text-sm font-semibold text-[var(--att-blue)]">Claim a comp-off →</Link>}>
+        <Card title={`Comp-off balance: ${co.balance} day${co.balance === 1 ? "" : "s"}`} icon={Gift} iconTone="orange" actions={<Link href="/attendance/more/compoff" className="text-sm font-semibold text-[var(--att-primary)]">Claim a comp-off →</Link>}>
           {activeCo.length === 0 ? (
             <p className="text-sm att-muted">No comp-offs to use. Working a holiday or weekly off earns one.</p>
           ) : (
@@ -76,7 +77,7 @@ export default async function LeavePage({ searchParams }: PageProps<"/attendance
           <p className="mt-3 text-xs att-muted">Comp-off leave uses the oldest (soonest to expire) first.</p>
         </Card>
 
-        <Card title="Team calendar" actions={<MonthNav month={month} href={(m) => `/attendance/leave?month=${m}`} />}>
+        <Card title="Team calendar" icon={CalendarDays} iconTone="blue" actions={<MonthNav month={month} href={(m) => `/attendance/leave?month=${m}`} />}>
           <MonthGrid
             month={month}
             today={today}
@@ -108,7 +109,7 @@ export default async function LeavePage({ searchParams }: PageProps<"/attendance
           )}
         </Card>
 
-        <Card title={`Holidays ${year}`} pad={false}>
+        <Card title={`Holidays ${year}`} icon={PartyPopper} iconTone="purple" pad={false}>
           {hols.length === 0 ? (
             <p className="px-5 py-4 text-sm att-muted">HR has not added this year&apos;s holidays yet.</p>
           ) : (

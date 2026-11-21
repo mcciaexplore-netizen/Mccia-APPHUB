@@ -1,13 +1,17 @@
 /*
- * Attendance's own look on the hub's base (src/app/globals.css): deep blue with white 12px cards on a light grey page, a big green CHECK IN
- * button, and a colour per day status. Everything is prefixed att- (or scoped under .att-root) so nothing can change a hub page. Buttons and
+ * Attendance's own look on the hub's base (src/app/globals.css): green (#16A34A) on an off-white page (#F8F9FA), white cards with a soft
+ * shadow, a white sidebar with green pill items and a green blob, and a colour per day status. Everything is prefixed att- (or scoped under .att-root) so nothing can change a hub page. Buttons and
  * inputs use the hub's own classes (btn, input), recoloured inside .att-root.
  */
 :root {
-  --att-blue: #0e5a8a;
-  --att-blue-2: #1a7bb9;
-  --att-blue-tint: rgba(14, 90, 138, 0.07);
-  --att-blue-line: rgba(14, 90, 138, 0.18);
+  --att-primary: #16a34a;
+  --att-primary-2: #15803d;
+  --att-primary-tint: #ecfdf3;
+  --att-primary-line: rgba(22, 163, 74, 0.22);
+  --att-info: #2563eb;
+  --att-info-tint: #eff6ff;
+  --att-orange: #ea580c;
+  --att-orange-tint: #fff7ed;
   --att-green: #16a34a;
   --att-green-dark: #15803d;
   --att-green-tint: rgba(22, 163, 74, 0.1);
@@ -21,16 +25,20 @@
   --att-teal-tint: rgba(13, 148, 136, 0.1);
   --att-grey: #64748b;
   --att-grey-tint: #f1f5f9;
-  --att-page: #f4f6f8;
-  --att-line: #e5e7eb;
-  --att-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 14px rgba(15, 23, 42, 0.05);
+  --att-page: #f8f9fa;
+  --att-line: #eef0f2;
+  --att-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 16px rgba(15, 23, 42, 0.05);
 }
 
 .min-h-screen:has(.att-root) { background: var(--att-page); }
-.att-root { --c-primary: var(--att-blue); --grad-primary: linear-gradient(135deg, var(--att-blue) 0%, var(--att-blue-2) 100%); --c-border-hover: var(--att-blue-line); --c-blue-tint: var(--att-blue-tint); --c-blue-tint-border: var(--att-blue-line); }
+.att-root { --c-primary: var(--att-primary); --grad-primary: linear-gradient(135deg, var(--att-primary) 0%, var(--att-primary-2) 100%); --c-border-hover: var(--att-primary-line); --c-blue-tint: var(--att-primary-tint); --c-blue-tint-border: var(--att-primary-line); }
 .att-root .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+/* The hub's primary button, in Attendance's green (only inside .att-root). */
+.att-root .btn-primary { background: linear-gradient(180deg, #22c55e 0%, #16a34a 60%, #15803d 100%); border-color: #15803d; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 4px 12px rgba(22, 163, 74, 0.28); }
+.att-root .btn-primary:hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 20px rgba(22, 163, 74, 0.34); }
+.att-root .input:focus { border-color: var(--att-primary); box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15); outline: none; }
 
-.att-card { background: #fff; border: 1px solid var(--att-line); border-radius: 12px; box-shadow: var(--att-shadow); }
+.att-card { background: #fff; border: 1px solid var(--att-line); border-radius: 16px; box-shadow: var(--att-shadow); }
 .att-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--att-grey); }
 .att-muted { color: var(--att-grey); }
 .att-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
@@ -42,22 +50,16 @@
 /* Badges */
 .att-badge { display: inline-flex; align-items: center; gap: 0.3rem; border-radius: 99px; padding: 0.12rem 0.55rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; border: 1px solid transparent; line-height: 1.5; }
 .att-tone-neutral, .att-tone-grey, .att-tone-none { background: var(--att-grey-tint); color: #475569; border-color: #e2e8f0; }
-.att-tone-blue { background: var(--att-blue-tint); color: var(--att-blue); border-color: var(--att-blue-line); }
+.att-tone-primary { background: var(--att-primary-tint); color: var(--att-primary-2); border-color: var(--att-primary-line); }
+.att-tone-blue { background: var(--att-info-tint); color: var(--att-info); border-color: rgba(37, 99, 235, 0.2); }
 .att-tone-green { background: var(--att-green-tint); color: var(--att-green-dark); border-color: rgba(22, 163, 74, 0.22); }
 .att-tone-red { background: var(--att-red-tint); color: var(--att-red); border-color: rgba(220, 38, 38, 0.2); }
 .att-tone-amber { background: var(--att-amber-tint); color: #b45309; border-color: rgba(217, 119, 6, 0.22); }
 .att-tone-purple { background: var(--att-purple-tint); color: var(--att-purple); border-color: rgba(124, 58, 237, 0.2); }
 .att-tone-teal { background: var(--att-teal-tint); color: #0f766e; border-color: rgba(13, 148, 136, 0.22); }
 
-/* The check-in button: big and round, green to check in, red-outlined to check out. */
-.att-punch { display: grid; place-items: center; width: 11rem; height: 11rem; border-radius: 999px; font-size: 1.25rem; font-weight: 800; letter-spacing: 0.04em; transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease; }
-.att-punch:active:not(:disabled) { transform: scale(0.97); }
-.att-punch-in { background: var(--att-green); color: #fff; box-shadow: 0 10px 30px rgba(22, 163, 74, 0.35), inset 0 -4px 0 rgba(0, 0, 0, 0.12); }
-.att-punch-in:hover:not(:disabled) { background: var(--att-green-dark); }
-.att-punch-out { background: #fff; color: var(--att-red); border: 3px solid var(--att-red); box-shadow: 0 10px 30px rgba(220, 38, 38, 0.15); }
-.att-punch-out:hover:not(:disabled) { background: var(--att-red-tint); }
-.att-punch:disabled { opacity: 0.6; cursor: not-allowed; }
-.att-timer { font-variant-numeric: tabular-nums; font-size: 2.4rem; font-weight: 800; letter-spacing: 0.02em; color: #0f172a; }
+/* Time worked today. */
+.att-timer { font-variant-numeric: tabular-nums; font-size: clamp(1.6rem, 3vw, 2.1rem); font-weight: 800; letter-spacing: 0.02em; color: #111827; line-height: 1.15; }
 
 /* Day colours: calendar cells and dots. */
 .att-st-green { background: var(--att-green-tint); color: var(--att-green-dark); }
@@ -65,26 +67,26 @@
 .att-st-amber { background: var(--att-amber-tint); color: #b45309; }
 .att-st-purple { background: var(--att-purple-tint); color: var(--att-purple); }
 .att-st-grey { background: var(--att-grey-tint); color: #64748b; }
-.att-st-blue { background: var(--att-blue-tint); color: var(--att-blue); }
+.att-st-blue { background: var(--att-info-tint); color: var(--att-info); }
 .att-st-teal { background: var(--att-teal-tint); color: #0f766e; }
 .att-st-none { background: #fff; color: #334155; }
 .att-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .att-cal-cell { min-height: 4.4rem; border-radius: 8px; padding: 0.35rem 0.4rem; border: 1px solid var(--att-line); font-size: 0.72rem; line-height: 1.25; display: flex; flex-direction: column; gap: 2px; }
-.att-cal-cell.att-today { outline: 2px solid var(--att-blue); outline-offset: -1px; }
+.att-cal-cell.att-today { outline: 2px solid var(--att-primary); outline-offset: -1px; }
 @media (max-width: 640px) { .att-cal-cell { min-height: 3.2rem; padding: 0.25rem; font-size: 0.62rem; } .att-cal-cell .att-cal-extra { display: none; } }
 
 /* Tabs */
 .att-tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: #e9edf2; }
 .att-tab { padding: 0.4rem 0.9rem; border-radius: 8px; font-size: 0.86rem; font-weight: 700; color: #475569; }
-.att-tab[aria-current="page"] { background: #fff; color: var(--att-blue); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1); }
+.att-tab[aria-current="page"] { background: #fff; color: var(--att-primary); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1); }
 
 /* Avatars */
-.att-avatar { display: inline-grid; place-items: center; border-radius: 999px; background: var(--att-blue); color: #fff; font-weight: 700; flex-shrink: 0; }
+.att-avatar { display: inline-grid; place-items: center; border-radius: 999px; background: var(--att-primary-tint); color: var(--att-primary-2); font-weight: 700; flex-shrink: 0; }
 
 /* The phone's bottom bar (hidden from a laptop up, where the sidebar shows). Space is left under the page so nothing hides behind it. */
-.att-bottom-nav { position: fixed; inset: auto 0 0 0; z-index: 40; display: grid; grid-template-columns: repeat(4, 1fr); background: #fff; border-top: 1px solid var(--att-line); padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06); }
+.att-bottom-nav { position: fixed; inset: auto 0 0 0; z-index: 40; display: grid; grid-template-columns: repeat(5, 1fr); background: #fff; border-top: 1px solid var(--att-line); padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06); }
 .att-bottom-nav a { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0.5rem 0 0.45rem; font-size: 0.7rem; font-weight: 700; color: #64748b; }
-.att-bottom-nav a[aria-current="page"] { color: var(--att-blue); }
+.att-bottom-nav a[aria-current="page"] { color: var(--att-primary); }
 @media (min-width: 1024px) { .att-bottom-nav { display: none; } }
 @media (max-width: 1023px) { .att-root.att-has-bottom-nav { padding-bottom: 4.5rem; } }
 
@@ -92,5 +94,36 @@
 .att-org { position: relative; overflow: hidden; height: min(70vh, 640px); background: radial-gradient(circle, #e2e8f0 1px, transparent 1px) 0 0 / 22px 22px, #fafbfc; border-radius: 12px; cursor: grab; touch-action: none; }
 .att-org:active { cursor: grabbing; }
 .att-org-node { position: absolute; width: 180px; background: #fff; border: 1px solid var(--att-line); border-radius: 10px; padding: 0.5rem 0.6rem; box-shadow: var(--att-shadow); font-size: 0.78rem; }
-.att-org-node.att-org-root { background: var(--att-blue); color: #fff; border-color: var(--att-blue); }
+.att-org-node.att-org-root { background: var(--att-primary); color: #fff; border-color: var(--att-primary); }
 .att-org-node.att-org-me { border: 2px solid var(--att-green); }
+
+/* Sidebar: white, green pill for the page you are on, a soft green blob at the bottom left. */
+.att-side { position: relative; overflow: hidden; background: #fff; border: 1px solid var(--att-line); border-radius: 18px; box-shadow: var(--att-shadow); padding: 1.25rem 0.75rem 7rem; }
+.att-side::after { content: ""; position: absolute; left: -3.5rem; bottom: -3.5rem; width: 11rem; height: 11rem; border-radius: 46% 54% 60% 40% / 52% 44% 56% 48%; background: radial-gradient(circle at 35% 35%, #bbf7d0 0%, #dcfce7 55%, #f0fdf4 100%); opacity: 0.9; pointer-events: none; }
+.att-side::before { content: ""; position: absolute; left: 4.5rem; bottom: 1.25rem; width: 2.2rem; height: 2.2rem; border-radius: 999px; background: #dcfce7; pointer-events: none; }
+.att-side-item { display: flex; align-items: center; gap: 0.75rem; border-radius: 999px; padding: 0.55rem 1rem; font-size: 0.9rem; font-weight: 600; color: #374151; transition: background 0.15s ease, color 0.15s ease; }
+.att-side-item:hover { background: #f3f4f6; }
+.att-side-item[aria-current="page"] { background: var(--att-primary-tint); color: var(--att-primary); }
+.att-side-item[aria-current="page"] svg { color: var(--att-primary); }
+.att-side-item svg { color: #6b7280; }
+
+/* Round icon badges on card headings (Today, Coming up, Announcements …). */
+.att-icon { display: inline-grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 999px; flex-shrink: 0; }
+.att-icon-green { background: var(--att-primary-tint); color: var(--att-primary); }
+.att-icon-blue { background: var(--att-info-tint); color: var(--att-info); }
+.att-icon-purple { background: var(--att-purple-tint); color: var(--att-purple); }
+.att-icon-orange { background: var(--att-orange-tint); color: var(--att-orange); }
+.att-icon-grey { background: #f3f4f6; color: #6b7280; }
+
+/* Login / Logout (check in / check out) buttons on the Home card. */
+.att-btn-in, .att-btn-out { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; border-radius: 12px; padding: 0.75rem 1.5rem; font-size: 0.95rem; font-weight: 700; min-width: 9rem; transition: background 0.15s ease, transform 0.1s ease; }
+.att-btn-in { background: var(--att-primary); color: #fff; box-shadow: 0 6px 18px rgba(22, 163, 74, 0.28); }
+.att-btn-in:hover:not(:disabled) { background: var(--att-primary-2); }
+.att-btn-out { background: #fff; color: #111827; border: 1px solid #d1d5db; }
+.att-btn-out:hover:not(:disabled) { background: #f9fafb; }
+.att-btn-in:active:not(:disabled), .att-btn-out:active:not(:disabled) { transform: scale(0.98); }
+.att-btn-in:disabled, .att-btn-out:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Day pill and status dot in the work schedule. */
+.att-day-pill { display: inline-grid; place-items: center; width: 3.25rem; flex-shrink: 0; border-radius: 999px; padding: 0.25rem 0.75rem; font-size: 0.78rem; font-weight: 700; background: var(--att-primary-tint); color: var(--att-primary-2); }
+.att-dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 999px; flex-shrink: 0; }

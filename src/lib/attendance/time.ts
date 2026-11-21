@@ -118,3 +118,22 @@ export function formatMoment(at: Date | string): string {
 
 /** Hours rounded to two decimals (what the numeric(6,2) columns hold). */
 export const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** The greeting for an IST clock time: morning 5:00–11:59, afternoon 12:00–16:59, evening 17:00–20:59, night 21:00–4:59. */
+export function greetingFor(minutes: number): "Good morning" | "Good afternoon" | "Good evening" | "Good night" {
+  const h = Math.floor((((minutes % 1440) + 1440) % 1440) / 60);
+  if (h >= 5 && h < 12) return "Good morning";
+  if (h >= 12 && h < 17) return "Good afternoon";
+  if (h >= 17 && h < 21) return "Good evening";
+  return "Good night";
+}
+
+const LONG_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const LONG_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+/** "2025-06-24" → "Tuesday, 24 June 2025". */
+export function formatLongDate(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return `${LONG_DAYS[weekday(day)]}, ${d} ${LONG_MONTHS[m - 1]} ${y}`;
+}
+/** "2026-11-21" → "SAT 21 NOV". */
+export const formatDayCaps = (day: string) => formatDayShort(day).toUpperCase();

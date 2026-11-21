@@ -1,5 +1,6 @@
 "use client";
 
+import { FolderKanban } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Modal } from "@/components/Modal";
 import { decideAction } from "@/lib/attendance/actions/staff";
@@ -21,7 +22,7 @@ export function TimeTrackerView({ sheets, projects, status }: { sheets: Sheet[];
         actions={
           <nav className="flex flex-wrap gap-1.5" aria-label="Filter by status">
             {["all", "submitted", "approved", "rejected"].map((s) => (
-              <a key={s} href={`/attendance/admin/time${s === "all" ? "" : `?status=${s}`}`} className={`att-badge ${status === s ? "att-tone-blue" : "att-tone-neutral"}`}>
+              <a key={s} href={`/attendance/admin/time${s === "all" ? "" : `?status=${s}`}`} className={`att-badge ${status === s ? "att-tone-primary" : "att-tone-neutral"}`}>
                 {s === "all" ? "All" : s[0].toUpperCase() + s.slice(1)}
               </a>
             ))}
@@ -133,7 +134,7 @@ function Projects({ projects }: { projects: Project[] }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   return (
-    <Card title="Projects" pad={false}>
+    <Card title="Projects" icon={FolderKanban} iconTone="purple" pad={false}>
       <form
         className="grid gap-2 border-b border-[var(--att-line)] px-5 py-4 sm:grid-cols-[1fr_2fr_auto] sm:items-end"
         onSubmit={async (e) => {

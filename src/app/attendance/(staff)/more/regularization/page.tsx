@@ -1,3 +1,4 @@
+import { ClipboardList } from "lucide-react";
 import { Card, PageHeader } from "@/components/attendance/ui";
 import { RegularizationForm, RequestList } from "@/components/attendance/requests/RequestForms";
 import { requireMember } from "@/lib/attendance/dal";
@@ -16,7 +17,7 @@ export default async function RegularizationPage() {
       <PageHeader title="Regularization" subtitle="Correct a check-in or check-out you genuinely missed." />
       <div className="flex flex-col gap-5">
         <RegularizationForm days={days} approver={approver} windowDays={settings.regularizationWindowDays} />
-        <Card title="My requests" pad={false}>
+        <Card title="My requests" icon={ClipboardList} iconTone="grey" pad={false}>
           <RequestList
             kind="regularization"
             rows={rows.map((r) => ({

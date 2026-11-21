@@ -1,5 +1,6 @@
 "use client";
 
+import { Clock, Gift, Home as HomeIcon } from "lucide-react";
 import { useState } from "react";
 import type { MissedPunch } from "@/db/attendance-schema";
 import { applyCompoffAction, applyRegularizationAction, applyWfhAction, cancelRequestAction } from "@/lib/attendance/actions/staff";
@@ -15,7 +16,7 @@ export function WfhForm({ today, approver }: { today: string; approver: string }
   const [reason, setReason] = useState("");
   const [plan, setPlan] = useState("");
   return (
-    <Card title="Ask to work from home">
+    <Card title="Ask to work from home" icon={HomeIcon} iconTone="green">
       <form
         className="grid gap-3"
         onSubmit={async (e) => {
@@ -55,9 +56,9 @@ export function RegularizationForm({ days, approver, windowDays }: { days: { day
   const [inTime, setIn] = useState("10:00");
   const [outTime, setOut] = useState("17:30");
   const [reason, setReason] = useState("");
-  if (!days.length) return <Card title="Correct a missed punch"><Empty title="Nothing to correct">In the last {windowDays} days there is no working day with a missed check-in or check-out (or a request is already in for it).</Empty></Card>;
+  if (!days.length) return <Card title="Correct a missed punch" icon={Clock} iconTone="orange"><Empty title="Nothing to correct">In the last {windowDays} days there is no working day with a missed check-in or check-out (or a request is already in for it).</Empty></Card>;
   return (
-    <Card title="Correct a missed punch">
+    <Card title="Correct a missed punch" icon={Clock} iconTone="orange">
       <form
         className="grid gap-3"
         onSubmit={async (e) => {
@@ -110,12 +111,12 @@ export function CompoffForm({ days, approver, expiryDays }: { days: { day: strin
   const [reason, setReason] = useState("");
   if (!days.length)
     return (
-      <Card title="Claim a comp-off">
+      <Card title="Claim a comp-off" icon={Gift} iconTone="purple">
         <Empty title="Nothing to claim">Check in and out on a holiday or weekly off (extra work) and the day appears here. Comp-offs expire {expiryDays} days after the day worked.</Empty>
       </Card>
     );
   return (
-    <Card title="Claim a comp-off">
+    <Card title="Claim a comp-off" icon={Gift} iconTone="purple">
       <form
         className="grid gap-3"
         onSubmit={async (e) => {

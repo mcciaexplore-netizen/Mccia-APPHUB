@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, History } from "lucide-react";
 import { Card, PageHeader, RequestStatus } from "@/components/attendance/ui";
 import { TimeView } from "@/components/attendance/time/TimeView";
 import { requireMember } from "@/lib/attendance/dal";
@@ -36,14 +36,14 @@ export default async function TimePage({ searchParams }: PageProps<"/attendance/
       />
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <TimeView week={week} today={today} projects={projects.map((p) => ({ id: p.id, name: p.name }))} logs={view.logs} status={view.sheet?.status ?? null} remark={view.sheet?.approverRemark ?? null} total={view.total} />
-        <Card title="Recent weeks" pad={false}>
+        <Card title="Recent weeks" icon={History} iconTone="grey" pad={false}>
           {weeks.length === 0 ? (
             <p className="px-5 py-4 text-sm att-muted">No timesheets yet.</p>
           ) : (
             <ul className="divide-y divide-[var(--att-line)]">
               {weeks.map((w) => (
                 <li key={w.start}>
-                  <Link href={`/attendance/time?week=${w.start}`} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm hover:bg-[var(--att-blue-tint)]">
+                  <Link href={`/attendance/time?week=${w.start}`} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm hover:bg-[var(--att-primary-tint)]">
                     <span>
                       {formatDay(w.start)} <span className="att-muted">· {formatHours(w.total)}</span>
                     </span>

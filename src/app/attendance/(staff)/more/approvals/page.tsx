@@ -16,7 +16,7 @@ export default async function TeamApprovalsPage({ searchParams }: PageProps<"/at
     <>
       <PageHeader
         title="Team approvals"
-        subtitle={user.admin ? <>Requests sent to you by name. Everything else is in <Link href="/attendance/admin/approvals" className="font-semibold text-[var(--att-blue)]">Attendance Admin → Approvals</Link>.</> : "Requests from the people who report to you."}
+        subtitle={user.admin ? <>Requests sent to you by name. Everything else is in <Link href="/attendance/admin/approvals" className="font-semibold text-[var(--att-primary)]">Attendance Admin → Approvals</Link>.</> : "Requests from the people who report to you."}
         actions={<LinkTabs current={tab} tabs={[{ key: "pending", label: "Waiting", href: "/attendance/more/approvals" }, { key: "history", label: "History", href: "/attendance/more/approvals?tab=history" }]} />}
       />
       <Card pad={false}>

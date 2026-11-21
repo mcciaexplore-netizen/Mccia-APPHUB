@@ -19,7 +19,7 @@ export default async function MorePage() {
       <ul className="att-card divide-y divide-[var(--att-line)] overflow-hidden">
         {MORE_LINKS.filter((l) => !("managerOnly" in l) || manages).map((l) => (
           <li key={l.href}>
-            <Link href={l.href} className="flex items-center gap-3 px-5 py-4 hover:bg-[var(--att-blue-tint)]">
+            <Link href={l.href} className="flex items-center gap-3 px-5 py-4 hover:bg-[var(--att-primary-tint)]">
               <span className="flex-1">
                 <span className="block text-[0.95rem] font-bold text-ink">{l.label}</span>
                 <span className="block text-xs att-muted">{l.note}</span>

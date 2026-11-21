@@ -14,7 +14,7 @@ export default async function AdminPeoplePage() {
   const [{ people, shifts }, settings] = await Promise.all([peopleList(), getSettings()]);
   return (
     <>
-      <PageHeader title="People" subtitle={<>Everyone given the Attendance application. To add someone, give them the application in Administrator → Users. Shifts are set up in <Link href="/attendance/admin/settings" className="font-semibold text-[var(--att-blue)]">Settings</Link>.</>} />
+      <PageHeader title="People" subtitle={<>Everyone given the Attendance application. To add someone, give them the application in Administrator → Users. Shifts are set up in <Link href="/attendance/admin/settings" className="font-semibold text-[var(--att-primary)]">Settings</Link>.</>} />
       <div className="flex flex-col gap-5">
         <Card pad={false}>
           <PeopleTable people={people} shifts={shifts} />

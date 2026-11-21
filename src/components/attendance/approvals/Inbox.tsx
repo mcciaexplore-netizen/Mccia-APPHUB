@@ -22,7 +22,7 @@ export function Inbox({ items, mode, showApprover = false }: { items: InboxItem[
     <div>
       <div className="flex flex-wrap gap-1.5 border-b border-[var(--att-line)] px-5 py-3">
         {(["all", "leave", "wfh", "regularization", "compoff", "timesheet"] as const).map((k) => (
-          <button key={k} type="button" onClick={() => setKind(k)} className={`att-badge ${kind === k ? "att-tone-blue" : "att-tone-neutral"}`} aria-pressed={kind === k}>
+          <button key={k} type="button" onClick={() => setKind(k)} className={`att-badge ${kind === k ? "att-tone-primary" : "att-tone-neutral"}`} aria-pressed={kind === k}>
             {k === "all" ? "All" : REQUEST_KIND_LABEL[k]} {k === "all" ? items.length : (counts[k] ?? 0)}
           </button>
         ))}
@@ -46,7 +46,7 @@ export function Inbox({ items, mode, showApprover = false }: { items: InboxItem[
                 </p>
                 {i.reason && <p className="mt-1 text-sm text-ink/80">“{i.reason}”</p>}
                 {i.attachment && (
-                  <a href={`/api/attendance/files/${i.id}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[var(--att-blue)]">
+                  <a href={`/api/attendance/files/${i.id}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[var(--att-primary)]">
                     <Paperclip size={12} aria-hidden /> Supporting document
                   </a>
                 )}
