@@ -1,17 +1,27 @@
 import "server-only";
 import { cache } from "react";
-import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "./db";
 import { holidays, settings as settingsTable, shifts, userProfiles, type Shift, type UserProfile } from "@/db/attendance-schema";
 import { parseSettings, type AttSettings } from "./settings";
 import type { Calendar, ShiftHours } from "./calendar";
-import { parseHm } from "./time";
+import { istDay, parseHm } from "./time";
 
 /** What every page needs: the settings, the shifts, holidays as a calendar, and people's profiles with their shift. */
 
 export const getSettings = cache(async (): Promise<AttSettings> => {
   const [row] = await db.select({ value: settingsTable.value }).from(settingsTable).where(eq(settingsTable.key, "config"));
-  return parseSettings(row?.value);
+  const s = parseSettings(row?.value);
+  if (!s.firstEnabledOn) {
+    // The first time Attendance is used (it only runs with ATT_ENABLED on): record the day, once, as the go-live date until HR set one.
+    const today = istDay();
+    await db.execute(sql`
+      insert into att_settings (key, value) values ('config', ${JSON.stringify({ firstEnabledOn: today })}::jsonb)
+      on conflict (key) do update set value = att_settings.value || jsonb_build_object('firstEnabledOn', ${today}::text)
+      where not (att_settings.value ? 'firstEnabledOn')`);
+    s.firstEnabledOn = today;
+  }
+  return s;
 });
 
 /** Saves the whole settings object (already checked by parseSettings). */

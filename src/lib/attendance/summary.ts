@@ -3,7 +3,7 @@
  *
  * Working days are Mon-Fri and working Saturdays, less holidays. A half day counts 0.5 present and 0.5 absent (or 0.5 leave with half-day
  * leave). A missed check-out counts absent until regularized. Holidays and weekly offs worked are counted as extra-work days, not present.
- * Days still to come are not counted.
+ * Days still to come, and days before the go-live date, are not counted.
  */
 
 import type { DayView } from "./calendar";
@@ -14,7 +14,8 @@ export type MonthLine = { userId: string; name: string; workingDays: number; pre
 export function tally(views: readonly DayView[]): Omit<MonthLine, "userId" | "name"> {
   const t = { workingDays: 0, present: 0, absent: 0, late: 0, earlyOut: 0, leave: 0, wfh: 0, extraWork: 0, hours: 0 };
   for (const v of views) {
-    if (v.status === "upcoming") continue;
+    // Days to come and days before the go-live date are not counted at all.
+    if (v.status === "upcoming" || v.status === "untracked") continue;
     if (v.kind === "working") t.workingDays++;
     const r = v.record;
     if (r?.isLate) t.late++;

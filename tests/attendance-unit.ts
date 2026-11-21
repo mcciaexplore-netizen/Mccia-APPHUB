@@ -5,7 +5,7 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import * as T from "../src/lib/attendance/time";
-import { DEFAULT_SETTINGS, isIpEntry, parseSettings } from "../src/lib/attendance/settings";
+import { DEFAULT_SETTINGS, effectiveGoLive, isIpEntry, parseSettings } from "../src/lib/attendance/settings";
 import { dayKind, isWeeklyOff, nthOfMonth, resolveDay, statusForHours, type Calendar, type PunchRecord, type ShiftHours } from "../src/lib/attendance/calendar";
 import * as C from "../src/lib/attendance/checkin-rules";
 import * as L from "../src/lib/attendance/leave-rules";
@@ -41,6 +41,11 @@ export function attendanceUnit(eq: Eq): void {
     officeIps: ["203.0.113.5", "10.0.0.0/24"],
     offSaturdays: [2, 4],
   });
+  eq("att settings: go-live date: HR's date, else the day first switched on, else today; bad dates ignored", [
+    effectiveGoLive(parseSettings({ goLiveDate: "2026-12-01", firstEnabledOn: "2026-11-20" }), "2026-11-21"),
+    effectiveGoLive(parseSettings({ firstEnabledOn: "2026-11-20" }), "2026-11-21"),
+    effectiveGoLive(parseSettings({ goLiveDate: "2026-13-01" }), "2026-11-21"),
+  ], ["2026-12-01", "2026-11-20", "2026-11-21"]);
   eq("att settings: isIpEntry", [isIpEntry("1.2.3.4"), isIpEntry("1.2.3.4/28"), isIpEntry("2001:db8::1"), isIpEntry("256.1.1.1"), isIpEntry("1.2.3.4/40"), isIpEntry("abc")], [true, true, true, false, false, false]);
 
   // ── Working calendar ────────────────────────────────────────────────────
@@ -57,6 +62,7 @@ export function attendanceUnit(eq: Eq): void {
   const day = (d: string, o: Partial<Parameters<typeof resolveDay>[0]> = {}) => resolveDay({ day: d, today: "2026-11-21", cal, ...o }).status;
   eq("att calendar: resolveDay: past working day, no punch = absent; today = pending; future = upcoming", [day("2026-11-16"), day("2026-11-21"), day("2026-11-23")], ["absent", "pending", "upcoming"]);
   eq("att calendar: resolveDay: holiday, weekly off, full leave, half leave without punch", [day("2026-11-18"), day("2026-11-14"), day("2026-11-17", { leave: { half: "none", typeName: "CL", color: "blue" } }), day("2026-11-17", { leave: { half: "first", typeName: "CL", color: "blue" } })], ["holiday", "weekly_off", "leave", "half_day"]);
+  eq("att calendar: before the go-live date a day is not tracked (“—”), even a past working day with no punch; from go-live it is absent", [day("2026-11-16", { goLive: "2026-11-18" }), day("2026-11-17", { goLive: "2026-11-17" }), day("2026-11-16", { goLive: null })], ["untracked", "absent", "absent"]);
   eq("att calendar: resolveDay: a punch wins over everything; missed check-out on a past day is absent", [day("2026-11-16", { record: rec({}) }), resolveDay({ day: "2026-11-16", today: "2026-11-21", cal, record: rec({ checkOut: null }) }), day("2026-11-21", { record: rec({ checkOut: null }) })].map((x) => (typeof x === "string" ? x : `${x.status}:${x.missedCheckout}`)), ["present", "absent:true", "present"]);
 
   // ── Check-in rules ──────────────────────────────────────────────────────
@@ -88,6 +94,12 @@ export function attendanceUnit(eq: Eq): void {
   eq("att checkin: short day 10:00–15:00 is a half day, early out, 2.5 h short", fig({ workedMs: 5 * 3_600_000, checkOutMin: 900 }), { hoursWorked: 5, deficitHours: 2.5, excessHours: 0, isLate: false, isEarlyOut: true, status: "half_day" });
   eq("att checkin: with first-half leave, 14:00–17:30 is a full (half) day, not late", fig({ workedMs: 3.5 * 3_600_000, checkInMin: 840, halfLeave: "first" }), { hoursWorked: 3.5, deficitHours: 0.5, excessHours: 0, isLate: false, isEarlyOut: false, status: "half_day" });
   eq("att checkin: extra work: every hour is excess, never late or early", fig({ workedMs: 3 * 3_600_000, checkInMin: 700, checkOutMin: 880, isExtraWork: true }), { hoursWorked: 3, deficitHours: 0, excessHours: 3, isLate: false, isEarlyOut: false, status: "present" });
+
+  const gate = (workedH: number, o: Partial<Parameters<typeof C.checkoutGate>[0]> = {}) => C.checkoutGate({ workedMs: workedH * 3_600_000, requiredHours: 7.5, isExtraWork: false, earlyApproved: false, ...o });
+  eq("att checkout gate: closed until 7.5 h are worked (3 h 22 m in → opens in 4 h 08 m); open at exactly 7.5 h", [gate(3 + 22 / 60).allowed, C.formatWait(gate(3 + 22 / 60).remainingMs), gate(7.5).allowed, gate(7.5).remainingMs], [false, "4h 8m", true, 0]);
+  eq("att checkout gate: an approved early check-out opens it; extra work has no minimum; half-day leave needs the half-day hours", [gate(2, { earlyApproved: true }).why, gate(1, { isExtraWork: true }).why, gate(4, { requiredHours: 4 }).allowed, gate(3.9, { requiredHours: 4 }).allowed], ["approved_early", "extra_work", true, false]);
+  eq("att checkout gate: the wait is rounded up to the minute", [C.formatWait(1), C.formatWait(60_000), C.formatWait(61_000), C.formatWait(3_600_000)], ["1m", "1m", "2m", "1h 0m"]);
+  eq("att time: 12-hour clock", [T.istClock12(T.istMoment("2026-11-21", 615)), T.istClock12(T.istMoment("2026-11-21", 0)), T.istClock12(T.istMoment("2026-11-21", 12 * 60 + 5)), T.istClock12(T.istMoment("2026-11-21", 17 * 60 + 30))], ["10:15 AM", "12:00 AM", "12:05 PM", "5:30 PM"]);
 
   // ── Leave days and balances ─────────────────────────────────────────────
   const noHol: Calendar = { holidays: new Map(), offSaturdays: [2, 4] };
@@ -146,6 +158,7 @@ export function attendanceUnit(eq: Eq): void {
   eq("att regularization: checked in, no check-out → the check-out", re({ record: { checkIn: true, checkOut: false } }), { ok: true, missed: ["checkout"] });
   eq("att regularization: both punches present → nothing missed", re({ record: { checkIn: true, checkOut: true } }).ok, false);
   eq("att regularization: today, the future, beyond 31 days, on leave, already asked, an unworked weekly off → refused", [re({ day: "2026-11-21" }), re({ day: "2026-11-25" }), re({ day: "2026-10-20" }), re({ onFullLeave: true }), re({ liveRequest: true }), re({ kind: "weekly_off" })].map((x) => x.ok), [false, false, false, false, false, false]);
+  eq("att regularization: nothing before the go-live date", [re({ goLive: "2026-11-17" }).ok, re({ goLive: "2026-11-16" }).ok], [false, true]);
   eq("att regularization: exactly 31 days back is allowed, 32 is not", [re({ day: "2026-10-21" }).ok, re({ day: "2026-10-20" }).ok], [true, false]);
   eq("att regularization: extra work with a missed check-out on a weekly off can be corrected", re({ kind: "weekly_off", record: { checkIn: true, checkOut: false } }), { ok: true, missed: ["checkout"] });
   eq("att regularization: times: check-out after check-in, check-in from 06:00, check-out after the recorded check-in", [
@@ -205,6 +218,8 @@ export function attendanceUnit(eq: Eq): void {
   };
   const views = days.map((d) => resolveDay({ day: d, today: "2026-11-22", cal, record: recs[d] ?? null, leave: d === "2026-11-19" ? { half: "none", typeName: "CL", color: "blue" } : null }));
   eq("att tally: a week: present, half day, holiday, leave, WFH, absent 3rd Saturday, extra-work Sunday, future Monday", tally(views), { workingDays: 5, present: 1.5, absent: 1.5, late: 1, earlyOut: 1, leave: 1, wfh: 1, extraWork: 1, hours: 22.5 });
+  const fromWed = days.map((d) => resolveDay({ day: d, today: "2026-11-22", cal, record: recs[d] ?? null, goLive: "2026-11-18" }));
+  eq("att tally: days before go-live (Mon, Tue) are not counted at all, not even their hours", tally(fromWed), { workingDays: 3, present: 0, absent: 2, late: 0, earlyOut: 0, leave: 0, wfh: 1, extraWork: 1, hours: 10.5 });
 
   // ── Org chart ───────────────────────────────────────────────────────────
   const org = layout([

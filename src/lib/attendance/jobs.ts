@@ -1,6 +1,7 @@
 import "server-only";
 import { listMembers, notify } from "./host-adapter";
 import { getSettings } from "./config";
+import { effectiveGoLive } from "./settings";
 import { loadDays, recordOf, viewOf } from "./days";
 import { istDay, istMinutes, parseHm } from "./time";
 
@@ -16,6 +17,7 @@ export async function sendReminders(now = new Date()): Promise<{ checkIn: number
   const s = await getSettings();
   if (!s.reminders.enabled) return { checkIn: 0, checkOut: 0, skipped: "Reminders are switched off in Settings." };
   const today = istDay(now);
+  if (today < effectiveGoLive(s, today)) return { checkIn: 0, checkOut: 0, skipped: "Attendance has not gone live yet (Settings → go-live date)." };
   const minute = istMinutes(now);
   const inAt = parseHm(s.reminders.checkIn) ?? 630;
   const outAt = parseHm(s.reminders.checkOut) ?? 1065;

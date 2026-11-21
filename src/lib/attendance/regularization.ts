@@ -1,7 +1,7 @@
 /**
  * Regularization: correcting a genuinely missed punch. Pure.
  *
- * Eligible: a past day within the window (31 days by default), with no live request for it already, not on full-day leave, and either
+ * Eligible: a past day within the window (31 days by default) and on or after the go-live date, with no live request for it already, not on full-day leave, and either
  *   - checked in but never checked out → the check-out is corrected ("checkout"), or
  *   - a working day with no punch at all → both times are given ("both").
  * A day with both punches has nothing missed; a holiday or weekly off with no punch was not a working day. Today cannot be regularized
@@ -22,8 +22,11 @@ export function regularizationEligibility(i: {
   onFullLeave: boolean;
   liveRequest: boolean;
   record: { checkIn: boolean; checkOut: boolean } | null;
+  /** The first day attendance counts: nothing before it is regularized. */
+  goLive?: string | null;
 }): Eligibility {
   if (i.day >= i.today) return { ok: false, reason: "Only a past day can be regularized. For today, check in or out." };
+  if (i.goLive && i.day < i.goLive) return { ok: false, reason: "Attendance was not being tracked yet on that day." };
   if (i.day < addDays(i.today, -i.windowDays)) return { ok: false, reason: `Only the last ${i.windowDays} days can be regularized.` };
   if (i.liveRequest) return { ok: false, reason: "There is already a regularization request for that day." };
   if (i.onFullLeave) return { ok: false, reason: "You were on leave that day." };

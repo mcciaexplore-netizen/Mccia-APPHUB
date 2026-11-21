@@ -115,7 +115,7 @@
 .att-icon-orange { background: var(--att-orange-tint); color: var(--att-orange); }
 .att-icon-grey { background: #f3f4f6; color: #6b7280; }
 
-/* Login / Logout (check in / check out) buttons on the Home card. */
+/* Check In / Check Out buttons on the Home card (Check Out is grey while disabled, green once it opens). */
 .att-btn-in, .att-btn-out { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; border-radius: 12px; padding: 0.75rem 1.5rem; font-size: 0.95rem; font-weight: 700; min-width: 9rem; transition: background 0.15s ease, transform 0.1s ease; }
 .att-btn-in { background: var(--att-primary); color: #fff; box-shadow: 0 6px 18px rgba(22, 163, 74, 0.28); }
 .att-btn-in:hover:not(:disabled) { background: var(--att-primary-2); }

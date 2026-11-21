@@ -2,7 +2,8 @@ import "server-only";
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "./db";
 import { attendance, leaveRequests, leaveTypes, wfhRequests, type AttendanceRow } from "@/db/attendance-schema";
-import { calendarFor } from "./config";
+import { calendarFor, getSettings } from "./config";
+import { effectiveGoLive } from "./settings";
 import { resolveDay, type Calendar, type DayView, type PunchRecord } from "./calendar";
 import { eachDay, istDay } from "./time";
 
@@ -11,7 +12,7 @@ import { eachDay, istDay } from "./time";
  * Used by Home (schedule, team), the attendance summary, HR's Today and Attendance pages, and the monthly report.
  */
 
-export type DayData = { cal: Calendar; records: Map<string, AttendanceRow>; leaves: Map<string, NonNullable<DayView["leave"]>>; wfh: Set<string> };
+export type DayData = { cal: Calendar; goLive: string; records: Map<string, AttendanceRow>; leaves: Map<string, NonNullable<DayView["leave"]>>; wfh: Set<string> };
 
 const k = (userId: string, day: string) => `${userId}|${day}`;
 
@@ -30,7 +31,8 @@ export const toPunch = (r: AttendanceRow): PunchRecord => ({
 
 /** Everything recorded for these people from `from` to `to`, keyed "userId|day". */
 export async function loadDays(userIds: string[], from: string, to: string): Promise<DayData> {
-  if (!userIds.length) return { cal: await calendarFor(from, to), records: new Map(), leaves: new Map(), wfh: new Set() };
+  const goLive = effectiveGoLive(await getSettings(), istDay());
+  if (!userIds.length) return { cal: await calendarFor(from, to), goLive, records: new Map(), leaves: new Map(), wfh: new Set() };
   const [cal, recs, leaves, wfh] = await Promise.all([
     calendarFor(from, to),
     db.select().from(attendance).where(and(inArray(attendance.userId, userIds), gte(attendance.date, from), lte(attendance.date, to))),
@@ -48,13 +50,13 @@ export async function loadDays(userIds: string[], from: string, to: string): Pro
   for (const l of leaves) {
     for (const d of eachDay(l.start < from ? from : l.start, l.end > to ? to : l.end)) leaveMap.set(k(l.userId, d), { half: l.half, typeName: l.typeName, color: l.color });
   }
-  return { cal, records: new Map(recs.map((r) => [k(r.userId, r.date), r])), leaves: leaveMap, wfh: new Set(wfh.map((w) => k(w.userId, w.date))) };
+  return { cal, goLive, records: new Map(recs.map((r) => [k(r.userId, r.date), r])), leaves: leaveMap, wfh: new Set(wfh.map((w) => k(w.userId, w.date))) };
 }
 
 /** One person's day from loaded data. */
 export function viewOf(data: DayData, userId: string, day: string, today = istDay()): DayView {
   const r = data.records.get(k(userId, day));
-  return resolveDay({ day, today, cal: data.cal, record: r ? toPunch(r) : null, leave: data.leaves.get(k(userId, day)) ?? null, wfhApproved: data.wfh.has(k(userId, day)) });
+  return resolveDay({ day, today, cal: data.cal, record: r ? toPunch(r) : null, leave: data.leaves.get(k(userId, day)) ?? null, wfhApproved: data.wfh.has(k(userId, day)), goLive: data.goLive });
 }
 
 export const recordOf = (data: DayData, userId: string, day: string) => data.records.get(k(userId, day)) ?? null;

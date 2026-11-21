@@ -90,9 +90,9 @@ export const MORE_LINKS = [
 
 // ── Requests and who decides them ─────────────────────────────────────────
 
-export type RequestKind = "leave" | "wfh" | "regularization" | "compoff" | "timesheet";
-export const REQUEST_KIND_LABEL: Record<RequestKind, string> = { leave: "Leave", wfh: "Work from home", regularization: "Regularization", compoff: "Comp-off", timesheet: "Timesheet" };
-export const REQUEST_KINDS: RequestKind[] = ["leave", "wfh", "regularization", "compoff", "timesheet"];
+export type RequestKind = "leave" | "wfh" | "early" | "regularization" | "compoff" | "timesheet";
+export const REQUEST_KIND_LABEL: Record<RequestKind, string> = { leave: "Leave", wfh: "Work from home", early: "Early check-out", regularization: "Regularization", compoff: "Comp-off", timesheet: "Timesheet" };
+export const REQUEST_KINDS: RequestKind[] = ["leave", "wfh", "early", "regularization", "compoff", "timesheet"];
 
 /** Who a new request is sent to: the reporting manager while they are active and not the person themself; otherwise HR (null). */
 export function approverFor(person: { id: string; managerId: string | null }, activeManager: boolean): string | null {

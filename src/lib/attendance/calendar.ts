@@ -47,8 +47,8 @@ export type PunchRecord = { checkIn: Date | null; checkOut: Date | null; status:
 export type DayView = {
   day: string;
   kind: DayKind;
-  /** What the day counts as. "pending" = today, no punch yet; "upcoming" = a future day. */
-  status: DayStatus | "pending" | "upcoming";
+  /** What the day counts as. "pending" = today, no punch yet; "upcoming" = a future day; "untracked" = before the go-live date. */
+  status: DayStatus | "pending" | "upcoming" | "untracked";
   holidayName?: string;
   leave?: { half: "none" | "first" | "second"; typeName: string; color: string } | null;
   wfh: boolean;
@@ -57,7 +57,10 @@ export type DayView = {
   missedCheckout: boolean;
 };
 
-/** One day for one person, from the calendar and what is recorded. Precedence: a punch, then full-day leave, then holiday / weekly off. */
+/**
+ * One day for one person, from the calendar and what is recorded. A day before the go-live date is not tracked (its punch, if any, is still
+ * shown). From go-live on, precedence: a punch, then full-day leave, then holiday / weekly off.
+ */
 export function resolveDay(input: {
   day: string;
   today: string;
@@ -65,11 +68,14 @@ export function resolveDay(input: {
   record?: PunchRecord | null;
   leave?: DayView["leave"];
   wfhApproved?: boolean;
+  /** The first day attendance counts (settings.ts effectiveGoLive). */
+  goLive?: string | null;
 }): DayView {
   const { day, today, cal, record, leave = null } = input;
   const kind = dayKind(day, cal);
   const holidayName = cal.holidays.get(day)?.name;
   const base = { day, kind, holidayName, leave, wfh: !!input.wfhApproved || !!record?.isWfh, record: record ?? null, missedCheckout: false };
+  if (input.goLive && day < input.goLive) return { ...base, status: "untracked" };
   if (record?.checkIn) {
     if (!record.checkOut) {
       if (day < today) return { ...base, status: "absent", missedCheckout: true };
@@ -96,6 +102,7 @@ export const STATUS_LABEL: Record<DayView["status"], string> = {
   wfh: "WFH",
   pending: "Not checked in",
   upcoming: "Upcoming",
+  untracked: "—",
 };
 
 /** Colour key for a status (the CSS has att-st-<key>). */
@@ -109,6 +116,7 @@ export const STATUS_TONE: Record<DayView["status"], "green" | "red" | "amber" | 
   wfh: "teal",
   pending: "none",
   upcoming: "none",
+  untracked: "none",
 };
 
 /** The plan for a coming day, for the Work Schedule widget. */

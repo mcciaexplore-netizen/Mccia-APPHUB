@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { assertMember, run, type ActionResult } from "../dal";
 import { checkIn, checkOut } from "../checkin";
 import { applyLeave, beginLeaveUpload, cancelLeave, previewDays, type LeaveInput } from "../leave";
-import { applyCompoff, applyRegularization, applyWfh, cancelRequest } from "../requests";
+import { applyCompoff, applyEarlyDeparture, applyRegularization, applyWfh, cancelRequest } from "../requests";
 import { addTimeLog, deleteTimeLog, submitWeek } from "../timesheets";
 import { decide } from "../approvals";
 import { sendWish } from "../overview";
@@ -89,7 +89,15 @@ export async function applyCompoffAction(input: { workedDate: string; type: "ful
   }, "Comp-off claimed");
 }
 
-export async function cancelRequestAction(kind: "wfh" | "regularization" | "compoff", id: string): Promise<ActionResult> {
+export async function applyEarlyDepartureAction(reason: string): Promise<ActionResult<{ id: string }>> {
+  return run(async () => {
+    const r = await applyEarlyDeparture(await assertMember(), { reason });
+    refresh();
+    return r;
+  }, "Early check-out requested");
+}
+
+export async function cancelRequestAction(kind: "wfh" | "regularization" | "compoff" | "early", id: string): Promise<ActionResult> {
   return run(async () => {
     await cancelRequest((await assertMember()).id, kind, id);
     refresh();

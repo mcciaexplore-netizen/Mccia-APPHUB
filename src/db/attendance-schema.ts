@@ -205,6 +205,30 @@ export const wfhRequests = pgTable(
   ],
 );
 
+/**
+ * Leaving before the shift's hours are worked. Check-out is refused until the full hours are in (checkin-rules.ts checkoutGate); an approved
+ * request for today lifts that. One live request per person per day. Added in migration 0045.
+ */
+export const earlyDepartures = pgTable(
+  "att_early_departures",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull(),
+    date: date("date").notNull(),
+    reason: text("reason").notNull(),
+    status: requestStatusEnum("status").notNull().default("pending"),
+    approverId: uuid("approver_id"),
+    decidedBy: uuid("decided_by"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approverRemark: text("approver_remark"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("att_early_live_uq").on(t.userId, t.date).where(sql`status in ('pending', 'approved')`),
+    index("att_early_status_idx").on(t.status, t.approverId),
+  ],
+);
+
 export const regularizationRequests = pgTable(
   "att_regularization_requests",
   {
@@ -351,6 +375,7 @@ export type LeaveType = typeof leaveTypes.$inferSelect;
 export type LeaveBalance = typeof leaveBalances.$inferSelect;
 export type LeaveRequest = typeof leaveRequests.$inferSelect;
 export type WfhRequest = typeof wfhRequests.$inferSelect;
+export type EarlyDeparture = typeof earlyDepartures.$inferSelect;
 export type RegularizationRequest = typeof regularizationRequests.$inferSelect;
 export type CompoffRequest = typeof compoffRequests.$inferSelect;
 export type TimeProject = typeof timeProjects.$inferSelect;

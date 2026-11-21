@@ -10,7 +10,7 @@ import { formatMoment } from "@/lib/attendance/time";
 import { Avatar, Badge, Empty, RequestStatus } from "../ui";
 import { useAct } from "../use-act";
 
-const KIND_TONE: Record<RequestKind, "blue" | "teal" | "amber" | "purple" | "green"> = { leave: "blue", wfh: "teal", regularization: "amber", compoff: "purple", timesheet: "green" };
+const KIND_TONE: Record<RequestKind, "blue" | "teal" | "amber" | "purple" | "green" | "red"> = { leave: "blue", wfh: "teal", early: "red", regularization: "amber", compoff: "purple", timesheet: "green" };
 
 /** Requests waiting for a decision (approve, or reject with a remark), or past decisions. Used by managers and by HR. */
 export function Inbox({ items, mode, showApprover = false }: { items: InboxItem[]; mode: "pending" | "history"; showApprover?: boolean }) {
@@ -21,7 +21,7 @@ export function Inbox({ items, mode, showApprover = false }: { items: InboxItem[
   return (
     <div>
       <div className="flex flex-wrap gap-1.5 border-b border-[var(--att-line)] px-5 py-3">
-        {(["all", "leave", "wfh", "regularization", "compoff", "timesheet"] as const).map((k) => (
+        {(["all", "leave", "wfh", "early", "regularization", "compoff", "timesheet"] as const).map((k) => (
           <button key={k} type="button" onClick={() => setKind(k)} className={`att-badge ${kind === k ? "att-tone-primary" : "att-tone-neutral"}`} aria-pressed={kind === k}>
             {k === "all" ? "All" : REQUEST_KIND_LABEL[k]} {k === "all" ? items.length : (counts[k] ?? 0)}
           </button>

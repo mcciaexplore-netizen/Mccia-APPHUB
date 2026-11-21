@@ -17,7 +17,7 @@ import {
   type LeaveType,
 } from "@/db/attendance-schema";
 import { AttError } from "./dal";
-import { listShifts, profilesFor, saveSettings } from "./config";
+import { getSettings, listShifts, profilesFor, saveSettings } from "./config";
 import { listMembers, notify, peopleByIds, setManager } from "./host-adapter";
 import { ensureBalances, listLeaveTypes } from "./leave";
 import { accrued, balanceOf, entitlementFor } from "./leave-rules";
@@ -78,7 +78,9 @@ export async function updateSettings(actor: Actor, raw: unknown): Promise<AttSet
   const r = (raw ?? {}) as Record<string, unknown>;
   const bad = (Array.isArray(r.officeIps) ? r.officeIps : []).map((s) => String(s).trim()).filter(Boolean).filter((s) => !parseSettings({ officeIps: [s] }).officeIps.length);
   if (bad.length) throw new AttError(`Not a valid IP address or IPv4 range: ${bad.slice(0, 3).join(", ")}`);
-  const s = parseSettings(raw);
+  if (r.goLiveDate && !isDay(r.goLiveDate)) throw new AttError("The go-live date is not a valid date.");
+  // The recorded first-use day is the server's, never the form's.
+  const s = { ...parseSettings(raw), firstEnabledOn: (await getSettings()).firstEnabledOn };
   await saveSettings(actor.id, s);
   return s;
 }

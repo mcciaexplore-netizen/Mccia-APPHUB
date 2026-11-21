@@ -3,7 +3,7 @@
  * already works. Pure, so the Settings form, the server and the unit tests share it.
  */
 
-import { parseHm } from "./time";
+import { isDay, parseHm } from "./time";
 
 export type AttSettings = {
   /** The office the phone check-in is measured from (ICC Trade Tower, SB Road, Pune by default). */
@@ -22,6 +22,13 @@ export type AttSettings = {
   reminders: { enabled: boolean; checkIn: string; checkOut: string };
   /** Also email approvers and requesters (the bell is always used). Off by default. */
   emailEnabled: boolean;
+  /**
+   * The day attendance starts counting, set by HR (null = not set). Days before it are not tracked: shown as "—", never absent, never in
+   * the reports' totals, never regularized. See effectiveGoLive().
+   */
+  goLiveDate: string | null;
+  /** The day Attendance was first used with ATT_ENABLED on, recorded once by the server (config.ts): the go-live date until HR set one. */
+  firstEnabledOn: string | null;
 };
 
 export const DEFAULT_SETTINGS: AttSettings = {
@@ -33,6 +40,8 @@ export const DEFAULT_SETTINGS: AttSettings = {
   compoffExpiryDays: 90,
   reminders: { enabled: true, checkIn: "10:30", checkOut: "17:45" },
   emailEnabled: false,
+  goLiveDate: null,
+  firstEnabledOn: null,
 };
 
 const num = (v: unknown, lo: number, hi: number, dflt: number) => {
@@ -76,5 +85,10 @@ export function parseSettings(raw: unknown): AttSettings {
       checkOut: hm(rem.checkOut, d.reminders.checkOut),
     },
     emailEnabled: typeof r.emailEnabled === "boolean" ? r.emailEnabled : d.emailEnabled,
+    goLiveDate: isDay(r.goLiveDate) ? r.goLiveDate : null,
+    firstEnabledOn: isDay(r.firstEnabledOn) ? r.firstEnabledOn : null,
   };
 }
+
+/** The day attendance starts counting: HR's go-live date, else the day Attendance was first switched on, else today. */
+export const effectiveGoLive = (s: Pick<AttSettings, "goLiveDate" | "firstEnabledOn">, today: string) => s.goLiveDate ?? s.firstEnabledOn ?? today;

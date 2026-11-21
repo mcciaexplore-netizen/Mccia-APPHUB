@@ -70,7 +70,7 @@ const [savedSettings] = await db.select().from(T.settings).where(eq(T.settings.k
 async function cleanup() {
   const people = (await db.select({ id: H.users.id }).from(H.users).where(like(H.users.email, "zza-%"))).map((u) => u.id);
   if (people.length) {
-    for (const t of [T.attendance, T.leaveRequests, T.leaveBalances, T.leaveAdjustments, T.wfhRequests, T.regularizationRequests, T.compoffRequests, T.timeLogs, T.timesheets, T.userProfiles]) {
+    for (const t of [T.attendance, T.leaveRequests, T.leaveBalances, T.leaveAdjustments, T.wfhRequests, T.earlyDepartures, T.regularizationRequests, T.compoffRequests, T.timeLogs, T.timesheets, T.userProfiles]) {
       await db.delete(t).where(inArray((t as typeof T.attendance).userId, people));
     }
     await db.delete(T.wishes).where(inArray(T.wishes.fromUserId, people));
@@ -99,6 +99,11 @@ try {
   const today = istDay();
   const year = Number(today.slice(0, 4));
   await cfg.saveSettings(randomUUID(), { ...DEFAULT_SETTINGS, officeIps: [OFFICE_IP] });
+  const recorded = await cfg.getSettings();
+  check("go-live: the first use records the day Attendance was switched on (today), the go-live date until HR set one", recorded.firstEnabledOn === today && recorded.goLiveDate === null, recorded);
+  const preLive = await RQ.regularizableDays(randomUUID());
+  check("go-live: going live today means no past day can be regularized yet", preLive.length === 0, preLive);
+  await cfg.saveSettings(randomUUID(), { ...DEFAULT_SETTINGS, officeIps: [OFFICE_IP], goLiveDate: addDays(today, -60), firstEnabledOn: today });
 
   // ── The hub side: two applications and five people ───────────────────
   const [dept] = await db.insert(H.departments).values({ name: `ZZA HR ${randomUUID().slice(0, 6)}`, icon: "clock" }).returning();
@@ -135,6 +140,16 @@ try {
   await CI.checkIn(ben.id, { ip: null, position: near });
   const card = await CI.todayCard(ben.id);
   check("check-in: within 150 m by phone, recorded as gps; the card shows it open", card.record?.method === "gps" && !!card.record.checkIn && !card.record.checkOut, card.record);
+  check("check-out: refused before the shift's 7.5 hours are worked (when today is a working day)", kindToday !== "working" || (await refused(() => CI.checkOut(ben.id, { ip: OFFICE_IP, position: null }), /once you have worked 7h 30m/)) === true);
+  check("check-out: the card says 7.5 hours are required (0 on extra work)", card.requiredHours === (kindToday === "working" ? 7.5 : 0), card.requiredHours);
+  if (kindToday === "working") {
+    const { id: earlyId } = await RQ.applyEarlyDeparture(B, { reason: "doctor's appointment" });
+    check("early check-out: asking twice the same day is refused", (await refused(() => RQ.applyEarlyDeparture(B, { reason: "again" }), /already asked/)) === true);
+    check("early check-out: goes to HR (Ben has no manager) and shows in HR's inbox as an early check-out", (await AP.pendingFor(HR, true)).some((i) => i.id === earlyId && i.kind === "early"));
+    check("early check-out: a colleague cannot decide it", (await refused(() => AP.decide({ ...A, hr: false }, "early", earlyId, true, ""), /not yours/)) === true);
+    await AP.decide(HR, "early", earlyId, true, "");
+    check("early check-out: once approved the card shows it", (await CI.todayCard(ben.id)).early?.status === "approved");
+  }
   await CI.checkOut(ben.id, { ip: OFFICE_IP, position: null });
   const card2 = await CI.todayCard(ben.id);
   check("check-out: fills the check-out once, with hours", !!card2.record?.checkOut && card2.record.hoursWorked != null, card2.record);

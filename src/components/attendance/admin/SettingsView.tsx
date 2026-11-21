@@ -104,6 +104,7 @@ function General({ settings: s }: { settings: AttSettings }) {
               offSaturdays: [1, 2, 3, 4, 5].filter((i) => f.get(`sat${i}`) === "on"),
               reminders: { enabled: f.get("remind") === "on", checkIn: String(f.get("remIn") ?? ""), checkOut: String(f.get("remOut") ?? "") },
               emailEnabled: f.get("email") === "on",
+              goLiveDate: String(f.get("goLive") ?? "") || null,
             }),
           );
         }}
@@ -129,6 +130,20 @@ function General({ settings: s }: { settings: AttSettings }) {
               Check on a map →
             </a>
           </div>
+        </fieldset>
+
+        <fieldset className="grid gap-3 sm:grid-cols-3">
+          <legend className="mb-2 text-sm font-bold text-ink">Go-live</legend>
+          <Field
+            label="Attendance counts from"
+            hint={
+              s.goLiveDate
+                ? "Days before this are not tracked: shown as “—”, never absent, not in the reports."
+                : `Not set: counting from ${s.firstEnabledOn ? formatDayShort(s.firstEnabledOn) : "today"}, the day Attendance was first switched on.`
+            }
+          >
+            <input name="goLive" type="date" className="input" defaultValue={s.goLiveDate ?? ""} />
+          </Field>
         </fieldset>
 
         <fieldset className="grid gap-3 sm:grid-cols-3">

@@ -1,7 +1,7 @@
 import "server-only";
 import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "./db";
-import { attendance, compoffRequests, leaveRequests, regularizationRequests, wfhRequests, type MissedPunch } from "@/db/attendance-schema";
+import { attendance, compoffRequests, earlyDepartures, leaveRequests, regularizationRequests, wfhRequests, type MissedPunch } from "@/db/attendance-schema";
 import { AttError } from "./dal";
 import { calendarFor, getSettings, profileOf } from "./config";
 import { loadDays, recordOf, viewOf } from "./days";
@@ -11,6 +11,7 @@ import { checkCompoffClaim, compoffDays, expiryFor } from "./compoff";
 import { approverIdFor } from "./leave";
 import { notifyNewRequest } from "./notify";
 import { MAX_REASON, isUuid } from "./att.manifest";
+import { effectiveGoLive } from "./settings";
 import { addDays, eachDay, formatDay, formatHm, isDay, istDay, istMinutes } from "./time";
 
 /** WFH, regularization and comp-off requests: asking, cancelling and listing (decisions are in approvals.ts). */
@@ -53,6 +54,29 @@ export async function applyWfh(user: { id: string; name: string }, input: { date
   return { id: row.id };
 }
 
+// ── Early check-out ───────────────────────────────────────────────────────
+
+/**
+ * Asks to check out today before the shift's hours are worked (check-out is otherwise refused until then). Only while checked in and not
+ * yet out; one live request a day. Goes to the manager, or HR.
+ */
+export async function applyEarlyDeparture(user: { id: string; name: string }, input: { reason: string }): Promise<{ id: string }> {
+  const today = istDay();
+  const reason = cleanReason(input.reason);
+  const [rec] = await db.select().from(attendance).where(and(eq(attendance.userId, user.id), eq(attendance.date, today)));
+  if (!rec?.checkInTime) throw new AttError("Check in first. An early check-out is asked for after checking in.");
+  if (rec.checkOutTime) throw new AttError("You have already checked out today.");
+  if (rec.isExtraWork) throw new AttError("On extra work (a holiday or weekly off) you can check out at any time.");
+  const [row] = await db
+    .insert(earlyDepartures)
+    .values({ userId: user.id, date: today, reason, approverId: await approverIdFor(user.id) })
+    .onConflictDoNothing()
+    .returning({ id: earlyDepartures.id, approverId: earlyDepartures.approverId });
+  if (!row) throw new AttError("You have already asked to check out early today.");
+  await notifyNewRequest({ kind: "early", id: row.id, requester: user, approverId: row.approverId, summary: `Check out early today (${formatDay(today)}): ${reason}` });
+  return { id: row.id };
+}
+
 // ── Regularization ────────────────────────────────────────────────────────
 
 export type RegularizableDay = { day: string; missed: MissedPunch[]; checkIn: string | null };
@@ -60,8 +84,11 @@ export type RegularizableDay = { day: string; missed: MissedPunch[]; checkIn: st
 /** The days in the window the person may still regularize (newest first). */
 export async function regularizableDays(userId: string): Promise<RegularizableDay[]> {
   const [settings, today] = [await getSettings(), istDay()];
-  const from = addDays(today, -settings.regularizationWindowDays);
+  const windowStart = addDays(today, -settings.regularizationWindowDays);
+  const goLive = effectiveGoLive(settings, today);
+  const from = goLive > windowStart ? goLive : windowStart;
   const to = addDays(today, -1);
+  if (from > to) return [];
   const [data, live] = await Promise.all([
     loadDays([userId], from, to),
     db
@@ -82,6 +109,7 @@ export async function regularizableDays(userId: string): Promise<RegularizableDa
       onFullLeave: v.leave?.half === "none",
       liveRequest: liveDays.has(day),
       record: r ? { checkIn: !!r.checkInTime, checkOut: !!r.checkOutTime } : null,
+      goLive,
     });
     if (e.ok) out.push({ day, missed: e.missed, checkIn: r?.checkInTime ? formatHm(istMinutes(r.checkInTime)) : null });
   }
@@ -107,6 +135,7 @@ export async function applyRegularization(user: { id: string; name: string }, in
     onFullLeave: v.leave?.half === "none",
     liveRequest: live.length > 0,
     record: r ? { checkIn: !!r.checkInTime, checkOut: !!r.checkOutTime } : null,
+    goLive: effectiveGoLive(settings, today),
   });
   if (!e.ok) throw new AttError(e.reason);
   if (!e.missed.includes(input.missed)) throw new AttError("Choose what was missed on that day.");
@@ -197,10 +226,10 @@ export const myWfh = (userId: string) => db.select().from(wfhRequests).where(eq(
 export const myRegularizations = (userId: string) => db.select().from(regularizationRequests).where(eq(regularizationRequests.userId, userId)).orderBy(desc(regularizationRequests.date)).limit(100);
 export const myCompoffs = (userId: string) => db.select().from(compoffRequests).where(eq(compoffRequests.userId, userId)).orderBy(desc(compoffRequests.workedDate)).limit(100);
 
-/** Withdraws one of the person's own pending WFH, regularization or comp-off requests. */
-export async function cancelRequest(userId: string, kind: "wfh" | "regularization" | "compoff", id: string): Promise<void> {
+/** Withdraws one of the person's own pending WFH, early check-out, regularization or comp-off requests. */
+export async function cancelRequest(userId: string, kind: "wfh" | "regularization" | "compoff" | "early", id: string): Promise<void> {
   if (!isUuid(id)) throw new AttError("That request was not found.");
-  const table = kind === "wfh" ? wfhRequests : kind === "regularization" ? regularizationRequests : compoffRequests;
+  const table = kind === "wfh" ? wfhRequests : kind === "regularization" ? regularizationRequests : kind === "early" ? earlyDepartures : compoffRequests;
   const done = await db
     .update(table)
     .set({ status: "cancelled" })

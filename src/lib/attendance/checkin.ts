@@ -1,13 +1,14 @@
 import "server-only";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import { db } from "./db";
-import { attendance, type AttendanceRow } from "@/db/attendance-schema";
+import { attendance, earlyDepartures, type AttendanceRow } from "@/db/attendance-schema";
 import { AttError } from "./dal";
 import { getSettings, profileOf, type ShiftRules } from "./config";
 import { loadDays, recordOf, viewOf } from "./days";
-import { computeDay, decideCheckIn, decideCheckOut, isLate, expectedWindow, validPosition, type Position } from "./checkin-rules";
+import { checkoutGate, computeDay, decideCheckIn, decideCheckOut, expectedWindow, formatWait, isLate, validPosition, type Position } from "./checkin-rules";
+import { approverName } from "./people";
 import { dayKind, type DayKind } from "./calendar";
-import { istDay, istMinutes } from "./time";
+import { formatHours, istDay, istMinutes } from "./time";
 
 /**
  * Checking in and out (rules in checkin-rules.ts). The unique (user, day) index makes a second check-in impossible even when two taps race;
@@ -23,6 +24,14 @@ export type TodayCard = {
   record: { checkIn: string | null; checkOut: string | null; method: string | null; isLate: boolean; isEarlyOut: boolean; isWfh: boolean; isExtraWork: boolean; hoursWorked: number | null } | null;
   leaveToday: "none" | "first" | "second" | null;
   wfhApproved: boolean;
+  /** Hours to work before check-out opens (full day, or half with half-day leave; 0 on extra work). */
+  requiredHours: number;
+  /** Today's request to leave early, if any. */
+  early: { id: string; status: "pending" | "approved" | "rejected"; remark: string | null } | null;
+  /** Who an early-departure request goes to, in words. */
+  approver: string;
+  /** When this was worked out (ms): the card's clock starts here, so the page renders the same on the server and in the browser. */
+  serverNow: number;
 };
 
 async function todayFacts(userId: string) {
@@ -46,9 +55,23 @@ const cardRecord = (r: AttendanceRow | null): TodayCard["record"] =>
       }
     : null;
 
+/** Today's latest early-departure request (the live one, else the last decided one). */
+async function earlyToday(userId: string, today: string) {
+  const rows = await db
+    .select({ id: earlyDepartures.id, status: earlyDepartures.status, remark: earlyDepartures.approverRemark })
+    .from(earlyDepartures)
+    .where(and(eq(earlyDepartures.userId, userId), eq(earlyDepartures.date, today), ne(earlyDepartures.status, "cancelled")))
+    .orderBy(desc(earlyDepartures.createdAt));
+  const r = rows.find((x) => x.status === "approved" || x.status === "pending") ?? rows[0];
+  return r ? { id: r.id, status: r.status as "pending" | "approved" | "rejected", remark: r.remark } : null;
+}
+
+const required = (f: Awaited<ReturnType<typeof todayFacts>>) => (f.record?.isExtraWork ? 0 : expectedWindow(f.profile.shift, f.view.leave?.half ?? null).hours);
+
 /** What the check-in card shows. */
 export async function todayCard(userId: string): Promise<TodayCard> {
   const f = await todayFacts(userId);
+  const [early, approver] = await Promise.all([earlyToday(userId, f.today), approverName(userId)]);
   const s = f.profile.shift;
   return {
     today: f.today,
@@ -58,6 +81,10 @@ export async function todayCard(userId: string): Promise<TodayCard> {
     record: cardRecord(f.record),
     leaveToday: f.view.leave?.half ?? null,
     wfhApproved: f.view.wfh,
+    requiredHours: required(f),
+    early,
+    approver,
+    serverNow: Date.now(),
   };
 }
 
@@ -103,6 +130,9 @@ export async function checkOut(userId: string, input: { ip: string | null; posit
   const d = decideCheckOut({ checkedIn: !!r?.checkInTime, checkedOut: !!r?.checkOutTime, isWfhDay: !!r?.isWfh || f.view.wfh, ip: input.ip, position, settings });
   if (!d.ok || !r?.checkInTime) throw new AttError(d.ok ? "You have not checked in today." : d.error);
   const now = new Date();
+  const gate = checkoutGate({ workedMs: +now - +r.checkInTime, requiredHours: required(f), isExtraWork: r.isExtraWork, earlyApproved: (await earlyToday(userId, f.today))?.status === "approved" });
+  if (!gate.allowed)
+    throw new AttError(`You can check out once you have worked ${formatHours(gate.requiredHours)} (in ${formatWait(gate.remainingMs)}). To leave earlier, ask your manager to approve an early check-out.`);
   const fig = computeDay({
     workedMs: +now - +r.checkInTime,
     checkInMin: istMinutes(r.checkInTime),

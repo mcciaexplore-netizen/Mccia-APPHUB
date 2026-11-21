@@ -137,3 +137,9 @@ export function formatLongDate(day: string): string {
 }
 /** "2026-11-21" → "SAT 21 NOV". */
 export const formatDayCaps = (day: string) => formatDayShort(day).toUpperCase();
+/** A moment's IST clock time on a 12-hour clock, "10:15 AM". */
+export function istClock12(at: Date | string | number): string {
+  const m = istMinutes(new Date(at));
+  const h = Math.floor(m / 60);
+  return `${((h + 11) % 12) + 1}:${pad(m % 60)} ${h < 12 ? "AM" : "PM"}`;
+}

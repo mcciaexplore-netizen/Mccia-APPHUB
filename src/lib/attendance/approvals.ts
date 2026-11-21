@@ -2,7 +2,7 @@ import "server-only";
 import { and, desc, eq, gte, inArray, isNotNull, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { db, rowsOf } from "./db";
-import { attendance, compoffRequests, leaveRequests, leaveTypes, regularizationRequests, timesheets, wfhRequests } from "@/db/attendance-schema";
+import { attendance, compoffRequests, earlyDepartures, leaveRequests, leaveTypes, regularizationRequests, timesheets, wfhRequests } from "@/db/attendance-schema";
 import { AttError } from "./dal";
 import { getSettings, profileOf } from "./config";
 import { loadDays, viewOf } from "./days";
@@ -57,7 +57,7 @@ function visible(t: Cols, s: Scope, pendingValue: string, cancellable = true): S
 async function items(s: Scope): Promise<InboxItem[]> {
   const limit = s.limit ?? 200;
   const order = s.mode === "pending" ? "asc" : "desc";
-  const [leave, wfh, reg, co, ts] = await Promise.all([
+  const [leave, wfh, reg, co, ts, early] = await Promise.all([
     db
       .select({ r: leaveRequests, typeName: leaveTypes.name })
       .from(leaveRequests)
@@ -69,6 +69,7 @@ async function items(s: Scope): Promise<InboxItem[]> {
     db.select().from(regularizationRequests).where(visible(regularizationRequests, s, "pending")).orderBy(order === "asc" ? regularizationRequests.createdAt : desc(regularizationRequests.approvedAt)).limit(limit),
     db.select().from(compoffRequests).where(visible(compoffRequests, s, "pending")).orderBy(order === "asc" ? compoffRequests.createdAt : desc(compoffRequests.approvedAt)).limit(limit),
     db.select().from(timesheets).where(visible(timesheets, s, "submitted", false)).orderBy(order === "asc" ? timesheets.submittedAt : desc(timesheets.approvedAt)).limit(limit),
+    db.select().from(earlyDepartures).where(visible(earlyDepartures, s, "pending")).orderBy(order === "asc" ? earlyDepartures.createdAt : desc(earlyDepartures.approvedAt)).limit(limit),
   ]);
   const base = (r: { id: string; userId: string; status: string; approverId: string | null; decidedBy: string | null; approvedAt: Date | null; approverRemark: string | null; createdAt: Date }) => ({
     id: r.id,
@@ -90,6 +91,7 @@ async function items(s: Scope): Promise<InboxItem[]> {
       reason: r.reason,
       attachment: !!r.attachmentUrl,
     })),
+    ...early.map((r) => ({ ...base(r), kind: "early" as const, title: "Check out early", when: formatDay(r.date), detail: "Before the shift's hours are worked", reason: r.reason, attachment: false })),
     ...wfh.map((r) => ({ ...base(r), kind: "wfh" as const, title: "Work from home", when: formatDay(r.date), detail: r.planNote, reason: r.reason, attachment: false })),
     ...reg.map((r) => ({
       ...base(r),
@@ -135,6 +137,7 @@ export async function pendingCountFor(userId: string): Promise<number> {
   const res = await db.execute(sql`
     select (select count(*) from att_leave_requests where status = 'pending' and approver_id = ${userId})
       + (select count(*) from att_wfh_requests where status = 'pending' and approver_id = ${userId})
+      + (select count(*) from att_early_departures where status = 'pending' and approver_id = ${userId})
       + (select count(*) from att_regularization_requests where status = 'pending' and approver_id = ${userId})
       + (select count(*) from att_compoff_requests where status = 'pending' and approver_id = ${userId})
       + (select count(*) from att_timesheets where status = 'submitted' and approver_id = ${userId}) as n`);
@@ -145,6 +148,7 @@ export async function pendingCountFor(userId: string): Promise<number> {
 export async function pendingCountAll(): Promise<number> {
   const res = await db.execute(sql`
     select (select count(*) from att_leave_requests where status = 'pending') + (select count(*) from att_wfh_requests where status = 'pending')
+      + (select count(*) from att_early_departures where status = 'pending')
       + (select count(*) from att_regularization_requests where status = 'pending') + (select count(*) from att_compoff_requests where status = 'pending')
       + (select count(*) from att_timesheets where status = 'submitted') as n`);
   return Number(rowsOf<{ n: string }>(res)[0]?.n ?? 0);
@@ -188,6 +192,16 @@ export async function decide(actor: Actor, kind: RequestKind, id: string, approv
     if (!done.length) throw stale();
     await notifyDecision({ kind, id, requesterId: r.userId, approved: approve, by: actor.name, remark, summary: `Work from home on ${formatDay(r.date)}`, link: "/attendance/more/wfh" });
     return `${word}.`;
+  }
+
+  if (kind === "early") {
+    const [r] = await db.select().from(earlyDepartures).where(eq(earlyDepartures.id, id));
+    if (!r || r.status !== "pending") throw stale();
+    if (!canDecide(actor, r)) throw new AttError("This request is not yours to decide.");
+    const done = await db.update(earlyDepartures).set(decidedSet(actor.id, approve, remark)).where(and(eq(earlyDepartures.id, id), eq(earlyDepartures.status, "pending"))).returning({ id: earlyDepartures.id });
+    if (!done.length) throw stale();
+    await notifyDecision({ kind, id, requesterId: r.userId, approved: approve, by: actor.name, remark, summary: approve ? `You can check out now (${formatDay(r.date)})` : `Early check-out on ${formatDay(r.date)}`, link: "/attendance" });
+    return `${word}${approve ? ": they can check out now" : ""}.`;
   }
 
   if (kind === "regularization") {

@@ -98,7 +98,7 @@ try {
   const out = await mk("ZZA Omar");
   for (const u of [mgr, asha]) await sql`insert into user_app_access (user_id, app_id, app_role) values (${u.id}, ${userApp.id}, 'user')`;
   await sql`insert into app_admins (app_id, user_id) values (${adminApp.id}, ${hr.id})`;
-  await sql`insert into att_settings (key, value) values ('config', ${JSON.stringify({ officeIps: ["127.0.0.1", "::1"] })}::jsonb) on conflict (key) do update set value = excluded.value`;
+  await sql`insert into att_settings (key, value) values ('config', ${JSON.stringify({ officeIps: ["127.0.0.1", "::1"], goLiveDate: addDays(istDay(), -30), firstEnabledOn: addDays(istDay(), -30) })}::jsonb) on conflict (key) do update set value = excluded.value`;
 
   browser = await launch();
 
@@ -119,15 +119,36 @@ try {
   await go(s.page, "/attendance");
   const head = await mainText(s.page);
   check("home: time-of-day greeting with the first name, the subtitle and the long date", /Good (morning|afternoon|evening|night), ZZA/.test(head) && head.includes("Here's your attendance overview.") && /(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day, \d{1,2} [A-Z][a-z]+ \d{4}/.test(head));
+  check("home: before check-in, no Login/Logout wording anywhere", !/\bLog ?in\b|\bLog ?out\b/i.test(head));
   check("home: Work Schedule, Today, Coming up and Announcements cards", ["Work Schedule – Next 7 Days", "View Calendar", "Today", "Coming up (next 30 days)", "Announcements", "TIME WORKED TODAY"].every((t) => head.toUpperCase().includes(t.toUpperCase())));
-  await s.page.getByRole("button", { name: "Login", exact: true }).click();
+  await s.page.getByRole("button", { name: "Check In", exact: true }).click();
   check("check in: from the office network (no location asked)", await toast(s.page, /Checked in on the office network/));
-  await s.page.getByRole("button", { name: "Logout", exact: true }).waitFor();
-  const t1 = await s.page.locator(".att-timer").innerText();
+  const outBtn = s.page.getByRole("button", { name: "Check Out", exact: true });
+  await outBtn.waitFor();
+  const worked = () => s.page.locator("p", { hasText: "Time worked" }).locator("span").last().innerText();
+  const t1 = await worked();
   await s.page.waitForTimeout(2200);
-  const t2 = await s.page.locator(".att-timer").innerText();
-  check("check in: the Logout button and a ticking HH:MM:SS timer", /^\d\d:\d\d:\d\d$/.test(t1) && t1 !== t2, [t1, t2]);
-  await s.page.getByRole("button", { name: "Logout", exact: true }).click();
+  const t2 = await worked();
+  check("check in: Check In time, a ticking Time worked HH:MM:SS", /^\d\d:\d\d:\d\d$/.test(t1) && t1 !== t2 && /Check In\s*\d{1,2}:\d\d (AM|PM)/.test(await mainText(s.page)), [t1, t2]);
+  const card = await mainText(s.page);
+  // On a working day Check Out waits for 7.5 hours; on extra work (a holiday or weekly off) it is open at once.
+  if (await outBtn.isDisabled()) {
+    check("check out: disabled before 7.5 hours, with a countdown", /Check out available in\s*0?\d:\d\d:\d\d/.test(card) && card.includes("Opens after 7h 30m worked"), card.slice(0, 300));
+    await s.page.getByRole("button", { name: "Need to leave early?" }).click();
+    await s.page.locator("textarea").fill("Doctor's appointment");
+    await s.page.getByRole("button", { name: "Send request" }).click();
+    check("early check-out: asked, waiting for the manager", await toast(s.page, /Early check-out requested/));
+    const mgEarly = await signedIn(mgr.email);
+    await go(mgEarly.page, "/attendance/more/approvals");
+    check("early check-out: in the manager's inbox", (await mainText(mgEarly.page)).includes("Check out early"));
+    await mgEarly.page.locator("li", { hasText: "Check out early" }).getByRole("button", { name: "Approve" }).click();
+    await mgEarly.page.locator(".dialog, [role=dialog]").getByRole("button", { name: "Approve" }).click();
+    check("early check-out: approved", await toast(mgEarly.page, /they can check out now/));
+    await mgEarly.ctx.close();
+    await go(s.page, "/attendance");
+    check("check out: enabled (green) once approved", (await outBtn.isEnabled()) && (await outBtn.getAttribute("class"))?.includes("att-btn-in"));
+  }
+  await outBtn.click();
   check("check out: done for today", await s.page.getByText("Done for").waitFor({ timeout: 20000 }).then(() => true, () => false));
   const [rec] = await sql`select check_in_method, check_out_time from att_attendance where user_id = ${asha.id} and date = ${istDay()}`;
   check("check out: one row today, method ip, with a check-out", rec?.check_in_method === "ip" && !!rec.check_out_time, rec);
@@ -194,9 +215,10 @@ try {
   await go(h.page, "/attendance/admin/approvals?tab=history");
   check("HR history: the manager's decision is there", (await mainText(h.page)).includes("ZZA Asha"));
   await go(h.page, "/attendance/admin/settings");
-  await h.page.locator('input[type="date"]').first().fill(`${istDay().slice(0, 4)}-12-25`);
-  await h.page.getByLabel("Name", { exact: true }).last().fill("ZZA Christmas");
-  await h.page.getByRole("button", { name: "Add", exact: true }).click();
+  const hol = h.page.locator("section").filter({ has: h.page.getByRole("heading", { name: /^Holidays \d{4}$/ }) });
+  await hol.locator('input[type="date"]').fill(`${istDay().slice(0, 4)}-12-25`);
+  await hol.getByLabel("Name", { exact: true }).fill("ZZA Christmas");
+  await hol.getByRole("button", { name: "Add", exact: true }).click();
   check("HR settings: a holiday is added", await toast(h.page, /Holiday saved/));
   await go(h.page, "/attendance/admin/leave");
   await h.page.getByRole("row", { name: /ZZA Asha/ }).getByRole("button", { name: "Adjust" }).click();

@@ -144,3 +144,25 @@ export function computeDay(input: {
   else status = statusForHours(hoursWorked, input.shift, input.isWfh);
   return { hoursWorked, deficitHours: diff < 0 ? -diff : 0, excessHours: diff > 0 ? diff : 0, isLate: late, isEarlyOut: early, status };
 }
+
+export type CheckoutGate = { allowed: boolean; remainingMs: number; requiredHours: number; why: "worked" | "approved_early" | "extra_work" | "wait" };
+
+/**
+ * Whether a person may check out yet: only once they have worked the hours expected of them today (the shift's full-day hours, 7.5 by
+ * default; the half-day hours with half-day leave), unless their manager or HR approved leaving early today. Extra work on a holiday or
+ * weekly off has no minimum. `remainingMs` is how long until check-out opens (0 when allowed).
+ */
+export function checkoutGate(i: { workedMs: number; requiredHours: number; isExtraWork: boolean; earlyApproved: boolean }): CheckoutGate {
+  const requiredMs = Math.round(i.requiredHours * 3_600_000);
+  if (i.isExtraWork) return { allowed: true, remainingMs: 0, requiredHours: i.requiredHours, why: "extra_work" };
+  if (i.workedMs >= requiredMs) return { allowed: true, remainingMs: 0, requiredHours: i.requiredHours, why: "worked" };
+  if (i.earlyApproved) return { allowed: true, remainingMs: 0, requiredHours: i.requiredHours, why: "approved_early" };
+  return { allowed: false, remainingMs: requiredMs - Math.max(0, i.workedMs), requiredHours: i.requiredHours, why: "wait" };
+}
+
+/** 16_320_000 ms → "4h 32m" (rounded up to the minute, so it never says 0m while still waiting). */
+export function formatWait(ms: number): string {
+  const mins = Math.max(0, Math.ceil(ms / 60_000));
+  const h = Math.floor(mins / 60);
+  return h ? `${h}h ${mins % 60}m` : `${mins}m`;
+}
