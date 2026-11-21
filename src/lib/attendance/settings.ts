@@ -60,6 +60,15 @@ export function isIpEntry(s: string): boolean {
   return bits === undefined && /^[0-9a-f:]+$/i.test(addr) && addr.includes(":") && addr.length <= 39;
 }
 
+/**
+ * The office IPs from what is stored: "officeIps" (what the Settings page writes) and "allowedIps" (a row edited by hand), together, trimmed,
+ * valid entries only, no repeats, at most 50.
+ */
+function ipList(r: Record<string, unknown>): string[] {
+  const raw = [...(Array.isArray(r.officeIps) ? r.officeIps : []), ...(Array.isArray(r.allowedIps) ? r.allowedIps : [])];
+  return [...new Set(raw.map((s) => String(s).trim()).filter(isIpEntry))].slice(0, 50);
+}
+
 /** The settings from what is stored (anything missing or invalid takes its default). */
 export function parseSettings(raw: unknown): AttSettings {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -72,9 +81,10 @@ export function parseSettings(raw: unknown): AttSettings {
       name: typeof o.name === "string" && o.name.trim() ? o.name.trim().slice(0, 120) : d.office.name,
       lat: num(o.lat, -90, 90, d.office.lat),
       lng: num(o.lng, -180, 180, d.office.lng),
-      radiusM: int(o.radiusM, 25, 5000, d.office.radiusM),
+      // "radius" is accepted too (a row edited by hand); the Settings page writes radiusM.
+      radiusM: int(o.radiusM ?? o.radius, 25, 5000, d.office.radiusM),
     },
-    officeIps: Array.isArray(r.officeIps) ? [...new Set(r.officeIps.map((s) => String(s).trim()).filter(isIpEntry))].slice(0, 50) : d.officeIps,
+    officeIps: ipList(r),
     regularizationWindowDays: int(r.regularizationWindowDays, 1, 90, d.regularizationWindowDays),
     offSaturdays: sats,
     earlyOutMinutes: int(r.earlyOutMinutes, 0, 240, d.earlyOutMinutes),

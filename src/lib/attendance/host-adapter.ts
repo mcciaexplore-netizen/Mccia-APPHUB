@@ -221,6 +221,12 @@ export async function email(to: string[], subject: string, lines: string[], link
 /** The address the current request came from (set by Vercel, so the visitor cannot choose it). */
 export const requestIp = async () => clientIp(await headers());
 
+/** For the debug-ip route: the address used, and the raw headers it can come from (Vercel sets all three; the first one present wins). */
+export async function requestIpDetails(): Promise<{ ip: string | null; headers: Record<string, string | null> }> {
+  const h = await headers();
+  return { ip: clientIp(h), headers: { "x-vercel-forwarded-for": h.get("x-vercel-forwarded-for"), "x-real-ip": h.get("x-real-ip"), "x-forwarded-for": h.get("x-forwarded-for") } };
+}
+
 /** How many unread notices the person has (for the hub's bell in the page frame). */
 export const unreadNotices = (userId: string) => noticeUnread(userId);
 

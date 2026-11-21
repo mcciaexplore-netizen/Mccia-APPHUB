@@ -46,6 +46,9 @@ export function attendanceUnit(eq: Eq): void {
     effectiveGoLive(parseSettings({ firstEnabledOn: "2026-11-20" }), "2026-11-21"),
     effectiveGoLive(parseSettings({ goLiveDate: "2026-13-01" }), "2026-11-21"),
   ], ["2026-12-01", "2026-11-20", "2026-11-21"]);
+  const handEdited = parseSettings({ office: { lat: 18.534976522712075, lng: 73.82985210397189, radius: 150 }, allowedIps: ["49.248.67.194"] });
+  eq("att settings: a hand-edited row (allowedIps, office.radius) is read: the IP is an office IP, the office is where it says", [handEdited.officeIps, handEdited.office.radiusM, handEdited.office.lat, C.ipAllowed("49.248.67.194", handEdited.officeIps), C.ipAllowed(" 49.248.67.194", handEdited.officeIps), C.ipAllowed("49.248.67.195", handEdited.officeIps)], [["49.248.67.194"], 150, 18.534976522712075, true, true, false]);
+  eq("att settings: officeIps and allowedIps together, no repeats", parseSettings({ officeIps: ["1.2.3.4"], allowedIps: ["1.2.3.4", "5.6.7.8"] }).officeIps, ["1.2.3.4", "5.6.7.8"]);
   eq("att settings: isIpEntry", [isIpEntry("1.2.3.4"), isIpEntry("1.2.3.4/28"), isIpEntry("2001:db8::1"), isIpEntry("256.1.1.1"), isIpEntry("1.2.3.4/40"), isIpEntry("abc")], [true, true, true, false, false, false]);
 
   // ── Working calendar ────────────────────────────────────────────────────
