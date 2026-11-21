@@ -30,6 +30,7 @@
     "test:e2e:approvals": "node tests/e2e/approvals.mjs",
     "test:e2e:approvals:flow": "node tests/e2e/approvals-flow.mjs",
     "test:e2e:approvals:budget": "node tests/e2e/approvals-budget.mjs",
+    "test:e2e:approvals:watchers": "node tests/e2e/approvals-watchers.mjs",
     "test:e2e:eru": "node tests/e2e/eru.mjs"
   },
   "dependencies": {

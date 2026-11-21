@@ -16,6 +16,8 @@ export type ApprovalsSettings = {
   notifyApproverOnAssignment: boolean;
   notifyRequesterOnOutcome: boolean;
   notifyAdminOnImportErrors: boolean;
+  /** Also email the watchers of a form about each new request (they always get the bell notice). Off until an admin turns it on. */
+  notifyWatchersByEmail: boolean;
 };
 
 const KEYS = {
@@ -25,6 +27,7 @@ const KEYS = {
   notifyApproverOnAssignment: "notify_approver_on_assignment",
   notifyRequesterOnOutcome: "notify_requester_on_outcome",
   notifyAdminOnImportErrors: "notify_admin_on_import_errors",
+  notifyWatchersByEmail: "notify_watchers_by_email",
 } as const satisfies Record<keyof ApprovalsSettings, string>;
 
 function envThreshold(): number {
@@ -48,6 +51,7 @@ export async function getSettings(): Promise<ApprovalsSettings> {
     notifyApproverOnAssignment: asBool(m.get(KEYS.notifyApproverOnAssignment), true),
     notifyRequesterOnOutcome: asBool(m.get(KEYS.notifyRequesterOnOutcome), true),
     notifyAdminOnImportErrors: asBool(m.get(KEYS.notifyAdminOnImportErrors), true),
+    notifyWatchersByEmail: asBool(m.get(KEYS.notifyWatchersByEmail), false),
   };
 }
 
@@ -58,6 +62,8 @@ export const settingsInput = z.object({
   notifyApproverOnAssignment: z.boolean(),
   notifyRequesterOnOutcome: z.boolean(),
   notifyAdminOnImportErrors: z.boolean(),
+  // Older clients do not send it: then it stays off.
+  notifyWatchersByEmail: z.boolean().default(false),
 });
 
 export async function saveSettings(input: ApprovalsSettings, actor: ApprovalsUser): Promise<ApprovalsSettings> {

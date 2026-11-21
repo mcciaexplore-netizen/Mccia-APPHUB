@@ -295,6 +295,13 @@
       "when": 1795073756609,
       "tag": "0041_approvals_departments",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1795243878030,
+      "tag": "0042_approvals_watchers",
+      "breakpoints": true
     }
   ]
 }

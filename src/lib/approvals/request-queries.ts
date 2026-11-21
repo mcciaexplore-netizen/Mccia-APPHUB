@@ -4,10 +4,12 @@ import { and, asc, desc, eq, gte, ilike, inArray, lt, ne, or, sql, type SQL } fr
 import { db } from "@/db";
 import {
   aprApprovalEvents, aprAttachments, aprBranches, aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprPublicationTypes,
-  aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType, type BudgetDetails,
+  aprPublications, aprRequestSteps, aprRequests, type AprRequestStatus, type AprRequestType, type AprWatcherForm, type BudgetDetails,
 } from "@/db/approvals-schema";
 import { activeVersion, budgetBalance, budgetIdOf, deleteConfirmText, expenseLinesOf, incomeLinesOf, linesTotal, vendorLinesOf, revisionBase, revisionBlocker, waitingRevision, type BudgetBalance, type BudgetLine } from "./budget";
 import { canDeleteBudgets } from "./budget-delete";
+import { watchedForms } from "./watchers";
+import { WATCH_FORM_LABEL, formOfType, typesOfForm, watchesType } from "./watching";
 import { decisionMode, type DecisionMode } from "./calc";
 import { REVIEW_KEYS, isDgOnly, type ReviewItem, type ReviewKey } from "./approvals.manifest";
 import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
@@ -19,17 +21,20 @@ const sees = {
 };
 
 /**
- * Who may see a request: the people who oversee everything, the person who raised it, and anyone who is (or was) one of its
- * approvers. Everyone else gets nothing back, as if it did not exist. Drafts are never visible.
+ * Who may see a request: the people who oversee everything, the person who raised it, anyone who is (or was) one of its approvers, and the
+ * watchers of its form (every request of the forms they watch, read only). Everyone else gets nothing back, as if it did not exist. Drafts
+ * are never visible. `watched`: the forms this person watches (watchedForms).
  */
-function visibility(user: ApprovalsUser): SQL | undefined {
+function visibility(user: ApprovalsUser, watched: readonly AprWatcherForm[]): SQL | undefined {
   const notDraft = ne(aprRequests.status, "draft");
   if (sees.all(user)) return notDraft;
+  const watchedTypes = watched.flatMap(typesOfForm);
   return and(
     notDraft,
     or(
       eq(aprRequests.requesterUserId, user.id),
       sql`exists (select 1 from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id})`,
+      watchedTypes.length ? inArray(aprRequests.type, watchedTypes) : undefined,
     ),
   );
 }
@@ -109,11 +114,11 @@ const SORT_SQL: Record<SortKey, SQL> = {
 const istStart = (d: string) => new Date(`${d}T00:00:00+05:30`);
 const likeEscape = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
-function conditions(user: ApprovalsUser, f: ListFilter): SQL | undefined {
+function conditions(user: ApprovalsUser, f: ListFilter, watched: readonly AprWatcherForm[]): SQL | undefined {
   const needle = f.q?.trim();
   const toExclusive = f.to && /^\d{4}-\d{2}-\d{2}$/.test(f.to) ? new Date(istStart(f.to).getTime() + 86400000) : undefined;
   return and(
-    visibility(user),
+    visibility(user, watched),
     f.types?.length ? inArray(aprRequests.type, f.types) : undefined,
     f.statuses?.length ? inArray(aprRequests.status, f.statuses) : undefined,
     f.from && /^\d{4}-\d{2}-\d{2}$/.test(f.from) ? gte(aprRequests.requestedAt, istStart(f.from)) : undefined,
@@ -155,7 +160,7 @@ function conditions(user: ApprovalsUser, f: ListFilter): SQL | undefined {
 export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Promise<{ rows: RequestRow[]; total: number; page: number; pageSize: number }> {
   const pageSize = Math.min(Math.max(f.pageSize ?? 25, 1), 200);
   const page = Math.max(f.page ?? 1, 1);
-  const where = conditions(user, f);
+  const where = conditions(user, f, await watchedForms(user.id));
   const order = SORT_SQL[f.sort ?? "requestedAt"];
   const direction = (f.dir ?? "desc") === "asc" ? asc : desc;
 
@@ -198,7 +203,8 @@ export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Pro
 export async function countRequests(user: ApprovalsUser, filters: ListFilter[]): Promise<number[]> {
   if (!filters.length) return [];
   const cols: Record<string, SQL<number>> = {};
-  filters.forEach((f, i) => { cols[`n${i}`] = sql<number>`(count(*) filter (where ${conditions(user, f) ?? sql`true`}))::int`; });
+  const watched = await watchedForms(user.id);
+  filters.forEach((f, i) => { cols[`n${i}`] = sql<number>`(count(*) filter (where ${conditions(user, f, watched) ?? sql`true`}))::int`; });
   const [row] = await db
     .select(cols)
     .from(aprRequests)
@@ -207,7 +213,7 @@ export async function countRequests(user: ApprovalsUser, filters: ListFilter[]):
     .leftJoin(aprExpenditureDetails, eq(aprExpenditureDetails.requestId, aprRequests.id))
     .leftJoin(aprCategories, eq(aprCategories.id, aprExpenditureDetails.categoryId))
     .leftJoin(aprBranches, eq(aprBranches.id, aprExpenditureDetails.branchId))
-    .where(visibility(user));
+    .where(visibility(user, await watchedForms(user.id)));
   return filters.map((_, i) => Number(row?.[`n${i}`] ?? 0));
 }
 
@@ -218,7 +224,7 @@ export type DecisionRow = { id: string; requestNo: string | null; type: AprReque
  * latest decision on it. Filtered as `decidedByMe`, so the sidebar's count of that filter always matches.
  */
 export async function listMyDecisions(user: ApprovalsUser, page: number, pageSize: number): Promise<{ rows: DecisionRow[]; total: number }> {
-  const where = conditions(user, { decidedByMe: true });
+  const where = conditions(user, { decidedByMe: true }, await watchedForms(user.id));
   const latest = sql`from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id} and s.status in ('approved', 'rejected') order by s.step_no desc limit 1`;
   const actedAt = sql<Date | null>`(select s.decided_at ${latest})`.mapWith(aprRequestSteps.decidedAt);
   const [rows, [{ n: total }]] = await Promise.all([
@@ -324,6 +330,11 @@ export type RequestDetail = {
   attachments: AttachmentRow[];
   /** While the request is returned: who sent it back and what they asked to be corrected. */
   returned: { byName: string; comment: string | null; at: Date | null } | null;
+  /**
+   * The form this person watches it through ("HR", "Expenditure", "Budget"), when that is their only part in it (they did not raise it and
+   * are not one of its approvers): they read and print it, and decide nothing. Null otherwise.
+   */
+  watching: string | null;
   can: {
     decide: boolean;
     withdraw: boolean;
@@ -417,7 +428,7 @@ async function budgetViewOf(req: typeof aprRequests.$inferSelect, user: Approval
       .from(aprRequests)
       .where(and(chain, ne(aprRequests.status, "draft")))
       .orderBy(sql`coalesce(${aprRequests.revisionNo}, 0)`),
-    db.select({ id: aprRequests.id }).from(aprRequests).where(and(chain, visibility(user))),
+    db.select({ id: aprRequests.id }).from(aprRequests).where(and(chain, visibility(user, await watchedForms(user.id)))),
   ]);
   // Each version has one step (a budget has one approver): who decided it, or who it waits for.
   const versionSteps = versions.length
@@ -454,13 +465,13 @@ async function budgetViewOf(req: typeof aprRequests.$inferSelect, user: Approval
 }
 
 export const canSeeRequest = async (user: ApprovalsUser, requestId: string): Promise<boolean> => {
-  const [row] = await db.select({ id: aprRequests.id }).from(aprRequests).where(and(eq(aprRequests.id, requestId), visibility(user))).limit(1);
+  const [row] = await db.select({ id: aprRequests.id }).from(aprRequests).where(and(eq(aprRequests.id, requestId), visibility(user, await watchedForms(user.id)))).limit(1);
   return !!row;
 };
 
 /** Everything the detail page shows, or null when the request does not exist or this person may not see it. */
 export async function getRequestDetail(requestId: string, user: ApprovalsUser): Promise<RequestDetail | null> {
-  const [req] = await db.select().from(aprRequests).where(and(eq(aprRequests.id, requestId), visibility(user)));
+  const [req] = await db.select().from(aprRequests).where(and(eq(aprRequests.id, requestId), visibility(user, await watchedForms(user.id))));
   if (!req) return null;
 
   const [hrRow, exp, steps, events, attachments] = await Promise.all([
@@ -502,6 +513,8 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
   const pending = req.status === "pending";
   const returnedStep = req.status === "returned" ? steps.find((x) => x.stepNo === req.currentStep && x.status === "returned") : undefined;
   const mine = pending && req.currentApproverUserId === user.id && req.requesterUserId !== user.id;
+  const involved = req.requesterUserId === user.id || steps.some((x) => x.approverUserId === user.id);
+  const watching = !involved && watchesType(await watchedForms(user.id), req.type) ? WATCH_FORM_LABEL[formOfType(req.type)] : null;
   return {
     id: req.id, requestNo: req.requestNo, type: req.type, status: req.status, requesterUserId: req.requesterUserId, requesterName: req.requesterName,
     requesterEmail: req.requesterEmail, requestedAt: req.requestedAt, financialYear: req.financialYear, amountPaise: req.amountPaise, overBudget: req.overBudget,
@@ -509,6 +522,7 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
     custom: (req.customValues ?? []).map((c) => ({ label: c.label, value: c.value })),
     hr, expenditure, budget, steps, events, attachments,
     returned: returnedStep ? { byName: returnedStep.approverName, comment: returnedStep.comment, at: returnedStep.decidedAt } : null,
+    watching,
     can: {
       decide: mine,
       withdraw: (pending || req.status === "returned") && req.requesterUserId === user.id,
