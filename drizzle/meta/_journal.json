@@ -309,6 +309,13 @@
       "when": 1795246271463,
       "tag": "0043_approvals_watching_category",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795255180532,
+      "tag": "0044_attendance",
+      "breakpoints": true
     }
   ]
 }

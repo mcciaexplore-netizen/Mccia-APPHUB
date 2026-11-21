@@ -1,5 +1,6 @@
 /** Fast checks for the pure helpers: CSV parsing/exporting, the email-domain rule and the Approvals money, date and menu rules. Run: npm run test:unit */
 import { readdirSync, readFileSync } from "node:fs";
+import { attendanceUnit } from "./attendance-unit";
 import { strToU8, zipSync } from "fflate";
 import { parseCsv, toCsv } from "../src/lib/csv";
 import { accountStatus } from "../src/lib/account-status";
@@ -551,7 +552,7 @@ eq("guards: the reviewed list holds only actions that really exist", [...SELF_CH
 // the Inventory module's and the Cab Booking module's routes go through their own route() wrappers, which do it centrally (checked just below).
 const appDir = new URL("../src/app/", import.meta.url);
 const allRouteFiles = (readdirSync(appDir, { recursive: true }) as string[]).filter((f) => /(^|\/)route\.ts$/.test(f));
-const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory|api\/cabs|cabs|api\/ivr|ivr|api\/design|design|api\/aistudio|aistudio|api\/eru|eru)\//.test(f) && f !== "api/cron/ivr-sync/route.ts");
+const routeFiles = allRouteFiles.filter((f) => !/^(api\/approvals|approvals|api\/inventory|inventory|api\/cabs|cabs|api\/ivr|ivr|api\/design|design|api\/aistudio|aistudio|api\/eru|eru|api\/attendance|attendance)\//.test(f) && f !== "api/cron/ivr-sync/route.ts");
 // A Vercel Cron route has no sign-in: it must check CRON_SECRET instead. The only route open to anyone on purpose is the ping, which
 // touches nothing and answers only "ok" and the time (the proxy lets exactly /api/ping through).
 const PUBLIC_ROUTES = ["api/ping/route.ts"];
@@ -600,6 +601,19 @@ for (const file of readdirSync(eruActionsDir).filter((f) => f.endsWith(".ts"))) 
 eq(`guards: every one of the ${eruActionCount} ERU server actions checks who is asking`, eruUnguarded, []);
 const eruRoutes = allRouteFiles.filter((f) => f.startsWith("api/eru/"));
 eq(`guards: every one of the ${eruRoutes.length} ERU route files checks who is asking`, eruRoutes.filter((f) => !/\bassert(Member|Admin|SuperAdmin)\(/.test(readFileSync(new URL(f, appDir), "utf8"))), []);
+// Every Attendance server action and route proves who is asking through its guard (assertMember / assertAdmin) in its own body.
+const attActionsDir = new URL("../src/lib/attendance/actions/", import.meta.url);
+const attUnguarded: string[] = [];
+let attActionCount = 0;
+for (const file of readdirSync(attActionsDir).filter((f) => f.endsWith(".ts"))) {
+  for (const part of readFileSync(new URL(file, attActionsDir), "utf8").split(/^export async function /m).slice(1)) {
+    attActionCount++;
+    if (!/\bassert(Member|Admin)\(/.test(part)) attUnguarded.push(`${file}:${/^(\w+)/.exec(part)?.[1] ?? "?"}`);
+  }
+}
+eq(`guards: every one of the ${attActionCount} Attendance server actions checks who is asking`, attUnguarded, []);
+const attRoutes = allRouteFiles.filter((f) => f.startsWith("api/attendance/"));
+eq(`guards: every one of the ${attRoutes.length} Attendance route files checks who is asking`, attRoutes.filter((f) => !/\bassert(Member|Admin)\(/.test(readFileSync(new URL(f, appDir), "utf8"))), []);
 // DesignDesk's routes check who is asking through its own guard (src/lib/design/dal.ts); the review link's file checks the link's token.
 const designRoutes = allRouteFiles.filter((f) => f.startsWith("api/design/"));
 const DESIGN_TOKEN_ROUTES = ["api/design/public/review/[token]/file/route.ts"];
@@ -1752,6 +1766,9 @@ const eruImports = (async () => {
   const HOST = /from "@\/(?:db|db\/schema|lib\/permissions|lib\/notifications|lib\/site-url|lib\/log-error|lib\/notice-feed|lib\/audit)"/;
   eq("eru isolation: only the host-adapter (and db.ts) reach the hub's own code", all.filter(isEru).filter((f) => f !== "lib/eru/host-adapter.ts" && f !== "lib/eru/db.ts" && HOST.test(readFileSync(new URL(f, srcDir), "utf8"))), []);
 }
+
+// Attendance: check-in, calendar, leave, comp-off, regularization, timesheets, feeds, roles (tests/attendance-unit.ts)
+attendanceUnit(eq);
 
 Promise.all([ssoTests, eruAsync, eruImports]).then(() => {
   console.log(`\n${ok}/${ok + bad} unit checks passed`);

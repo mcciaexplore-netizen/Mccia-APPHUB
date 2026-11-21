@@ -1,0 +1,80 @@
+/**
+ * Attendance's settings: what att_settings ("config") holds, read with a default for anything missing or wrong, so an empty row (as seeded)
+ * already works. Pure, so the Settings form, the server and the unit tests share it.
+ */
+
+import { parseHm } from "./time";
+
+export type AttSettings = {
+  /** The office the phone check-in is measured from (ICC Trade Tower, SB Road, Pune by default). */
+  office: { name: string; lat: number; lng: number; radiusM: number };
+  /** Office network addresses a laptop may check in from: exact IPv4/IPv6 addresses or IPv4 ranges (CIDR, e.g. 203.0.113.0/28). */
+  officeIps: string[];
+  /** How far back a missed punch may be corrected. */
+  regularizationWindowDays: number;
+  /** Which Saturdays of the month are off (Sundays always are). 2 and 4 by default: the 1st, 3rd and 5th are working days. */
+  offSaturdays: number[];
+  /** A check-out this many minutes or more before the shift ends is an early out. */
+  earlyOutMinutes: number;
+  /** Comp-offs expire this many days after the day worked. */
+  compoffExpiryDays: number;
+  /** Bell reminders, at IST clock times ("10:30"). */
+  reminders: { enabled: boolean; checkIn: string; checkOut: string };
+  /** Also email approvers and requesters (the bell is always used). Off by default. */
+  emailEnabled: boolean;
+};
+
+export const DEFAULT_SETTINGS: AttSettings = {
+  office: { name: "ICC Trade Tower, SB Road, Pune", lat: 18.5195, lng: 73.8553, radiusM: 150 },
+  officeIps: [],
+  regularizationWindowDays: 31,
+  offSaturdays: [2, 4],
+  earlyOutMinutes: 30,
+  compoffExpiryDays: 90,
+  reminders: { enabled: true, checkIn: "10:30", checkOut: "17:45" },
+  emailEnabled: false,
+};
+
+const num = (v: unknown, lo: number, hi: number, dflt: number) => {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  return Number.isFinite(n) && n >= lo && n <= hi ? n : dflt;
+};
+const int = (v: unknown, lo: number, hi: number, dflt: number) => Math.round(num(v, lo, hi, dflt));
+const hm = (v: unknown, dflt: string) => (parseHm(v) != null ? String(v).slice(0, 5) : dflt);
+
+/** An IPv4 or IPv6 address, or an IPv4 range a.b.c.d/n. */
+export function isIpEntry(s: string): boolean {
+  const v4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+  const [addr, bits, extra] = s.split("/");
+  if (extra !== undefined) return false;
+  if (v4.test(addr)) return bits === undefined || (/^\d{1,2}$/.test(bits) && Number(bits) <= 32);
+  return bits === undefined && /^[0-9a-f:]+$/i.test(addr) && addr.includes(":") && addr.length <= 39;
+}
+
+/** The settings from what is stored (anything missing or invalid takes its default). */
+export function parseSettings(raw: unknown): AttSettings {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const o = (r.office && typeof r.office === "object" ? r.office : {}) as Record<string, unknown>;
+  const rem = (r.reminders && typeof r.reminders === "object" ? r.reminders : {}) as Record<string, unknown>;
+  const d = DEFAULT_SETTINGS;
+  const sats = Array.isArray(r.offSaturdays) ? [...new Set(r.offSaturdays.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 5))].sort() : d.offSaturdays;
+  return {
+    office: {
+      name: typeof o.name === "string" && o.name.trim() ? o.name.trim().slice(0, 120) : d.office.name,
+      lat: num(o.lat, -90, 90, d.office.lat),
+      lng: num(o.lng, -180, 180, d.office.lng),
+      radiusM: int(o.radiusM, 25, 5000, d.office.radiusM),
+    },
+    officeIps: Array.isArray(r.officeIps) ? [...new Set(r.officeIps.map((s) => String(s).trim()).filter(isIpEntry))].slice(0, 50) : d.officeIps,
+    regularizationWindowDays: int(r.regularizationWindowDays, 1, 90, d.regularizationWindowDays),
+    offSaturdays: sats,
+    earlyOutMinutes: int(r.earlyOutMinutes, 0, 240, d.earlyOutMinutes),
+    compoffExpiryDays: int(r.compoffExpiryDays, 7, 365, d.compoffExpiryDays),
+    reminders: {
+      enabled: typeof rem.enabled === "boolean" ? rem.enabled : d.reminders.enabled,
+      checkIn: hm(rem.checkIn, d.reminders.checkIn),
+      checkOut: hm(rem.checkOut, d.reminders.checkOut),
+    },
+    emailEnabled: typeof r.emailEnabled === "boolean" ? r.emailEnabled : d.emailEnabled,
+  };
+}

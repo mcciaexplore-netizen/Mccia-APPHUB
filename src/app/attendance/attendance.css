@@ -1,0 +1,96 @@
+/*
+ * Attendance's own look on the hub's base (src/app/globals.css): deep blue with white 12px cards on a light grey page, a big green CHECK IN
+ * button, and a colour per day status. Everything is prefixed att- (or scoped under .att-root) so nothing can change a hub page. Buttons and
+ * inputs use the hub's own classes (btn, input), recoloured inside .att-root.
+ */
+:root {
+  --att-blue: #0e5a8a;
+  --att-blue-2: #1a7bb9;
+  --att-blue-tint: rgba(14, 90, 138, 0.07);
+  --att-blue-line: rgba(14, 90, 138, 0.18);
+  --att-green: #16a34a;
+  --att-green-dark: #15803d;
+  --att-green-tint: rgba(22, 163, 74, 0.1);
+  --att-red: #dc2626;
+  --att-red-tint: rgba(220, 38, 38, 0.08);
+  --att-amber: #d97706;
+  --att-amber-tint: rgba(217, 119, 6, 0.11);
+  --att-purple: #7c3aed;
+  --att-purple-tint: rgba(124, 58, 237, 0.09);
+  --att-teal: #0d9488;
+  --att-teal-tint: rgba(13, 148, 136, 0.1);
+  --att-grey: #64748b;
+  --att-grey-tint: #f1f5f9;
+  --att-page: #f4f6f8;
+  --att-line: #e5e7eb;
+  --att-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 14px rgba(15, 23, 42, 0.05);
+}
+
+.min-h-screen:has(.att-root) { background: var(--att-page); }
+.att-root { --c-primary: var(--att-blue); --grad-primary: linear-gradient(135deg, var(--att-blue) 0%, var(--att-blue-2) 100%); --c-border-hover: var(--att-blue-line); --c-blue-tint: var(--att-blue-tint); --c-blue-tint-border: var(--att-blue-line); }
+.att-root .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.att-card { background: #fff; border: 1px solid var(--att-line); border-radius: 12px; box-shadow: var(--att-shadow); }
+.att-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--att-grey); }
+.att-muted { color: var(--att-grey); }
+.att-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+.att-table th { text-align: left; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--att-grey); padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--att-line); white-space: nowrap; }
+.att-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--att-line); vertical-align: top; }
+.att-table tr:last-child td { border-bottom: none; }
+.att-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* Badges */
+.att-badge { display: inline-flex; align-items: center; gap: 0.3rem; border-radius: 99px; padding: 0.12rem 0.55rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; border: 1px solid transparent; line-height: 1.5; }
+.att-tone-neutral, .att-tone-grey, .att-tone-none { background: var(--att-grey-tint); color: #475569; border-color: #e2e8f0; }
+.att-tone-blue { background: var(--att-blue-tint); color: var(--att-blue); border-color: var(--att-blue-line); }
+.att-tone-green { background: var(--att-green-tint); color: var(--att-green-dark); border-color: rgba(22, 163, 74, 0.22); }
+.att-tone-red { background: var(--att-red-tint); color: var(--att-red); border-color: rgba(220, 38, 38, 0.2); }
+.att-tone-amber { background: var(--att-amber-tint); color: #b45309; border-color: rgba(217, 119, 6, 0.22); }
+.att-tone-purple { background: var(--att-purple-tint); color: var(--att-purple); border-color: rgba(124, 58, 237, 0.2); }
+.att-tone-teal { background: var(--att-teal-tint); color: #0f766e; border-color: rgba(13, 148, 136, 0.22); }
+
+/* The check-in button: big and round, green to check in, red-outlined to check out. */
+.att-punch { display: grid; place-items: center; width: 11rem; height: 11rem; border-radius: 999px; font-size: 1.25rem; font-weight: 800; letter-spacing: 0.04em; transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease; }
+.att-punch:active:not(:disabled) { transform: scale(0.97); }
+.att-punch-in { background: var(--att-green); color: #fff; box-shadow: 0 10px 30px rgba(22, 163, 74, 0.35), inset 0 -4px 0 rgba(0, 0, 0, 0.12); }
+.att-punch-in:hover:not(:disabled) { background: var(--att-green-dark); }
+.att-punch-out { background: #fff; color: var(--att-red); border: 3px solid var(--att-red); box-shadow: 0 10px 30px rgba(220, 38, 38, 0.15); }
+.att-punch-out:hover:not(:disabled) { background: var(--att-red-tint); }
+.att-punch:disabled { opacity: 0.6; cursor: not-allowed; }
+.att-timer { font-variant-numeric: tabular-nums; font-size: 2.4rem; font-weight: 800; letter-spacing: 0.02em; color: #0f172a; }
+
+/* Day colours: calendar cells and dots. */
+.att-st-green { background: var(--att-green-tint); color: var(--att-green-dark); }
+.att-st-red { background: var(--att-red-tint); color: var(--att-red); }
+.att-st-amber { background: var(--att-amber-tint); color: #b45309; }
+.att-st-purple { background: var(--att-purple-tint); color: var(--att-purple); }
+.att-st-grey { background: var(--att-grey-tint); color: #64748b; }
+.att-st-blue { background: var(--att-blue-tint); color: var(--att-blue); }
+.att-st-teal { background: var(--att-teal-tint); color: #0f766e; }
+.att-st-none { background: #fff; color: #334155; }
+.att-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.att-cal-cell { min-height: 4.4rem; border-radius: 8px; padding: 0.35rem 0.4rem; border: 1px solid var(--att-line); font-size: 0.72rem; line-height: 1.25; display: flex; flex-direction: column; gap: 2px; }
+.att-cal-cell.att-today { outline: 2px solid var(--att-blue); outline-offset: -1px; }
+@media (max-width: 640px) { .att-cal-cell { min-height: 3.2rem; padding: 0.25rem; font-size: 0.62rem; } .att-cal-cell .att-cal-extra { display: none; } }
+
+/* Tabs */
+.att-tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: #e9edf2; }
+.att-tab { padding: 0.4rem 0.9rem; border-radius: 8px; font-size: 0.86rem; font-weight: 700; color: #475569; }
+.att-tab[aria-current="page"] { background: #fff; color: var(--att-blue); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1); }
+
+/* Avatars */
+.att-avatar { display: inline-grid; place-items: center; border-radius: 999px; background: var(--att-blue); color: #fff; font-weight: 700; flex-shrink: 0; }
+
+/* The phone's bottom bar (hidden from a laptop up, where the sidebar shows). Space is left under the page so nothing hides behind it. */
+.att-bottom-nav { position: fixed; inset: auto 0 0 0; z-index: 40; display: grid; grid-template-columns: repeat(4, 1fr); background: #fff; border-top: 1px solid var(--att-line); padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06); }
+.att-bottom-nav a { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0.5rem 0 0.45rem; font-size: 0.7rem; font-weight: 700; color: #64748b; }
+.att-bottom-nav a[aria-current="page"] { color: var(--att-blue); }
+@media (min-width: 1024px) { .att-bottom-nav { display: none; } }
+@media (max-width: 1023px) { .att-root.att-has-bottom-nav { padding-bottom: 4.5rem; } }
+
+/* Org chart */
+.att-org { position: relative; overflow: hidden; height: min(70vh, 640px); background: radial-gradient(circle, #e2e8f0 1px, transparent 1px) 0 0 / 22px 22px, #fafbfc; border-radius: 12px; cursor: grab; touch-action: none; }
+.att-org:active { cursor: grabbing; }
+.att-org-node { position: absolute; width: 180px; background: #fff; border: 1px solid var(--att-line); border-radius: 10px; padding: 0.5rem 0.6rem; box-shadow: var(--att-shadow); font-size: 0.78rem; }
+.att-org-node.att-org-root { background: var(--att-blue); color: #fff; border-color: var(--att-blue); }
+.att-org-node.att-org-me { border: 2px solid var(--att-green); }
