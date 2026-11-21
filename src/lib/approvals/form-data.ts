@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { EditInfo, ExpenditureFormProps, HrFormProps } from "@/components/approvals/RequestForms";
 import type { BudgetFormProps } from "@/components/approvals/BudgetForm";
-import { hasRole, listUsers, type ApprovalsUser } from "./host-adapter";
+import { hasRole, listBranches, listUsers, type ApprovalsUser } from "./host-adapter";
 import { departmentOptions } from "./departments";
 import { getFormFields } from "./form-config";
 import { listMaster, type MasterRow } from "./masters";
@@ -25,8 +25,9 @@ const money = (paise: number | null | undefined) => (paise == null ? "" : format
 export async function expenditureFormProps(
   form: "large" | "small", user: ApprovalsUser, search: Record<string, string | string[] | undefined>,
 ): Promise<ExpenditureFormProps> {
-  const [categories, branches, types, publications, people, settings, fields] = await Promise.all([
+  const [categories, branches, types, publications, people, settings, fields, hubBranches] = await Promise.all([
     listMaster("categories", false), listMaster("branches", false), listMaster("publication-types", false), listMaster("publications", false), listUsers(), getSettings(), getFormFields("small"),
+    listBranches(),
   ]);
   const amount = first(search.amount);
   return {
@@ -35,6 +36,7 @@ export async function expenditureFormProps(
     meId: user.id,
     categories: options(categories),
     branches: options(branches),
+    hubBranches: hubBranches.map((b) => ({ value: b.id, label: b.name })),
     publicationTypes: options(types),
     publications: publications.filter((p) => p.publicationTypeId).map((p) => ({ value: p.id, label: p.name, typeId: p.publicationTypeId! })).sort(byName),
     thresholdPaise: settings.thresholdPaise,
@@ -42,7 +44,7 @@ export async function expenditureFormProps(
     canAdd: hasRole(user, "approvals_admin"),
     now: new Date().toISOString(),
     initial: {
-      employeeId: idOrEmpty(search.employee), email: first(search.email).slice(0, 200), categoryId: idOrEmpty(search.category), branchId: idOrEmpty(search.branch),
+      employeeId: idOrEmpty(search.employee), email: first(search.email).slice(0, 200), categoryId: idOrEmpty(search.category), branchId: idOrEmpty(search.branch), hubBranchId: idOrEmpty(search.hubBranch),
       nature: first(search.nature).slice(0, 2000), vendor: first(search.vendor).slice(0, 500), amount: /^[\d.,\s]{0,20}$/.test(amount) ? amount : "",
       budgetAllocated: moneyOrEmpty(search.allocated), budgetUsed: moneyOrEmpty(search.used),
     },
@@ -87,7 +89,7 @@ export async function expenditureEditProps(user: ApprovalsUser, requestId: strin
     ...base,
     edit: editInfo(requestId, v),
     initial: {
-      employeeId: person?.value ?? "", email: v.requesterEmail, categoryId: e.categoryId, branchId: e.branchId ?? "", nature: e.nature ?? "", vendor: e.vendorName ?? "",
+      employeeId: person?.value ?? "", email: v.requesterEmail, categoryId: e.categoryId, branchId: e.branchId ?? "", hubBranchId: e.hubBranchId ?? "", nature: e.nature ?? "", vendor: e.vendorName ?? "",
       amount: v.amountPaise == null ? "" : formatINR(v.amountPaise), budgetAllocated: money(e.budget.allocatedPaise), budgetUsed: money(e.budget.usedPaise), expenseDate: e.expenseDate ?? "", taxInvoiceDate: e.taxInvoiceDate ?? "",
       pubTypeId: e.publicationTypeId ?? "", pubId: e.publicationId ?? "",
     },

@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { departments, users } from "@/db/schema";
+import { branches, departments, users } from "@/db/schema";
 import { aprUserRoles } from "@/db/approvals-schema";
 import { adminUnlocked, getCurrentUser as hostCurrentUser } from "@/lib/permissions";
 import { ALL_ROLES, type ApprovalsRole } from "./approvals.manifest";
@@ -83,6 +83,17 @@ export async function listDepartments(): Promise<{ id: string; name: string }[]>
     .from(departments)
     .where(and(eq(departments.kind, "organisation"), eq(departments.isActive, true)))
     .orderBy(asc(departments.name));
+}
+
+/** The hub's branches (the office locations people's profiles use), active ones, by name: the Branch list of an Administrative expense. */
+export async function listBranches(): Promise<{ id: string; name: string }[]> {
+  return db.select({ id: branches.id, name: branches.name }).from(branches).where(eq(branches.isActive, true)).orderBy(asc(branches.name));
+}
+
+/** One hub branch by id, active or not (null when there is none). */
+export async function branchById(id: string): Promise<{ id: string; name: string; active: boolean } | null> {
+  const [row] = await db.select({ id: branches.id, name: branches.name, active: branches.isActive }).from(branches).where(eq(branches.id, id));
+  return row ?? null;
 }
 
 /** One department by id, active or not (null when there is none), to keep its name on a budget request. */

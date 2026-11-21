@@ -242,8 +242,9 @@ export const aprRequests = pgTable(
     decisionComment: text("decision_comment"),
     amountPaise: paise("amount_paise"),
     // The answers to the extra fields the Support Admin added to the form (see aprFormFields), each kept with the label it had when it was
-    // answered, in the order of the form: [{ "key": "...", "label": "...", "value": "..." }].
-    customValues: jsonb("custom_values").$type<{ key: string; label: string; value: string }[]>().notNull().default(sql`'[]'::jsonb`),
+    // answered, in the order of the form: [{ "key": "...", "label": "...", "value": "..." }]. The Branch of an Administrative expense is kept
+    // here too, as { "key": "branch", "label": "Branch", "value": <name>, "ref": <hub branch id> } (see lib/approvals/expense-branch.ts).
+    customValues: jsonb("custom_values").$type<{ key: string; label: string; value: string; ref?: string }[]>().notNull().default(sql`'[]'::jsonb`),
     // Expenditure only: the amount was more than the budget left, or no budget exists for the branch, category and year.
     overBudget: boolean("over_budget").notNull().default(false),
     // Resubmit clones a rejected request into a new draft and links back to the original.

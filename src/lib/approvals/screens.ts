@@ -26,7 +26,7 @@ export type ListScreen = {
   approvedByMe?: boolean;
   /** Only requests that have reached this person's step: waiting for them, or already decided by them. */
   reachedMe?: boolean;
-  /** Show the Branch column (expenditure lists). */
+  /** Show the Branch column and filter (the hub's branches: an Administrative expense names one). */
   branch?: boolean;
   /** Show vendor and tax invoice date (the below-threshold approved list). */
   vendor?: boolean;
@@ -126,7 +126,7 @@ export function recommendationScreen(key: RecommendationKey): ListScreen {
 export const WATCHING_SCREEN: ListScreen = {
   title: "All Approvals",
   intro: "Every request you have view-only access to, the most recent first. Open, print or export any of them; you cannot approve or reject them.",
-  types: ["hr", "expenditure_large", "expenditure_small", "budget"], categories: "all", watchedOnly: true, typeFilter: true,
+  types: ["hr", "expenditure_large", "expenditure_small", "budget"], categories: "all", watchedOnly: true, typeFilter: true, branch: true,
 };
 
 /** The screen for a path, whichever kind it is: one of the fixed lists, or one of the Pending / Approved / Rejected lists of HR and Expenditure. */

@@ -10,6 +10,7 @@ import { activeVersion, budgetBalance, budgetIdOf, deleteConfirmText, expenseLin
 import { canDeleteBudgets } from "./budget-delete";
 import { watchRules } from "./watchers";
 import { rulesMatch, typesOfForm, type WatchRule } from "./watching";
+import { BRANCH_KEY, splitBranch } from "./expense-branch";
 import { decisionMode, type DecisionMode } from "./calc";
 import { REVIEW_KEYS, isDgOnly, type ReviewItem, type ReviewKey } from "./approvals.manifest";
 import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
@@ -109,6 +110,9 @@ export type RequestRow = {
 
 /** The Category column: the HR or expense category, or for a budget its event. */
 const categoryName = sql<string | null>`coalesce(${aprHrCategories.name}, ${aprCategories.name}, ${aprRequests.budgetDetails}->>'eventName')`;
+/** The Branch column: the hub branch of an Administrative expense (kept in custom_values), else the branch an old request was raised with. */
+const branchName = sql<string | null>`coalesce(
+  (select b->>'value' from jsonb_array_elements(${aprRequests.customValues}) b where b->>'key' = ${BRANCH_KEY} limit 1), ${aprBranches.name})`;
 /** The person who decided, or while it is pending the one it is waiting for. */
 const approverName = sql<string | null>`coalesce(
   (select s.approver_name from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.status in ('approved', 'rejected', 'returned') order by s.step_no desc limit 1),
@@ -118,7 +122,7 @@ const SORT_SQL: Record<SortKey, SQL> = {
   requestNo: sql`${aprRequests.requestNo}`,
   name: sql`lower(${aprRequests.requesterName})`,
   category: sql`lower(${categoryName})`,
-  branch: sql`lower(${aprBranches.name})`,
+  branch: sql`lower(${branchName})`,
   amount: sql`${aprRequests.amountPaise}`,
   requestedAt: sql`${aprRequests.requestedAt}`,
   status: sql`${aprRequests.status}`,
@@ -140,7 +144,12 @@ function conditions(user: ApprovalsUser, f: ListFilter, rules: readonly WatchRul
     f.from && /^\d{4}-\d{2}-\d{2}$/.test(f.from) ? gte(aprRequests.requestedAt, istStart(f.from)) : undefined,
     toExclusive ? lt(aprRequests.requestedAt, toExclusive) : undefined,
     f.categoryId ? or(eq(aprExpenditureDetails.categoryId, f.categoryId), eq(aprHrDetails.hrCategoryId, f.categoryId)) : undefined,
-    f.branchId ? or(eq(aprExpenditureDetails.branchId, f.branchId), eq(aprHrDetails.branchId, f.branchId)) : undefined,
+    f.branchId
+      ? or(
+          sql`${aprRequests.customValues} @> ${JSON.stringify([{ key: BRANCH_KEY, ref: f.branchId }])}::jsonb`,
+          eq(aprExpenditureDetails.branchId, f.branchId), eq(aprHrDetails.branchId, f.branchId),
+        )
+      : undefined,
     f.mine ? eq(aprRequests.requesterUserId, user.id) : undefined,
     f.waitingForMe ? and(eq(aprRequests.status, "pending"), eq(aprRequests.currentApproverUserId, user.id)) : undefined,
     f.decidedByMe
@@ -165,7 +174,7 @@ function conditions(user: ApprovalsUser, f: ListFilter, rules: readonly WatchRul
           ilike(aprExpenditureDetails.vendorName, `%${likeEscape(needle)}%`),
           ilike(aprCategories.name, `%${likeEscape(needle)}%`),
           ilike(aprHrCategories.name, `%${likeEscape(needle)}%`),
-          ilike(aprBranches.name, `%${likeEscape(needle)}%`),
+          sql`${branchName} ilike ${`%${likeEscape(needle)}%`}`,
           sql`${aprRequests.budgetDetails}->>'eventName' ilike ${`%${likeEscape(needle)}%`}`,
         )
       : undefined,
@@ -184,7 +193,7 @@ export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Pro
     db
       .select({
         id: aprRequests.id, requestNo: aprRequests.requestNo, type: aprRequests.type, status: aprRequests.status, name: aprRequests.requesterName,
-        categoryName, branchName: aprBranches.name, amountPaise: aprRequests.amountPaise, requestedAt: aprRequests.requestedAt, decidedAt: aprRequests.decidedAt,
+        categoryName, branchName, amountPaise: aprRequests.amountPaise, requestedAt: aprRequests.requestedAt, decidedAt: aprRequests.decidedAt,
         approverName, overBudget: aprRequests.overBudget, vendorName: aprExpenditureDetails.vendorName, taxInvoiceDate: aprExpenditureDetails.taxInvoiceDate,
         currentStep: aprRequests.currentStep, totalSteps: aprRequests.totalSteps,
         mineToDecide: sql<boolean>`(${aprRequests.status} = 'pending' and ${aprRequests.currentApproverUserId} = ${user.id})`,
@@ -512,7 +521,8 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
       exp.d.publicationId ? db.select({ name: aprPublications.name }).from(aprPublications).where(eq(aprPublications.id, exp.d.publicationId)).then((r) => r[0]?.name ?? null) : null,
     ]);
     expenditure = {
-      categoryId: exp.d.categoryId, categoryName: exp.categoryName, branchName: exp.branchName, nature: exp.d.natureOfExpenditure, vendorName: exp.d.vendorName,
+      // The hub branch of an Administrative expense; an old request keeps the branch it was raised with.
+      categoryId: exp.d.categoryId, categoryName: exp.categoryName, branchName: splitBranch(req.customValues).branch?.name ?? exp.branchName, nature: exp.d.natureOfExpenditure, vendorName: exp.d.vendorName,
       expenseDate: exp.d.expenseDate, taxInvoiceDate: exp.d.taxInvoiceDate, publicationType: type, publication: pub,
       budget: budgetOf(exp.d),
     };
@@ -535,7 +545,7 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
     id: req.id, requestNo: req.requestNo, type: req.type, status: req.status, requesterUserId: req.requesterUserId, requesterName: req.requesterName,
     requesterEmail: req.requesterEmail, requestedAt: req.requestedAt, financialYear: req.financialYear, amountPaise: req.amountPaise, overBudget: req.overBudget,
     decidedAt: req.decidedAt, decisionComment: req.decisionComment, currentApproverUserId: req.currentApproverUserId,
-    custom: (req.customValues ?? []).map((c) => ({ label: c.label, value: c.value })),
+    custom: splitBranch(req.customValues).rest.map((c) => ({ label: c.label, value: c.value })),
     hr, expenditure, budget, steps, events, attachments,
     returned: returnedStep ? { byName: returnedStep.approverName, comment: returnedStep.comment, at: returnedStep.decidedAt } : null,
     watching,
@@ -565,7 +575,7 @@ export type EditValues = {
   amountPaise: number | null;
   hr: { firstName: string; lastName: string; hrCategoryId: string; description: string | null; budget: BudgetView | null } | null;
   expenditure: {
-    categoryId: string; branchId: string | null; nature: string | null; vendorName: string | null; expenseDate: string | null; taxInvoiceDate: string | null;
+    categoryId: string; branchId: string | null; hubBranchId: string | null; nature: string | null; vendorName: string | null; expenseDate: string | null; taxInvoiceDate: string | null;
     publicationTypeId: string | null; publicationId: string | null; budget: BudgetView;
   } | null;
   attachments: AttachmentRow[];
@@ -591,12 +601,12 @@ export async function getEditValues(requestId: string, user: ApprovalsUser): Pro
     hr: hr ? { firstName: hr.firstName, lastName: hr.lastName, hrCategoryId: hr.hrCategoryId, description: hr.description, budget: hr.budgetAllocatedPaise != null ? budgetOf(hr) : null } : null,
     expenditure: exp
       ? {
-          categoryId: exp.categoryId, branchId: exp.branchId, nature: exp.natureOfExpenditure, vendorName: exp.vendorName, expenseDate: exp.expenseDate, taxInvoiceDate: exp.taxInvoiceDate,
+          categoryId: exp.categoryId, branchId: exp.branchId, hubBranchId: splitBranch(req.customValues).branch?.id || null, nature: exp.natureOfExpenditure, vendorName: exp.vendorName, expenseDate: exp.expenseDate, taxInvoiceDate: exp.taxInvoiceDate,
           publicationTypeId: exp.publicationTypeId, publicationId: exp.publicationId, budget: budgetOf(exp),
         }
       : null,
     attachments: attachments.map((a) => ({ id: a.id, slot: a.slot, fileName: a.fileName, size: a.size, mime: a.mime })),
-    custom: Object.fromEntries((req.customValues ?? []).map((c) => [c.key, c.value])),
+    custom: Object.fromEntries(splitBranch(req.customValues).rest.map((c) => [c.key, c.value])),
     returnedBy: step?.approverName ?? null,
     returnComment: step?.comment ?? null,
   };

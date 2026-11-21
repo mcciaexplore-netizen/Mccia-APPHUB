@@ -14,7 +14,7 @@ import { listMasterCached } from "@/lib/approvals/masters";
 import { listRequests } from "@/lib/approvals/request-queries";
 import { typesOfForm } from "@/lib/approvals/watching";
 import { PAGE_SIZE, type ListScreen } from "@/lib/approvals/screens";
-import { hasRole, type ApprovalsUser } from "@/lib/approvals/host-adapter";
+import { hasRole, listBranches, type ApprovalsUser } from "@/lib/approvals/host-adapter";
 import type { AprRequestStatus, AprWatcherForm } from "@/db/approvals-schema";
 import { decisionMode } from "@/lib/approvals/calc";
 
@@ -31,7 +31,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
     }),
     screen.categories === "hr" || screen.categories === "all" ? listMasterCached("hr-categories", true) : Promise.resolve([]),
     screen.categories === "expense" || screen.categories === "all" ? listMasterCached("categories", true) : Promise.resolve([]),
-    screen.branch ? listMasterCached("branches", true) : Promise.resolve([]),
+    screen.branch ? listBranches() : Promise.resolve([]),
   ]);
   const categories = [...hrCats, ...expCats].map((c) => ({ id: c.id, name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
   const mixed = !screen.types || screen.types.length > 1;

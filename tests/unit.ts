@@ -28,6 +28,7 @@ import { isEmailAllowed } from "../src/lib/domains";
 import {
   FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, decidesIn, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, pageHeading, typeHeading, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
 import * as W from "../src/lib/approvals/watching";
+import * as XB from "../src/lib/approvals/expense-branch";
 import { activeVersion, budgetBalance, budgetIdOf, compareVersions, comparisonPairs, deleteConfirmed, diffLines, nextBudgetSerial, budgetIdView, budgetRequestNo, requestNoText, cleanVendors, expenseLinesOf, incomeLinesOf, linesTotal, nextRevisionNo, revisionBase, revisionBlocker, revisionRequestNo, versionLabel, waitingRevision } from "../src/lib/approvals/budget";
 import { budgetRequestInput, budgetRevisionInput } from "../src/lib/approvals/request-schemas";
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
@@ -226,6 +227,19 @@ eq("headings: a request's kind", (["hr", "expenditure_large", "expenditure_small
     ["Asha Rao submitted a new Expenditure request", "Asha Rao submitted a new HR request", "Asha Rao submitted a new Budget request"]);
   eq("watchers: All Approvals is one list", [W.isWatchingPath(["watching", "all"]), W.isWatchingPath(["watching", "hr"]), W.isWatchingPath(["watching"]), W.WATCHING_HREF], [true, false, false, "/approvals/watching/all"]);
 }
+eq("expense branch: asked only for Administrative Expenses (any case or spacing)", [
+  XB.needsBranch("Administrative Expenses"), XB.needsBranch("  administrative   EXPENSES "), XB.needsBranch("Event Expenses"), XB.needsBranch("Administrative"), XB.needsBranch(""), XB.needsBranch(null),
+], [true, true, false, false, false, false]);
+eq("expense branch: kept with the answers by name and id, and split back out of them", [
+  XB.branchAnswer({ id: "b1", name: "Pune" }),
+  XB.splitBranch([{ key: "c_1a2b3c4d", label: "PO", value: "42" }, XB.branchAnswer({ id: "b1", name: "Pune" })]),
+  XB.splitBranch([{ key: "c_1a2b3c4d", label: "PO", value: "42" }]), XB.splitBranch(null),
+], [
+  { key: "branch", label: "Branch", value: "Pune", ref: "b1" },
+  { branch: { id: "b1", name: "Pune" }, rest: [{ key: "c_1a2b3c4d", label: "PO", value: "42" }] },
+  { branch: null, rest: [{ key: "c_1a2b3c4d", label: "PO", value: "42" }] }, { branch: null, rest: [] },
+]);
+eq("expense branch: All Approvals shows the Branch column and filter", [resolveScreen(["watching", "all"], false)?.branch], [true]);
 eq("budget: versions read Original, Rev 1, Rev 2; a revision's number is the original's with -R1, -R2", [versionLabel(null), versionLabel(0), versionLabel(1), versionLabel(2), revisionRequestNo("BUD-2026-27-0004", 2)], ["Original", "Original", "Rev 1", "Rev 2", "BUD-2026-27-0004-R2"]);
 eq("budget: a budget's ID is BUD-<short year>-<number>, counted per year; a revision adds -R1, -R2; it can never look like an HR or expenditure number", [budgetRequestNo("2026-27", 1), budgetRequestNo("2026-27", 42), budgetRequestNo("2027-28", 1), budgetRequestNo("2099-00", 7), revisionRequestNo(budgetRequestNo("2026-27", 1), 2), /^(HR|EXP|EXB)-/.test(budgetRequestNo("2026-27", 1))], ["BUD-2627-0001", "BUD-2627-0042", "BUD-2728-0001", "BUD-9900-0007", "BUD-2627-0001-R2", false]);
 eq("budget: the ID shown: one Budget ID for every version once the budget has it (never with -R1/-R2); Pending approval while none; Not assigned after a rejection or withdrawal", [

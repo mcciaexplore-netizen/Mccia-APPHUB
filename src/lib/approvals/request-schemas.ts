@@ -97,6 +97,8 @@ const common = {
   natureOfExpenditure: optionalText(2000),
   // The form no longer asks for a branch; an older client that still sends one is accepted.
   branchId: idSchema.nullish().transform((v) => v ?? null),
+  // The hub branch, asked only when the category is "Administrative Expenses" (and then required; the server checks). Ignored otherwise.
+  hubBranchId: idSchema.nullish().transform((v) => v ?? null),
   amountPaise,
   // The budget the requester says is allocated, and how much of it is used. The branch and category no longer decide the budget.
   // Budget figures are no longer typed (the budget of the category is used); an older client that still sends them is accepted and ignored.

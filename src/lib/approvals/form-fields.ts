@@ -117,7 +117,8 @@ export function mergeFields(form: FormKey, rows: readonly FormFieldRow[]): FormF
 }
 
 /** One answer to an extra field, kept with the name the field had when it was answered. A request keeps them in the order of the form. */
-type CustomAnswer = { key: string; label: string; value: string };
+// `ref` is only on the expense's Branch (see expense-branch.ts): the hub branch's id, beside its name.
+type CustomAnswer = { key: string; label: string; value: string; ref?: string };
 export type CustomAnswers = CustomAnswer[];
 
 /**

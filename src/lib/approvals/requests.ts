@@ -13,7 +13,8 @@ import { checkFilesReady, claimFiles, releaseFiles } from "./files";
 import { resolveCustomAnswers } from "./form-config";
 import type { CustomAnswers } from "./form-fields";
 import { financialYearOf, formatINR, todayIST } from "./format";
-import { getDirectoryUsers, listUsers, roleApprovers, type ApprovalsUser } from "./host-adapter";
+import { branchById, getDirectoryUsers, listUsers, roleApprovers, type ApprovalsUser } from "./host-adapter";
+import { branchAnswer, needsBranch, type BranchAnswer } from "./expense-branch";
 import { resolveDepartment } from "./departments";
 import { retiredBudgetIds } from "./budget-delete";
 import { watcherIdsFor } from "./watchers";
@@ -265,7 +266,16 @@ async function prepareExpenditure(form: ExpenditureForm, input: LargeExpenditure
     if (!pub || pub.publicationTypeId !== small.publicationTypeId) throw new ApprovalsError("That publication does not belong to the chosen type.");
   }
 
-  return { employee, small, large: form === "large" ? (input as LargeExpenditureInput) : null };
+  // An Administrative expense names one of the hub's branches; any other category has none (a branch sent anyway is dropped).
+  let branchEntry: BranchAnswer | null = null;
+  if (needsBranch(category.name)) {
+    if (!input.hubBranchId) throw new ApprovalsError("Choose the branch: it is needed for Administrative Expenses.", 422);
+    const hubBranch = await branchById(input.hubBranchId);
+    if (!hubBranch?.active) throw new ApprovalsError("Pick a branch from the list.", 422);
+    branchEntry = branchAnswer(hubBranch);
+  }
+
+  return { employee, small, large: form === "large" ? (input as LargeExpenditureInput) : null, branchEntry };
 }
 
 const expenditureDetailsValues = (input: LargeExpenditureInput | SmallExpenditureInput, small: SmallExpenditureInput) => ({
@@ -284,9 +294,9 @@ const expenditureFiles = (large: LargeExpenditureInput | null, small: SmallExpen
 
 /** Both expenditure forms. The amount must match the form: 10,000 and above is "large" (DG), anything lower is "small". */
 export async function submitExpenditure(form: ExpenditureForm, input: LargeExpenditureInput | SmallExpenditureInput, actor: ApprovalsUser) {
-  const { employee, small, large } = await prepareExpenditure(form, input);
-  // One expense form: its extra fields are the ones set on it ("small"), whatever the amount.
-  const customValues = await resolveCustomAnswers("small", input.custom);
+  const { employee, small, large, branchEntry } = await prepareExpenditure(form, input);
+  // One expense form: its extra fields are the ones set on it ("small"), whatever the amount. The branch, if any, is kept with them.
+  const customValues: CustomAnswers = [...(await resolveCustomAnswers("small", input.custom)), ...(branchEntry ? [branchEntry] : [])];
   return createRequest(actor, {
     customValues,
     type: form === "large" ? "expenditure_large" : "expenditure_small",
@@ -616,7 +626,7 @@ export async function resubmitRequest(requestId: string, input: ResubmitInput, a
   let requesterEmail: string;
   let newFiles: { slot: Slot; fileId: string }[];
   let writeDetails: () => Promise<unknown>;
-  const customValues = await resolveCustomAnswers(input.kind === "hr" ? "hr" : "small", input.custom);
+  let customValues = await resolveCustomAnswers(input.kind === "hr" ? "hr" : "small", input.custom);
   if (input.kind === "hr") {
     const [category] = await db.select().from(aprHrCategories).where(eq(aprHrCategories.id, input.hrCategoryId));
     if (!category?.active) throw new ApprovalsError("Pick an active category.");
@@ -628,7 +638,8 @@ export async function resubmitRequest(requestId: string, input: ResubmitInput, a
     ];
     writeDetails = () => db.update(aprHrDetails).set(hrDetailsValues(input)).where(eq(aprHrDetails.requestId, requestId));
   } else {
-    const { employee, small, large } = await prepareExpenditure(input.kind, input);
+    const { employee, small, large, branchEntry } = await prepareExpenditure(input.kind, input);
+    if (branchEntry) customValues = [...customValues, branchEntry];
     requesterName = employee.name;
     requesterEmail = input.email ?? employee.email;
     newFiles = expenditureFiles(large, small);

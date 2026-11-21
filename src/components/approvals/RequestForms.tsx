@@ -9,6 +9,7 @@ import { DateInput, DateTimeInput, EmailInput, FileInput, FormActions, MoneyInpu
 import { wrongFormMessage } from "@/lib/approvals/calc";
 import { formatDateTime, formatINR, parseINR, todayIST } from "@/lib/approvals/format";
 import type { FormField } from "@/lib/approvals/form-fields";
+import { needsBranch } from "@/lib/approvals/expense-branch";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ref = (f: UploadedFile | null) => (f ? { fileId: f.fileId } : null);
@@ -237,6 +238,8 @@ export type ExpenditureFormProps = {
   meId: string;
   categories: Option[];
   branches: Option[];
+  /** The hub's branches (as on people's profiles): asked only when the category is Administrative Expenses. */
+  hubBranches: Option[];
   publicationTypes: Option[];
   publications: (Option & { typeId: string })[];
   thresholdPaise: number;
@@ -245,7 +248,7 @@ export type ExpenditureFormProps = {
   canAdd: boolean;
   now: string;
   /** Values carried over from the other expenditure form (see the link in the amount message), or, when correcting, the request's own. */
-  initial?: { employeeId?: string; email?: string; categoryId?: string; branchId?: string; nature?: string; vendor?: string; amount?: string; budgetAllocated?: string; budgetUsed?: string; expenseDate?: string; taxInvoiceDate?: string; pubTypeId?: string; pubId?: string };
+  initial?: { employeeId?: string; email?: string; categoryId?: string; branchId?: string; hubBranchId?: string; nature?: string; vendor?: string; amount?: string; budgetAllocated?: string; budgetUsed?: string; expenseDate?: string; taxInvoiceDate?: string; pubTypeId?: string; pubId?: string };
   /** Set when the form corrects a request that was returned. */
   edit?: EditInfo;
   /**
@@ -277,6 +280,9 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   const [nature, setNature] = useState(defaults.nature);
   // No branch is asked any more; a returned request that had one keeps it when it is corrected.
   const [branchId, setBranchId] = useState(defaults.branchId);
+  // The hub branch: only an Administrative expense asks for it, and then it is required.
+  const [hubBranchId, setHubBranchId] = useState(start.hubBranchId ?? "");
+  const askBranch = needsBranch(categories.find((c) => c.value === categoryId)?.label);
   const [amount, setAmount] = useState(defaults.amount);
   // Which kind of request this is: fixed by the form, or, on the one expense form, by the amount typed.
   const typedPaise = amount.trim() ? parseINR(amount) : null;
@@ -300,7 +306,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
 
   const reset = () => {
     if (p.edit) { router.push(`/approvals/requests/${p.edit.requestId}?app=${large ? "hr" : "exp"}`); return; }
-    setEmployeeId(defaults.employeeId); setEmail(defaults.email); setRequestedAt(new Date().toISOString()); setCategoryId(""); setNature(""); setBranchId("");
+    setEmployeeId(defaults.employeeId); setEmail(defaults.email); setRequestedAt(new Date().toISOString()); setCategoryId(""); setNature(""); setBranchId(""); setHubBranchId("");
     setAmount(""); setVendor(""); setQuotation(null); setFileUpload(null); setTaxInvoice(null); setExpenseDate(""); setTaxInvoiceDate("");
     setPubTypeId(""); setPubId(""); setCustom({}); setErrors({}); setFormError(null);
   };
@@ -314,11 +320,12 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
     if (email) q.set("email", email);
     if (categoryId) q.set("category", categoryId);
     if (branchId) q.set("branch", branchId);
+    if (askBranch && hubBranchId) q.set("hubBranch", hubBranchId);
     if (nature) q.set("nature", nature);
     if (vendor) q.set("vendor", vendor);
     if (amount) q.set("amount", amount);
     return `${large ? "/approvals/expenses/new" : "/approvals/expenditures/new"}${q.toString() ? `?${q}` : ""}`;
-  }, [large, employeeId, email, categoryId, branchId, nature, vendor, amount]);
+  }, [large, employeeId, email, categoryId, branchId, askBranch, hubBranchId, nature, vendor, amount]);
 
   const onEmployee = (id: string) => { setEmployeeId(id); setEmail(emailOf(id)); };
   const onType = (id: string) => { setPubTypeId(id); setPubId(""); };
@@ -330,6 +337,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
     if (!email.trim()) err.email = "Enter the email address.";
     else if (email.trim() && !EMAIL.test(email.trim())) err.email = "Enter a valid email address.";
     if (!categoryId) err.category = "Choose a category.";
+    else if (askBranch && !hubBranchId) err.hubBranch = "Choose the branch.";
     if (!vendor.trim()) err.vendor = "Enter the vendor name.";
     if (amountPaise === null || amountPaise <= 0) err.amount = "Enter an amount above 0, with at most 2 decimals.";
     else if (wrong) err.amount = wrong;
@@ -338,7 +346,7 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
     checkExtra(fields, custom, err);
     setErrors(err);
     if (Object.keys(err).length) return;
-    const common = { employeeUserId: employeeId, email, requestedAt, categoryId, natureOfExpenditure: nature, branchId: branchId || null, amountPaise, vendorName: vendor, custom: extraAnswers(fields, custom), ...(p.edit ? { keepAttachmentIds: keep } : {}) };
+    const common = { employeeUserId: employeeId, email, requestedAt, categoryId, natureOfExpenditure: nature, branchId: branchId || null, hubBranchId: askBranch ? hubBranchId || null : null, amountPaise, vendorName: vendor, custom: extraAnswers(fields, custom), ...(p.edit ? { keepAttachmentIds: keep } : {}) };
     // The same fields for every amount; the kind only decides who approves it.
     void submit({ kind: large ? "large" : "small", ...common, fileUpload: ref(fileUpload), expenseDate, publicationTypeId: pubTypeId || null, publicationId: pubId || null, taxInvoice: ref(taxInvoice), quotation: ref(quotation), taxInvoiceDate });
   };
@@ -371,9 +379,16 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
       ? <Row label={lab("date", "Date")}><p className="py-2">{formatDateTime(p.edit.requestedAt)}</p></Row>
       : <Row label={lab("date", "Date")} htmlFor="ex-requested"><DateTimeInput id="ex-requested" value={requestedAt} onChange={setRequestedAt} /></Row>,
     category: (
-      <Row label={lab("category", "Category")} required htmlFor="ex-category" error={errors.category}>
-        <SearchSelect id="ex-category" options={categories} value={categoryId} onChange={setCategoryId} invalid={!!errors.category} add={addCategory} />
-      </Row>
+      <>
+        <Row label={lab("category", "Category")} required htmlFor="ex-category" error={errors.category}>
+          <SearchSelect id="ex-category" options={categories} value={categoryId} onChange={setCategoryId} invalid={!!errors.category} add={addCategory} />
+        </Row>
+        {askBranch && (
+          <Row label="Branch" required htmlFor="ex-branch" error={errors.hubBranch}>
+            <SearchSelect id="ex-branch" options={p.hubBranches} value={hubBranchId} onChange={setHubBranchId} invalid={!!errors.hubBranch} />
+          </Row>
+        )}
+      </>
     ),
     nature: <Row label={lab("nature", "Nature of Expenditure")} htmlFor="ex-nature"><TextArea id="ex-nature" value={nature} onChange={setNature} /></Row>,
     vendor: <Row label={lab("vendor", "Vendor Name")} required htmlFor="ex-vendor" error={errors.vendor}><TextArea id="ex-vendor" value={vendor} onChange={setVendor} rows={3} /></Row>,
