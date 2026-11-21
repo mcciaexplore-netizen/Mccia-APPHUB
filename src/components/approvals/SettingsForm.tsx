@@ -7,11 +7,12 @@ import { Field } from "@/components/approvals/shared-ui";
 import { formatINR, parseINR } from "@/lib/approvals/format";
 import type { ApprovalsSettings } from "@/lib/approvals/settings";
 
-const TOGGLES: { key: "largeFormShowQuotation" | "notifyApproverOnAssignment" | "notifyRequesterOnOutcome" | "notifyAdminOnImportErrors"; label: string; hint: string }[] = [
+const TOGGLES: { key: "largeFormShowQuotation" | "notifyApproverOnAssignment" | "notifyRequesterOnOutcome" | "notifyAdminOnImportErrors" | "notifyWatchersByEmail"; label: string; hint: string }[] = [
   { key: "largeFormShowQuotation", label: "Show the Quotation upload on the Expenditure (10,000 and above) form", hint: "An optional extra file field after Tax Invoice / Supporting Documents." },
   { key: "notifyApproverOnAssignment", label: "Email the approver when a request is assigned to them", hint: "Reminders for requests left waiting are controlled by the hours above." },
   { key: "notifyRequesterOnOutcome", label: "Email the requester on every step outcome and the final result", hint: "Submission confirmations are always sent." },
   { key: "notifyAdminOnImportErrors", label: "Email Approvals admins when an import has errors", hint: "" },
+  { key: "notifyWatchersByEmail", label: "Email watchers when a new request is submitted on a form they watch", hint: "Watchers always get the bell notice. Watchers are set in Administrator > Approval Forms." },
 ];
 
 export function SettingsForm({ initial }: { initial: ApprovalsSettings }) {
@@ -24,6 +25,7 @@ export function SettingsForm({ initial }: { initial: ApprovalsSettings }) {
     notifyApproverOnAssignment: initial.notifyApproverOnAssignment,
     notifyRequesterOnOutcome: initial.notifyRequesterOnOutcome,
     notifyAdminOnImportErrors: initial.notifyAdminOnImportErrors,
+    notifyWatchersByEmail: initial.notifyWatchersByEmail,
   });
 
   const submit = (e: React.FormEvent) => {

@@ -7,6 +7,8 @@ import { formatDateTime, formatINR } from "@/lib/approvals/format";
 import { parseListParams } from "@/lib/approvals/list-params";
 import { listRequests, reviewItemsFor, type RequestRow } from "@/lib/approvals/request-queries";
 import { resolveScreen } from "@/lib/approvals/screens";
+import { watchedForms } from "@/lib/approvals/watchers";
+import { parseWatchingPath } from "@/lib/approvals/watching";
 import { STATUS_LABEL, TYPE_LABEL } from "@/lib/approvals/calc";
 import { requestNoText } from "@/lib/approvals/budget";
 
@@ -29,7 +31,11 @@ export const GET = route({}, async ({ req, user }) => {
   // The Budget place is anyone's who was sent a budget (as its pages are); every other list needs full access, and the Director General
   // works from the Recommended Queue.
   const review = parseReviewPath(slug);
-  if (review?.key === "budget") {
+  const watching = parseWatchingPath(slug);
+  if (watching) {
+    // A Watching list: for the watchers of that form only.
+    if (!(await watchedForms(user.id)).includes(watching)) return NextResponse.json({ error: "Not allowed." }, { status: 403 });
+  } else if (review?.key === "budget") {
     if (!(await reviewItemsFor(user)).some((i) => i.key === "budget") && !hasAnyRole(user, ["dg"])) return NextResponse.json({ error: "Not allowed." }, { status: 403 });
   } else if (!hasAnyRole(user, FULL_ACCESS_ROLES) || isDgOnly(user.roles)) {
     return NextResponse.json({ error: "Not allowed." }, { status: 403 });

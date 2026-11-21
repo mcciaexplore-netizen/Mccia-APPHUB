@@ -1,4 +1,5 @@
-import type { AprRequestStatus, AprRequestType } from "@/db/approvals-schema";
+import type { AprRequestStatus, AprRequestType, AprWatcherForm } from "@/db/approvals-schema";
+import { WATCH_FORM_LABEL, parseWatchingPath, typesOfForm } from "./watching";
 import { parseRecommendationPath, parseReviewPath, type RecommendationKey, type ReviewKey, type ReviewTab } from "./approvals.manifest";
 
 /**
@@ -117,10 +118,22 @@ export function recommendationScreen(key: RecommendationKey): ListScreen {
   };
 }
 
+/** What a watcher of a form reads: every request of it, any status (filtered on the page), read only. */
+export function watchingScreen(form: AprWatcherForm): ListScreen {
+  const label = WATCH_FORM_LABEL[form];
+  return {
+    title: `Watched ${label} requests`,
+    intro: `Every ${label} request, as a watcher of the ${label} form: open, print or export any of them. Watching never lets you approve or reject.`,
+    types: typesOfForm(form), categories: form === "hr" ? "hr" : form === "expenditure" ? "expense" : "none", branch: form === "expenditure" || undefined,
+  };
+}
+
 /** The screen for a path, whichever kind it is: one of the fixed lists, or one of the Pending / Approved / Rejected lists of HR and Expenditure. */
 export function resolveScreen(slug: string[], decides: boolean): ListScreen | undefined {
   const review = parseReviewPath(slug);
   if (review) return reviewScreen(review.key, review.tab, decides);
   const recommended = parseRecommendationPath(slug);
-  return recommended ? recommendationScreen(recommended) : screenFor(slug);
+  if (recommended) return recommendationScreen(recommended);
+  const watched = parseWatchingPath(slug);
+  return watched ? watchingScreen(watched) : screenFor(slug);
 }

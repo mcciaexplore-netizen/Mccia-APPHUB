@@ -465,8 +465,9 @@ try {
     await H.goto(BASE + "/administrator/approval-forms");
     if (new URL(H.url()).pathname === "/unlock") { await H.locator("input[name=password]").fill(ADMIN_PW); await H.getByRole("button", { name: "Unlock" }).click(); await H.waitForURL((u) => u.pathname !== "/unlock", { timeout: 30000 }); }
     const card = H.locator('a[href="/administrator/approval-forms/budget"]').filter({ hasText: "Budget form" }).first();
+    await card.waitFor({ timeout: 15000 }).catch(() => {}); // the page also loads the watchers and the people to pick from
     check("Administrator → Approval Forms has a Budget form card beside HR and Expenditure, with its description and Edit form", (await card.count()) === 1 && (await card.innerText()).includes("The budget approval form for events, with income, expenses and revision tracking.") && (await card.innerText()).includes("Edit form")
-      && (await H.locator('a[href="/administrator/approval-forms/hr"]').count()) >= 1 && (await H.locator('a[href="/administrator/approval-forms/expenditure"]').count()) >= 1);
+      && (await H.locator('a[href="/administrator/approval-forms/hr"]').count()) >= 1 && (await H.locator('a[href="/administrator/approval-forms/expenditure"]').count()) >= 1, [await card.count(), await card.innerText().catch((e) => String(e).slice(0, 200)), H.url()]);
     check("…and Budget is in the Administrator sidebar after HR and Expenditure", (await H.locator('a[href="/administrator/approval-forms/budget"]').count()) >= 2);
     await card.click(); await H.waitForURL(/approval-forms\/budget$/); await H.waitForLoadState("networkidle").catch(() => {});
     const listed = await H.locator('ol[aria-label="Fields of the Budget form"] input[aria-label^="Name of field"]').evaluateAll((els) => els.map((e) => e.value));

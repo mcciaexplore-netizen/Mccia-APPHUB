@@ -27,6 +27,7 @@ import { safeNext } from "../src/lib/session";
 import { isEmailAllowed } from "../src/lib/domains";
 import {
   FULL_ACCESS_ROLES, approvalsApps, appForType, canSee, decidesIn, parseRecommendationPath, parseReviewPath, reviewHref, hasFullAccess, isApprovalsUrl, isGroup, isModuleEnabled, isDgOnly, pageHeading, typeHeading, type ApprovalsRole } from "../src/lib/approvals/approvals.manifest";
+import * as W from "../src/lib/approvals/watching";
 import { activeVersion, budgetBalance, budgetIdOf, compareVersions, comparisonPairs, deleteConfirmed, diffLines, nextBudgetSerial, budgetIdView, budgetRequestNo, requestNoText, cleanVendors, expenseLinesOf, incomeLinesOf, linesTotal, nextRevisionNo, revisionBase, revisionBlocker, revisionRequestNo, versionLabel, waitingRevision } from "../src/lib/approvals/budget";
 import { budgetRequestInput, budgetRevisionInput } from "../src/lib/approvals/request-schemas";
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
@@ -205,6 +206,22 @@ eq("headings: each page names its kind (HR, Expenditure, Budget), personal lists
   "Approval System", "Approval System", "Approval System", null, null, "Revise Budget",
 ]);
 eq("headings: a request's kind", (["hr", "expenditure_large", "expenditure_small", "budget"] as const).map(typeHeading), ["HR Approval", "Expenditure Approval", "Expenditure Approval", "Budget Approval"]);
+{
+  eq("watchers: each form covers its request types (Expenditure both expense forms, Budget its budgets and revisions)",
+    [W.typesOfForm("hr"), W.typesOfForm("expenditure"), W.typesOfForm("budget"), W.formOfType("expenditure_small"), W.formOfType("expenditure_large"), W.formOfType("hr"), W.formOfType("budget")],
+    [["hr"], ["expenditure_large", "expenditure_small"], ["budget"], "expenditure", "expenditure", "hr", "budget"]);
+  eq("watchers: a watcher sees only the forms they watch", [
+    W.watchesType(["expenditure"], "expenditure_small"), W.watchesType(["expenditure"], "hr"), W.watchesType(["expenditure"], "budget"),
+    W.watchesType(["hr", "budget"], "budget"), W.watchesType([], "hr"),
+  ], [true, false, false, true, false]);
+  eq("watchers: a new request tells each watcher once, never the person who raised it nor the approver already told", [
+    W.watcherRecipients(["a", "b", "a", "r", "x"], "r", ["x"]), W.watcherRecipients([], "r", ["x"]), W.watcherRecipients(["x"], "r", ["x"]),
+  ], [["a", "b"], [], []]);
+  eq("watchers: the notice names the person and the form", [W.watcherNoticeTitle("Asha Rao", "expenditure_large"), W.watcherNoticeTitle("Asha Rao", "hr"), W.watcherNoticeTitle("Asha Rao", "budget")],
+    ["Asha Rao submitted a new Expenditure request", "Asha Rao submitted a new HR request", "Asha Rao submitted a new Budget request"]);
+  eq("watchers: the Watching lists' paths", [W.parseWatchingPath(["watching", "hr"]), W.parseWatchingPath(["watching", "expenditure"]), W.parseWatchingPath(["watching", "other"]), W.parseWatchingPath(["watching"]), W.watchingHref("budget")],
+    ["hr", "expenditure", null, null, "/approvals/watching/budget"]);
+}
 eq("budget: versions read Original, Rev 1, Rev 2; a revision's number is the original's with -R1, -R2", [versionLabel(null), versionLabel(0), versionLabel(1), versionLabel(2), revisionRequestNo("BUD-2026-27-0004", 2)], ["Original", "Original", "Rev 1", "Rev 2", "BUD-2026-27-0004-R2"]);
 eq("budget: a budget's ID is BUD-<short year>-<number>, counted per year; a revision adds -R1, -R2; it can never look like an HR or expenditure number", [budgetRequestNo("2026-27", 1), budgetRequestNo("2026-27", 42), budgetRequestNo("2027-28", 1), budgetRequestNo("2099-00", 7), revisionRequestNo(budgetRequestNo("2026-27", 1), 2), /^(HR|EXP|EXB)-/.test(budgetRequestNo("2026-27", 1))], ["BUD-2627-0001", "BUD-2627-0042", "BUD-2728-0001", "BUD-9900-0007", "BUD-2627-0001-R2", false]);
 eq("budget: the ID shown: one Budget ID for every version once the budget has it (never with -R1/-R2); Pending approval while none; Not assigned after a rejection or withdrawal", [

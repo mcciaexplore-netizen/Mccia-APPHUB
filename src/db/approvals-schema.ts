@@ -193,6 +193,25 @@ export const aprUserRoles = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.role] })],
 );
 
+/**
+ * Watchers: hub users who may read every request of one form (HR, Expenditure: both expense types, Budget: budgets and their revisions),
+ * print and export them, and are told of each new one, but never decide anything. Managed by the Support Admin in Administrator > Approval
+ * Forms. One row per person per form.
+ */
+export const aprWatcherForm = ["hr", "expenditure", "budget"] as const;
+export type AprWatcherForm = (typeof aprWatcherForm)[number];
+export const aprWatchers = pgTable(
+  "apr_watchers",
+  {
+    id: id(),
+    formType: text("form_type").notNull().$type<AprWatcherForm>(),
+    userId: uuid("user_id").notNull(),
+    addedById: uuid("added_by_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("apr_watchers_form_user_uq").on(t.formType, t.userId), index("apr_watchers_user_idx").on(t.userId)],
+);
+
 /** Serial numbers: one row per prefix and financial year, for example "EXP-2026-27". Bumped with a single atomic statement. */
 export const aprCounters = pgTable("apr_counters", {
   key: text("key").primaryKey(),
