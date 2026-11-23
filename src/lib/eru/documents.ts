@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { db } from "./db";
 import { auditLogs, documentChanges, documentComments, documents, files, projects, settings } from "@/db/eru-schema";
@@ -49,10 +49,25 @@ async function documentRow(id: string) {
   return d;
 }
 
-/** A new document in a project: blank, or with content the browser converted from a .docx (whose original upload is kept with it). */
-export async function createDocument(u: SessionUser, projectId: string, input: { title: string; content?: unknown; originalFileId?: string | null }): Promise<{ id: string }> {
+/**
+ * A new document in a project: blank, or with content the browser read from a Word file. With `sourceFileId` (Edit in editor on a project
+ * file) the document points at that file as its original, which stays a project file of its own: deleting the document never deletes it.
+ * (`originalFileId`, a fresh upload claimed for the document, is the older import and is kept for documents made that way.)
+ */
+export async function createDocument(u: SessionUser, projectId: string, input: { title: string; content?: unknown; originalFileId?: string | null; sourceFileId?: string | null }): Promise<{ id: string }> {
   if (!can.editDocument(u.roles)) throw new EruError("ERU team members only.");
   const p = await projectOf(projectId);
+  let source: { id: string; fileName: string } | null = null;
+  if (input.sourceFileId) {
+    if (!isUuid(input.sourceFileId)) throw new EruError("That file is no longer in this project.");
+    const [f] = await db
+      .select({ id: files.id, fileName: files.fileName })
+      .from(files)
+      .where(and(eq(files.id, input.sourceFileId), eq(files.projectId, p.id), eq(files.attached, true), isNull(files.documentId)))
+      .limit(1);
+    if (!f) throw new EruError("That file is no longer in this project.");
+    source = f;
+  }
   const content = input.content ? plainContent(parseContent(input.content).toJSON()) : EMPTY_DOC;
   const [s] = await db.select({ trackChangesDefault: settings.trackChangesDefault }).from(settings).where(eq(settings.id, 1));
   // The original upload is claimed first, so a file that cannot be used never leaves a document behind.
@@ -60,11 +75,15 @@ export async function createDocument(u: SessionUser, projectId: string, input: {
   const original = input.originalFileId ? await claimFile(u.id, input.originalFileId, { projectId: p.id }) : null;
   const [d] = await db
     .insert(documents)
-    .values({ projectId: p.id, title: cleanDocumentTitle(input.title), content, originalFileId: original?.id ?? null, createdBy: u.id, lastEditedBy: u.id, trackChanges: !!s?.trackChangesDefault })
+    .values({ projectId: p.id, title: cleanDocumentTitle(input.title), content, originalFileId: original?.id ?? source?.id ?? null, createdBy: u.id, lastEditedBy: u.id, trackChanges: !!s?.trackChangesDefault })
     .returning({ id: documents.id });
   if (original) await db.update(files).set({ documentId: d.id }).where(eq(files.id, original.id));
   await db.update(projects).set({ updatedAt: new Date() }).where(eq(projects.id, p.id));
-  await audit(p.id, u.id, input.originalFileId ? "document.import" : "document.create", { documentId: d.id, title: cleanDocumentTitle(input.title) });
+  await audit(p.id, u.id, source ? "document.from_file" : input.originalFileId ? "document.import" : "document.create", {
+    documentId: d.id,
+    title: cleanDocumentTitle(input.title),
+    ...(source ? { fileName: source.fileName } : {}),
+  });
   return d;
 }
 

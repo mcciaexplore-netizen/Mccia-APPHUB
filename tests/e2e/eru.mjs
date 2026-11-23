@@ -4,7 +4,9 @@
  * (converted for the editor, the original kept in storage), formats text, comments on a passage, switches track changes on and makes tracked
  * edits (and cannot switch it off); an admin accepts and rejects the changes; the .docx download carries the result. Tables (from a .docx,
  * and inserted, edited, saved and reloaded in the editor), and PDF and PowerPoint files converted for editing. Then ERU Admin: the
- * dashboard, All Projects, Members (adding someone writes the hub's own lists) and Settings. Run against a site with ERU_ENABLED=true and
+ * dashboard, All Projects, Members (adding someone writes the hub's own lists) and Settings. Uploading never converts a file: Word, PDF and
+ * PowerPoint files are stored as they are and shown as file cards (Download, Preview, Edit in editor for Word, Convert to PDF / to Word, each
+ * conversion a new card beside the original). Run against a site with ERU_ENABLED=true and
  * SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY pointing at a storage (a local stub is fine):
  *   E2E_BASE_URL=http://localhost:3000 STORAGE_STUB=http://localhost:54400 node tests/e2e/eru.mjs
  * With the module switched off (ERU_ENABLED unset), E2E_ERU_OFF=yes checks instead that every page and route is a 404.
@@ -175,6 +177,16 @@ const saveNow = async (page) => {
   return poll(async () => /^Saved/.test((await page.getByTestId("eru-save-status").innerText()).trim()), 20000);
 };
 const docRow = async (id) => (await sql`select * from eru_documents where id = ${id}`)[0];
+/** Uploads a file with "Upload file" and waits for its card (nothing is converted). */
+const uploadCard = async (page, name, mimeType, buffer) => {
+  await page.getByTestId("eru-upload-file-input").setInputFiles({ name, mimeType, buffer });
+  const card = page.locator(`[data-testid="eru-file-card"][data-file-name="${name}"]`);
+  await card.waitFor({ timeout: Number(process.env.E2E_SLOW_MS || 90000) });
+  return card;
+};
+const cardButtons = async (card) => (await card.locator("a, button").allInnerTexts()).map((t) => t.trim()).filter(Boolean).join("|");
+const fileRowNamed = async (projectId, name) => (await sql`select * from eru_files where project_id = ${projectId} and file_name = ${name} order by created_at desc`)[0];
+const closeDialog = async (page) => { await page.keyboard.press("Escape"); await page.waitForTimeout(400); };
 const CODE_LOCKED = "Code blocks cannot be edited while track changes is on. Turn off track changes to edit code blocks.";
 const NO_CODE_COMMENTS = "Comments cannot be added to code blocks.";
 /** The editor's short message by the caret (why something was not done). */
@@ -226,8 +238,25 @@ try {
   check("its page shows number, title, status and priority", new RegExp(`${proj.number}[\\s\\S]*ZZE Pune industry outlook[\\s\\S]*Active[\\s\\S]*High`).test(await Mb.page.locator("main header").first().innerText()));
   check("a member does not get the admin controls", (await Mb.page.getByLabel("Manage project").count()) === 0);
 
-  section("upload a .docx");
-  await Mb.page.getByTestId("eru-docx-input").setInputFiles({ name: "Pune Outlook Q2.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: await sampleDocx() });
+  section("upload a .docx: stored as it is, nothing converted");
+  const docsBeforeWord = (await sql`select count(*)::int as n from eru_documents where project_id = ${projectId}`)[0].n;
+  check("the button says Upload file (not Upload document)", (await Mb.page.getByRole("button", { name: "Upload file", exact: true }).count()) === 1 && (await Mb.page.getByRole("button", { name: /Upload document|Import document/ }).count()) === 0);
+  const wordCard = await uploadCard(Mb.page, "Pune Outlook Q2.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", await sampleDocx());
+  check("it appears as a Word file card: name, size, date, and Download, Preview, Edit in editor, Convert to PDF", /Pune Outlook Q2\.docx[\s\S]*Word · [\d.]+ (KB|B)/.test(await wordCard.innerText()) && (await cardButtons(wordCard)) === "Download|Preview|Edit in editor|Convert to PDF", [await wordCard.innerText(), await cardButtons(wordCard)]);
+  check("no document was made: the upload converted nothing", (await sql`select count(*)::int as n from eru_documents where project_id = ${projectId}`)[0].n === docsBeforeWord && pathOf(Mb.page).startsWith("/eru/projects/"));
+  const wordFile = await fileRowNamed(projectId, "Pune Outlook Q2.docx");
+  check("stored as a project file, as uploaded", !!wordFile && wordFile.attached && !wordFile.document_id, wordFile);
+  if (STUB) check("the original really is in the storage bucket", (await (await fetch(`${STUB}/_stub/count`)).json()).keys.some((k) => k.endsWith("Pune Outlook Q2.docx")));
+  await wordCard.getByRole("button", { name: "Preview" }).click();
+  const docxPreview = Mb.page.getByTestId("eru-preview-docx");
+  await docxPreview.waitFor({ timeout: 20000 });
+  check("Preview shows the Word file read only, with its formatting", /Pune Industry Outlook/.test(await docxPreview.innerText()) && (await docxPreview.locator("strong", { hasText: "rose sharply" }).count()) === 1 && (await docxPreview.locator("[contenteditable]").count()) === 0);
+  await closeDialog(Mb.page);
+
+  section("Edit in editor (Word)");
+  await wordCard.getByRole("button", { name: "Edit in editor" }).click();
+  check("it asks first, saying the Word file is kept", await Mb.page.getByText("This will convert your Word document to an editable document. The original Word file will be kept. Continue?").waitFor({ timeout: 8000 }).then(() => true, () => false));
+  await Mb.page.getByRole("button", { name: "Continue" }).click();
   // The editor page is the heaviest (TipTap): a dev server compiles it on first use, which can take minutes.
   await Mb.page.waitForURL(/\/eru\/documents\/[0-9a-f-]{36}$/, { timeout: Number(process.env.E2E_SLOW_MS || 90000) });
   const docId = pathOf(Mb.page).split("/").pop();
@@ -236,8 +265,9 @@ try {
   check("the editor opens with the Word file's text", /Pune Industry Outlook/.test(await prose.innerText()) && /Credit demand remains strong/.test(await prose.innerText()));
   check("its formatting came through: heading, bold, bullet", (await prose.locator("h1", { hasText: "Pune Industry Outlook" }).count()) === 1 && (await prose.locator("strong", { hasText: "rose sharply" }).count()) === 1 && (await prose.locator("ul li", { hasText: "Exports steady" }).count()) === 1);
   const d0 = await docRow(docId);
-  check("the document is stored with the original upload kept", d0.title === "Pune Outlook Q2" && !!d0.original_file_id, d0);
-  if (STUB) check("the original really is in the storage bucket", (await (await fetch(`${STUB}/_stub/count`)).json()).keys.some((k) => k.endsWith("Pune Outlook Q2.docx")));
+  check("the document points at the Word file as its original", d0.title === "Pune Outlook Q2" && d0.original_file_id === wordFile.id, d0);
+  const wordAfter = await fileRowNamed(projectId, "Pune Outlook Q2.docx");
+  check("the Word file is still a project file of its own (side by side, not owned by the document)", !!wordAfter && !wordAfter.document_id);
 
   section("edit with formatting");
   await caretAtEnd(Mb.page);
@@ -383,7 +413,16 @@ try {
   await go(Mb.page, `/eru/projects/${projectId}`);
   const row = Mb.page.getByTestId("eru-document-row");
   check("the document is listed with who edited it last, and an Edit and a .docx button", (await row.count()) === 1 && /Pune Outlook Q2[\s\S]*Last edited by ZZE Admin Arjun/.test(await row.innerText()) && (await row.getByRole("link", { name: "Edit" }).count()) === 1);
-  check("the activity log tells the story", /imported the document[\s\S]*/.test(await mainText(Mb.page)) && /accepted 1 change/.test(await mainText(Mb.page)) && /rejected 1 change/.test(await mainText(Mb.page)));
+  check("the activity log tells the story", /made the editable document "Pune Outlook Q2" from Pune Outlook Q2\.docx/.test(await mainText(Mb.page)) && /accepted 1 change/.test(await mainText(Mb.page)) && /rejected 1 change/.test(await mainText(Mb.page)));
+  const wordCard2 = Mb.page.locator('[data-testid="eru-file-card"][data-file-name="Pune Outlook Q2.docx"]');
+  check("the original Word file is still listed, beside the document", (await wordCard2.count()) === 1);
+  await wordCard2.getByRole("button", { name: "Convert to PDF" }).click();
+  const wordPdf = Mb.page.locator('[data-testid="eru-file-card"][data-file-name="Pune Outlook Q2.pdf"]');
+  check("Convert to PDF saves a new PDF file card; the Word file stays", await wordPdf.waitFor({ timeout: 60000 }).then(() => true, () => false) && (await wordCard2.count()) === 1);
+  const wordPdfRow = await fileRowNamed(projectId, "Pune Outlook Q2.pdf");
+  const wordPdfBytes = Buffer.from(await (await Mb.page.request.get(`${BASE}/api/eru/files/${wordPdfRow.id}`)).body());
+  check("…and it is a real PDF", wordPdfBytes.subarray(0, 5).toString() === "%PDF-" && wordPdfBytes.length > 800 && wordPdfRow.mime === "application/pdf", wordPdfBytes.length);
+  check("the PDF card offers Preview and Convert to Word", (await cardButtons(wordPdf)) === "Download|Preview|Convert to Word", await cardButtons(wordPdf));
   await Mb.page.getByRole("tab", { name: /Members/ }).click();
   check("Members tab: a member sees it and the assigned people", (await Mb.page.getByRole("tab", { name: /Members/ }).count()) === 1 && /ZZE Member Meena/.test(await mainText(Mb.page)));
   check("…but cannot add or remove anyone", (await Mb.page.getByRole("button", { name: /Remove|Assign/ }).count()) === 0 && /An ERU admin changes who is assigned/.test(await mainText(Mb.page)));
@@ -408,8 +447,10 @@ try {
 
   section("tables: a .docx with a table");
   await go(Mb.page, `/eru/projects/${projectId}`);
-  check("Upload document takes Word, PDF and PowerPoint files", (await Mb.page.getByTestId("eru-docx-input").getAttribute("accept")).startsWith(".docx,.pdf,.pptx"));
-  await Mb.page.getByTestId("eru-docx-input").setInputFiles({ name: "Cluster Comparison.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: await tableDocx() });
+  check("Upload file takes any file (no type filter)", (await Mb.page.getByTestId("eru-upload-file-input").getAttribute("accept")) === null);
+  const tableCard = await uploadCard(Mb.page, "Cluster Comparison.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", await tableDocx());
+  await tableCard.getByRole("button", { name: "Edit in editor" }).click();
+  await Mb.page.getByRole("button", { name: "Continue" }).click();
   await Mb.page.waitForURL(/\/eru\/documents\/[0-9a-f-]{36}$/, { timeout: SLOW });
   const wordTableId = pathOf(Mb.page).split("/").pop();
   await ed.waitFor({ timeout: SLOW });
@@ -468,54 +509,47 @@ try {
   await Mb.page.keyboard.press("ControlOrMeta+z");
   check("Delete table removes it; undo brings it back", gone && (await ed.locator("table").count()) === 1);
 
-  section("import a PDF");
+  section("a PDF: stored as it is; Preview and Convert to Word");
   await go(Mb.page, `/eru/projects/${projectId}`);
-  await Mb.page.getByTestId("eru-docx-input").setInputFiles({ name: "Pune Manufacturing Survey.pdf", mimeType: "application/pdf", buffer: samplePdf() });
-  await Mb.page.waitForURL(/\/eru\/documents\/[0-9a-f-]{36}\?converted=1$/, { timeout: SLOW });
-  const pdfDocId = pathOf(Mb.page).split("/").pop();
-  await ed.waitFor({ timeout: SLOW });
-  const note = Mb.page.getByTestId("eru-converted-note");
-  check("it opens with the note that some formatting may not be preserved, and a link to the original", /Some formatting may not be preserved during conversion/.test(await note.innerText()) && (await note.getByRole("link", { name: /Pune Manufacturing Survey\.pdf/ }).count()) === 1, await note.innerText().catch(() => "no note"));
-  check(
-    "the PDF's text came through with its structure: title, headings, a paragraph, bullets",
-    (await ed.locator("h1", { hasText: "Pune Manufacturing Survey" }).count()) === 1 && (await ed.locator("h2").allInnerTexts()).join("|") === "Key findings|Outlook" && (await ed.locator("ul li").count()) === 2 && (await ed.locator("p", { hasText: "led by automotive components and engineering goods" }).count()) === 1,
-    (await ed.innerHTML()).slice(0, 700),
-  );
-  const pdfRow = await docRow(pdfDocId);
-  check("stored as a document titled from the file, the original PDF kept with it", pdfRow.title === "Pune Manufacturing Survey" && !!pdfRow.original_file_id, pdfRow.title);
-  if (STUB) check("the original PDF really is in the storage bucket", (await (await fetch(`${STUB}/_stub/count`)).json()).keys.some((k) => k.endsWith("Pune Manufacturing Survey.pdf")));
-  check("the editor's Original button downloads it", (await Mb.page.getByRole("link", { name: "Original" }).count()) === 1 && (await fetchIn(Mb.page, `/api/eru/files/${pdfRow.original_file_id}`)).status === 302);
-  await caretAfter(Mb.page, "through the period.");
-  await Mb.page.keyboard.type(" Output should hold in Q3.");
-  check("the converted text can be edited and saved", (await saveNow(Mb.page)) && (await contentHas(pdfDocId, "Output should hold in Q3.")));
-  await note.getByRole("button", { name: "Dismiss" }).click();
-  check("the note can be dismissed", (await note.count()) === 0 && !/converted/.test(Mb.page.url()));
-  await Mb.page.reload();
-  await ed.waitFor({ timeout: SLOW });
-  check("…and does not come back on a reload", (await note.count()) === 0);
+  const docsBeforePdf = (await sql`select count(*)::int as n from eru_documents where project_id = ${projectId}`)[0].n;
+  const pdfCard = await uploadCard(Mb.page, "Pune Manufacturing Survey.pdf", "application/pdf", samplePdf());
+  check("a PDF card: Download, Preview, Convert to Word (no Edit in editor)", (await cardButtons(pdfCard)) === "Download|Preview|Convert to Word", await cardButtons(pdfCard));
+  check("no document was made", (await sql`select count(*)::int as n from eru_documents where project_id = ${projectId}`)[0].n === docsBeforePdf);
+  if (STUB) check("the PDF really is in the storage bucket", (await (await fetch(`${STUB}/_stub/count`)).json()).keys.some((k) => k.endsWith("Pune Manufacturing Survey.pdf")));
+  await pdfCard.getByRole("button", { name: "Preview" }).click();
+  const pdfCanvas = Mb.page.getByTestId("eru-preview-pdf");
+  await pdfCanvas.waitFor({ timeout: 20000 });
+  await poll(async () => (await pdfCanvas.evaluate((c) => c.width)) > 100, 15000);
+  check("Preview draws the PDF's pages in the page", /Page 1 of \d+/.test(await Mb.page.getByTestId("eru-preview-page").innerText()) && (await pdfCanvas.evaluate((c) => c.width)) > 100);
+  await closeDialog(Mb.page);
+  await pdfCard.getByRole("button", { name: "Convert to Word" }).click();
+  const pdfWord = Mb.page.locator('[data-testid="eru-file-card"][data-file-name="Pune Manufacturing Survey.docx"]');
+  check("Convert to Word saves a new Word file card; the PDF stays", await pdfWord.waitFor({ timeout: 60000 }).then(() => true, () => false) && (await pdfCard.count()) === 1);
+  const pdfWordRow = await fileRowNamed(projectId, "Pune Manufacturing Survey.docx");
+  const pdfWordXml = strFromU8(unzipSync(new Uint8Array(await (await Mb.page.request.get(`${BASE}/api/eru/files/${pdfWordRow.id}`)).body()))["word/document.xml"]);
+  check("…a Word file with the PDF's text and headings", /Key findings/.test(pdfWordXml) && /Outlook/.test(pdfWordXml) && /led by automotive components/.test(pdfWordXml) && /w:pStyle w:val="Heading2"/.test(pdfWordXml));
+  check("…which can itself be edited in the editor", (await cardButtons(pdfWord)) === "Download|Preview|Edit in editor|Convert to PDF", await cardButtons(pdfWord));
 
-  section("import a PowerPoint");
-  await go(Mb.page, `/eru/projects/${projectId}`);
-  await Mb.page.getByTestId("eru-docx-input").setInputFiles({ name: "Quarterly Review.pptx", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", buffer: await samplePptx() });
-  await Mb.page.waitForURL(/\/eru\/documents\/[0-9a-f-]{36}\?converted=1$/, { timeout: SLOW });
-  const pptxDocId = pathOf(Mb.page).split("/").pop();
-  await ed.waitFor({ timeout: SLOW });
-  check("it opens with the conversion note", /Some formatting may not be preserved during conversion/.test(await note.innerText()));
-  check("each slide is a section headed by its title, in the deck's order", (await ed.locator("h2").allInnerTexts()).join("|") === "Quarterly Highlights|Sector Table", await ed.locator("h2").allInnerTexts());
-  check(
-    "the slides' bullets (nested), bold text, text box, subtitle and table came through",
-    (await ed.locator("ul ul li", { hasText: "Driven by exports" }).count()) === 1 && (await ed.locator("strong", { hasText: "18 percent" }).count()) === 1 && (await ed.locator("p", { hasText: "Source: MCCIA member survey" }).count()) === 1 && (await ed.locator("h3", { hasText: "By industry" }).count()) === 1 && (await ed.locator("table th").allInnerTexts()).join("|") === "Sector|Growth" && (await ed.locator('table td[colspan="2"]', { hasText: "All sectors steady" }).count()) === 1,
-    (await ed.innerHTML()).slice(0, 900),
-  );
-  await caretAfter(Mb.page, "Auto");
-  await Mb.page.keyboard.type(" parts");
-  check("the converted slides can be edited and saved", (await saveNow(Mb.page)) && (await contentHas(pptxDocId, "Auto parts")) && !!(await docRow(pptxDocId)).original_file_id);
+  section("a PowerPoint: Preview a slide at a time, Convert to PDF");
+  const pptxCard = await uploadCard(Mb.page, "Quarterly Review.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", await samplePptx());
+  check("a PowerPoint card: Download, Preview, Convert to PDF", (await cardButtons(pptxCard)) === "Download|Preview|Convert to PDF", await cardButtons(pptxCard));
+  await pptxCard.getByRole("button", { name: "Preview" }).click();
+  const slide = Mb.page.getByTestId("eru-preview-slide");
+  await slide.waitFor({ timeout: 20000 });
+  check("Preview shows slide 1 of 2 with its title and bullets", (await Mb.page.getByTestId("eru-preview-page").innerText()) === "Slide 1 of 2" && /Quarterly Highlights/.test(await slide.innerText()) && /18 percent/.test(await slide.innerText()));
+  await Mb.page.getByRole("button", { name: "Next slide" }).click();
+  check("…and the next slide (its table)", (await Mb.page.getByTestId("eru-preview-page").innerText()) === "Slide 2 of 2" && /Sector Table/.test(await slide.innerText()) && (await slide.locator("table td", { hasText: "Sector" }).count()) >= 1);
+  await closeDialog(Mb.page);
+  await pptxCard.getByRole("button", { name: "Convert to PDF" }).click();
+  const pptxPdf = Mb.page.locator('[data-testid="eru-file-card"][data-file-name="Quarterly Review.pdf"]');
+  check("Convert to PDF saves a new PDF card; the PowerPoint stays", await pptxPdf.waitFor({ timeout: 60000 }).then(() => true, () => false) && (await pptxCard.count()) === 1);
+  const pptxPdfBytes = Buffer.from(await (await Mb.page.request.get(`${BASE}/api/eru/files/${(await fileRowNamed(projectId, "Quarterly Review.pdf")).id}`)).body()).toString("latin1");
+  check("…a PDF with one page per slide", pptxPdfBytes.startsWith("%PDF-") && (pptxPdfBytes.match(/\/Type \/Page\b/g) ?? []).length === 2, (pptxPdfBytes.match(/\/Type \/Page\b/g) ?? []).length);
 
-  section("a file that cannot be imported");
-  await go(Mb.page, `/eru/projects/${projectId}`);
-  const docsBefore = await Mb.page.getByTestId("eru-document-row").count();
-  await Mb.page.getByTestId("eru-docx-input").setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("plain notes") });
-  check("is refused with a message saying what can be", !!(await poll(async () => (await Mb.page.getByText(/Choose a Word document \(\.docx\), a PDF or a PowerPoint/).count()) > 0, 8000)) && (await Mb.page.getByTestId("eru-document-row").count()) === docsBefore);
+  section("any other file: Download only");
+  const docsBeforeTxt = (await sql`select count(*)::int as n from eru_documents where project_id = ${projectId}`)[0].n;
+  const txtCard = await uploadCard(Mb.page, "notes.txt", "text/plain", Buffer.from("plain notes"));
+  check("a .txt file is stored and offers only Download", (await cardButtons(txtCard)) === "Download" && (await sql`select count(*)::int as n from eru_documents where project_id = ${projectId}`)[0].n === docsBeforeTxt, await cardButtons(txtCard));
 
   section("ERU Admin");
   await go(Ad.page, "/eru/admin");

@@ -14,14 +14,13 @@ import {
   deleteDocumentAction,
   deleteProjectAction,
   manageProjectAction,
-  removeProjectFileAction,
   setAssigneesAction,
   updateDetailsAction,
 } from "@/lib/eru/actions/workspace";
 import { PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL } from "@/lib/eru/eru.manifest";
-import { formatBytes, IMPORT_ACCEPT, importKind } from "@/lib/eru/file-types";
+import { FileCards } from "./FileCards";
 import type { ActivityItem, DocumentSummary, FileSummary } from "@/lib/eru/queries";
-import { Avatar, Avatars, Badge, Card, describeActivity, DomainBadge, Empty, exportHref, fileHref, formatDateTime, formatDay, isOverdue, PriorityBadge, StatusBadge } from "../ui";
+import { Avatar, Avatars, Badge, Card, describeActivity, DomainBadge, Empty, exportHref, formatDateTime, formatDay, isOverdue, PriorityBadge, StatusBadge } from "../ui";
 import { useAct } from "../use-act";
 import { uploadFile } from "../upload";
 
@@ -178,23 +177,15 @@ function Documents({ projectId, documents, admin }: { projectId: string; documen
     router.push(`/eru/documents/${r.data.id}`);
   }
 
-  async function importFile(file: File) {
-    const kind = importKind(file.name);
-    if (!kind) return toast.error("Choose a Word document (.docx), a PDF or a PowerPoint (.pptx). Other files go under Files.");
+  /** "Upload file": the file is stored exactly as it is and shown under Files; nothing is converted. */
+  async function uploadAsFile(file: File) {
     try {
-      setBusy(kind === "docx" ? "Reading the document…" : "Converting…");
-      const { fileToContent, titleFromFile } = await import("./import-file");
-      const { content, converted } = await fileToContent(file, kind);
-      setBusy("Uploading the original…");
+      setBusy("Uploading…");
       const up = await uploadFile(file);
-      setBusy("Creating the document…");
-      const r = await createDocumentAction(projectId, { title: titleFromFile(file.name), content, originalFileId: up.fileId });
-      if (!r.ok) throw new Error(r.error);
-      toast.success("Imported");
-      // A converted PDF or presentation opens with a note that some formatting may not have come across.
-      router.push(`/eru/documents/${r.data.id}${converted ? "?converted=1" : ""}`);
+      const r = await act(() => addProjectFileAction(projectId, up.fileId), { quiet: true });
+      if (r.ok) toast.success(`Uploaded ${file.name}: it is under Files`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "The document could not be imported.");
+      toast.error(e instanceof Error ? e.message : "The file could not be uploaded.");
     } finally {
       setBusy(null);
     }
@@ -209,20 +200,19 @@ function Documents({ projectId, documents, admin }: { projectId: string; documen
           <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => setNaming(true)}>
             <FilePlus2 size={14} aria-hidden /> New document
           </button>
-          <button type="button" className="btn eru-btn-navy btn-sm" disabled={!!busy} title="A Word document (.docx), a PDF or a PowerPoint (.pptx), to edit here" onClick={() => input.current?.click()}>
-            <FileUp size={14} aria-hidden /> {busy ?? "Upload document"}
+          <button type="button" className="btn eru-btn-navy btn-sm" disabled={!!busy} title="Stores the file as it is (Word, PDF, PowerPoint or anything else). Then choose what to do with it under Files." onClick={() => input.current?.click()}>
+            <FileUp size={14} aria-hidden /> {busy ?? "Upload file"}
           </button>
           <input
             ref={input}
             type="file"
-            accept={IMPORT_ACCEPT}
             className="sr-only"
-            aria-label="Upload a document (Word, PDF or PowerPoint)"
-            data-testid="eru-docx-input"
+            aria-label="Upload a file"
+            data-testid="eru-upload-file-input"
             onChange={(e) => {
               const f = e.target.files?.[0];
               e.target.value = "";
-              if (f) void importFile(f);
+              if (f) void uploadAsFile(f);
             }}
           />
         </div>
@@ -275,7 +265,7 @@ function Documents({ projectId, documents, admin }: { projectId: string; documen
           ))}
         </ul>
       ) : (
-        <Empty title="No documents yet">Upload a Word document (.docx), a PDF or a PowerPoint (.pptx) to edit it here, or start a new one.</Empty>
+        <Empty title="No documents yet">Start a new document, or upload a Word file and choose “Edit in editor” on it under Files.</Empty>
       )}
       {naming && (
         <Modal title="New document" onClose={() => setNaming(false)}>
@@ -402,7 +392,6 @@ function Details({ project: p }: { project: ProjectViewProps["project"] }) {
 function Files({ projectId, files, me }: { projectId: string; files: FileSummary[]; me: { id: string; admin: boolean } }) {
   const input = useRef<HTMLInputElement>(null);
   const toast = useToast();
-  const confirm = useConfirm();
   const { act } = useAct();
   const [progress, setProgress] = useState<number | null>(null);
 
@@ -443,32 +432,7 @@ function Files({ projectId, files, me }: { projectId: string; files: FileSummary
         </>
       }
     >
-      {files.length ? (
-        <ul className="divide-y divide-[var(--eru-line)]">
-          {files.map((f) => (
-            <li key={f.id} className="flex items-center gap-2 px-5 py-2.5 text-sm">
-              <a href={fileHref(f.id)} className="min-w-0 flex-1 truncate font-semibold text-ink hover:underline" title={f.fileName}>
-                {f.fileName}
-              </a>
-              <span className="shrink-0 text-xs eru-muted">{formatBytes(f.size)}</span>
-              {(me.admin || f.uploadedById === me.id) && (
-                <button
-                  type="button"
-                  className="eru-tool"
-                  aria-label={`Remove ${f.fileName}`}
-                  onClick={async () => {
-                    if (await confirm({ title: `Remove ${f.fileName}?`, message: "The file is deleted for good.", confirmLabel: "Remove", danger: true })) await act(() => removeProjectFileAction(f.id));
-                  }}
-                >
-                  <Trash2 size={13} aria-hidden />
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="px-5 py-6 text-center text-sm eru-muted">Data, spreadsheets, PDFs and other files for this project.</p>
-      )}
+      <FileCards projectId={projectId} files={files} me={me} />
     </Card>
   );
 }

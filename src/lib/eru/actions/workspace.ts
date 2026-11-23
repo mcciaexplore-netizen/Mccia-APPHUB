@@ -5,6 +5,7 @@ import { assertAdmin, assertMember, run, type ActionResult } from "../dal";
 import { startUpload } from "../files";
 import * as P from "../projects";
 import * as D from "../documents";
+import { convertProjectFile } from "../convert-file";
 import type { ProjectInput } from "../eru.manifest";
 
 /**
@@ -73,7 +74,7 @@ export async function removeProjectFileAction(fileId: string): Promise<ActionRes
   }, "File removed");
 }
 
-export async function createDocumentAction(projectId: string, input: { title: string; content?: unknown; originalFileId?: string | null }): Promise<ActionResult<{ id: string }>> {
+export async function createDocumentAction(projectId: string, input: { title: string; content?: unknown; originalFileId?: string | null; sourceFileId?: string | null }): Promise<ActionResult<{ id: string }>> {
   return run(async () => {
     const r = await D.createDocument(await assertMember(), projectId, input);
     refresh();
@@ -114,4 +115,13 @@ export async function resolveCommentAction(id: string, resolved: boolean): Promi
 
 export async function deleteCommentAction(id: string): Promise<ActionResult> {
   return run(async () => D.deleteComment(await assertMember(), id));
+}
+
+/** Convert to PDF / Convert to Word: the content the browser read from the stored file, written as a new file beside it. */
+export async function convertFileAction(fileId: string, to: "pdf" | "docx", content: unknown): Promise<ActionResult<{ fileId: string; fileName: string }>> {
+  return run(async () => {
+    const r = await convertProjectFile(await assertMember(), fileId, to === "docx" ? "docx" : "pdf", content);
+    refresh();
+    return r;
+  }, "Converted: the new file is in Files");
 }

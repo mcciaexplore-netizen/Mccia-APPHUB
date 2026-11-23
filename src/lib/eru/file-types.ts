@@ -45,15 +45,41 @@ export function safeFileName(name: string): string {
   return cleaned.slice(0, 120 - ext.length) + ext;
 }
 
-/** What "Upload document" turns into an editable document: a Word file as it is, a PDF or a PowerPoint (.pptx) converted to text. */
-export type ImportKind = "docx" | "pdf" | "pptx";
-/** The kind of document a file can be imported as, by name; null for anything else (which goes under Files). */
-export function importKind(name: string): ImportKind | null {
+/**
+ * Files are stored exactly as uploaded; nothing is converted on upload. What can be done with one depends on its type:
+ *   .docx  Download, Preview (read only), Edit in editor (makes an editable document; the Word file stays), Convert to PDF
+ *   .pdf   Download, Preview, Convert to Word
+ *   .pptx  Download, Preview (one slide at a time), Convert to PDF
+ *   other  Download
+ * A conversion is saved as a new file beside the original, which is always kept.
+ */
+export type FileKind = "docx" | "pdf" | "pptx" | "other";
+export type ImportKind = Exclude<FileKind, "other">;
+export type FileAction = "download" | "preview" | "edit" | "toPdf" | "toWord";
+
+export function fileKind(name: string): FileKind {
   const m = /\.(docx|pdf|pptx)$/i.exec(name);
-  return m ? (m[1].toLowerCase() as ImportKind) : null;
+  return m ? (m[1].toLowerCase() as ImportKind) : "other";
 }
-/** The upload picker's filter for documents to import. */
-export const IMPORT_ACCEPT = [".docx", ".pdf", ".pptx", MIME.docx, MIME.pdf, MIME.pptx].join(",");
+
+export function fileActions(name: string): FileAction[] {
+  switch (fileKind(name)) {
+    case "docx":
+      return ["download", "preview", "edit", "toPdf"];
+    case "pdf":
+      return ["download", "preview", "toWord"];
+    case "pptx":
+      return ["download", "preview", "toPdf"];
+    default:
+      return ["download"];
+  }
+}
+
+/** The converted file's name: the original's name with the new extension. */
+export function convertedName(name: string, to: "pdf" | "docx"): string {
+  const base = name.replace(/\.[^.]+$/, "") || "converted";
+  return `${base}.${to}`;
+}
 
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;

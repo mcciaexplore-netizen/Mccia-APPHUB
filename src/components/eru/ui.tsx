@@ -182,6 +182,10 @@ export function describeActivity(action: string, d: Record<string, unknown>): st
       return `rejected ${s("count")} change${s("count") === "1" ? "" : "s"} in "${s("title")}"`;
     case "comment.add":
       return `commented on "${s("title")}"`;
+    case "document.from_file":
+      return `made the editable document "${s("title")}" from ${s("fileName")}`;
+    case "file.convert":
+      return `converted ${s("fileName")} to ${s("to")}`;
     case "file.upload":
       return `uploaded ${s("fileName")}`;
     case "file.remove":

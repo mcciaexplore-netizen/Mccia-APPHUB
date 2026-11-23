@@ -90,7 +90,7 @@ import { eruSchema, plainContent as eruPlain } from "../src/lib/eru/editor/exten
 import { collectChanges as eruChanges, decidedDoc as eruDecided, editsCodeBlock as eruEditsCode, SKIP_TRACKING as ERU_SKIP, touchesCodeBlock as eruTouchesCode, trackTransactions as eruTrack } from "../src/lib/eru/editor/track-changes";
 import { commentAnchors as eruAnchors } from "../src/lib/eru/editor/comments";
 import { exportDocx as eruExport, halfPoints as eruHalfPoints, hexColor as eruHex } from "../src/lib/eru/docx-export";
-import { IMPORT_ACCEPT as ERU_IMPORT_ACCEPT, importKind as eruImportKind, mimeFor as eruMime, safeFileName as eruSafeName } from "../src/lib/eru/file-types";
+import { convertedName as eruConvertedName, fileActions as eruFileActions, fileKind as eruFileKind, mimeFor as eruMime, safeFileName as eruSafeName } from "../src/lib/eru/file-types";
 import { ConvertError as EruConvertError, parseSlideXml as eruParseSlide, pdfToDoc as eruPdfToDoc, readPdf as eruReadPdf, readPptx as eruReadPptx, slideOrder as eruSlideOrder, slidesToDoc as eruSlidesToDoc, type PdfItem as EruPdfItem } from "../src/lib/eru/convert";
 import { addColumnAfter as pmAddColumnAfter, addRowAfter as pmAddRowAfter, deleteRow as pmDeleteRow } from "@tiptap/pm/tables";
 import { samplePdf as eruSamplePdf, samplePptx as eruSamplePptx, tableDocx as eruTableDocx } from "./eru-fixtures.mjs";
@@ -1636,12 +1636,18 @@ const eruOutline = (json: unknown): string[] => {
   const accepted = eruDecided(st.doc, null, "accept").doc;
   eq("eru tables while tracking: accepting the deletion removes the row's text", [accepted.textContent.includes("61000"), accepted.textContent.includes("Chakan East")], [false, false]);
 
-  // What "Upload document" takes.
+  // Files are stored as uploaded; what can be done with one depends on its type (never converted on upload).
   eq(
-    "eru import: .docx, .pdf and .pptx (any case) are imported; anything else goes under Files",
-    [eruImportKind("Report.DOCX"), eruImportKind("survey.pdf"), eruImportKind("deck.PPTX"), eruImportKind("old.ppt"), eruImportKind("notes.txt"), eruImportKind("pdf"), ERU_IMPORT_ACCEPT.split(",").slice(0, 3)],
-    ["docx", "pdf", "pptx", null, null, null, [".docx", ".pdf", ".pptx"]],
+    "eru files: .docx, .pdf and .pptx (any case) are recognised; anything else is just a file",
+    [eruFileKind("Report.DOCX"), eruFileKind("survey.pdf"), eruFileKind("deck.PPTX"), eruFileKind("old.ppt"), eruFileKind("notes.txt"), eruFileKind("pdf")],
+    ["docx", "pdf", "pptx", "other", "other", "other"],
   );
+  eq(
+    "eru files: Word: download, preview, edit in editor, convert to PDF; PDF: download, preview, convert to Word; PowerPoint: download, preview, convert to PDF; anything else: download",
+    [eruFileActions("a.docx"), eruFileActions("a.pdf"), eruFileActions("a.pptx"), eruFileActions("a.xlsx")],
+    [["download", "preview", "edit", "toPdf"], ["download", "preview", "toWord"], ["download", "preview", "toPdf"], ["download"]],
+  );
+  eq("eru files: a conversion is named after the original", [eruConvertedName("Pune Outlook Q2.docx", "pdf"), eruConvertedName("survey.final.pdf", "docx"), eruConvertedName("noext", "pdf")], ["Pune Outlook Q2.pdf", "survey.final.docx", "noext.pdf"]);
 
   // PDF: lines become headings (by size), paragraphs and lists, from pdf.js's text pieces.
   const line = (str: string, y: number, size = 11, x = 72): EruPdfItem => ({ str, x, y, width: str.length * size * 0.5, size, eol: true });

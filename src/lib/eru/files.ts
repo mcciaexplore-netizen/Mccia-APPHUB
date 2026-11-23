@@ -5,7 +5,7 @@ import { db } from "./db";
 import { files } from "@/db/eru-schema";
 import { EruError } from "./dal";
 import { MAX_FILE_BYTES, MAX_FILE_MB } from "./eru.manifest";
-import { objectSize, removeObjects, signedDownloadUrl, signedUploadUrl } from "./storage";
+import { objectSize, putObject, removeObjects, signedDownloadUrl, signedUploadUrl } from "./storage";
 import { mimeFor, safeFileName } from "./file-types";
 
 /**
@@ -47,6 +47,17 @@ export async function claimFile(userId: string, fileId: string, target: { projec
     .returning();
   if (!got) throw new EruError("The file was used somewhere else at the same moment. Please upload it again.");
   return got;
+}
+
+/** Stores a file the server made (a conversion) straight into a project's files. The row goes only once the bytes are stored. */
+export async function storeGenerated(userId: string, projectId: string, fileName: string, bytes: Uint8Array): Promise<StoredFile> {
+  const name = safeFileName(fileName) || "converted";
+  if (bytes.byteLength > MAX_FILE_BYTES) throw new EruError(`The converted file would be larger than ${MAX_FILE_MB} MB.`);
+  const mime = mimeFor(name);
+  const storageKey = `${new Date().toISOString().slice(0, 7)}/${randomUUID()}/${name}`;
+  await putObject(storageKey, bytes, mime);
+  const [row] = await db.insert(files).values({ storageKey, fileName: name, mime, size: bytes.byteLength, uploadedBy: userId, projectId, attached: true }).returning();
+  return row;
 }
 
 export async function fileById(id: string): Promise<StoredFile | null> {

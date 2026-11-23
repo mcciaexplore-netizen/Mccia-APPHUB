@@ -4,7 +4,8 @@
  * bullets with their levels, bold / italic / underline, and tables). Pictures, charts, layout, colours and fonts do not: the page says so,
  * and the original file is kept with the document.
  *
- * No DOM: the same code runs in the browser (the import) and in the unit tests. The file readers load pdf.js / JSZip only when called.
+ * No DOM: the same code runs in the browser (Edit in editor, Convert, Preview) and in the unit tests. The file readers load pdf.js / JSZip
+ * only when called. Nothing is converted on upload: files are stored as they are, and converted only when someone asks.
  */
 
 type Json = Record<string, unknown>;
@@ -87,7 +88,7 @@ function join(a: string, b: string): string {
 export function pdfToDoc(pages: readonly (readonly PdfItem[])[]): Json {
   const byPage = pages.map(pdfLines);
   const all = byPage.flat();
-  if (!all.some((l) => /\S/.test(l.text))) throw new ConvertError("This PDF has no text to convert (it may be scanned pages, which are pictures). Add it under Files instead.");
+  if (!all.some((l) => /\S/.test(l.text))) throw new ConvertError("This PDF has no text to convert (it may be scanned pages, which are pictures). It is still kept as it is: download or preview it.");
   const body = bodySize(all);
   const levelOf = (l: Line): 0 | 1 | 2 | 3 => {
     if (l.text.length > 160) return 0;
@@ -144,6 +145,20 @@ async function loadPdfJs() {
   return pdfjs;
 }
 
+/** A PDF opened for drawing its pages (the preview). Call destroy() when done. */
+export async function openPdf(data: Uint8Array) {
+  const pdfjs = await loadPdfJs();
+  const task = pdfjs.getDocument({ data, verbosity: 0 });
+  try {
+    const pdf = await task.promise;
+    return { pdf, destroy: () => task.destroy() };
+  } catch (e) {
+    await task.destroy();
+    if ((e as { name?: string })?.name === "PasswordException") throw new ConvertError("This PDF is password-protected, so it cannot be previewed here. Download it instead.");
+    throw new ConvertError("This PDF could not be opened for preview. Download it instead.");
+  }
+}
+
 /** A PDF file's text, page by page, as pdf.js reads it. */
 export async function readPdf(data: Uint8Array): Promise<PdfItem[][]> {
   const pdfjs = await loadPdfJs();
@@ -155,7 +170,7 @@ export async function readPdf(data: Uint8Array): Promise<PdfItem[][]> {
     const name = (e as { name?: string })?.name;
     await task.destroy();
     if (name === "PasswordException") throw new ConvertError("This PDF is password-protected. Remove the password, then upload it again.");
-    throw new ConvertError("This PDF could not be read. It may be damaged; try saving it again, or add it under Files.");
+    throw new ConvertError("This PDF could not be read. It may be damaged or password-protected; try saving it again.");
   }
   try {
     const pages: PdfItem[][] = [];
@@ -380,7 +395,7 @@ export function slidesToDoc(slides: readonly Slide[]): Json {
       }
     }
   });
-  if (!anyText) throw new ConvertError("This presentation has no text to convert (its slides may be pictures only). Add it under Files instead.");
+  if (!anyText) throw new ConvertError("This presentation has no text to convert (its slides may be pictures only). It is still kept as it is: download it.");
   return { type: "doc", content };
 }
 

@@ -50,6 +50,13 @@ export async function signedUploadUrl(storageKey: string): Promise<string> {
   return `${c.base}${j.url.startsWith("/") ? "" : "/"}${j.url}`;
 }
 
+/** Stores bytes the server made itself (a converted file) under `storageKey`. */
+export async function putObject(storageKey: string, bytes: Uint8Array, mime: string): Promise<void> {
+  const url = await signedUploadUrl(storageKey);
+  const res = await call(url, { method: "PUT", headers: { "content-type": mime, "x-upsert": "false" }, body: bytes as unknown as BodyInit });
+  if (!res.ok) throw new StorageError(`File storage refused the converted file (${res.status}).`);
+}
+
 /** A link that downloads (or, with `inline`, shows) the object for the next 60 seconds. */
 export async function signedDownloadUrl(storageKey: string, fileName: string, inline = false): Promise<string> {
   const c = need();
