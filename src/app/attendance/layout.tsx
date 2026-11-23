@@ -15,11 +15,11 @@ export const metadata: Metadata = {
 };
 
 // Pinch-zoom stays on (people who need larger text can still zoom); inputs are 16px on phones, so iPhones do not zoom in on a tapped field.
-// The browser bar: green, or dark grey when the device is in dark mode (a choice made in Profile overrides it: Theme.tsx).
+// The browser bar: green, or black when the device is in dark mode (a choice made in Profile overrides it: Theme.tsx).
 export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#16A34A" },
-    { media: "(prefers-color-scheme: dark)", color: "#111827" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
   ],
   colorScheme: "light dark",
   width: "device-width",

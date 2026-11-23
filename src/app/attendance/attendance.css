@@ -16,6 +16,9 @@
   --att-sidebar: #ffffff;
   --att-hover: #f3f4f6;
   --att-sunken: #f3f4f6;
+  --att-card-hover: #f9fafb;
+  --att-input-bg: #ffffff;
+  --att-nav-bg: #ffffff;
 
   --att-primary-2: #15803d;
   --att-primary-tint: #ecfdf3;
@@ -103,7 +106,7 @@
 .att-avatar { display: inline-grid; place-items: center; border-radius: 999px; background: var(--att-primary-tint); color: var(--att-primary-2); font-weight: 700; flex-shrink: 0; }
 
 /* The phone's bottom bar (hidden from a laptop up, where the sidebar shows). Space is left under the page so nothing hides behind it. */
-.att-bottom-nav { position: fixed; inset: auto 0 0 0; z-index: 40; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--att-sidebar); border-top: 1px solid var(--att-border); padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06); }
+.att-bottom-nav { position: fixed; inset: auto 0 0 0; z-index: 40; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--att-nav-bg); border-top: 1px solid var(--att-border); padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06); }
 .att-bottom-nav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; padding: 0.45rem 0 0.4rem; font-size: 0.7rem; font-weight: 700; color: var(--att-text-muted); -webkit-tap-highlight-color: transparent; }
 .att-bottom-nav a[aria-current="page"] { color: var(--att-primary); }
 @media (min-width: 768px) { .att-bottom-nav { display: none; } }
@@ -198,76 +201,85 @@
 /* ── Dark mode ────────────────────────────────────────────────────────────
    html.att-dark is set only while an Attendance page is open (components/attendance/pwa/Theme.tsx: the person's choice in Profile, else the
    device's setting), so nothing here reaches a hub page. It switches Attendance's variables, the hub's own variables (header, buttons,
-   inputs, dialogs, toasts) and Tailwind's grey scale (inverted), and makes the browser's own controls (date pickers, scrollbars) dark. */
+   inputs, dialogs, toasts) and Tailwind's grey scale (inverted), and makes the browser's own controls (date pickers, scrollbars) dark.
+   Pure black: #000000 backgrounds, #0D0D0D cards, neutral greys, green (#22C55E) the only accent. */
 html.att-dark {
   color-scheme: dark;
-  --att-bg: #111827;
-  --att-card: #1f2937;
-  --att-text: #f9fafb;
-  --att-text-2: #e5e7eb;
-  --att-text-muted: #9ca3af;
-  --att-border: #374151;
+  /* Pure black: black backgrounds, near-black cards, neutral greys only (no blue or slate), green the one accent. */
+  --att-bg: #000000;
+  --att-card: #0d0d0d;
+  --att-card-hover: #141414;
+  --att-sidebar: #000000;
+  --att-text: #f5f5f5;
+  --att-text-2: #e5e5e5;
+  --att-text-muted: #a3a3a3;
+  --att-border: #1a1a1a;
   --att-primary: #22c55e;
-  --att-primary-light: #14532d;
-  --att-sidebar: #1f2937;
-  --att-hover: #374151;
-  --att-sunken: #111827;
+  --att-primary-light: #052e16;
+  --att-input-bg: #0d0d0d;
+  --att-nav-bg: #000000;
+  --att-hover: #141414;
+  --att-sunken: #000000;
 
   --att-primary-2: #86efac;
-  --att-primary-tint: #14532d;
-  --att-primary-line: rgba(34, 197, 94, 0.4);
+  --att-primary-tint: #052e16;
+  --att-primary-line: rgba(34, 197, 94, 0.35);
+  /* Day-status colours keep their meaning as text; their backgrounds are near-black. */
   --att-info: #93c5fd;
-  --att-info-tint: #172554;
+  --att-info-tint: #141414;
   --att-orange: #fdba74;
-  --att-orange-tint: #431407;
+  --att-orange-tint: #1a0d05;
   --att-green: #22c55e;
   --att-green-dark: #86efac;
-  --att-green-tint: #14532d;
+  --att-green-tint: #052e16;
   --att-red: #fca5a5;
-  --att-red-tint: #450a0a;
+  --att-red-tint: #2a0707;
   --att-amber: #f59e0b;
   --att-amber-text: #fcd34d;
   --att-amber-strong: #fde68a;
-  --att-amber-tint: #451a03;
+  --att-amber-tint: #1f1503;
   --att-purple: #d8b4fe;
-  --att-purple-tint: #3b0764;
+  --att-purple-tint: #1a0b26;
   --att-teal: #2dd4bf;
   --att-teal-text: #5eead4;
-  --att-teal-tint: #134e4a;
-  --att-grey-tint: #374151;
-  --att-grey-text: #d1d5db;
-  --att-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
-  --att-blob-1: #166534;
-  --att-blob-2: #14532d;
-  --att-blob-3: #1f2937;
+  --att-teal-tint: #04201d;
+  --att-grey-tint: #1a1a1a;
+  --att-grey-text: #d4d4d4;
+  --att-shadow: none;
+  --att-blob-1: #14532d;
+  --att-blob-2: #052e16;
+  --att-blob-3: #000000;
 
   /* The hub's own colours (header, .btn, .input, .glass dialogs, toasts) */
-  --c-primary: #4ade80;
-  --c-text: #f9fafb;
-  --c-muted: #d1d5db;
-  --c-subtle: #9ca3af;
-  --c-alt: #111827;
-  --c-white: #1f2937;
-  --c-card: #1f2937;
-  --c-card-hover: #273244;
-  --c-border: #374151;
-  --c-canvas: #111827;
-  --grad-page: #111827;
-  --c-overlay: rgba(0, 0, 0, 0.6);
+  --c-primary: #22c55e;
+  --c-text: #f5f5f5;
+  --c-muted: #d4d4d4;
+  --c-subtle: #a3a3a3;
+  --c-alt: #000000;
+  --c-white: #0d0d0d;
+  --c-card: #0d0d0d;
+  --c-card-hover: #141414;
+  --c-border: #1a1a1a;
+  --c-canvas: #000000;
+  --grad-page: #000000;
+  --c-overlay: rgba(0, 0, 0, 0.75);
   --c-green-tint: rgba(34, 197, 94, 0.15);
   --c-red-tint: rgba(239, 68, 68, 0.15);
 
-  /* Tailwind's greys, inverted: text-gray-900 becomes near white, text-gray-500 a light grey, bg-gray-50 a dark grey. */
-  --color-gray-50: #1f2937;
-  --color-gray-100: #374151;
-  --color-gray-200: #374151;
-  --color-gray-300: #4b5563;
-  --color-gray-400: #9ca3af;
-  --color-gray-500: #9ca3af;
-  --color-gray-600: #d1d5db;
-  --color-gray-700: #e5e7eb;
-  --color-gray-800: #f3f4f6;
-  --color-gray-900: #f9fafb;
+  /* Tailwind's greys, inverted and neutral (no blue cast): text-gray-900 near white, text-gray-500 a mid grey, bg-gray-50 near black. */
+  --color-gray-50: #0d0d0d;
+  --color-gray-100: #141414;
+  --color-gray-200: #1a1a1a;
+  --color-gray-300: #262626;
+  --color-gray-400: #a3a3a3;
+  --color-gray-500: #a3a3a3;
+  --color-gray-600: #d4d4d4;
+  --color-gray-700: #e5e5e5;
+  --color-gray-800: #f5f5f5;
+  --color-gray-900: #f5f5f5;
+  --color-slate-100: #141414;
+  --color-slate-300: #262626;
+  --color-slate-600: #d4d4d4;
   background: var(--att-bg);
 }
 html.att-dark body { background: var(--att-bg); color: var(--att-text); }
@@ -275,13 +287,16 @@ html.att-dark .bg-white, html.att-dark .\!bg-white, html.att-dark .\!bg-white\/9
 html.att-dark .text-\[\#b45309\] { color: var(--att-amber-text); }
 html.att-dark .text-\[\#92400e\] { color: var(--att-amber-strong); }
 html.att-dark .text-\[\#0f766e\] { color: var(--att-teal-text); }
-html.att-dark .btn-ghost { background: #273244; box-shadow: none; }
+html.att-dark .btn-ghost { background: var(--att-card); border-color: var(--att-border); box-shadow: none; }
+html.att-dark .btn-ghost:hover:not(:disabled) { background: var(--att-card-hover); }
+html.att-dark .input { background: var(--att-input-bg); border-color: var(--att-border); }
+html.att-dark .att-card:hover { border-color: #262626; }
 html.att-dark .att-root .btn-primary { background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%); border-color: #16a34a; color: #fff; }
 html.att-dark .att-btn-in { color: #fff; background: #16a34a; }
 html.att-dark .att-btn-in:hover:not(:disabled) { background: #15803d; }
 html.att-dark .att-fab, html.att-dark .att-install, html.att-dark .att-org-node.att-org-root { background: #16a34a; color: #fff; }
 html.att-dark .att-install-btn { background: #fff; color: #15803d; }
-html.att-dark .att-offline { background: #78350f; }
+html.att-dark .att-offline { background: #422006; }
 html.att-dark .att-cal-cell.att-today { outline-color: #22c55e; }
 html.att-dark header img[alt="MCCIA"], html.att-dark .att-side img[alt="MCCIA"] { filter: brightness(1.15) saturate(1.1); background: #fff; border-radius: 6px; padding: 2px 4px; }
 
@@ -292,4 +307,4 @@ html.att-dark header img[alt="MCCIA"], html.att-dark .att-side img[alt="MCCIA"] 
 .att-switch[aria-checked="true"] .att-switch-knob { transform: translateX(1.5rem); color: #4f46e5; }
 @media (pointer: coarse) { .att-switch { width: 3.75rem; height: 2.25rem; } .att-switch-knob { width: 1.85rem; height: 1.85rem; } .att-switch[aria-checked="true"] .att-switch-knob { transform: translateX(1.5rem); } }
 @media (prefers-reduced-motion: reduce) { .att-switch, .att-switch-knob { transition: none; } }
-html.att-dark .att-org { background: radial-gradient(circle, #374151 1px, transparent 1px) 0 0 / 22px 22px, #111827; }
+html.att-dark .att-org { background: radial-gradient(circle, #1a1a1a 1px, transparent 1px) 0 0 / 22px 22px, #000000; }

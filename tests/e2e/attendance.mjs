@@ -329,6 +329,7 @@ try {
 
   section("Dark mode");
   {
+    // No blue anywhere in the dark surfaces: every background and border is a neutral grey (equal red, green and blue) or pure black.
     const rgb = (page, sel, prop) => page.locator(sel).first().evaluate((el, p) => getComputedStyle(el)[p], prop);
     const isDark = (page) => page.evaluate(() => document.documentElement.classList.contains("att-dark"));
     // A phone set to dark mode: Attendance is dark from the first visit, with no choice made.
@@ -342,20 +343,38 @@ try {
     check("dark: the hub itself is not dark (only Attendance has dark mode)", !(await isDark(dp)));
     await go(dp, "/attendance");
     check("dark: follows the device's dark setting on the first visit", await isDark(dp));
-    check("dark: page #111827, cards #1F2937, text #F9FAFB", (await rgb(dp, "body", "backgroundColor")) === "rgb(17, 24, 39)" && (await rgb(dp, ".att-card", "backgroundColor")) === "rgb(31, 41, 55)" && (await rgb(dp, "main h1", "color")) === "rgb(249, 250, 251)");
-    check("dark: bottom bar #1F2937 with a #374151 top border; the current item green", (await rgb(dp, ".att-bottom-nav", "backgroundColor")) === "rgb(31, 41, 55)" && (await rgb(dp, ".att-bottom-nav", "borderTopColor")) === "rgb(55, 65, 81)" && (await rgb(dp, '.att-bottom-nav a[aria-current="page"]', "color")) === "rgb(34, 197, 94)");
+    const bluish = await dp.evaluate(() => {
+      const out = [];
+      const parse = (c) => (c.match(/[\d.]+/g) ?? []).map(Number);
+      for (const el of document.querySelectorAll("body *")) {
+        // Day-status chips keep their colour (absent red, on leave blue …): they carry meaning. Pictures are not checked.
+        if (el.closest(".att-badge, .att-dot, [class*='att-st-'], [class*='att-icon-'], [class*='att-tone-'], img, svg")) continue;
+        const cs = getComputedStyle(el);
+        for (const prop of ["backgroundColor", "borderTopColor"]) {
+          const [r, g, b, a = 1] = parse(cs[prop]);
+          if (a === 0 || (prop === "borderTopColor" && cs.borderTopWidth === "0px")) continue;
+          const neutral = Math.abs(r - g) <= 6 && Math.abs(g - b) <= 6 && Math.abs(r - b) <= 6;
+          const green = g > r + 20 && g > b + 20;
+          if (!neutral && !green && b > r + 10) out.push(`${el.tagName}.${String(el.className).slice(0, 40)} ${prop} ${cs[prop]}`);
+        }
+      }
+      return out.slice(0, 8);
+    });
+    check("dark: no blue or slate anywhere (backgrounds and borders are black, neutral grey or green)", bluish.length === 0, bluish);
+    check("dark: pure black page #000000, cards #0D0D0D, text #F5F5F5", (await rgb(dp, "body", "backgroundColor")) === "rgb(0, 0, 0)" && (await rgb(dp, ".att-card", "backgroundColor")) === "rgb(13, 13, 13)" && (await rgb(dp, "main h1", "color")) === "rgb(245, 245, 245)");
+    check("dark: bottom bar pure black with a #1A1A1A top border; the current item green", (await rgb(dp, ".att-bottom-nav", "backgroundColor")) === "rgb(0, 0, 0)" && (await rgb(dp, ".att-bottom-nav", "borderTopColor")) === "rgb(26, 26, 26)" && (await rgb(dp, '.att-bottom-nav a[aria-current="page"]', "color")) === "rgb(34, 197, 94)");
     const btn = '.att-checkin button.att-btn-in, .att-checkin span:has(svg)';
     check("dark: Check In stays green with white text", await dp.locator(".att-checkin .att-btn-in").count().then(async (n) => n === 0 || ((await rgb(dp, ".att-checkin .att-btn-in", "backgroundColor")) === "rgb(22, 163, 74)" && (await rgb(dp, ".att-checkin .att-btn-in", "color")) === "rgb(255, 255, 255)")), btn);
-    check("dark: the browser bar is dark grey", (await dp.evaluate(() => [...document.querySelectorAll('meta[name="theme-color"]')].some((m) => m.content.toLowerCase() === "#111827" && (!m.media || matchMedia(m.media).matches)))));
+    check("dark: the browser bar is black", (await dp.evaluate(() => [...document.querySelectorAll('meta[name="theme-color"]')].some((m) => m.content.toLowerCase() === "#000000" && (!m.media || matchMedia(m.media).matches)))));
     await go(dp, "/attendance/more/summary");
-    check("dark: calendar: present dark green, absent dark red, weekly off dark grey; today outlined green", (await dp.locator(".att-st-red").count()) === 0 || (await rgb(dp, ".att-st-red", "backgroundColor")) === "rgb(69, 10, 10)");
-    check("dark: a weekly off is dark grey", (await rgb(dp, ".att-st-grey", "backgroundColor")) === "rgb(55, 65, 81)");
+    check("dark: calendar: present dark green, absent dark red, weekly off dark grey; today outlined green", (await dp.locator(".att-st-red").count()) === 0 || (await rgb(dp, ".att-st-red", "backgroundColor")) === "rgb(42, 7, 7)");
+    check("dark: a weekly off is dark grey (neutral)", (await rgb(dp, ".att-st-grey", "backgroundColor")) === "rgb(26, 26, 26)");
     check("dark: today is outlined green", (await rgb(dp, ".att-today", "outlineColor")) === "rgb(34, 197, 94)");
     await go(dp, "/attendance/more/profile");
     const sw = dp.getByRole("switch", { name: "Dark mode" });
     check("dark: Profile shows the Dark mode switch, on, following the device", (await sw.getAttribute("aria-checked")) === "true" && (await mainText(dp)).includes("Following this device's setting (dark)"));
     await sw.click();
-    check("dark: switching it off applies at once (light, even though the device is dark)", !(await isDark(dp)) && (await rgb(dp, "body", "backgroundColor")) !== "rgb(17, 24, 39)" && (await dp.evaluate(() => localStorage.getItem("att-theme"))) === "light");
+    check("dark: switching it off applies at once (light, even though the device is dark)", !(await isDark(dp)) && (await rgb(dp, "body", "backgroundColor")) !== "rgb(0, 0, 0)" && (await dp.evaluate(() => localStorage.getItem("att-theme"))) === "light");
     await go(dp, "/attendance");
     check("dark: the choice is remembered on the next page", !(await isDark(dp)));
     await go(dp, "/attendance/more/profile");
@@ -374,7 +393,7 @@ try {
     await l.page.getByRole("switch", { name: "Dark mode" }).click();
     check("dark: switching it on applies at once", await isDark(l.page));
     await l.page.reload(); await l.page.waitForLoadState("networkidle");
-    check("dark: still dark after a reload (remembered), and the sidebar is #1F2937", (await isDark(l.page)) && (await rgb(l.page, ".att-side", "backgroundColor")) === "rgb(31, 41, 55)");
+    check("dark: still dark after a reload (remembered), and the sidebar is pure black", (await isDark(l.page)) && (await rgb(l.page, ".att-side", "backgroundColor")) === "rgb(0, 0, 0)");
     await l.ctx.close();
   }
 

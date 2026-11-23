@@ -18,7 +18,7 @@ export const metadata = { title: "Attendance · MCCIA App Hub" };
 function planTone(v: DayView): { dot: string; text: string } {
   if (v.leave?.half === "none") return { dot: "var(--att-info)", text: "text-[var(--att-info)]" };
   if (v.kind === "holiday") return { dot: "var(--att-purple)", text: "text-[var(--att-purple)]" };
-  if (v.kind === "weekly_off") return { dot: "#9ca3af", text: "text-gray-500" };
+  if (v.kind === "weekly_off") return { dot: "var(--att-text-muted)", text: "text-gray-500" };
   if (v.leave) return { dot: "var(--att-amber)", text: "text-[#b45309]" };
   if (v.wfh) return { dot: "var(--att-teal)", text: "text-[#0f766e]" };
   return { dot: "var(--att-primary)", text: "text-[var(--att-primary-2)]" };

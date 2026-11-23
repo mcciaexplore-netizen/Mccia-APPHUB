@@ -265,7 +265,7 @@ export function attendanceUnit(eq: Eq): void {
   ], [true, false, false]);
   eq("att dark mode: no choice follows the device; a choice (light or dark) wins over the device", [isDarkTheme(null, true), isDarkTheme(null, false), isDarkTheme("light", true), isDarkTheme("dark", false)], [true, false, false, true]);
   eq("att dark mode: only \"light\" and \"dark\" are choices; anything else means the device setting", [parseThemePref("dark"), parseThemePref("light"), parseThemePref("auto"), parseThemePref(null)], ["dark", "light", null, null]);
-  eq("att dark mode: browser bar colour", [themeColorFor(true), themeColorFor(false)], ["#111827", "#16A34A"]);
+  eq("att dark mode: browser bar colour", [themeColorFor(true), themeColorFor(false)], ["#000000", "#16A34A"]);
   eq("att push: base64url round trip", bytesToB64url(b64urlToBytes("BPx-_w")), "BPx-_w");
   eq("att push: bad or missing keys give no signing key", [vapidJwk(undefined, "x"), vapidJwk("abc", "def"), vapidJwk(bytesToB64url(new Uint8Array(65)), bytesToB64url(new Uint8Array(32)))], [null, null, null]);
   eq("att push: only the browsers' push services are accepted as endpoints (never an address of someone's choosing)", [

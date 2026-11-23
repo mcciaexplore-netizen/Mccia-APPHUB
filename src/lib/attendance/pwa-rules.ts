@@ -7,5 +7,5 @@ export const isIosSafari = (ua: string) => /iP(hone|ad|od)/.test(ua) && /Safari/
 export type ThemePref = "light" | "dark" | null;
 export const parseThemePref = (raw: unknown): ThemePref => (raw === "light" || raw === "dark" ? raw : null);
 export const isDarkTheme = (pref: ThemePref, systemDark: boolean) => (pref ? pref === "dark" : systemDark);
-/** The browser bar's colour: dark grey in dark mode, the green otherwise. */
-export const themeColorFor = (dark: boolean) => (dark ? "#111827" : "#16A34A");
+/** The browser bar's colour: pure black in dark mode, the green otherwise. */
+export const themeColorFor = (dark: boolean) => (dark ? "#000000" : "#16A34A");

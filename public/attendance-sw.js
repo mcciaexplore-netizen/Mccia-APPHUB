@@ -44,7 +44,7 @@ const offlinePage = () =>
     `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Offline · MCCIA People</title>` +
       // Light or dark like the app: the person's choice on this device (localStorage "att-theme"), else the device's setting.
       `<style>body{font-family:system-ui,sans-serif;background:#f8f9fa;color:#111827;display:grid;place-items:center;min-height:100vh;margin:0;padding:24px;text-align:center}p{color:#6b7280}` +
-      `@media (prefers-color-scheme:dark){body:not(.light){background:#111827;color:#f9fafb}body:not(.light) p{color:#9ca3af}}body.dark{background:#111827;color:#f9fafb}body.dark p{color:#9ca3af}</style>` +
+      `@media (prefers-color-scheme:dark){body:not(.light){background:#000;color:#f5f5f5}body:not(.light) p{color:#a3a3a3}}body.dark{background:#000;color:#f5f5f5}body.dark p{color:#a3a3a3}</style>` +
       `<body><script>try{var t=localStorage.getItem("att-theme");if(t)document.body.className=t}catch(e){}</script>` +
       `<div><div style="font-size:40px">📶</div><h1 style="font-size:20px;margin:12px 0 6px">You are offline</h1>` +
       `<p style="margin:0 0 16px">This page has not been opened on this device yet. Connect to the internet and try again.</p>` +
