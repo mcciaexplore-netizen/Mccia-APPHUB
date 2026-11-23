@@ -40,7 +40,7 @@ export function AttSidebar({ section, roles, badges = {} }: { section: AttSectio
   return (
     <nav aria-label={ATT_NAV[section].title} className="att-side">
       <Link href="/" className="mb-6 block px-3" title="Back to the App Hub">
-        <Image src="/mccia-logo.png" alt="MCCIA" width={134} height={36} className="h-8 w-auto" />
+        <Image src="/mccia-logo.png" alt="MCCIA" width={134} height={36} className="h-8 w-auto" style={{ background: "transparent" }} />
         <span className="mt-2 block text-[0.68rem] font-bold uppercase tracking-[0.18em] text-gray-400">App Hub</span>
       </Link>
       <p className="px-4 pb-2 text-[0.66rem] font-bold uppercase tracking-widest text-gray-400">{ATT_NAV[section].title}</p>

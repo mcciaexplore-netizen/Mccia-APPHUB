@@ -137,9 +137,9 @@ export function LinkTabs({ tabs, current }: { tabs: { key: string; label: string
   );
 }
 
-export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
+export function Field({ label, children, hint, className }: { label: string; children: ReactNode; hint?: ReactNode; className?: string }) {
   return (
-    <label className="flex flex-col gap-1 text-xs font-semibold att-muted">
+    <label className={`flex min-w-0 flex-col gap-1 text-xs font-semibold att-muted${className ? ` ${className}` : ""}`}>
       {label}
       {children}
       {hint && <span className="text-[0.7rem] font-normal">{hint}</span>}

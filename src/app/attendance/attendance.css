@@ -298,7 +298,8 @@ html.att-dark .att-fab, html.att-dark .att-install, html.att-dark .att-org-node.
 html.att-dark .att-install-btn { background: #fff; color: #15803d; }
 html.att-dark .att-offline { background: #422006; }
 html.att-dark .att-cal-cell.att-today { outline-color: #22c55e; }
-html.att-dark header img[alt="MCCIA"], html.att-dark .att-side img[alt="MCCIA"] { filter: brightness(1.15) saturate(1.1); background: #fff; border-radius: 6px; padding: 2px 4px; }
+/* The logo PNG is transparent: no plate behind it in either theme, just a little lift so the blue reads on black. */
+html.att-dark header img[alt="MCCIA"], html.att-dark .att-side img[alt="MCCIA"] { filter: brightness(1.35) saturate(1.1); }
 
 /* Everything else a dark page can show. Dialogs, toasts and the user menu (hub components) paint with --c-white, #0D0D0D here. Only
    backgrounds and borders are set for whole element types, never the text colour, so status colours (present green, absent red, pending
@@ -336,3 +337,17 @@ html.att-dark .att-skel { background: linear-gradient(90deg, #141414 0%, #1a1a1a
 @media (pointer: coarse) { .att-switch { width: 3.75rem; height: 2.25rem; } .att-switch-knob { width: 1.85rem; height: 1.85rem; } .att-switch[aria-checked="true"] .att-switch-knob { transform: translateX(1.5rem); } }
 @media (prefers-reduced-motion: reduce) { .att-switch, .att-switch-knob { transition: none; } }
 html.att-dark .att-org { background: radial-gradient(circle, #1a1a1a 1px, transparent 1px) 0 0 / 22px 22px, #000000; }
+
+/* MCCIA logo in the Attendance header and sidebar: transparent in both themes, never a white box. */
+header img[alt="MCCIA"], .att-side img[alt="MCCIA"] { background: transparent !important; }
+
+/* Leave dates (From / To / Half day): every box the same width and height. Phones (iOS Safari especially) give a date input its own
+   intrinsic width and centre the text, so the two boxes came out uneven; this pins them to the grid column. */
+.att-date { display: block; width: 100%; min-width: 0; max-width: 100%; height: 2.875rem; box-sizing: border-box;
+  padding: 0 0.5rem 0 0.85rem; line-height: 2.875rem; -webkit-appearance: none; appearance: none; text-align: left; }
+select.att-date { padding-right: 2rem; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 1.05rem) 50%, calc(100% - 0.75rem) 50%; background-size: 0.3rem 0.3rem; background-repeat: no-repeat; }
+.att-date::-webkit-date-and-time-value { text-align: left; margin: 0; }
+.att-date::-webkit-datetime-edit { padding: 0; line-height: 1; }
+.att-date::-webkit-calendar-picker-indicator { margin: 0 0 0 0.25rem; padding: 0; opacity: 0.7; }
+html.att-dark .att-date::-webkit-calendar-picker-indicator { filter: invert(1); }
