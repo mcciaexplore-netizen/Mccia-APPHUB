@@ -125,11 +125,11 @@ export function ApplyLeaveForm({ types, today, approver }: { types: ApplyType[];
           )}
         </fieldset>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3" data-testid="att-leave-dates">
           <Field label="From">
             <input
               type="date"
-              className="input"
+              className="input att-date"
               value={start}
               onChange={(e) => {
                 setStart(e.target.value);
@@ -139,17 +139,15 @@ export function ApplyLeaveForm({ types, today, approver }: { types: ApplyType[];
             />
           </Field>
           <Field label="To">
-            <input type="date" className="input" value={effectiveEnd} min={start} disabled={half !== "none"} onChange={(e) => setEnd(e.target.value)} required />
+            <input type="date" className="input att-date" value={effectiveEnd} min={start} disabled={half !== "none"} onChange={(e) => setEnd(e.target.value)} required />
           </Field>
-          <div className="col-span-2 sm:col-span-1">
-          <Field label="Half day">
-            <select className="input" value={half} onChange={(e) => setHalf(e.target.value as HalfDay)} disabled={!type?.allowHalfDay}>
+          <Field label="Half day" className="col-span-2 md:col-span-1">
+            <select className="input att-date" value={half} onChange={(e) => setHalf(e.target.value as HalfDay)} disabled={!type?.allowHalfDay}>
               <option value="none">Full day(s)</option>
               {type?.halfDayFirst && <option value="first">First half</option>}
               {type?.halfDaySecond && <option value="second">Second half</option>}
             </select>
           </Field>
-          </div>
         </div>
         <p className="text-sm font-semibold text-ink">{days == null ? "—" : `${days} day${days === 1 ? "" : "s"} of leave`} <span className="font-normal att-muted">(weekly offs and holidays are not counted)</span></p>
 
