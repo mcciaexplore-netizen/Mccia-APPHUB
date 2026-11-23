@@ -1,5 +1,5 @@
 // Payment Desk inside the hub (/payment-desk): the hub tile of an application whose address is Payment Desk's opens the hub page in the same
-// tab, the page frames Payment Desk with the signed-in person's email, the help line opens Payment Desk in a new tab and can be closed,
+// tab, the page frames Payment Desk with the signed-in person's email, a faint corner link opens Payment Desk in a new tab,
 // someone signed out is sent to /login, and the old /go/<id> link lands on /payment-desk too. Another outside application still opens
 // through /go in a new tab, as before.
 //
@@ -103,21 +103,24 @@ try {
     const after = Number((await q("select count(*)::int as n from activity_log where user_id = $1 and app_id = $2 and action = 'launch'", [u.id, desk.id]))[0].n);
     check(`${tag}: the launch is recorded in the activity log`, after === before + 1, `${before} → ${after}`);
 
-    // The help line: a new-tab link to Payment Desk, which can be closed; the frame then takes its space.
-    const help = p.locator("[data-testid=payment-desk-help]");
-    check(`${tag}: help line shown`, await help.isVisible());
-    check(`${tag}: help line text`, /Having trouble loading\?\s*Open Payment Desk in new tab →/.test((await help.innerText()).replace(/\s+/g, " ")), await help.innerText());
-    const link = help.locator("a");
-    check(`${tag}: help link goes to Payment Desk`, (await link.getAttribute("href")) === "https://payment-advice.vercel.app");
-    check(`${tag}: help link opens a new tab`, (await link.getAttribute("target")) === "_blank" && /noopener/.test((await link.getAttribute("rel")) ?? ""));
-    const fs = await p.evaluate(() => getComputedStyle(document.querySelector("[data-testid=payment-desk-help]")).fontSize);
-    check(`${tag}: help line is small text`, parseFloat(fs) <= 13, fs);
-    await help.getByRole("button", { name: "Hide this message" }).click();
-    check(`${tag}: help line closes`, (await help.count()) === 0);
-    const top = await p.evaluate(() => document.querySelector("iframe[title='Payment Desk']").getBoundingClientRect().top);
-    check(`${tag}: frame then starts right under the top bar (64px)`, Math.round(top) === 64, String(top));
-    const h = await p.evaluate(() => document.querySelector("iframe[title='Payment Desk']").getBoundingClientRect().height);
-    check(`${tag}: frame is then the screen height minus 64px`, Math.abs(h - (geo.vh - 64)) <= 1, `${h} vs ${geo.vh - 64}`);
+    // No banner: the frame starts right under the top bar. A small faint link in the bottom right corner opens Payment Desk in a new tab.
+    check(`${tag}: no banner above the frame`, (await p.locator("[data-testid=payment-desk-help]").count()) === 0);
+    check(`${tag}: frame starts right under the top bar (64px)`, Math.round(geo.fTop) === 64, String(geo.fTop));
+    check(`${tag}: frame is the screen height minus 64px`, Math.abs(geo.fBottom - geo.fTop - (geo.vh - 64)) <= 1, JSON.stringify(geo));
+    const link = p.locator("[data-testid=payment-desk-newtab]");
+    check(`${tag}: corner link shown`, await link.isVisible());
+    check(`${tag}: corner link text`, (await link.innerText()).trim() === "Open in new tab ↗", await link.innerText());
+    check(`${tag}: corner link goes to Payment Desk`, (await link.getAttribute("href")) === "https://payment-advice.vercel.app");
+    check(`${tag}: corner link opens a new tab`, (await link.getAttribute("target")) === "_blank" && /noopener/.test((await link.getAttribute("rel")) ?? ""));
+    const look = await link.evaluate((el) => { const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); return { pos: cs.position, right: innerWidth - r.right, bottom: innerHeight - r.bottom, rightCss: cs.right, bottomCss: cs.bottom, fs: cs.fontSize, color: cs.color, op: cs.opacity, deco: cs.textDecorationLine, z: cs.zIndex, bg: cs.backgroundColor }; });
+    check(`${tag}: corner link is fixed 16px from the bottom right`, look.pos === "fixed" && look.rightCss === "16px" && look.bottomCss === "16px" && Math.round(look.right) === 16 && Math.round(look.bottom) === 16, JSON.stringify(look));
+    check(`${tag}: corner link is small grey text, no background, no underline`, look.fs === "12px" && look.color === "rgb(156, 163, 175)" && look.bg === "rgba(0, 0, 0, 0)" && look.deco === "none", JSON.stringify(look));
+    check(`${tag}: corner link is faint (0.6) and above the frame (z 10)`, look.op === "0.6" && look.z === "10", JSON.stringify(look));
+    if (vp.width >= 768) {
+      await link.hover(); await p.waitForTimeout(400);
+      const op = await link.evaluate((el) => getComputedStyle(el).opacity);
+      check(`${tag}: corner link is fully visible on hover`, op === "1", op);
+    }
 
     // The old link (bookmarks, notifications): /go/<id> lands on the hub page too.
     await p.goto(BASE + `/go/${desk.id}`);
