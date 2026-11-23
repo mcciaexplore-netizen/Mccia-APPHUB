@@ -15,6 +15,9 @@ const MANIFEST = {
   display: "standalone",
   background_color: "#ffffff",
   theme_color: "#16A34A",
+  // Dark mode's colours, where the browser supports per-scheme manifest colours (Chromium's user_preferences); the page's own
+  // <meta name="theme-color"> follows dark mode everywhere else.
+  user_preferences: { color_scheme_dark: { theme_color: "#111827", background_color: "#111827" } },
   orientation: "portrait",
   icons: [
     { src: "/icons/attendance-192.png", sizes: "192x192", type: "image/png" },

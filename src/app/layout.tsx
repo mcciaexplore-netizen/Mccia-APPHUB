@@ -22,7 +22,8 @@ export const viewport: Viewport = { themeColor: "#2a6b7c" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`font-sans ${geist.variable}`}>
+    // suppressHydrationWarning: Attendance adds its dark-mode class to <html> before React starts (only that attribute is exempt).
+    <html lang="en" className={`font-sans ${geist.variable}`} suppressHydrationWarning>
       <head>
         {/* The browser's install offer can come before the page has loaded its scripts: keep it so the Download buttons can use it. */}
         <script dangerouslySetInnerHTML={{ __html: `window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.__mcciaInstall=e;window.dispatchEvent(new Event("mccia-install-ready"));});` }} />

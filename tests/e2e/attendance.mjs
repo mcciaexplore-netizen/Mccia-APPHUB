@@ -212,7 +212,8 @@ try {
   await go(h.page, "/attendance");
   await h.page.locator("aside nav").getByRole("link", { name: "Attendance Admin" }).click();
   await h.page.waitForURL((u) => u.pathname === "/attendance/admin");
-  check("HR: the sidebar's Attendance Admin link opens /attendance/admin (Today)", pathOf(h.page) === "/attendance/admin" && (await mainText(h.page)).includes("Attendance Admin ·"), pathOf(h.page));
+  const labelled = await h.page.getByText(/^Attendance Admin · /).waitFor({ timeout: 20000 }).then(() => true, () => false);
+  check("HR: the sidebar's Attendance Admin link opens /attendance/admin (Today)", pathOf(h.page) === "/attendance/admin" && labelled, pathOf(h.page));
   {
     const hp = await signedIn(hr.email, { width: 390, height: 844 });
     await go(hp.page, "/attendance/more");
@@ -324,6 +325,57 @@ try {
     await hr2.ctx.close();
     check(`${width}px: no page scrolls sideways (${STAFF.length + ADMIN.length} pages)`, wide.length === 0, wide);
     check(`${width}px: ${width < 768 ? "bottom bar, no sidebar" : "sidebar, no bottom bar"}`, navOk);
+  }
+
+  section("Dark mode");
+  {
+    const rgb = (page, sel, prop) => page.locator(sel).first().evaluate((el, p) => getComputedStyle(el)[p], prop);
+    const isDark = (page) => page.evaluate(() => document.documentElement.classList.contains("att-dark"));
+    // A phone set to dark mode: Attendance is dark from the first visit, with no choice made.
+    const dctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, colorScheme: "dark" });
+    await dctx.addInitScript(() => { try { localStorage.setItem("mccia-install-popup-seen", "1"); localStorage.setItem("mccia-install-snoozed-until", String(Date.now() + 864e5)); localStorage.setItem("att-install-dismissed-until", String(Date.now() + 864e6)); } catch {} });
+    const dp = await dctx.newPage();
+    dp.on("pageerror", (e) => pageErrors.push(`dark ${new URL(dp.url()).pathname}: ${String(e).slice(0, 200)}`));
+    dp.on("console", (m) => m.type() === "error" && !/Failed to load resource/.test(m.text()) && consoleErrors.push(`dark ${new URL(dp.url()).pathname}: ${m.text().slice(0, 300)}`));
+    await dp.goto(BASE + "/login"); await dp.fill("input[name=email]", asha.email); await dp.fill("input[name=password]", PW);
+    await dp.click("button[type=submit]"); await dp.waitForURL((u) => u.pathname === "/");
+    check("dark: the hub itself is not dark (only Attendance has dark mode)", !(await isDark(dp)));
+    await go(dp, "/attendance");
+    check("dark: follows the device's dark setting on the first visit", await isDark(dp));
+    check("dark: page #111827, cards #1F2937, text #F9FAFB", (await rgb(dp, "body", "backgroundColor")) === "rgb(17, 24, 39)" && (await rgb(dp, ".att-card", "backgroundColor")) === "rgb(31, 41, 55)" && (await rgb(dp, "main h1", "color")) === "rgb(249, 250, 251)");
+    check("dark: bottom bar #1F2937 with a #374151 top border; the current item green", (await rgb(dp, ".att-bottom-nav", "backgroundColor")) === "rgb(31, 41, 55)" && (await rgb(dp, ".att-bottom-nav", "borderTopColor")) === "rgb(55, 65, 81)" && (await rgb(dp, '.att-bottom-nav a[aria-current="page"]', "color")) === "rgb(34, 197, 94)");
+    const btn = '.att-checkin button.att-btn-in, .att-checkin span:has(svg)';
+    check("dark: Check In stays green with white text", await dp.locator(".att-checkin .att-btn-in").count().then(async (n) => n === 0 || ((await rgb(dp, ".att-checkin .att-btn-in", "backgroundColor")) === "rgb(22, 163, 74)" && (await rgb(dp, ".att-checkin .att-btn-in", "color")) === "rgb(255, 255, 255)")), btn);
+    check("dark: the browser bar is dark grey", (await dp.evaluate(() => [...document.querySelectorAll('meta[name="theme-color"]')].some((m) => m.content.toLowerCase() === "#111827" && (!m.media || matchMedia(m.media).matches)))));
+    await go(dp, "/attendance/more/summary");
+    check("dark: calendar: present dark green, absent dark red, weekly off dark grey; today outlined green", (await dp.locator(".att-st-red").count()) === 0 || (await rgb(dp, ".att-st-red", "backgroundColor")) === "rgb(69, 10, 10)");
+    check("dark: a weekly off is dark grey", (await rgb(dp, ".att-st-grey", "backgroundColor")) === "rgb(55, 65, 81)");
+    check("dark: today is outlined green", (await rgb(dp, ".att-today", "outlineColor")) === "rgb(34, 197, 94)");
+    await go(dp, "/attendance/more/profile");
+    const sw = dp.getByRole("switch", { name: "Dark mode" });
+    check("dark: Profile shows the Dark mode switch, on, following the device", (await sw.getAttribute("aria-checked")) === "true" && (await mainText(dp)).includes("Following this device's setting (dark)"));
+    await sw.click();
+    check("dark: switching it off applies at once (light, even though the device is dark)", !(await isDark(dp)) && (await rgb(dp, "body", "backgroundColor")) !== "rgb(17, 24, 39)" && (await dp.evaluate(() => localStorage.getItem("att-theme"))) === "light");
+    await go(dp, "/attendance");
+    check("dark: the choice is remembered on the next page", !(await isDark(dp)));
+    await go(dp, "/attendance/more/profile");
+    await dp.getByRole("button", { name: "Use the device setting" }).click();
+    check("dark: \"Use the device setting\" goes back to dark", (await isDark(dp)) && (await dp.evaluate(() => localStorage.getItem("att-theme"))) === null);
+    await go(dp, "/attendance/admin");
+    check("dark: admin pages are dark too (staff are sent back to Home, also dark)", await isDark(dp));
+    await go(dp, "/");
+    check("dark: leaving Attendance for the hub turns dark mode off", !(await isDark(dp)));
+    await dctx.close();
+
+    // A light device: the switch turns dark mode on, and it stays on after a reload.
+    const l = await signedIn(asha.email);
+    await go(l.page, "/attendance/more/profile");
+    check("dark: on a light device Attendance starts light", !(await isDark(l.page)));
+    await l.page.getByRole("switch", { name: "Dark mode" }).click();
+    check("dark: switching it on applies at once", await isDark(l.page));
+    await l.page.reload(); await l.page.waitForLoadState("networkidle");
+    check("dark: still dark after a reload (remembered), and the sidebar is #1F2937", (await isDark(l.page)) && (await rgb(l.page, ".att-side", "backgroundColor")) === "rgb(31, 41, 55)");
+    await l.ctx.close();
   }
 
   check("no page threw an error", pageErrors.length === 0, pageErrors);

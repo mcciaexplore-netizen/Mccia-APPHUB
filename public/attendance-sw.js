@@ -1,4 +1,4 @@
-// The service worker of "MCCIA People" (Attendance, /attendance). Registered with scope /attendance by the Attendance pages, so it never
+// The service worker of "MCCIA People" (Attendance, /attendance). Its offline page follows dark mode too. Registered with scope /attendance by the Attendance pages, so it never
 // handles a hub page (those keep the hub's own /sw.js, which caches nothing).
 //
 //   Pages (/attendance…): network first; a good copy is kept, so with no connection the last copy is shown (the page then says it is offline).
@@ -42,9 +42,12 @@ self.addEventListener("message", (event) => {
 const offlinePage = () =>
   new Response(
     `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Offline · MCCIA People</title>` +
-      `<body style="font-family:system-ui,sans-serif;background:#f8f9fa;color:#111827;display:grid;place-items:center;min-height:100vh;margin:0;padding:24px;text-align:center">` +
+      // Light or dark like the app: the person's choice on this device (localStorage "att-theme"), else the device's setting.
+      `<style>body{font-family:system-ui,sans-serif;background:#f8f9fa;color:#111827;display:grid;place-items:center;min-height:100vh;margin:0;padding:24px;text-align:center}p{color:#6b7280}` +
+      `@media (prefers-color-scheme:dark){body:not(.light){background:#111827;color:#f9fafb}body:not(.light) p{color:#9ca3af}}body.dark{background:#111827;color:#f9fafb}body.dark p{color:#9ca3af}</style>` +
+      `<body><script>try{var t=localStorage.getItem("att-theme");if(t)document.body.className=t}catch(e){}</script>` +
       `<div><div style="font-size:40px">📶</div><h1 style="font-size:20px;margin:12px 0 6px">You are offline</h1>` +
-      `<p style="color:#6b7280;margin:0 0 16px">This page has not been opened on this device yet. Connect to the internet and try again.</p>` +
+      `<p style="margin:0 0 16px">This page has not been opened on this device yet. Connect to the internet and try again.</p>` +
       `<button onclick="location.reload()" style="background:#16a34a;color:#fff;border:0;border-radius:12px;padding:12px 20px;font-size:16px;font-weight:700">Try again</button></div>`,
     { headers: { "content-type": "text/html; charset=utf-8" } },
   );
