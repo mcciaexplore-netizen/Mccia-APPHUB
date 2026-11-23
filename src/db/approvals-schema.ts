@@ -2,6 +2,7 @@ import {
   bigint,
   bigserial,
   boolean,
+  check,
   customType,
   date,
   index,
@@ -17,6 +18,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { users } from "./schema";
 
 /**
  * Approvals module tables. Every table is prefixed apr_ and nothing here touches a host table.
@@ -197,7 +199,8 @@ export const aprUserRoles = pgTable(
  * Watching rules: hub users who may read requests of one approval type (HR, Expenditure: both expense types, Budget: budgets and their
  * revisions), print and export them, and are told of each new one, but never decide anything. A person may have several rules; an
  * Expenditure rule may be limited to one expense category (`category`: the apr_categories id; null = every category). Set by the Support
- * Admin on the person's page in Administrator > Users. Migrations 0042 (table) and 0043 (category).
+ * Admin on the person's page in Administrator > Users. Migrations 0042 (table) and 0043 (category). A rule can instead name a person
+ * (`watched_user_id`, migration 0047): the watcher then reads every request that person submits, of any type.
  */
 export const aprWatcherForm = ["hr", "expenditure", "budget"] as const;
 export type AprWatcherForm = (typeof aprWatcherForm)[number];
@@ -205,13 +208,23 @@ export const aprWatchers = pgTable(
   "apr_watchers",
   {
     id: id(),
-    formType: text("form_type").notNull().$type<AprWatcherForm>(),
+    // A rule is one of two kinds: an approval type (form_type, with category for Expenditure), or every request one person submits
+    // (watched_user_id, migration 0047). Never both: the check below keeps it so.
+    formType: text("form_type").$type<AprWatcherForm>(),
     userId: uuid("user_id").notNull(),
     category: text("category"),
+    watchedUserId: uuid("watched_user_id").references(() => users.id, { onDelete: "cascade" }),
     addedById: uuid("added_by_id"),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex("apr_watchers_rule_uq").on(t.formType, t.userId, sql`coalesce(${t.category}, '')`), index("apr_watchers_user_idx").on(t.userId)],
+  (t) => [
+    uniqueIndex("apr_watchers_rule_uq").on(t.formType, t.userId, sql`coalesce(${t.category}, '')`),
+    // Watching one person's requests: once per watcher.
+    uniqueIndex("apr_watchers_user_rule_uq").on(t.userId, t.watchedUserId).where(sql`watched_user_id is not null`),
+    index("apr_watchers_user_idx").on(t.userId),
+    index("apr_watchers_watched_idx").on(t.watchedUserId),
+    check("apr_watchers_one_kind", sql`(form_type is not null and watched_user_id is null) or (form_type is null and watched_user_id is not null and category is null)`),
+  ],
 );
 
 /** Serial numbers: one row per prefix and financial year, for example "EXP-2026-27". Bumped with a single atomic statement. */

@@ -1,7 +1,9 @@
 /**
  * Watching rules, as plain functions (no database, so the server, the pages and the unit tests share them). A watcher is a hub user the
- * Support Admin gave one or more rules on their page in Administrator > Users. A rule is an approval type, HR, Expenditure (both expense
- * types: one expense form) or Budget (budgets and their revisions), and for Expenditure optionally one expense category (null = all of them).
+ * Support Admin gave one or more rules on their page in Administrator > Users. A rule is either
+ *   - an approval type: HR, Expenditure (both expense types: one expense form) or Budget (budgets and their revisions), and for Expenditure
+ *     optionally one expense category (null = all of them); or
+ *   - a person (by user): every request that person submits, of any type (HR, Expenditure, Budget).
  * A watcher reads, prints and exports the requests their rules match and is told of new ones; watching never lets anyone decide anything.
  */
 import type { AprRequestType, AprWatcherForm } from "@/db/approvals-schema";
@@ -11,8 +13,11 @@ export const WATCH_FORM_LABEL: Record<AprWatcherForm, string> = { hr: "HR", expe
 /** As the rules table on a person's page names them. */
 export const WATCH_FORM_TITLE: Record<AprWatcherForm, string> = { hr: "HR Approval", expenditure: "Expenditure", budget: "Budget" };
 
-/** One rule: an approval type, and for Expenditure an expense category's id (null: every category; HR and Budget always null). */
-export type WatchRule = { form: AprWatcherForm; categoryId: string | null };
+/**
+ * One rule: an approval type (`form`), and for Expenditure an expense category's id (null: every category; HR and Budget always null); or,
+ * with `watchedUserId`, everything that person submits (`form` and `categoryId` then null).
+ */
+export type WatchRule = { form: AprWatcherForm | null; categoryId: string | null; watchedUserId?: string | null };
 
 const TYPES: Record<AprWatcherForm, AprRequestType[]> = {
   hr: ["hr"],
@@ -27,11 +32,16 @@ export const isWatchForm = (v: string): v is AprWatcherForm => (WATCH_FORMS as r
 /** Only Expenditure rules can name a category; HR and Budget ones are always "All". */
 export const formHasCategories = (form: AprWatcherForm): boolean => form === "expenditure";
 
-/** Whether a request (its type, and the expense category of an expenditure) matches any of the rules. */
-export function rulesMatch(rules: readonly WatchRule[], type: AprRequestType, categoryId: string | null): boolean {
+/** Whether a request (its type, an expenditure's expense category, and who submitted it) matches any of the rules. */
+export function rulesMatch(rules: readonly WatchRule[], type: AprRequestType, categoryId: string | null, requesterId: string | null = null): boolean {
   const form = formOfType(type);
-  return rules.some((r) => r.form === form && (r.categoryId === null || (form === "expenditure" && r.categoryId === categoryId)));
+  return rules.some((r) =>
+    r.watchedUserId ? !!requesterId && r.watchedUserId === requesterId : r.form === form && (r.categoryId === null || (form === "expenditure" && r.categoryId === categoryId)),
+  );
 }
+
+/** Whether a rule watches a person (rather than an approval type). */
+export const isUserRule = (r: WatchRule): boolean => !!r.watchedUserId;
 
 /**
  * Who to tell about a new request among the people whose rules match it: each once, never the person who raised it, nor anyone already told

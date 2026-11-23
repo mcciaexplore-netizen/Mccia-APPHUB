@@ -3,7 +3,8 @@
  * rules on their page in Administrator > Users (Budget: all; Expenditure: two of the expense categories; HR saved and removed again); the
  * watcher gets All Approvals in the sidebar with its count, one list holding exactly what the rules match (filterable by type), opens a
  * request with the view-only note and no decision buttons, prints, exports, is told of new budgets, and cannot see anything outside the
- * rules; removing rules takes the access away. Expenditure requests are written straight into the database (their routing needs hub roles
+ * rules; removing rules takes the access away. Then watching by user: search, add two people, every type they submit shows (once), the bell, the
+ * Submitted by filter and export, and removing them. Expenditure requests are written straight into the database (their routing needs hub roles
  * the test does not set up).
  *
  * Writes test people (zz-wat-*), a test department, expense categories (ZZ Wat ...) and requests, and removes them at the end. Run it
@@ -138,7 +139,8 @@ try {
   }
   const box = H.page.locator("[data-testid=watching-rules]");
   await box.waitFor({ timeout: 15000 }).catch(() => {});
-  check("the person's page has a Watching section, empty to begin with", (await box.count()) === 1 && (await box.textContent()).includes("Not watching anything."));
+  check("the person's page has a Watching section with By approval type and By user, empty to begin with", (await box.count()) === 1 && (await box.textContent()).includes("No approval types.")
+    && (await box.textContent()).includes("By user") && (await box.textContent()).includes("Nobody yet."), await box.textContent().catch(() => ""));
   const ruleCount = async (n) => poll(async () => (await box.locator("[data-testid=watching-row]").count()) === n);
   const addRule = async (form, category) => {
     await box.locator("[data-testid=watching-add]").click();
@@ -211,7 +213,7 @@ try {
   await box.getByRole("button", { name: "Remove Expenditure (ZZ Wat Administrative Exp)" }).click();
   await ruleCount(1);
   await box.getByRole("button", { name: "Remove Budget (All)" }).click();
-  check("with every row removed the section is empty again", await ruleCount(0) && (await box.textContent()).includes("Not watching anything."));
+  check("with every row removed the section is empty again", await ruleCount(0) && (await box.textContent()).includes("No approval types."));
   check("…recorded in the audit log", (await sql`select count(*)::int n from apr_admin_audit where entity = 'watcher' and action = 'revoke' and summary like 'ZZ Wat Watcher no longer watches%'`)[0].n === 4);
   await go(W.page, "/approvals");
   check("the watcher no longer has All Approvals", (await W.page.locator("nav a[href='/approvals/watching/all']").count()) === 0);
@@ -219,6 +221,66 @@ try {
   const later = await raise(R, "ZZ After Watching");
   await new Promise((r) => setTimeout(r, 1500));
   check("…and is not told of new requests", (await sql`select count(*)::int n from apr_notifications where user_id = ${watcher.id} and request_id = ${later.id}`)[0].n === 0);
+
+  section("Watch by user");
+  const userCount = async (n) => poll(async () => (await box.locator("[data-testid=watching-user-row]").count()) === n);
+  const watchByName = async (q, name) => {
+    if (await box.locator("[data-testid=watching-add-user]").count()) await box.locator("[data-testid=watching-add-user]").click();
+    await box.locator("[data-testid=watching-user-search]").fill(q);
+    await box.locator("[data-testid=watching-user-hit]", { hasText: name }).first().click({ timeout: 10000 });
+  };
+  await go(H.page, `/administrator/users/${watcher.id}`);
+  await box.locator("[data-testid=watching-add-user]").click();
+  await box.locator("[data-testid=watching-user-search]").fill("zz-wat-");
+  const hitNames = await poll(async () => { const t = await box.locator("[data-testid=watching-user-hit]").allTextContents(); return t.length ? t : null; });
+  check("the search finds hub people by email, never the person themself", (hitNames ?? []).some((t) => t.includes("ZZ Wat Requester")) && !(hitNames ?? []).some((t) => t.includes("ZZ Wat Watcher")), hitNames);
+  await watchByName("ZZ Wat Req", "ZZ Wat Requester");
+  check("picking someone adds them at once", await userCount(1) && (await box.locator("[data-testid=watching-user-row]").first().textContent()).includes("ZZ Wat Requester"));
+  await watchByName("outsider", "ZZ Wat Outsider");
+  check("several people can be added (searching by name)", await userCount(2));
+  check("…and a person already watched is not offered again", await (async () => { await box.locator("[data-testid=watching-user-search]").fill("ZZ Wat Req"); await new Promise((r) => setTimeout(r, 300)); return (await box.locator("[data-testid=watching-user-hit]", { hasText: "ZZ Wat Requester" }).count()) === 0; })());
+  check("…stored as user rules with no type or category", (await sql`select count(*)::int n from apr_watchers where user_id = ${watcher.id} and watched_user_id is not null and form_type is null and category is null`)[0].n === 2);
+  check("…each recorded in the audit log", (await sql`select count(*)::int n from apr_admin_audit where entity = 'watcher' and action = 'grant' and summary like 'ZZ Wat Watcher now watches all approvals from%'`)[0].n === 2);
+  check("the API refuses watching oneself (422) and is Support Admin only (403)", (await api(H.page, "/api/approvals/watchers", "POST", { userId: watcher.id, watchedUserId: watcher.id })).status === 422
+    && (await api(W.page, "/api/approvals/watchers", "POST", { userId: watcher.id, watchedUserId: approver.id })).status === 403);
+  check("the database refuses a rule that is both a type and a person", await sql`insert into apr_watchers (form_type, user_id, watched_user_id) values ('hr', ${watcher.id}, ${approver.id})`.then(() => false, () => true));
+  // A Budget rule as well, so budgets from the watched people match both kinds of rule: listed once, told once.
+  check("a type rule can sit next to the user rules", (await api(H.page, "/api/approvals/watchers", "POST", { userId: watcher.id, form: "budget" })).status === 201);
+  // The outsider raises a budget too, so the list has requests from two people.
+  const theirs = await raise(O, "ZZ Outsider Budget");
+  const uNote = await poll(async () => (await sql`select title from apr_notifications where user_id = ${watcher.id} and request_id = ${theirs.id}`)[0]);
+  check("a new request from a watched person rings the bell: \"ZZ Wat Outsider submitted a new Budget request\"", uNote?.title === "ZZ Wat Outsider submitted a new Budget request", uNote);
+  check("…once, though both rules match it", (await sql`select count(*)::int n from apr_notifications where user_id = ${watcher.id} and request_id = ${theirs.id}`)[0].n === 1);
+  await go(W.page, "/approvals/watching/all");
+  const byUser = await text(W.page);
+  check("All Approvals shows every type the watched people submitted, whatever the category", [EVENT, "ZZ Before Watching", "ZZ After Watching", "ZZ Outsider Budget", "ZZ-WAT-EXP-1", "ZZ-WAT-EXP-2", "ZZ-WAT-EXP-3"].every((t) => byUser.includes(t)), byUser.slice(0, 500));
+  check("…each request once, even one both rules match", (await W.page.locator("main tbody tr", { hasText: EVENT }).count()) === 1
+    && (await W.page.locator("main tbody tr", { hasText: "ZZ Outsider Budget" }).count()) === 1);
+  const [budgetRule] = await sql`select id from apr_watchers where user_id = ${watcher.id} and form_type = 'budget'`;
+  await api(H.page, "/api/approvals/watchers", "DELETE", { userId: watcher.id, id: budgetRule.id });
+  check("…read only: no Approve or Reject", (await W.page.getByRole("button", { name: /^(Approve|Reject)$/ }).count()) === 0
+    && (await api(W.page, `/api/approvals/requests/${expOther}/decision`, "POST", { action: "approve" })).status === 403);
+  check("a request of theirs opens with the view-only note", (await go(W.page, `/approvals/requests/${expOther}`))?.status() === 200 && (await W.page.locator("[data-testid=watching-note]").count()) === 1);
+  await go(W.page, "/approvals/watching/all");
+  const subOpts = await W.page.locator("[data-testid=filter-by] option").allTextContents();
+  check("a Submitted by filter lists the people in the list", ["Anyone", "ZZ Wat Outsider", "ZZ Wat Requester"].every((n) => subOpts.includes(n)), subOpts);
+  await W.page.locator("[data-testid=filter-by]").selectOption({ label: "ZZ Wat Outsider" });
+  await W.page.waitForURL(/by=/);
+  await W.page.waitForLoadState("networkidle").catch(() => {});
+  const onlyO = await text(W.page);
+  check("…which shows only that person's requests", onlyO.includes("ZZ Outsider Budget") && !onlyO.includes("ZZ-WAT-EXP-1") && !onlyO.includes(EVENT), onlyO.slice(0, 300));
+  await W.page.locator("[data-testid=filter-type]").selectOption("expenditure");
+  await W.page.waitForURL(/type=expenditure/);
+  await W.page.waitForLoadState("networkidle").catch(() => {});
+  check("…and works with the Type filter", (await text(W.page)).includes("No requests") || (await W.page.locator("main tbody tr", { hasText: "ZZ-WAT" }).count()) === 0);
+  const csvBy = await raw(W.page, `/api/approvals/requests/export?screen=watching/all&by=${requester.id}`);
+  check("the export follows Submitted by", csvBy.status === 200 && csvBy.body.includes("ZZ-WAT-EXP-3") && !csvBy.body.includes("ZZ Outsider Budget"));
+  await go(H.page, `/administrator/users/${watcher.id}`);
+  await box.getByRole("button", { name: "Stop watching ZZ Wat Outsider" }).click();
+  check("× removes a person at once", await userCount(1));
+  check("…and their requests close again (404); the other person's stay", (await go(W.page, `/approvals/requests/${theirs.id}`))?.status() === 404 && (await go(W.page, `/approvals/requests/${expOther}`))?.status() === 200);
+  await box.getByRole("button", { name: "Stop watching ZZ Wat Requester" }).click();
+  check("with nobody left, the list is gone again (404)", await userCount(0) && (await go(W.page, "/approvals/watching/all"))?.status() === 404);
 
   for (const s of [R, A, W, O, H]) await s.ctx.close();
 } catch (e) {

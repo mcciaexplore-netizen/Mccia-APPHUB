@@ -23,10 +23,13 @@ const sees = {
 
 /**
  * The requests a person's watching rules match: an HR or Budget rule all of its type; an Expenditure rule both expense types, of one expense
- * category or (no category) of all. Nothing when they have no rules.
+ * category or (no category) of all; a rule by user every request that person submitted, of any type. One OR, so a request matched by
+ * several rules appears once. Nothing when they have no rules.
  */
 function watchedByRules(rules: readonly WatchRule[]): SQL {
   const parts = rules.map((r) => {
+    if (r.watchedUserId) return eq(aprRequests.requesterUserId, r.watchedUserId);
+    if (!r.form) return sql`false`;
     const ofType = inArray(aprRequests.type, typesOfForm(r.form));
     if (r.form !== "expenditure" || !r.categoryId) return ofType;
     // The category is on the request's expenditure details (apr_requests is never aliased, so it can be named here).
@@ -78,6 +81,8 @@ export type ListFilter = {
   approvedByMe?: boolean;
   /** Only requests that have reached this person's step (waiting for them, or already decided by them). */
   reachedMe?: boolean;
+  /** Only requests submitted by this person (the "Submitted by" filter of All Approvals). */
+  requesterId?: string;
   /** Only requests this person's watching rules match (All Approvals), whatever else they may see. */
   watchedOnly?: boolean;
   sort?: SortKey;
@@ -139,6 +144,7 @@ function conditions(user: ApprovalsUser, f: ListFilter, rules: readonly WatchRul
   return and(
     visibility(user, rules),
     f.watchedOnly ? watchedByRules(rules) : undefined,
+    f.requesterId ? eq(aprRequests.requesterUserId, f.requesterId) : undefined,
     f.types?.length ? inArray(aprRequests.type, f.types) : undefined,
     f.statuses?.length ? inArray(aprRequests.status, f.statuses) : undefined,
     f.from && /^\d{4}-\d{2}-\d{2}$/.test(f.from) ? gte(aprRequests.requestedAt, istStart(f.from)) : undefined,
@@ -219,6 +225,25 @@ export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Pro
       .where(where),
   ]);
   return { rows, total, page, pageSize };
+}
+
+/** The people who submitted the requests a list shows (for its "Submitted by" filter), by name. */
+export async function listSubmitters(user: ApprovalsUser, f: ListFilter): Promise<{ id: string; name: string }[]> {
+  const where = conditions(user, { ...f, requesterId: undefined }, await watchRules(user.id));
+  const rows = await db
+    .selectDistinct({ id: aprRequests.requesterUserId, name: aprRequests.requesterName })
+    .from(aprRequests)
+    .leftJoin(aprHrDetails, eq(aprHrDetails.requestId, aprRequests.id))
+    .leftJoin(aprHrCategories, eq(aprHrCategories.id, aprHrDetails.hrCategoryId))
+    .leftJoin(aprExpenditureDetails, eq(aprExpenditureDetails.requestId, aprRequests.id))
+    .leftJoin(aprCategories, eq(aprCategories.id, aprExpenditureDetails.categoryId))
+    .leftJoin(aprBranches, eq(aprBranches.id, aprExpenditureDetails.branchId))
+    .where(where)
+    .limit(500);
+  // One entry per person (their name as on their latest request wins; names rarely change).
+  const byId = new Map<string, string>();
+  for (const r of rows) if (r.id) byId.set(r.id, r.name);
+  return [...byId].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -540,7 +565,7 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
   const returnedStep = req.status === "returned" ? steps.find((x) => x.stepNo === req.currentStep && x.status === "returned") : undefined;
   const mine = pending && req.currentApproverUserId === user.id && req.requesterUserId !== user.id;
   const involved = req.requesterUserId === user.id || steps.some((x) => x.approverUserId === user.id);
-  const watching = !involved && rulesMatch(await watchRules(user.id), req.type, exp?.d.categoryId ?? null);
+  const watching = !involved && rulesMatch(await watchRules(user.id), req.type, exp?.d.categoryId ?? null, req.requesterUserId);
   return {
     id: req.id, requestNo: req.requestNo, type: req.type, status: req.status, requesterUserId: req.requesterUserId, requesterName: req.requesterName,
     requesterEmail: req.requesterEmail, requestedAt: req.requestedAt, financialYear: req.financialYear, amountPaise: req.amountPaise, overBudget: req.overBudget,

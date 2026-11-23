@@ -330,6 +330,13 @@
       "when": 1795410702318,
       "tag": "0046_attendance_push",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795417247505,
+      "tag": "0047_approvals_watch_user",
+      "breakpoints": true
     }
   ]
 }

@@ -23,12 +23,14 @@ export type ListParams = {
   branchId: string;
   /** Lists that mix kinds of request (All Approvals): only HR, Expenditure or Budget. */
   type: string;
+  /** All Approvals: only requests submitted by this person (their user id). */
+  by: string;
   sort: SortKey;
   dir: "asc" | "desc";
   page: number;
 };
 
-const DEFAULT_PARAMS: ListParams = { q: "", from: "", to: "", status: "", categoryId: "", branchId: "", type: "", sort: "requestedAt", dir: "desc", page: 1 };
+const DEFAULT_PARAMS: ListParams = { q: "", from: "", to: "", status: "", categoryId: "", branchId: "", type: "", by: "", sort: "requestedAt", dir: "desc", page: 1 };
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const uuid = z.string().uuid();
@@ -47,6 +49,7 @@ export function parseListParams(sp: Record<string, string | string[] | undefined
     categoryId: uuid.safeParse(first(sp.categoryId)).success ? first(sp.categoryId) : "",
     branchId: uuid.safeParse(first(sp.branchId)).success ? first(sp.branchId) : "",
     type: (TYPE_FILTERS as readonly string[]).includes(first(sp.type)) ? first(sp.type) : "",
+    by: uuid.safeParse(first(sp.by)).success ? first(sp.by) : "",
     sort: (SORT_KEYS as readonly string[]).includes(sort) ? (sort as SortKey) : DEFAULT_PARAMS.sort,
     dir: first(sp.dir) === "asc" ? "asc" : "desc",
     page: Number.isInteger(page) && page > 0 ? Math.min(page, 100_000) : 1, // a huge page number would overflow the database offset

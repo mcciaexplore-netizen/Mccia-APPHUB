@@ -220,6 +220,12 @@ eq("headings: a request's kind", (["hr", "expenditure_large", "expenditure_small
     W.rulesMatch([EXP_ADMIN, EXP_EVENT], "expenditure_large", "cat-event"), W.rulesMatch([EXP_ADMIN, EXP_EVENT], "expenditure_small", "cat-admin"),
     W.rulesMatch([EXP_ADMIN], "expenditure_large", "cat-other"), W.rulesMatch([EXP_ADMIN], "expenditure_large", null), W.rulesMatch([EXP_ADMIN], "hr", null), W.rulesMatch([], "hr", null),
   ], [true, false, true, true, true, true, true, false, false, false, false]);
+  const RAJ = { form: null, categoryId: null, watchedUserId: "u-raj" } as const;
+  eq("watchers: a user rule matches every type from that person, and only from them", [
+    W.rulesMatch([RAJ], "hr", null, "u-raj"), W.rulesMatch([RAJ], "budget", null, "u-raj"), W.rulesMatch([RAJ], "expenditure_small", "cat-x", "u-raj"),
+    W.rulesMatch([RAJ], "hr", null, "u-other"), W.rulesMatch([RAJ], "hr", null), W.rulesMatch([RAJ, EXP_ADMIN], "expenditure_large", "cat-admin", "u-other"),
+    W.isUserRule(RAJ), W.isUserRule(HR),
+  ], [true, true, true, false, false, true, true, false]);
   eq("watchers: only Expenditure rules have categories", W.WATCH_FORMS.map(W.formHasCategories), [false, true, false]);
   eq("watchers: a new request tells each watcher once, never the person who raised it nor the approver already told", [
     W.watcherRecipients(["a", "b", "a", "r", "x"], "r", ["x"]), W.watcherRecipients([], "r", ["x"]), W.watcherRecipients(["x"], "r", ["x"]),

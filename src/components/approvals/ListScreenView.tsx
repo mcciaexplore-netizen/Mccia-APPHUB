@@ -11,7 +11,7 @@ import { appForType } from "@/lib/approvals/approvals.manifest";
 import { formatDate, formatDateTime, formatINR, isoToDisplay } from "@/lib/approvals/format";
 import { toQueryString, type ListParams, type SortKey } from "@/lib/approvals/list-params";
 import { listMasterCached } from "@/lib/approvals/masters";
-import { listRequests } from "@/lib/approvals/request-queries";
+import { listRequests, listSubmitters } from "@/lib/approvals/request-queries";
 import { typesOfForm } from "@/lib/approvals/watching";
 import { PAGE_SIZE, type ListScreen } from "@/lib/approvals/screens";
 import { hasRole, listBranches, type ApprovalsUser } from "@/lib/approvals/host-adapter";
@@ -23,15 +23,18 @@ const TYPE_SHORT = { hr: "HR", expenditure_large: "Expenditure", expenditure_sma
 /** One list screen: filters on top, a sortable table, a pager. Which rows appear is decided by the server, never by the filter alone. */
 export async function ListScreenView({ slug, screen, params, user }: { slug: string; screen: ListScreen; params: ListParams; user: ApprovalsUser }) {
   const path = `/approvals/${slug}`;
-  const [{ rows, total, page, pageSize }, hrCats, expCats, branches] = await Promise.all([
+  const listTypes = screen.typeFilter && params.type ? typesOfForm(params.type as AprWatcherForm) : screen.types;
+  const [{ rows, total, page, pageSize }, hrCats, expCats, branches, submitters] = await Promise.all([
     listRequests(user, {
-      types: screen.typeFilter && params.type ? typesOfForm(params.type as AprWatcherForm) : screen.types, watchedOnly: screen.watchedOnly,
+      types: listTypes, watchedOnly: screen.watchedOnly, requesterId: screen.watchedOnly && params.by ? params.by : undefined,
       statuses: params.status ? [params.status as AprRequestStatus] : screen.statuses, mine: screen.mine, waitingForMe: screen.waitingForMe, decidedByMe: screen.decidedByMe, recommendedByMe: screen.recommendedByMe, rejectedByMe: screen.rejectedByMe, approvedByMe: screen.approvedByMe, reachedMe: screen.reachedMe,
       q: params.q, from: params.from, to: params.to, categoryId: params.categoryId, branchId: params.branchId, sort: params.sort, dir: params.dir, page: params.page, pageSize: PAGE_SIZE,
     }),
     screen.categories === "hr" || screen.categories === "all" ? listMasterCached("hr-categories", true) : Promise.resolve([]),
     screen.categories === "expense" || screen.categories === "all" ? listMasterCached("categories", true) : Promise.resolve([]),
     screen.branch ? listBranches() : Promise.resolve([]),
+    // All Approvals: whose requests it holds, for the "Submitted by" filter.
+    screen.watchedOnly ? listSubmitters(user, { types: listTypes, watchedOnly: true }) : Promise.resolve(undefined),
   ]);
   const categories = [...hrCats, ...expCats].map((c) => ({ id: c.id, name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
   const mixed = !screen.types || screen.types.length > 1;
@@ -51,7 +54,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
   const exportHref = `/api/approvals/requests/export${exportQuery ? `${exportQuery}&` : "?"}screen=${encodeURIComponent(slug)}`;
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const filtered = !!(params.q || params.from || params.to || params.categoryId || params.branchId || params.status);
+  const filtered = !!(params.q || params.from || params.to || params.categoryId || params.branchId || params.status || params.by);
   // An empty list says why: nothing waits for you, nothing was recommended to you, you raised nothing, or nothing matches.
   const empty = filtered ? "none" : screen.reachedMe || slug === "inbox" ? "queue" : screen.waitingForMe ? "waiting" : screen.mine ? "mine" : "none";
 
@@ -61,7 +64,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
         title={screen.title} intro={screen.intro}
         actions={screen.newHref ? <Link href={screen.newHref} className="btn btn-primary btn-sm"><Plus size={14} /> New request</Link> : undefined}
       />
-      <ListFilters params={params} categories={categories} branches={branches.map((b) => ({ id: b.id, name: b.name }))} showStatus={!screen.statuses} showBranch={!!screen.branch} showCategory={screen.categories !== "none"} showType={!!screen.typeFilter} exportHref={exportHref}
+      <ListFilters params={params} categories={categories} branches={branches.map((b) => ({ id: b.id, name: b.name }))} showStatus={!screen.statuses} showBranch={!!screen.branch} showCategory={screen.categories !== "none"} showType={!!screen.typeFilter} submitters={submitters} exportHref={exportHref}
         addCategory={hasRole(user, "approvals_admin") && screen.categories !== "none" ? (screen.categories === "hr" ? { kind: "hr-categories", noun: "HR request type" } : { kind: "categories", noun: "expense type" }) : undefined} />
 
       {rows.length === 0 ? <EmptyState kind={empty} /> : (

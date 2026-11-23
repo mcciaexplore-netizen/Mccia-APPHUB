@@ -202,7 +202,8 @@ async function createRequest(actor: ApprovalsUser, p: Prepared): Promise<{ id: s
   try {
     const categoryId = p.type === "hr" || p.type === "budget" ? null
       : (await db.select({ c: aprExpenditureDetails.categoryId }).from(aprExpenditureDetails).where(eq(aprExpenditureDetails.requestId, draft.id)))[0]?.c ?? null;
-    const watchers = watcherRecipients(await watcherIdsFor(p.type, categoryId), actor.id, [first.approverUserId]);
+    // Matched by type (and category), or by who submitted it ("watch all approvals from this person").
+    const watchers = watcherRecipients(await watcherIdsFor(p.type, categoryId, actor.id), actor.id, [first.approverUserId]);
     for (const userId of watchers) {
       await notify({
         userId, requestId: draft.id, link: link(draft.id, p.type), email: settings.notifyWatchersByEmail,

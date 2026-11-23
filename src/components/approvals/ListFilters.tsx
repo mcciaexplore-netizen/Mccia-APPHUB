@@ -13,13 +13,15 @@ const ADD = "__add__";
 
 /** Search, date range and filters above a list. The state lives in the address, so a filtered view can be shared and exported. */
 export function ListFilters({
-  params, categories, branches, showStatus, showBranch, exportHref, addCategory, showCategory = true, showType = false,
+  params, categories, branches, showStatus, showBranch, exportHref, addCategory, showCategory = true, showType = false, submitters,
 }: {
   params: ListParams; categories: Opt[]; branches: Opt[]; showStatus: boolean; showBranch: boolean; exportHref: string;
   /** Off for budget lists: a budget has an event, not a category. */
   showCategory?: boolean;
   /** A Type filter (HR / Expenditure / Budget), for a list that mixes them (All Approvals). */
   showType?: boolean;
+  /** A "Submitted by" filter: the people whose requests the list holds (All Approvals). */
+  submitters?: Opt[];
   /** For the Approvals admin: "+ Add category" at the bottom of the Category list, adding to this kind of list. */
   addCategory?: { kind: "categories" | "hr-categories"; noun: string };
 }) {
@@ -34,7 +36,7 @@ export function ListFilters({
   const clear = () => { setQ(""); start(() => router.replace(path)); };
   useEffect(() => () => clearTimeout(timer.current), []);
   const typed = (v: string) => { setQ(v); clearTimeout(timer.current); timer.current = setTimeout(() => apply({ q: v }), 350); };
-  const dirty = !!(params.q || params.from || params.to || params.status || params.categoryId || params.branchId || params.type);
+  const dirty = !!(params.q || params.from || params.to || params.status || params.categoryId || params.branchId || params.type || params.by);
 
   return (
     <div className="mb-4 flex flex-wrap items-end gap-3" aria-busy={pending}>
@@ -70,6 +72,15 @@ export function ListFilters({
           <select className="input w-36" value={params.type} onChange={(e) => apply({ type: e.target.value })} data-testid="filter-type">
             <option value="">All</option>
             {TYPE_FILTERS.map((t) => <option key={t} value={t}>{WATCH_FORM_LABEL[t]}</option>)}
+          </select>
+        </label>
+      )}
+      {submitters && (
+        <label className="block">
+          <span className="label-xs block">Submitted by</span>
+          <select className="input w-44" value={params.by} onChange={(e) => apply({ by: e.target.value })} data-testid="filter-by">
+            <option value="">Anyone</option>
+            {submitters.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
       )}
