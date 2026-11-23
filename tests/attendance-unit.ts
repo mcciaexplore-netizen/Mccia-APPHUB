@@ -17,7 +17,7 @@ import { approverFor, attRolesFor, canDecide, isAdmin, isMember, navFor } from "
 import { tally } from "../src/lib/attendance/summary";
 import { BOTTOM_NAV } from "../src/lib/attendance/att.manifest";
 import { b64urlToBytes, bytesToB64url, isPushHost, pushAudience, subscriptionGone, validSubscription, vapidJwk } from "../src/lib/attendance/push-rules";
-import { isIosSafari } from "../src/lib/attendance/pwa-rules";
+import { isDarkTheme, isIosSafari, parseThemePref, themeColorFor } from "../src/lib/attendance/pwa-rules";
 import { generateKeyPairSync } from "node:crypto";
 import { SignJWT, importJWK, jwtVerify } from "jose";
 import { layout, ORG_ROOT } from "../src/lib/attendance/org-layout";
@@ -263,6 +263,9 @@ export function attendanceUnit(eq: Eq): void {
     isIosSafari("Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/124.0 Mobile/15E148 Safari/604.1"),
     isIosSafari("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"),
   ], [true, false, false]);
+  eq("att dark mode: no choice follows the device; a choice (light or dark) wins over the device", [isDarkTheme(null, true), isDarkTheme(null, false), isDarkTheme("light", true), isDarkTheme("dark", false)], [true, false, false, true]);
+  eq("att dark mode: only \"light\" and \"dark\" are choices; anything else means the device setting", [parseThemePref("dark"), parseThemePref("light"), parseThemePref("auto"), parseThemePref(null)], ["dark", "light", null, null]);
+  eq("att dark mode: browser bar colour", [themeColorFor(true), themeColorFor(false)], ["#111827", "#16A34A"]);
   eq("att push: base64url round trip", bytesToB64url(b64urlToBytes("BPx-_w")), "BPx-_w");
   eq("att push: bad or missing keys give no signing key", [vapidJwk(undefined, "x"), vapidJwk("abc", "def"), vapidJwk(bytesToB64url(new Uint8Array(65)), bytesToB64url(new Uint8Array(32)))], [null, null, null]);
   eq("att push: only the browsers' push services are accepted as endpoints (never an address of someone's choosing)", [

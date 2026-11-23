@@ -91,8 +91,9 @@ export function Avatar({ name, size = 28 }: { name: string; size?: number }) {
 }
 
 export function Kpi({ label, value, tone, href }: { label: string; value: ReactNode; tone?: "green" | "red" | "amber" | "blue" | "teal" | "dark"; href?: string }) {
-  const colors: Record<string, string> = { green: "var(--att-primary-2)", red: "var(--att-red)", amber: "#b45309", blue: "var(--att-info)", teal: "#0f766e" };
-  const color = colors[tone ?? "dark"] ?? "#111827";
+  // Theme variables, so each number stays readable in dark mode too.
+  const colors: Record<string, string> = { green: "var(--att-primary-2)", red: "var(--att-red)", amber: "var(--att-amber-text)", blue: "var(--att-info)", teal: "var(--att-teal-text)" };
+  const color = colors[tone ?? "dark"] ?? "var(--att-text)";
   const body = (
     <>
       <span className="att-label">{label}</span>

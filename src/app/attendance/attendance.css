@@ -1,10 +1,22 @@
 /*
  * Attendance's own look on the hub's base (src/app/globals.css): green (#16A34A) on an off-white page (#F8F9FA), white cards with a soft
- * shadow, a white sidebar with green pill items and a green blob, and a colour per day status. Everything is prefixed att- (or scoped under .att-root) so nothing can change a hub page. Buttons and
+ * shadow, a white sidebar with green pill items and a green blob, and a colour per day status. Dark mode: html.att-dark (end of the file). Everything is prefixed att- (or scoped under .att-root) so nothing can change a hub page. Buttons and
  * inputs use the hub's own classes (btn, input), recoloured inside .att-root.
  */
 :root {
+  /* The theme: light by default; html.att-dark (set by the Attendance pages, see theme below) switches every colour at once. */
+  --att-bg: #f8f9fa;
+  --att-card: #ffffff;
+  --att-text: #111827;
+  --att-text-2: #374151;
+  --att-text-muted: #6b7280;
+  --att-border: #e5e7eb;
   --att-primary: #16a34a;
+  --att-primary-light: #dcfce7;
+  --att-sidebar: #ffffff;
+  --att-hover: #f3f4f6;
+  --att-sunken: #f3f4f6;
+
   --att-primary-2: #15803d;
   --att-primary-tint: #ecfdf3;
   --att-primary-line: rgba(22, 163, 74, 0.22);
@@ -18,16 +30,23 @@
   --att-red: #dc2626;
   --att-red-tint: rgba(220, 38, 38, 0.08);
   --att-amber: #d97706;
+  --att-amber-text: #b45309;
+  --att-amber-strong: #92400e;
   --att-amber-tint: rgba(217, 119, 6, 0.11);
   --att-purple: #7c3aed;
   --att-purple-tint: rgba(124, 58, 237, 0.09);
   --att-teal: #0d9488;
+  --att-teal-text: #0f766e;
   --att-teal-tint: rgba(13, 148, 136, 0.1);
-  --att-grey: #64748b;
+  --att-grey: var(--att-text-muted);
   --att-grey-tint: #f1f5f9;
-  --att-page: #f8f9fa;
-  --att-line: #eef0f2;
+  --att-grey-text: #475569;
+  --att-page: var(--att-bg);
+  --att-line: var(--att-border);
   --att-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 16px rgba(15, 23, 42, 0.05);
+  --att-blob-1: #bbf7d0;
+  --att-blob-2: #dcfce7;
+  --att-blob-3: #f0fdf4;
 }
 
 .min-h-screen:has(.att-root) { background: var(--att-page); }
@@ -38,7 +57,7 @@
 .att-root .btn-primary:hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 20px rgba(22, 163, 74, 0.34); }
 .att-root .input:focus { border-color: var(--att-primary); box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15); outline: none; }
 
-.att-card { background: #fff; border: 1px solid var(--att-line); border-radius: 16px; box-shadow: var(--att-shadow); }
+.att-card { background: var(--att-card); border: 1px solid var(--att-line); border-radius: 16px; box-shadow: var(--att-shadow); }
 .att-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--att-grey); }
 .att-muted { color: var(--att-grey); }
 .att-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
@@ -49,43 +68,43 @@
 
 /* Badges */
 .att-badge { display: inline-flex; align-items: center; gap: 0.3rem; border-radius: 99px; padding: 0.12rem 0.55rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; border: 1px solid transparent; line-height: 1.5; }
-.att-tone-neutral, .att-tone-grey, .att-tone-none { background: var(--att-grey-tint); color: #475569; border-color: #e2e8f0; }
+.att-tone-neutral, .att-tone-grey, .att-tone-none { background: var(--att-grey-tint); color: var(--att-grey-text); border-color: var(--att-border); }
 .att-tone-primary { background: var(--att-primary-tint); color: var(--att-primary-2); border-color: var(--att-primary-line); }
 .att-tone-blue { background: var(--att-info-tint); color: var(--att-info); border-color: rgba(37, 99, 235, 0.2); }
 .att-tone-green { background: var(--att-green-tint); color: var(--att-green-dark); border-color: rgba(22, 163, 74, 0.22); }
 .att-tone-red { background: var(--att-red-tint); color: var(--att-red); border-color: rgba(220, 38, 38, 0.2); }
-.att-tone-amber { background: var(--att-amber-tint); color: #b45309; border-color: rgba(217, 119, 6, 0.22); }
+.att-tone-amber { background: var(--att-amber-tint); color: var(--att-amber-text); border-color: rgba(217, 119, 6, 0.22); }
 .att-tone-purple { background: var(--att-purple-tint); color: var(--att-purple); border-color: rgba(124, 58, 237, 0.2); }
-.att-tone-teal { background: var(--att-teal-tint); color: #0f766e; border-color: rgba(13, 148, 136, 0.22); }
+.att-tone-teal { background: var(--att-teal-tint); color: var(--att-teal-text); border-color: rgba(13, 148, 136, 0.22); }
 
 /* Time worked today. */
-.att-timer { font-variant-numeric: tabular-nums; font-size: clamp(1.6rem, 3vw, 2.1rem); font-weight: 800; letter-spacing: 0.02em; color: #111827; line-height: 1.15; }
+.att-timer { font-variant-numeric: tabular-nums; font-size: clamp(1.6rem, 3vw, 2.1rem); font-weight: 800; letter-spacing: 0.02em; color: var(--att-text); line-height: 1.15; }
 
 /* Day colours: calendar cells and dots. */
 .att-st-green { background: var(--att-green-tint); color: var(--att-green-dark); }
 .att-st-red { background: var(--att-red-tint); color: var(--att-red); }
-.att-st-amber { background: var(--att-amber-tint); color: #b45309; }
+.att-st-amber { background: var(--att-amber-tint); color: var(--att-amber-text); }
 .att-st-purple { background: var(--att-purple-tint); color: var(--att-purple); }
-.att-st-grey { background: var(--att-grey-tint); color: #64748b; }
+.att-st-grey { background: var(--att-grey-tint); color: var(--att-grey-text); }
 .att-st-blue { background: var(--att-info-tint); color: var(--att-info); }
-.att-st-teal { background: var(--att-teal-tint); color: #0f766e; }
-.att-st-none { background: #fff; color: #334155; }
+.att-st-teal { background: var(--att-teal-tint); color: var(--att-teal-text); }
+.att-st-none { background: var(--att-card); color: var(--att-text-2); }
 .att-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .att-cal-cell { min-height: 4.4rem; border-radius: 8px; padding: 0.35rem 0.4rem; border: 1px solid var(--att-line); font-size: 0.72rem; line-height: 1.25; display: flex; flex-direction: column; gap: 2px; }
 .att-cal-cell.att-today { outline: 2px solid var(--att-primary); outline-offset: -1px; }
 @media (max-width: 640px) { .att-cal-cell { min-height: 3.2rem; padding: 0.25rem; font-size: 0.62rem; } .att-cal-cell .att-cal-extra { display: none; } }
 
 /* Tabs */
-.att-tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: #e9edf2; }
-.att-tab { padding: 0.4rem 0.9rem; border-radius: 8px; font-size: 0.86rem; font-weight: 700; color: #475569; }
-.att-tab[aria-current="page"] { background: #fff; color: var(--att-primary); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1); }
+.att-tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--att-sunken); }
+.att-tab { padding: 0.4rem 0.9rem; border-radius: 8px; font-size: 0.86rem; font-weight: 700; color: var(--att-grey-text); }
+.att-tab[aria-current="page"] { background: var(--att-card); color: var(--att-primary); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1); }
 
 /* Avatars */
 .att-avatar { display: inline-grid; place-items: center; border-radius: 999px; background: var(--att-primary-tint); color: var(--att-primary-2); font-weight: 700; flex-shrink: 0; }
 
 /* The phone's bottom bar (hidden from a laptop up, where the sidebar shows). Space is left under the page so nothing hides behind it. */
-.att-bottom-nav { position: fixed; inset: auto 0 0 0; z-index: 40; display: grid; grid-template-columns: repeat(5, 1fr); background: #fff; border-top: 1px solid var(--att-line); padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06); }
-.att-bottom-nav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; padding: 0.45rem 0 0.4rem; font-size: 0.7rem; font-weight: 700; color: #64748b; -webkit-tap-highlight-color: transparent; }
+.att-bottom-nav { position: fixed; inset: auto 0 0 0; z-index: 40; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--att-sidebar); border-top: 1px solid var(--att-border); padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06); }
+.att-bottom-nav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; padding: 0.45rem 0 0.4rem; font-size: 0.7rem; font-weight: 700; color: var(--att-text-muted); -webkit-tap-highlight-color: transparent; }
 .att-bottom-nav a[aria-current="page"] { color: var(--att-primary); }
 @media (min-width: 768px) { .att-bottom-nav { display: none; } }
 @media (max-width: 767px) { .att-root.att-has-bottom-nav { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); } }
@@ -93,19 +112,19 @@
 /* Org chart */
 .att-org { position: relative; overflow: hidden; height: min(70vh, 640px); background: radial-gradient(circle, #e2e8f0 1px, transparent 1px) 0 0 / 22px 22px, #fafbfc; border-radius: 12px; cursor: grab; touch-action: none; }
 .att-org:active { cursor: grabbing; }
-.att-org-node { position: absolute; width: 180px; background: #fff; border: 1px solid var(--att-line); border-radius: 10px; padding: 0.5rem 0.6rem; box-shadow: var(--att-shadow); font-size: 0.78rem; }
+.att-org-node { position: absolute; width: 180px; background: var(--att-card); color: var(--att-text); border: 1px solid var(--att-line); border-radius: 10px; padding: 0.5rem 0.6rem; box-shadow: var(--att-shadow); font-size: 0.78rem; }
 .att-org-node.att-org-root { background: var(--att-primary); color: #fff; border-color: var(--att-primary); }
 .att-org-node.att-org-me { border: 2px solid var(--att-green); }
 
 /* Sidebar: white, green pill for the page you are on, a soft green blob at the bottom left. */
-.att-side { position: relative; overflow: hidden; background: #fff; border: 1px solid var(--att-line); border-radius: 18px; box-shadow: var(--att-shadow); padding: 1.25rem 0.75rem 7rem; }
-.att-side::after { content: ""; position: absolute; left: -3.5rem; bottom: -3.5rem; width: 11rem; height: 11rem; border-radius: 46% 54% 60% 40% / 52% 44% 56% 48%; background: radial-gradient(circle at 35% 35%, #bbf7d0 0%, #dcfce7 55%, #f0fdf4 100%); opacity: 0.9; pointer-events: none; }
-.att-side::before { content: ""; position: absolute; left: 4.5rem; bottom: 1.25rem; width: 2.2rem; height: 2.2rem; border-radius: 999px; background: #dcfce7; pointer-events: none; }
-.att-side-item { display: flex; align-items: center; gap: 0.75rem; border-radius: 999px; padding: 0.55rem 1rem; font-size: 0.9rem; font-weight: 600; color: #374151; transition: background 0.15s ease, color 0.15s ease; }
-.att-side-item:hover { background: #f3f4f6; }
+.att-side { position: relative; overflow: hidden; background: var(--att-sidebar); border: 1px solid var(--att-line); border-radius: 18px; box-shadow: var(--att-shadow); padding: 1.25rem 0.75rem 7rem; }
+.att-side::after { content: ""; position: absolute; left: -3.5rem; bottom: -3.5rem; width: 11rem; height: 11rem; border-radius: 46% 54% 60% 40% / 52% 44% 56% 48%; background: radial-gradient(circle at 35% 35%, var(--att-blob-1) 0%, var(--att-blob-2) 55%, var(--att-blob-3) 100%); opacity: 0.9; pointer-events: none; }
+.att-side::before { content: ""; position: absolute; left: 4.5rem; bottom: 1.25rem; width: 2.2rem; height: 2.2rem; border-radius: 999px; background: var(--att-blob-2); pointer-events: none; }
+.att-side-item { display: flex; align-items: center; gap: 0.75rem; border-radius: 999px; padding: 0.55rem 1rem; font-size: 0.9rem; font-weight: 600; color: var(--att-text-2); transition: background 0.15s ease, color 0.15s ease; }
+.att-side-item:hover { background: var(--att-hover); }
 .att-side-item[aria-current="page"] { background: var(--att-primary-tint); color: var(--att-primary); }
 .att-side-item[aria-current="page"] svg { color: var(--att-primary); }
-.att-side-item svg { color: #6b7280; }
+.att-side-item svg { color: var(--att-text-muted); }
 
 /* Round icon badges on card headings (Today, Coming up, Announcements …). */
 .att-icon { display: inline-grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 999px; flex-shrink: 0; }
@@ -113,14 +132,14 @@
 .att-icon-blue { background: var(--att-info-tint); color: var(--att-info); }
 .att-icon-purple { background: var(--att-purple-tint); color: var(--att-purple); }
 .att-icon-orange { background: var(--att-orange-tint); color: var(--att-orange); }
-.att-icon-grey { background: #f3f4f6; color: #6b7280; }
+.att-icon-grey { background: var(--att-sunken); color: var(--att-text-muted); }
 
 /* Check In / Check Out buttons on the Home card (Check Out is grey while disabled, green once it opens). */
 .att-btn-in, .att-btn-out { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; border-radius: 12px; padding: 0.75rem 1.5rem; font-size: 0.95rem; font-weight: 700; min-width: 9rem; transition: background 0.15s ease, transform 0.1s ease; }
 .att-btn-in { background: var(--att-primary); color: #fff; box-shadow: 0 6px 18px rgba(22, 163, 74, 0.28); }
 .att-btn-in:hover:not(:disabled) { background: var(--att-primary-2); }
-.att-btn-out { background: #fff; color: #111827; border: 1px solid #d1d5db; }
-.att-btn-out:hover:not(:disabled) { background: #f9fafb; }
+.att-btn-out { background: var(--att-card); color: var(--att-text); border: 1px solid var(--att-border); }
+.att-btn-out:hover:not(:disabled) { background: var(--att-hover); }
 .att-btn-in:active:not(:disabled), .att-btn-out:active:not(:disabled) { transform: scale(0.98); }
 .att-btn-in:disabled, .att-btn-out:disabled { opacity: 0.55; cursor: not-allowed; }
 
@@ -132,8 +151,8 @@
    Below 768 px: the bottom bar instead of the sidebar, full-width 56 px Check In / Check Out, a large centred timer. On any touch screen: every
    tap target at least 44 px, and inputs at 16 px so phones do not zoom in on a tapped field. */
 .att-link-btn { font-weight: 600; color: var(--att-primary-2); text-decoration: underline; text-underline-offset: 2px; }
-.att-btn-out:disabled { background: #f3f4f6; color: #6b7280; border: 1px dashed #cbd5e1; opacity: 1; box-shadow: none; }
-.att-queued { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; border-radius: 12px; padding: 0.75rem 1rem; font-size: 0.85rem; font-weight: 700; background: var(--att-amber-tint); color: #92400e; text-align: center; }
+.att-btn-out:disabled { background: var(--att-sunken); color: var(--att-text-muted); border: 1px dashed var(--att-border); opacity: 1; box-shadow: none; }
+.att-queued { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; border-radius: 12px; padding: 0.75rem 1rem; font-size: 0.85rem; font-weight: 700; background: var(--att-amber-tint); color: var(--att-amber-strong); text-align: center; }
 .att-root .input { min-height: 44px; }
 
 /* Until 1024 px the check-in card is stacked: its button runs the full width. */
@@ -167,7 +186,7 @@
 @media (min-width: 768px) { .att-fab { display: none; } }
 
 /* Loading skeletons. */
-.att-skel { border-radius: 12px; background: linear-gradient(90deg, #eef0f2 0%, #f6f7f8 50%, #eef0f2 100%); background-size: 200% 100%; animation: att-shimmer 1.2s ease-in-out infinite; }
+.att-skel { border-radius: 12px; background: linear-gradient(90deg, var(--att-sunken) 0%, var(--att-card) 50%, var(--att-sunken) 100%); background-size: 200% 100%; animation: att-shimmer 1.2s ease-in-out infinite; }
 @keyframes att-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .att-skel { animation: none; } }
 
@@ -175,3 +194,102 @@
 .att-swipe { position: relative; touch-action: pan-y; transition: transform 0.2s ease; }
 .att-swipe.att-dragging { transition: none; }
 .att-swipe-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 1.25rem; font-size: 0.8rem; font-weight: 800; pointer-events: none; }
+
+/* ── Dark mode ────────────────────────────────────────────────────────────
+   html.att-dark is set only while an Attendance page is open (components/attendance/pwa/Theme.tsx: the person's choice in Profile, else the
+   device's setting), so nothing here reaches a hub page. It switches Attendance's variables, the hub's own variables (header, buttons,
+   inputs, dialogs, toasts) and Tailwind's grey scale (inverted), and makes the browser's own controls (date pickers, scrollbars) dark. */
+html.att-dark {
+  color-scheme: dark;
+  --att-bg: #111827;
+  --att-card: #1f2937;
+  --att-text: #f9fafb;
+  --att-text-2: #e5e7eb;
+  --att-text-muted: #9ca3af;
+  --att-border: #374151;
+  --att-primary: #22c55e;
+  --att-primary-light: #14532d;
+  --att-sidebar: #1f2937;
+  --att-hover: #374151;
+  --att-sunken: #111827;
+
+  --att-primary-2: #86efac;
+  --att-primary-tint: #14532d;
+  --att-primary-line: rgba(34, 197, 94, 0.4);
+  --att-info: #93c5fd;
+  --att-info-tint: #172554;
+  --att-orange: #fdba74;
+  --att-orange-tint: #431407;
+  --att-green: #22c55e;
+  --att-green-dark: #86efac;
+  --att-green-tint: #14532d;
+  --att-red: #fca5a5;
+  --att-red-tint: #450a0a;
+  --att-amber: #f59e0b;
+  --att-amber-text: #fcd34d;
+  --att-amber-strong: #fde68a;
+  --att-amber-tint: #451a03;
+  --att-purple: #d8b4fe;
+  --att-purple-tint: #3b0764;
+  --att-teal: #2dd4bf;
+  --att-teal-text: #5eead4;
+  --att-teal-tint: #134e4a;
+  --att-grey-tint: #374151;
+  --att-grey-text: #d1d5db;
+  --att-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
+  --att-blob-1: #166534;
+  --att-blob-2: #14532d;
+  --att-blob-3: #1f2937;
+
+  /* The hub's own colours (header, .btn, .input, .glass dialogs, toasts) */
+  --c-primary: #4ade80;
+  --c-text: #f9fafb;
+  --c-muted: #d1d5db;
+  --c-subtle: #9ca3af;
+  --c-alt: #111827;
+  --c-white: #1f2937;
+  --c-card: #1f2937;
+  --c-card-hover: #273244;
+  --c-border: #374151;
+  --c-canvas: #111827;
+  --grad-page: #111827;
+  --c-overlay: rgba(0, 0, 0, 0.6);
+  --c-green-tint: rgba(34, 197, 94, 0.15);
+  --c-red-tint: rgba(239, 68, 68, 0.15);
+
+  /* Tailwind's greys, inverted: text-gray-900 becomes near white, text-gray-500 a light grey, bg-gray-50 a dark grey. */
+  --color-gray-50: #1f2937;
+  --color-gray-100: #374151;
+  --color-gray-200: #374151;
+  --color-gray-300: #4b5563;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #9ca3af;
+  --color-gray-600: #d1d5db;
+  --color-gray-700: #e5e7eb;
+  --color-gray-800: #f3f4f6;
+  --color-gray-900: #f9fafb;
+  background: var(--att-bg);
+}
+html.att-dark body { background: var(--att-bg); color: var(--att-text); }
+html.att-dark .bg-white, html.att-dark .\!bg-white, html.att-dark .\!bg-white\/90 { background-color: var(--att-card) !important; }
+html.att-dark .text-\[\#b45309\] { color: var(--att-amber-text); }
+html.att-dark .text-\[\#92400e\] { color: var(--att-amber-strong); }
+html.att-dark .text-\[\#0f766e\] { color: var(--att-teal-text); }
+html.att-dark .btn-ghost { background: #273244; box-shadow: none; }
+html.att-dark .att-root .btn-primary { background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%); border-color: #16a34a; color: #fff; }
+html.att-dark .att-btn-in { color: #fff; background: #16a34a; }
+html.att-dark .att-btn-in:hover:not(:disabled) { background: #15803d; }
+html.att-dark .att-fab, html.att-dark .att-install, html.att-dark .att-org-node.att-org-root { background: #16a34a; color: #fff; }
+html.att-dark .att-install-btn { background: #fff; color: #15803d; }
+html.att-dark .att-offline { background: #78350f; }
+html.att-dark .att-cal-cell.att-today { outline-color: #22c55e; }
+html.att-dark header img[alt="MCCIA"], html.att-dark .att-side img[alt="MCCIA"] { filter: brightness(1.15) saturate(1.1); background: #fff; border-radius: 6px; padding: 2px 4px; }
+
+/* The Dark mode switch (Profile → Appearance). */
+.att-switch { position: relative; flex-shrink: 0; width: 3.5rem; height: 2rem; border-radius: 999px; background: #d1d5db; transition: background 0.2s ease; }
+.att-switch[aria-checked="true"] { background: var(--att-primary); }
+.att-switch-knob { position: absolute; top: 0.2rem; left: 0.2rem; display: grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 999px; background: #fff; color: #f59e0b; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); transition: transform 0.2s ease; }
+.att-switch[aria-checked="true"] .att-switch-knob { transform: translateX(1.5rem); color: #4f46e5; }
+@media (pointer: coarse) { .att-switch { width: 3.75rem; height: 2.25rem; } .att-switch-knob { width: 1.85rem; height: 1.85rem; } .att-switch[aria-checked="true"] .att-switch-knob { transform: translateX(1.5rem); } }
+@media (prefers-reduced-motion: reduce) { .att-switch, .att-switch-knob { transition: none; } }
+html.att-dark .att-org { background: radial-gradient(circle, #374151 1px, transparent 1px) 0 0 / 22px 22px, #111827; }

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { notFound } from "next/navigation";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { attEnabled } from "@/lib/attendance/flags";
+import { THEME_SCRIPT, ThemeController } from "@/components/attendance/pwa/Theme";
 import "./attendance.css";
 
 export const dynamic = "force-dynamic";
@@ -14,13 +15,31 @@ export const metadata: Metadata = {
 };
 
 // Pinch-zoom stays on (people who need larger text can still zoom); inputs are 16px on phones, so iPhones do not zoom in on a tapped field.
-export const viewport: Viewport = { themeColor: "#16A34A", width: "device-width", initialScale: 1, viewportFit: "cover" };
+// The browser bar: green, or dark grey when the device is in dark mode (a choice made in Profile overrides it: Theme.tsx).
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#16A34A" },
+    { media: "(prefers-color-scheme: dark)", color: "#111827" },
+  ],
+  colorScheme: "light dark",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 /**
  * Attendance is two sections, each with its own layout: (staff) at /attendance (check in/out, leave, time, more) and admin/ (Attendance
- * Admin, for HR). This wrapper answers 404 for both while the module is switched off (ATT_ENABLED) and loads the module's styles (att-).
+ * Admin, for HR). This wrapper answers 404 for both while the module is switched off (ATT_ENABLED), loads the module's styles (att-) and
+ * applies dark mode (components/attendance/pwa/Theme.tsx).
  */
 export default function AttendanceRootLayout({ children }: { children: React.ReactNode }) {
   if (!attEnabled()) notFound();
-  return <ConfirmProvider>{children}</ConfirmProvider>;
+  return (
+    <>
+      {/* Dark mode before the first paint (the person's choice, else the device's setting): no white flash. */}
+      <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      <ThemeController />
+      <ConfirmProvider>{children}</ConfirmProvider>
+    </>
+  );
 }
