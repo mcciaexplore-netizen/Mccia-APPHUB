@@ -114,7 +114,7 @@ function SwipeRow({ enabled, onApprove, onReject, children }: { enabled: boolean
         </div>
       )}
       <div
-        className={`att-swipe flex flex-col gap-2 bg-white px-5 py-4 sm:flex-row sm:items-start ${dragging ? "att-dragging" : ""}`}
+        className={`att-swipe flex flex-col gap-2 bg-(--att-card) px-5 py-4 sm:flex-row sm:items-start ${dragging ? "att-dragging" : ""}`}
         style={dx ? { transform: `translateX(${dx}px)` } : undefined}
         onPointerDown={(e) => {
           if (!enabled || e.pointerType !== "touch") return;

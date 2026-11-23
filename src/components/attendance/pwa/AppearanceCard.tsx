@@ -11,7 +11,7 @@ export function AppearanceCard() {
     <Card title="Appearance" icon={dark ? Moon : Sun} iconTone={dark ? "purple" : "orange"}>
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <p className="flex items-center gap-2 font-semibold text-gray-900">
+          <p className="flex items-center gap-2 font-semibold text-(--att-text)">
             {dark ? <Moon size={16} aria-hidden /> : <Sun size={16} aria-hidden />} Dark mode
           </p>
           <p className="mt-0.5 text-xs text-gray-500">

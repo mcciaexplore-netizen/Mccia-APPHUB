@@ -48,7 +48,7 @@ export function PeopleTable({ people, shifts }: { people: PersonRow[]; shifts: {
             <li key={p.id}>
               <button type="button" className="flex w-full items-center gap-3 px-5 py-3.5 text-left" onClick={() => setEditing(p)}>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold text-gray-900">{p.name}</span>
+                  <span className="block truncate font-semibold text-(--att-text)">{p.name}</span>
                   <span className="block truncate text-xs text-gray-500">{[p.designation, p.teamName].filter(Boolean).join(" · ") || p.email}</span>
                   <span className="mt-1 block text-xs text-gray-600">
                     {p.managerName ? `Reports to ${p.managerName}` : "No manager: requests go to HR"} · {p.shiftName} · {EMPLOYMENT_LABEL[p.employmentType]}

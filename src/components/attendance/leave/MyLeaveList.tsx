@@ -30,7 +30,7 @@ export function MyLeaveList({ items }: { items: MyLeave[] }) {
         {items.map((r) => (
           <li key={r.id} className="flex flex-col gap-2 px-5 py-4">
             <div className="flex items-start justify-between gap-3">
-              <p className="flex items-center gap-2 font-bold text-gray-900">
+              <p className="flex items-center gap-2 font-bold text-(--att-text)">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: leaveColor(r.color) }} aria-hidden />
                 {r.typeName}
               </p>

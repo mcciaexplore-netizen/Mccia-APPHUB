@@ -33,7 +33,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
       <div
         role="dialog" aria-modal="true" aria-label={title}
         onMouseDown={(e) => e.stopPropagation()}
-        className={`glass max-h-[90vh] w-full max-w-2xl overflow-y-auto !bg-white/90 p-6 backdrop-blur-[16px] sm:p-8 ${closing ? "dialog-out" : "dialog-in"}`}
+        className={`glass max-h-[90vh] w-full max-w-2xl overflow-y-auto !bg-(--c-white)/90 p-6 backdrop-blur-[16px] sm:p-8 ${closing ? "dialog-out" : "dialog-in"}`}
       >
         <div className="mb-5 flex items-center justify-between gap-4">
           <h2 className="text-xl">{title}</h2>

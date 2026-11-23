@@ -174,7 +174,7 @@ export function RequestList({ kind, rows }: { kind: "wfh" | "regularization" | "
         {rows.map((r) => (
           <li key={r.id} className="flex flex-col gap-1.5 px-5 py-4">
             <div className="flex items-start justify-between gap-3">
-              <p className="font-bold text-gray-900">{r.when}</p>
+              <p className="font-bold text-(--att-text)">{r.when}</p>
               <RequestStatus status={r.status} />
             </div>
             {r.detail && <p className="text-sm text-gray-700">{r.detail}</p>}

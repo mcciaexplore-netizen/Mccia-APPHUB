@@ -234,7 +234,7 @@ function CcPicker({ cc, setCc }: { cc: { id: string; name: string }[]; setCc: (v
         <div className="relative mt-1.5 max-w-sm">
           <input className="input" placeholder="Type a name…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find a colleague to CC" />
           {hits.length > 0 && (
-            <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-[var(--att-line)] bg-white shadow-lg">
+            <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-[var(--att-line)] bg-(--att-card) shadow-lg">
               {hits
                 .filter((h) => !cc.some((c) => c.id === h.id))
                 .map((h) => (

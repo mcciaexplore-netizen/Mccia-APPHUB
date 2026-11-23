@@ -10,7 +10,7 @@ export function PageHeader({ title, subtitle, actions }: { title: ReactNode; sub
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
-        <h1 className="text-[clamp(1.6rem,3vw,2rem)] font-bold leading-tight text-gray-900">{title}</h1>
+        <h1 className="text-[clamp(1.6rem,3vw,2rem)] font-bold leading-tight text-(--att-text)">{title}</h1>
         {subtitle && <p className="mt-1 max-w-2xl text-[0.92rem] text-gray-500">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -55,7 +55,7 @@ export function Card({
           <div className="flex min-w-0 items-center gap-3">
             {icon && <IconBadge icon={icon} tone={iconTone} />}
             <div className="min-w-0">
-              {title && <h2 className="text-base font-bold text-gray-900">{title}</h2>}
+              {title && <h2 className="text-base font-bold text-(--att-text)">{title}</h2>}
               {subtitle && <p className="text-[0.8rem] text-gray-500">{subtitle}</p>}
             </div>
           </div>
@@ -115,7 +115,7 @@ export function Kpi({ label, value, tone, href }: { label: string; value: ReactN
 export function Empty({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="grid place-items-center gap-2 px-6 py-10 text-center">
-      <span className="grid h-11 w-11 place-items-center rounded-full bg-gray-100 text-gray-400">
+      <span className="grid h-11 w-11 place-items-center rounded-full bg-(--att-sunken) text-gray-400">
         <Inbox size={20} />
       </span>
       <p className="text-base font-bold text-ink">{title}</p>

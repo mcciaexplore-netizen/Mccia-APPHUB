@@ -22,7 +22,7 @@ export function UserMenu({ name, role }: { name: string; role: keyof typeof role
         <span className="max-w-28 truncate sm:max-w-40">{name}</span><ChevronDown size={14} className="text-subtle" />
       </button>
       {open && (
-        <div role="menu" className="glass absolute right-0 top-full z-50 mt-3 w-52 animate-pop !rounded-md !bg-white p-2">
+        <div role="menu" className="glass absolute right-0 top-full z-50 mt-3 w-52 animate-pop !rounded-md !bg-(--c-white) p-2">
           <p className="px-3 pb-2 pt-1"><span className="badge">{roleLabel[role]}</span></p>
           <Link href="/change-password" className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm text-muted transition-colors hover:bg-blue-tint hover:text-primary"><KeyRound size={15} /> Change password</Link>
           <form action={logout}>

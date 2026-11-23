@@ -37,7 +37,7 @@ export default async function MorePage() {
                   <I size={20} />
                 </span>
                 <span>
-                  <span className="block text-[0.95rem] font-bold leading-snug text-gray-900">{l.label}</span>
+                  <span className="block text-[0.95rem] font-bold leading-snug text-(--att-text)">{l.label}</span>
                   <span className="mt-0.5 hidden text-xs text-gray-500 sm:block">{l.note}</span>
                 </span>
                 {l.href.endsWith("/approvals") && waiting > 0 && (

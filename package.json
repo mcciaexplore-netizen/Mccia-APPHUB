@@ -33,7 +33,8 @@
     "test:e2e:approvals:budget": "node tests/e2e/approvals-budget.mjs",
     "test:e2e:approvals:watchers": "node tests/e2e/approvals-watchers.mjs",
     "test:e2e:approvals:branch": "node tests/e2e/approvals-expense-branch.mjs",
-    "test:e2e:eru": "node tests/e2e/eru.mjs"
+    "test:e2e:eru": "node tests/e2e/eru.mjs",
+    "test:e2e:attendance:dark": "node tests/e2e/attendance-dark.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

@@ -83,7 +83,7 @@ const METHOD: Record<string, { label: string; icon: typeof Wifi }> = {
   manual: { label: "Regularized", icon: MapPin },
 };
 
-function Line({ label, value, tone = "text-gray-900" }: { label: string; value: string; tone?: string }) {
+function Line({ label, value, tone = "text-(--att-text)" }: { label: string; value: string; tone?: string }) {
   return (
     <p className="flex items-baseline justify-between gap-4 text-sm">
       <span className="text-gray-500">{label}</span>
@@ -313,7 +313,7 @@ export function CheckInCard({ card, userId }: { card: TodayCard; userId: string 
           )}
         </div>
       </div>
-      <p className="rounded-b-2xl border-t border-[var(--att-line)] bg-gray-50 px-5 py-3 text-xs text-gray-500 sm:px-6">
+      <p className="rounded-b-2xl border-t border-[var(--att-line)] bg-(--att-bg) px-5 py-3 text-xs text-gray-500 sm:px-6">
         {onLeave
           ? "You are on leave today. Cancel the leave on the Leave page if you are working."
           : card.kind !== "working" && !server

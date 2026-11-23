@@ -300,6 +300,34 @@ html.att-dark .att-offline { background: #422006; }
 html.att-dark .att-cal-cell.att-today { outline-color: #22c55e; }
 html.att-dark header img[alt="MCCIA"], html.att-dark .att-side img[alt="MCCIA"] { filter: brightness(1.15) saturate(1.1); background: #fff; border-radius: 6px; padding: 2px 4px; }
 
+/* Everything else a dark page can show. Dialogs, toasts and the user menu (hub components) paint with --c-white, #0D0D0D here. Only
+   backgrounds and borders are set for whole element types, never the text colour, so status colours (present green, absent red, pending
+   amber) and links keep their meaning. Plain selectors without !important, so a component's own colour still wins where it sets one. */
+html.att-dark { --att-input-bg: #000000; --c-overlay: rgba(0, 0, 0, 0.8); scrollbar-color: #2a2a2a #000000; }
+html.att-dark :focus-visible { outline-color: #22c55e; }
+
+/* Form fields, with or without the hub's .input class: black, light text, #2A2A2A border; placeholders a dim grey; option lists dark. */
+html.att-dark :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), textarea, select),
+html.att-dark .input { background-color: var(--att-input-bg); color: var(--att-text); border-color: #2a2a2a; }
+html.att-dark :is(input, textarea)::placeholder { color: #6b6b6b; opacity: 1; }
+html.att-dark select option, html.att-dark select optgroup { background-color: #0d0d0d; color: #f5f5f5; }
+html.att-dark input:-webkit-autofill { -webkit-text-fill-color: #f5f5f5; box-shadow: 0 0 0 1000px #000000 inset; caret-color: #f5f5f5; }
+
+/* Tables: black rows, #0D0D0D header and hover, #1A1A1A lines. */
+html.att-dark table { background-color: #000000; }
+html.att-dark thead, html.att-dark th { background-color: #0d0d0d; border-color: #1a1a1a; }
+html.att-dark td, html.att-dark tr { border-color: #1a1a1a; }
+html.att-dark tbody tr:hover > td { background-color: #0d0d0d; }
+
+/* Buttons: the hub's red "Reject"/"Delete" and the grey ghost button, without their light gradients and white inner highlight. */
+html.att-dark .btn-danger { background: #2a0707; border-color: rgba(239, 68, 68, 0.45); color: #fca5a5; box-shadow: none; }
+html.att-dark .btn-danger:hover:not(:disabled) { background: #3a0a0a; border-color: #ef4444; box-shadow: none; }
+html.att-dark .btn-ghost, html.att-dark .btn-ghost:hover:not(:disabled) { color: var(--att-text); box-shadow: none; }
+
+/* Dividers and loading skeletons. */
+html.att-dark hr { border-color: #1a1a1a; }
+html.att-dark .att-skel { background: linear-gradient(90deg, #141414 0%, #1a1a1a 50%, #141414 100%); background-size: 200% 100%; }
+
 /* The Dark mode switch (Profile → Appearance). */
 .att-switch { position: relative; flex-shrink: 0; width: 3.5rem; height: 2rem; border-radius: 999px; background: #d1d5db; transition: background 0.2s ease; }
 .att-switch[aria-checked="true"] { background: var(--att-primary); }

@@ -33,7 +33,7 @@ export function Toaster({ children }: { children: React.ReactNode }) {
       {children}
       <div className="fixed bottom-4 right-4 z-[100] flex w-[min(92vw,22rem)] flex-col gap-2" aria-live="polite">
         {items.map((t) => (
-          <div key={t.id} className={`alert ${t.leaving ? "toast-out" : "toast-in"} shadow-card-hover ${t.kind === "success" ? "alert-green" : "alert-red"} !bg-white`}>
+          <div key={t.id} className={`alert ${t.leaving ? "toast-out" : "toast-in"} shadow-card-hover ${t.kind === "success" ? "alert-green" : "alert-red"} !bg-(--c-white)`}>
             {t.kind === "success" ? <CheckCircle2 size={18} className="mt-0.5 shrink-0" /> : <AlertCircle size={18} className="mt-0.5 shrink-0" />}
             <span className="flex-1 text-ink">{t.msg}</span>
             <button aria-label="Dismiss" onClick={() => dismiss(t.id)}>

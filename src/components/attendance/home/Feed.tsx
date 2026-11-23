@@ -54,7 +54,7 @@ export function Feed({
                 </span>
                 <Avatar name={e.name} size={32} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-gray-900">{e.name}</p>
+                  <p className="truncate text-sm font-bold text-(--att-text)">{e.name}</p>
                   <p className="text-xs text-gray-500">{WHAT[e.type](e)}</p>
                 </div>
                 {e.self ? (
@@ -80,7 +80,7 @@ export function Feed({
               <li key={`${e.type}-${e.userId}-${e.date}`} className="flex items-center gap-2">
                 <span aria-hidden>{FEED_EMOJI[e.type]}</span>
                 <span className="flex-1 truncate">
-                  <span className="font-semibold text-gray-900">{e.name}</span> <span className="text-gray-500">· {e.type === "birthday" ? "birthday" : `${e.years} yr anniversary`}</span>
+                  <span className="font-semibold text-(--att-text)">{e.name}</span> <span className="text-gray-500">· {e.type === "birthday" ? "birthday" : `${e.years} yr anniversary`}</span>
                 </span>
                 <span className="text-xs text-gray-500">{formatDayShort(e.date)}</span>
               </li>
@@ -98,7 +98,7 @@ export function Feed({
           <ul className="flex flex-col gap-4">
             {announcements.map((a) => (
               <li key={a.id}>
-                <p className="text-sm font-bold text-gray-900">{a.title}</p>
+                <p className="text-sm font-bold text-(--att-text)">{a.title}</p>
                 {a.content && <p className="mt-0.5 whitespace-pre-line text-sm text-gray-700">{a.content}</p>}
                 <p className="mt-1 text-xs text-gray-500">
                   {a.by} · {formatMoment(a.createdAt)}
