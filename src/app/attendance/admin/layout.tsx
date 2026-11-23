@@ -1,6 +1,7 @@
 import { HubShell } from "@/components/HubShell";
-import { MobileMenu } from "@/components/MobileMenu";
+import { AttMenu } from "@/components/attendance/shell/AttMenu";
 import { AttSidebar } from "@/components/attendance/shell/AttNav";
+import { AttPwa } from "@/components/attendance/pwa/AttPwa";
 import { requireAdmin } from "@/lib/attendance/dal";
 import { unreadNotices } from "@/lib/attendance/host-adapter";
 import { pendingCountAll } from "@/lib/attendance/approvals";
@@ -13,13 +14,14 @@ export default async function Layout({ children }: { children: React.ReactNode }
   const [unread, waiting] = await Promise.all([unreadNotices(user.id), pendingCountAll()]);
   return (
     <HubShell user={{ name: user.name, role: user.hubRole }} unread={unread}>
-      <div className="att-root flex flex-col gap-6 lg:flex-row lg:items-start">
-        <aside className="w-full shrink-0 lg:sticky lg:top-20 lg:w-64">
-          <MobileMenu label="Attendance Admin menu">
+      <div className="att-root flex flex-col gap-6 md:flex-row md:items-start">
+        <aside className="w-full shrink-0 md:sticky md:top-20 md:w-60 lg:w-64">
+          <AttMenu label="Attendance Admin menu">
             <AttSidebar section="admin" roles={user.roles} badges={{ "/attendance/admin/approvals": waiting }} />
-          </MobileMenu>
+          </AttMenu>
         </aside>
         <div className="page-slot min-w-0 flex-1">{children}</div>
+        <AttPwa userId={user.id} />
       </div>
     </HubShell>
   );

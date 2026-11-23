@@ -9,6 +9,7 @@ import { addTimeLog, deleteTimeLog, submitWeek } from "../timesheets";
 import { decide } from "../approvals";
 import { sendWish } from "../overview";
 import { requestIp, searchHubUsers, type Person } from "../host-adapter";
+import { removeSubscription, saveSubscription } from "../push";
 import type { HalfDay, MissedPunch } from "@/db/attendance-schema";
 import type { RequestKind } from "../att.manifest";
 import type { FeedType } from "../feeds";
@@ -147,4 +148,17 @@ export async function searchPeopleAction(q: string): Promise<ActionResult<Person
     await assertMember();
     return searchHubUsers(q);
   });
+}
+
+/** Turns phone notifications on for this browser (its Web Push subscription). */
+export async function subscribePushAction(subscription: unknown): Promise<ActionResult> {
+  return run(async () => {
+    await saveSubscription((await assertMember()).id, subscription);
+  }, "Notifications are on for this device");
+}
+
+export async function unsubscribePushAction(endpoint: string): Promise<ActionResult> {
+  return run(async () => {
+    await removeSubscription((await assertMember()).id, endpoint);
+  }, "Notifications are off for this device");
 }

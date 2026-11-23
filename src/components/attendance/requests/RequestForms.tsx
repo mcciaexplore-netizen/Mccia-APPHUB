@@ -39,7 +39,7 @@ export function WfhForm({ today, approver }: { today: string; approver: string }
         </Field>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs att-muted">Goes to {approver}. Once approved, you can check in from anywhere that day.</p>
-          <button type="submit" className="btn btn-primary" disabled={pending}>
+          <button type="submit" className="btn btn-primary w-full sm:w-auto" disabled={pending}>
             Send request
           </button>
         </div>
@@ -95,7 +95,7 @@ export function RegularizationForm({ days, approver, windowDays }: { days: { day
         </Field>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs att-muted">Goes to {approver}. Once approved, the day is corrected.</p>
-          <button type="submit" className="btn btn-primary" disabled={pending}>
+          <button type="submit" className="btn btn-primary w-full sm:w-auto" disabled={pending}>
             Send request
           </button>
         </div>
@@ -147,7 +147,7 @@ export function CompoffForm({ days, approver, expiryDays }: { days: { day: strin
         </Field>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs att-muted">Goes to {approver}. Expires {expiryDays} days after the day worked.</p>
-          <button type="submit" className="btn btn-primary" disabled={pending}>
+          <button type="submit" className="btn btn-primary w-full sm:w-auto" disabled={pending}>
             Claim
           </button>
         </div>
@@ -158,42 +158,57 @@ export function CompoffForm({ days, approver, expiryDays }: { days: { day: strin
 
 export type RequestRow = { id: string; when: string; detail: string; status: string; remark: string | null };
 
-/** The person's requests of one kind; pending ones can be withdrawn. */
+/** The person's requests of one kind; pending ones can be withdrawn. Cards on a phone, a table from 768 px. */
 export function RequestList({ kind, rows }: { kind: "wfh" | "regularization" | "compoff"; rows: RequestRow[] }) {
   const { act, pending } = useAct();
   if (!rows.length) return <Empty title="No requests yet" />;
+  const withdraw = (r: RequestRow) =>
+    r.status === "pending" && (
+      <button type="button" className="btn btn-ghost btn-sm" disabled={pending} onClick={() => act(() => cancelRequestAction(kind, r.id))}>
+        Withdraw
+      </button>
+    );
   return (
-    <div className="att-scroll">
-      <table className="att-table">
-        <thead>
-          <tr>
-            <th>Day</th>
-            <th>Details</th>
-            <th>Status</th>
-            <th>Remark</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id}>
-              <td className="whitespace-nowrap font-semibold">{r.when}</td>
-              <td className="text-sm">{r.detail}</td>
-              <td>
-                <RequestStatus status={r.status} />
-              </td>
-              <td className="text-xs att-muted">{r.remark ?? ""}</td>
-              <td className="text-right">
-                {r.status === "pending" && (
-                  <button type="button" className="btn btn-ghost btn-sm" disabled={pending} onClick={() => act(() => cancelRequestAction(kind, r.id))}>
-                    Withdraw
-                  </button>
-                )}
-              </td>
+    <>
+      <ul className="divide-y divide-[var(--att-line)] md:hidden">
+        {rows.map((r) => (
+          <li key={r.id} className="flex flex-col gap-1.5 px-5 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <p className="font-bold text-gray-900">{r.when}</p>
+              <RequestStatus status={r.status} />
+            </div>
+            {r.detail && <p className="text-sm text-gray-700">{r.detail}</p>}
+            {r.remark && <p className="text-xs text-gray-500">“{r.remark}”</p>}
+            {r.status === "pending" && <div className="flex justify-end">{withdraw(r)}</div>}
+          </li>
+        ))}
+      </ul>
+      <div className="att-scroll hidden md:block">
+        <table className="att-table">
+          <thead>
+            <tr>
+              <th>Day</th>
+              <th>Details</th>
+              <th>Status</th>
+              <th>Remark</th>
+              <th />
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td className="whitespace-nowrap font-semibold">{r.when}</td>
+                <td className="text-sm">{r.detail}</td>
+                <td>
+                  <RequestStatus status={r.status} />
+                </td>
+                <td className="text-xs att-muted">{r.remark ?? ""}</td>
+                <td className="text-right">{withdraw(r)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

@@ -3,8 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, BarChart3, CalendarCheck, CalendarDays, CheckSquare, Clock, Home, LayoutGrid, Settings, Sun, Users, Wallet, type LucideIcon } from "lucide-react";
-import { ATT_NAV, navFor, type AttNavItem, type AttRole, type AttSection } from "@/lib/attendance/att.manifest";
+import { ArrowLeft, BarChart3, CalendarCheck, CalendarDays, CheckSquare, Clock, Home, LayoutGrid, Settings, Sun, UserRound, Users, Wallet, type LucideIcon } from "lucide-react";
+import { ATT_NAV, BOTTOM_NAV, navFor, type AttNavItem, type AttRole, type AttSection } from "@/lib/attendance/att.manifest";
 
 const ICONS: Record<AttNavItem["icon"], LucideIcon> = {
   home: Home,
@@ -19,6 +19,7 @@ const ICONS: Record<AttNavItem["icon"], LucideIcon> = {
   reports: BarChart3,
   settings: Settings,
   back: ArrowLeft,
+  profile: UserRound,
 };
 
 /** Which menu item a page belongs to: the longest matching address in the section. */
@@ -62,10 +63,10 @@ export function AttSidebar({ section, roles, badges = {} }: { section: AttSectio
   );
 }
 
-/** The staff app's bottom bar on a phone. */
-export function AttBottomNav({ roles, badges = {} }: { roles: AttRole[]; badges?: Record<string, number> }) {
+/** The staff app's bottom bar on a phone (below 768 px): Home, Leave, Time, More, Profile. */
+export function AttBottomNav({ badges = {} }: { badges?: Record<string, number> }) {
   const pathname = usePathname();
-  const items = navFor("staff", roles).filter((i) => !i.adminOnly);
+  const items = BOTTOM_NAV;
   const on = activeHref(pathname, items, "staff");
   return (
     <nav className="att-bottom-nav" aria-label="Attendance">

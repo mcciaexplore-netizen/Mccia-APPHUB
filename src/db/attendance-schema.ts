@@ -367,6 +367,24 @@ export const wishes = pgTable(
   (t) => [uniqueIndex("att_wishes_once_uq").on(t.fromUserId, t.toUserId, t.eventType, t.eventDate), index("att_wishes_to_idx").on(t.toUserId, t.eventDate)],
 );
 
+/**
+ * Phones and browsers that asked for Attendance notifications (Web Push). One row per browser (its push endpoint); a person can have several.
+ * Pushes carry no message: the service worker fetches the latest notice itself (/api/attendance/push/latest), so nothing here is a secret
+ * beyond the endpoint. Added in migration 0046.
+ */
+export const pushSubscriptions = pgTable(
+  "att_push_subscriptions",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull(),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull().default(""),
+    auth: text("auth").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("att_push_endpoint_uq").on(t.endpoint), index("att_push_user_idx").on(t.userId)],
+);
+
 export type Shift = typeof shifts.$inferSelect;
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type Holiday = typeof holidays.$inferSelect;

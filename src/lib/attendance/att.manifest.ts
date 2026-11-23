@@ -40,7 +40,16 @@ export const isSuperAdmin = (roles: readonly AttRole[]) => roles.includes("atten
 export const isAdmin = (roles: readonly AttRole[]) => roles.includes("attendance_admin") || isSuperAdmin(roles);
 export const isMember = (roles: readonly AttRole[]) => roles.includes("attendance_member") || isAdmin(roles);
 
-export type AttNavItem = { label: string; href: string; icon: "home" | "leave" | "time" | "more" | "today" | "approvals" | "people" | "attendance" | "tracker" | "reports" | "settings" | "back"; adminOnly?: boolean };
+export type AttNavItem = { label: string; href: string; icon: "home" | "leave" | "time" | "more" | "today" | "approvals" | "people" | "attendance" | "tracker" | "reports" | "settings" | "back" | "profile"; adminOnly?: boolean };
+
+/** The phone's bottom bar (below 768 px wide; the sidebar takes over from there). */
+export const BOTTOM_NAV: AttNavItem[] = [
+  { label: "Home", href: "/attendance", icon: "home" },
+  { label: "Leave", href: "/attendance/leave", icon: "leave" },
+  { label: "Time", href: "/attendance/time", icon: "time" },
+  { label: "More", href: "/attendance/more", icon: "more" },
+  { label: "Profile", href: "/attendance/more/profile", icon: "profile" },
+];
 
 export const ATT_NAV: Record<AttSection, { title: string; items: AttNavItem[] }> = {
   staff: {
@@ -79,13 +88,13 @@ export function navFor(section: AttSection, roles: readonly AttRole[]): AttNavIt
 
 /** The pages under More, in order. */
 export const MORE_LINKS = [
-  { label: "Attendance summary", href: "/attendance/more/summary", note: "Your days, hours, late and early marks" },
-  { label: "Team approvals", href: "/attendance/more/approvals", note: "Requests waiting for you as a manager", managerOnly: true },
-  { label: "Regularization", href: "/attendance/more/regularization", note: "Correct a missed check-in or check-out" },
-  { label: "Work from home", href: "/attendance/more/wfh", note: "Ask to work from home on a day" },
-  { label: "Comp-off", href: "/attendance/more/compoff", note: "Claim a day off for working a holiday or weekly off" },
-  { label: "Profile", href: "/attendance/more/profile", note: "Your shift, manager and dates" },
-  { label: "Org chart", href: "/attendance/more/org-chart", note: "Who reports to whom" },
+  { label: "Attendance summary", href: "/attendance/more/summary", note: "Your days, hours, late and early marks", icon: "summary" },
+  { label: "Team approvals", href: "/attendance/more/approvals", note: "Requests waiting for you as a manager", icon: "approvals", managerOnly: true },
+  { label: "Regularization", href: "/attendance/more/regularization", note: "Correct a missed check-in or check-out", icon: "regularization" },
+  { label: "Work from home", href: "/attendance/more/wfh", note: "Ask to work from home on a day", icon: "wfh" },
+  { label: "Comp-off", href: "/attendance/more/compoff", note: "Claim a day off for working a holiday or weekly off", icon: "compoff" },
+  { label: "Org chart", href: "/attendance/more/org-chart", note: "Who reports to whom", icon: "org" },
+  { label: "Profile", href: "/attendance/more/profile", note: "Your shift, manager, dates and notifications", icon: "profile" },
 ] as const;
 
 // ── Requests and who decides them ─────────────────────────────────────────

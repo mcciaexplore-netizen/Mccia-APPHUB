@@ -38,7 +38,7 @@ export function HubShell({ user, unread, children }: { user: ShellUser | null; /
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-line bg-white px-5 sm:px-8 lg:px-12">
         <Link href="/" className="flex items-center gap-3" aria-label="MCCIA App Hub, home">
           <Image src="/mccia-logo.png" alt="MCCIA" width={134} height={36} priority className="h-8 w-auto" />
-          <span className="border-l border-line pl-3 text-[0.68rem] font-bold uppercase tracking-widest text-primary">App Hub</span>
+          <span className="hidden whitespace-nowrap border-l border-line pl-3 text-[0.68rem] font-bold uppercase tracking-widest text-primary sm:inline">App Hub</span>
         </Link>
         {user ? (
           <div className="flex items-center gap-3">

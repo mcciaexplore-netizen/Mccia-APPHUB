@@ -25,6 +25,8 @@ export function InstallPrompt() {
   const [ios, setIos] = useState(false);
 
   useEffect(() => {
+    // Attendance ("MCCIA People") is its own installable app with its own service worker and install banner: nothing from the hub there.
+    if (window.location.pathname === "/attendance" || window.location.pathname.startsWith("/attendance/")) return;
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
     const installed = window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
     if (installed) return;
@@ -37,6 +39,7 @@ export function InstallPrompt() {
     window.addEventListener("appinstalled", onInstalled);
     // Shown after a moment, so it never covers the page while it is still loading.
     const t = setTimeout(() => {
+      if (window.location.pathname.startsWith("/attendance")) return;
       setIos(/iphone|ipad|ipod/i.test(navigator.userAgent));
       if (!read(SEEN)) setShow("popup");
       else if (Number(read(SNOOZE) ?? 0) < Date.now()) setShow("banner");

@@ -31,7 +31,7 @@ export function TimeView({ week, today, projects, logs, status, remark, total }:
         }
         actions={
           editable && (
-            <button type="button" className="btn btn-primary btn-sm" disabled={pending || total <= 0 || week > today} onClick={() => act(() => submitWeekAction(week))}>
+            <button type="button" className="btn btn-primary btn-sm hidden md:inline-flex" disabled={pending || total <= 0 || week > today} onClick={() => act(() => submitWeekAction(week))}>
               {status === "rejected" ? "Resubmit week" : "Submit week for approval"}
             </button>
           )
@@ -73,6 +73,12 @@ export function TimeView({ week, today, projects, logs, status, remark, total }:
       </Card>
 
       {editable && (
+        <button type="button" className="btn btn-primary w-full md:hidden" disabled={pending || total <= 0 || week > today} onClick={() => act(() => submitWeekAction(week))}>
+          {status === "rejected" ? "Resubmit week" : "Submit week for approval"}
+        </button>
+      )}
+
+      {editable && (
         <Card title="Log time" icon={Plus} iconTone="green">
           {projects.length === 0 ? (
             <Empty title="No projects yet">HR adds the projects time is logged against in Attendance Admin → Time Tracker.</Empty>
@@ -106,12 +112,12 @@ export function TimeView({ week, today, projects, logs, status, remark, total }:
                 </select>
               </Field>
               <Field label="Hours">
-                <input className="input" type="number" min={0.25} max={24} step={0.25} value={hours} onChange={(e) => setHours(e.target.value)} required />
+                <input className="input" type="number" inputMode="decimal" min={0.25} max={24} step={0.25} value={hours} onChange={(e) => setHours(e.target.value)} required />
               </Field>
               <Field label="What you did">
                 <input className="input" maxLength={500} value={description} onChange={(e) => setDescription(e.target.value)} />
               </Field>
-              <button type="submit" className="btn btn-primary" disabled={pending || week > today}>
+              <button type="submit" className="btn btn-primary w-full lg:w-auto" disabled={pending || week > today}>
                 Add
               </button>
             </form>

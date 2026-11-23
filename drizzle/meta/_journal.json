@@ -323,6 +323,13 @@
       "when": 1795261181435,
       "tag": "0045_attendance_early_checkout",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1795410702318,
+      "tag": "0046_attendance_push",
+      "breakpoints": true
     }
   ]
 }

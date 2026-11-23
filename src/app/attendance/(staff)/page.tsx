@@ -73,7 +73,7 @@ export default async function HomePage({ searchParams }: PageProps<"/attendance"
         </Link>
       )}
       <div className="flex flex-col gap-6">
-        <CheckInCard card={card} />
+        <CheckInCard card={card} userId={user.id} />
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
           <div className="flex min-w-0 flex-col gap-6">
             <Card

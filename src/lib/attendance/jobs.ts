@@ -1,5 +1,6 @@
 import "server-only";
-import { listMembers, notify } from "./host-adapter";
+import { listMembers } from "./host-adapter";
+import { notify } from "./notice";
 import { getSettings } from "./config";
 import { effectiveGoLive } from "./settings";
 import { loadDays, recordOf, viewOf } from "./days";

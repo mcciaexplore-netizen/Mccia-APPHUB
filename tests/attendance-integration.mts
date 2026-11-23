@@ -27,6 +27,15 @@ if (/neon\.tech|supabase\.co/i.test(url) && process.env.INTEGRATION_ALLOW_REMOTE
 process.env.DATABASE_URL = url;
 process.env.DB_DRIVER = process.env.INTEGRATION_DB_DRIVER ?? "pg";
 process.env.ATT_ENABLED = "true";
+{
+  // A throwaway push key pair for this run (phone notifications on).
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const pub = publicKey.export({ format: "jwk" });
+  process.env.ATT_VAPID_PUBLIC_KEY = Buffer.concat([Buffer.from([4]), Buffer.from(pub.x!, "base64url"), Buffer.from(pub.y!, "base64url")]).toString("base64url");
+  process.env.ATT_VAPID_PRIVATE_KEY = privateKey.export({ format: "jwk" }).d!;
+  process.env.ATT_VAPID_SUBJECT = "https://hub.example";
+}
 delete process.env.SMTP_HOST;
 
 const { and, eq, inArray, like, sql } = await import("drizzle-orm");
@@ -44,6 +53,7 @@ const AD = await import("../src/lib/attendance/admin");
 const OV = await import("../src/lib/attendance/overview");
 const RP = await import("../src/lib/attendance/reports");
 const { sendReminders } = await import("../src/lib/attendance/jobs");
+const PUSH = await import("../src/lib/attendance/push");
 const { DEFAULT_SETTINGS } = await import("../src/lib/attendance/settings");
 const { dayKind } = await import("../src/lib/attendance/calendar");
 const { addDays, istDay, istMoment, weekStart } = await import("../src/lib/attendance/time");
@@ -74,6 +84,7 @@ async function cleanup() {
       await db.delete(t).where(inArray((t as typeof T.attendance).userId, people));
     }
     await db.delete(T.wishes).where(inArray(T.wishes.fromUserId, people));
+    await db.delete(T.pushSubscriptions).where(inArray(T.pushSubscriptions.userId, people));
     await db.delete(T.announcements).where(inArray(T.announcements.createdBy, people));
     await db.delete(H.hubNotifications).where(inArray(H.hubNotifications.userId, people));
     await db.delete(H.accessAudit).where(inArray(H.accessAudit.actorId, people));
@@ -276,6 +287,34 @@ try {
   await sendReminders(noon);
   const n2 = Number(await count());
   check("reminders: Manju (not checked in) is reminded on a working day, and only once however often it runs", kindToday === "working" ? n1 === 1 && n2 === 1 && first.checkIn >= 1 : n1 === 0, { kindToday, n1, n2, first });
+
+  // ── Phone notifications (Web Push) ────────────────────────────────────
+  const endpoint = `https://fcm.googleapis.com/fcm/send/zza-${randomUUID()}`;
+  check("push: an endpoint that is not a browser push service is refused", (await refused(() => PUSH.saveSubscription(asha.id, { endpoint: "https://evil.example/x" }), /could not be used/)) === true);
+  await PUSH.saveSubscription(asha.id, { endpoint, keys: { p256dh: "p", auth: "a" } });
+  await PUSH.saveSubscription(asha.id, { endpoint, keys: { p256dh: "p2", auth: "a2" } });
+  check("push: a subscription is kept once per browser", (await db.select().from(T.pushSubscriptions).where(eq(T.pushSubscriptions.userId, asha.id))).length === 1);
+  const realFetch = globalThis.fetch;
+  const calls: { url: string; headers: Record<string, string> }[] = [];
+  let answer = 201;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (!url.startsWith("https://fcm.googleapis.com/")) return realFetch(input, init);
+    calls.push({ url, headers: Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>).map(([k, v]) => [k.toLowerCase(), v])) });
+    return new Response(null, { status: answer });
+  }) as typeof fetch;
+  try {
+    await AD.adjustBalance(HR, { userId: asha.id, leaveTypeId: CL.id, year, days: 0.5, remark: "push test" });
+    const c = calls[0];
+    check("push: a notice to Asha also wakes her phone: one POST, no body, VAPID-signed for the push service", calls.length === 1 && c.url === endpoint && /^vapid t=[\w-]+\.[\w-]+\.[\w-]+, k=[\w-]+$/.test(c.headers.authorization ?? "") && c.headers["content-length"] === "0" && c.headers.ttl === "86400", calls);
+    const latest = await host.latestNotice(asha.id);
+    check("push: what the phone then shows is her newest notice", /added 0\.5 days of Casual Leave/.test(latest?.title ?? ""), latest);
+    answer = 410;
+    const r = await PUSH.pushTo([asha.id], "https://hub.example");
+    check("push: a subscription the push service says is gone (410) is removed", r.removed === 1 && (await db.select().from(T.pushSubscriptions).where(eq(T.pushSubscriptions.userId, asha.id))).length === 0, r);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 
   // ── Reports ───────────────────────────────────────────────────────────
   const month = await RP.monthlyReport(today.slice(0, 7));

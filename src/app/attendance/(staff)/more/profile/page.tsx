@@ -1,5 +1,8 @@
 import { Users } from "lucide-react";
 import { Card, PageHeader } from "@/components/attendance/ui";
+import { NotificationsCard } from "@/components/attendance/pwa/NotificationsCard";
+import { vapidPublicKey } from "@/lib/attendance/push";
+import { getSettings } from "@/lib/attendance/config";
 import { requireMember } from "@/lib/attendance/dal";
 import { profileOf } from "@/lib/attendance/config";
 import { listMembers } from "@/lib/attendance/host-adapter";
@@ -12,7 +15,8 @@ export const metadata = { title: "Profile · Attendance" };
 /** What Attendance knows about the person. HR change it in Attendance Admin → People. */
 export default async function ProfilePage() {
   const user = await requireMember();
-  const [p, members, approver] = await Promise.all([profileOf(user.id), listMembers(), approverName(user.id)]);
+  const [p, members, approver, settings] = await Promise.all([profileOf(user.id), listMembers(), approverName(user.id), getSettings()]);
+  const vapidKey = vapidPublicKey();
   const me = members.find((m) => m.id === user.id);
   const reports = members.filter((m) => m.managerId === user.id);
   const rows: [string, string][] = [
@@ -31,6 +35,7 @@ export default async function ProfilePage() {
     <>
       <PageHeader title="Profile" subtitle="If anything here is wrong, ask HR to correct it." />
       <div className="flex flex-col gap-5">
+        {vapidKey && <NotificationsCard vapidKey={vapidKey} reminders={settings.reminders.enabled ? settings.reminders : null} />}
         <Card pad={false}>
           <dl className="divide-y divide-[var(--att-line)]">
             {rows.map(([k, v]) => (

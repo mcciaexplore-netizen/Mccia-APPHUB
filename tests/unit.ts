@@ -1,6 +1,6 @@
 /** Fast checks for the pure helpers: CSV parsing/exporting, the email-domain rule and the Approvals money, date and menu rules. Run: npm run test:unit */
 import { readdirSync, readFileSync } from "node:fs";
-import { attendanceUnit } from "./attendance-unit";
+import { attendanceUnit, attendanceUnitAsync } from "./attendance-unit";
 import { strToU8, zipSync } from "fflate";
 import { parseCsv, toCsv } from "../src/lib/csv";
 import { accountStatus } from "../src/lib/account-status";
@@ -1770,11 +1770,11 @@ const eruImports = (async () => {
 // Attendance: check-in, calendar, leave, comp-off, regularization, timesheets, feeds, roles (tests/attendance-unit.ts)
 attendanceUnit(eq);
 
-Promise.all([ssoTests, eruAsync, eruImports]).then(() => {
+Promise.all([ssoTests, eruAsync, eruImports, attendanceUnitAsync(eq)]).then(() => {
   console.log(`\n${ok}/${ok + bad} unit checks passed`);
   process.exit(bad ? 1 : 0);
 }, (e) => {
-  console.error("FAIL async tests (single sign-on, ERU export and imports) crashed:", e);
+  console.error("FAIL async tests (single sign-on, ERU export and imports, Attendance push signing) crashed:", e);
   process.exit(1);
 });
 

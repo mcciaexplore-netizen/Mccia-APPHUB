@@ -38,7 +38,7 @@ export const DEFAULT_SETTINGS: AttSettings = {
   offSaturdays: [2, 4],
   earlyOutMinutes: 30,
   compoffExpiryDays: 90,
-  reminders: { enabled: true, checkIn: "10:30", checkOut: "17:45" },
+  reminders: { enabled: true, checkIn: "10:00", checkOut: "17:30" },
   emailEnabled: false,
   goLiveDate: null,
   firstEnabledOn: null,

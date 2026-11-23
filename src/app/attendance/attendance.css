@@ -85,10 +85,10 @@
 
 /* The phone's bottom bar (hidden from a laptop up, where the sidebar shows). Space is left under the page so nothing hides behind it. */
 .att-bottom-nav { position: fixed; inset: auto 0 0 0; z-index: 40; display: grid; grid-template-columns: repeat(5, 1fr); background: #fff; border-top: 1px solid var(--att-line); padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06); }
-.att-bottom-nav a { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0.5rem 0 0.45rem; font-size: 0.7rem; font-weight: 700; color: #64748b; }
+.att-bottom-nav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; padding: 0.45rem 0 0.4rem; font-size: 0.7rem; font-weight: 700; color: #64748b; -webkit-tap-highlight-color: transparent; }
 .att-bottom-nav a[aria-current="page"] { color: var(--att-primary); }
-@media (min-width: 1024px) { .att-bottom-nav { display: none; } }
-@media (max-width: 1023px) { .att-root.att-has-bottom-nav { padding-bottom: 4.5rem; } }
+@media (min-width: 768px) { .att-bottom-nav { display: none; } }
+@media (max-width: 767px) { .att-root.att-has-bottom-nav { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); } }
 
 /* Org chart */
 .att-org { position: relative; overflow: hidden; height: min(70vh, 640px); background: radial-gradient(circle, #e2e8f0 1px, transparent 1px) 0 0 / 22px 22px, #fafbfc; border-radius: 12px; cursor: grab; touch-action: none; }
@@ -127,3 +127,51 @@
 /* Day pill and status dot in the work schedule. */
 .att-day-pill { display: inline-grid; place-items: center; width: 3.25rem; flex-shrink: 0; border-radius: 999px; padding: 0.25rem 0.75rem; font-size: 0.78rem; font-weight: 700; background: var(--att-primary-tint); color: var(--att-primary-2); }
 .att-dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 999px; flex-shrink: 0; }
+
+/* ── Phones and touch ─────────────────────────────────────────────────────
+   Below 768 px: the bottom bar instead of the sidebar, full-width 56 px Check In / Check Out, a large centred timer. On any touch screen: every
+   tap target at least 44 px, and inputs at 16 px so phones do not zoom in on a tapped field. */
+.att-link-btn { font-weight: 600; color: var(--att-primary-2); text-decoration: underline; text-underline-offset: 2px; }
+.att-btn-out:disabled { background: #f3f4f6; color: #6b7280; border: 1px dashed #cbd5e1; opacity: 1; box-shadow: none; }
+.att-queued { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; border-radius: 12px; padding: 0.75rem 1rem; font-size: 0.85rem; font-weight: 700; background: var(--att-amber-tint); color: #92400e; text-align: center; }
+.att-root .input { min-height: 44px; }
+
+/* Until 1024 px the check-in card is stacked: its button runs the full width. */
+@media (max-width: 1023px) {
+  .att-checkin .att-btn-in, .att-checkin .att-btn-out { width: 100%; }
+}
+@media (max-width: 767px) {
+  .att-btn-in, .att-btn-out { width: 100%; min-height: 56px; font-size: 18px; }
+  .att-checkin .att-timer { font-size: 2.6rem; }
+  .att-root .input, .att-root select, .att-root textarea { font-size: 16px; }
+  .att-root .btn { min-height: 44px; }
+  .att-root h1 { font-size: 1.55rem; }
+}
+@media (pointer: coarse) {
+  .att-root .btn, .att-root .att-tab, .att-side-item { min-height: 44px; }
+  .att-root .att-tab { display: inline-flex; align-items: center; }
+  .att-root button.att-badge, .att-root a.att-badge { min-height: 44px; padding: 0.5rem 0.9rem; }
+  .att-link-btn { display: inline-block; padding: 0.6rem 0.2rem; margin: -0.6rem 0; }
+}
+
+/* Offline: a strip across the top of the screen. */
+.att-offline { position: fixed; inset: 0 0 auto 0; z-index: 60; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: calc(0.5rem + env(safe-area-inset-top)) 1rem 0.5rem; background: #92400e; color: #fff; font-size: 0.82rem; font-weight: 600; text-align: center; }
+
+/* "Install MCCIA People": a green bar above the bottom bar, on phones. */
+.att-install { position: fixed; left: 0.75rem; right: 0.75rem; bottom: calc(4.75rem + env(safe-area-inset-bottom)); z-index: 45; display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 0.85rem; border-radius: 16px; background: var(--att-primary); color: #fff; box-shadow: 0 10px 30px rgba(22, 101, 52, 0.35); }
+.att-install-btn { min-height: 44px; padding: 0 1rem; border-radius: 12px; background: #fff; color: var(--att-primary-2); font-weight: 800; font-size: 0.9rem; }
+.att-install-later { min-height: 44px; min-width: 44px; padding: 0 0.6rem; border-radius: 12px; color: #fff; font-weight: 700; font-size: 0.9rem; display: inline-grid; place-items: center; }
+
+/* Leave on a phone: "Apply leave" floats above the bottom bar. */
+.att-fab { position: fixed; right: 1rem; bottom: calc(5.25rem + env(safe-area-inset-bottom)); z-index: 44; display: inline-flex; align-items: center; gap: 0.5rem; min-height: 52px; padding: 0 1.25rem; border-radius: 999px; background: var(--att-primary); color: #fff; font-weight: 800; box-shadow: 0 10px 24px rgba(22, 163, 74, 0.35); }
+@media (min-width: 768px) { .att-fab { display: none; } }
+
+/* Loading skeletons. */
+.att-skel { border-radius: 12px; background: linear-gradient(90deg, #eef0f2 0%, #f6f7f8 50%, #eef0f2 100%); background-size: 200% 100%; animation: att-shimmer 1.2s ease-in-out infinite; }
+@keyframes att-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .att-skel { animation: none; } }
+
+/* Approvals on a phone: a request card can be swiped (right: approve, left: reject). */
+.att-swipe { position: relative; touch-action: pan-y; transition: transform 0.2s ease; }
+.att-swipe.att-dragging { transition: none; }
+.att-swipe-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 1.25rem; font-size: 0.8rem; font-weight: 800; pointer-events: none; }

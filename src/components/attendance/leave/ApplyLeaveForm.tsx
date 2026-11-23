@@ -125,7 +125,7 @@ export function ApplyLeaveForm({ types, today, approver }: { types: ApplyType[];
           )}
         </fieldset>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <Field label="From">
             <input
               type="date"
@@ -141,6 +141,7 @@ export function ApplyLeaveForm({ types, today, approver }: { types: ApplyType[];
           <Field label="To">
             <input type="date" className="input" value={effectiveEnd} min={start} disabled={half !== "none"} onChange={(e) => setEnd(e.target.value)} required />
           </Field>
+          <div className="col-span-2 sm:col-span-1">
           <Field label="Half day">
             <select className="input" value={half} onChange={(e) => setHalf(e.target.value as HalfDay)} disabled={!type?.allowHalfDay}>
               <option value="none">Full day(s)</option>
@@ -148,6 +149,7 @@ export function ApplyLeaveForm({ types, today, approver }: { types: ApplyType[];
               {type?.halfDaySecond && <option value="second">Second half</option>}
             </select>
           </Field>
+          </div>
         </div>
         <p className="text-sm font-semibold text-ink">{days == null ? "—" : `${days} day${days === 1 ? "" : "s"} of leave`} <span className="font-normal att-muted">(weekly offs and holidays are not counted)</span></p>
 
@@ -191,7 +193,7 @@ export function ApplyLeaveForm({ types, today, approver }: { types: ApplyType[];
           <p className="text-sm att-muted">
             Goes to <span className="font-semibold text-ink">{approver}</span> for approval.
           </p>
-          <button type="submit" className="btn btn-primary" disabled={pending || uploading || !days || (needsDoc && !file)}>
+          <button type="submit" className="btn btn-primary w-full sm:w-auto" disabled={pending || uploading || !days || (needsDoc && !file)}>
             {pending ? "Sending…" : "Apply for leave"}
           </button>
         </div>

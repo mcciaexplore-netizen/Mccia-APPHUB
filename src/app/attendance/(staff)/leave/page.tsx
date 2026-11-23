@@ -1,4 +1,4 @@
-import { CalendarDays, ClipboardList, Gift, PartyPopper } from "lucide-react";
+import { CalendarDays, ClipboardList, Gift, PartyPopper, Plus } from "lucide-react";
 import Link from "next/link";
 import { Badge, Card, PageHeader } from "@/components/attendance/ui";
 import { MyLeaveList } from "@/components/attendance/leave/MyLeaveList";
@@ -38,10 +38,13 @@ export default async function LeavePage({ searchParams }: PageProps<"/attendance
 
   return (
     <>
-      <PageHeader title="Leave" subtitle={`Your ${year} balances, requests and the team's leave.`} actions={<Link href="/attendance/leave/apply" className="btn btn-primary">Apply leave</Link>} />
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <PageHeader title="Leave" subtitle={`Your ${year} balances, requests and the team's leave.`} actions={<Link href="/attendance/leave/apply" className="btn btn-primary hidden md:inline-flex">Apply leave</Link>} />
+      <Link href="/attendance/leave/apply" className="att-fab">
+        <Plus size={20} aria-hidden /> Apply leave
+      </Link>
+      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
         {balances.map((b) => (
-          <div key={b.type.id} className="att-card relative overflow-hidden px-5 py-4">
+          <div key={b.type.id} className="att-card relative overflow-hidden px-4 py-4 sm:px-5">
             <span className="absolute inset-y-0 left-0 w-1" style={{ background: leaveColor(b.type.color) }} aria-hidden />
             <p className="att-label">{b.type.name}</p>
             <p className="text-[1.9rem] font-extrabold tabular-nums leading-tight text-ink">{b.balance}</p>

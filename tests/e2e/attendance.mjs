@@ -62,18 +62,20 @@ async function cleanup() {
 const pageErrors = [];
 const consoleErrors = [];
 let browser;
-const fresh = async (viewport = { width: 1366, height: 900 }) => {
-  const ctx = await browser.newContext({ viewport, acceptDownloads: true });
+const fresh = async (viewport = { width: 1366, height: 900 }, { hubPopupSeen = true } = {}) => {
+  // Below 768 px wide: a phone (touch screen), as the app sees it.
+  const phone = viewport.width < 768;
+  const ctx = await browser.newContext({ viewport, acceptDownloads: true, isMobile: phone, hasTouch: phone });
   ctx.setDefaultTimeout(60000);
-  await ctx.addInitScript(() => { try { localStorage.setItem("mccia-install-popup-seen", "1"); localStorage.setItem("mccia-install-snoozed-until", String(Date.now() + 864e5)); } catch {} });
+  if (hubPopupSeen) await ctx.addInitScript(() => { try { localStorage.setItem("mccia-install-popup-seen", "1"); localStorage.setItem("mccia-install-snoozed-until", String(Date.now() + 864e5)); } catch {} });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => pageErrors.push(`${new URL(page.url()).pathname}: ${String(e).slice(0, 200)}`));
   page.on("dialog", (d) => d.accept());
   page.on("console", (m) => m.type() === "error" && !/Failed to load resource/.test(m.text()) && consoleErrors.push(`${new URL(page.url()).pathname}: ${m.text().slice(0, 300)}`));
   return { ctx, page };
 };
-const signedIn = async (email, viewport) => {
-  const { ctx, page } = await fresh(viewport);
+const signedIn = async (email, viewport, opts) => {
+  const { ctx, page } = await fresh(viewport, opts);
   await page.goto(BASE + "/login"); await page.fill("input[name=email]", email); await page.fill("input[name=password]", PW);
   await page.click("button[type=submit]"); await page.waitForURL((u) => u.pathname === "/", { timeout: 90000 });
   return { ctx, page };
@@ -120,12 +122,12 @@ try {
   const head = await mainText(s.page);
   check("home: time-of-day greeting with the first name, the subtitle and the long date", /Good (morning|afternoon|evening|night), ZZA/.test(head) && head.includes("Here's your attendance overview.") && /(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day, \d{1,2} [A-Z][a-z]+ \d{4}/.test(head));
   check("home: before check-in, no Login/Logout wording anywhere", !/\bLog ?in\b|\bLog ?out\b/i.test(head));
-  check("home: Work Schedule, Today, Coming up and Announcements cards", ["Work Schedule – Next 7 Days", "View Calendar", "Today", "Coming up (next 30 days)", "Announcements", "TIME WORKED TODAY"].every((t) => head.toUpperCase().includes(t.toUpperCase())));
+  check("home: Work Schedule, Today, Coming up and Announcements cards", ["Work Schedule – Next 7 Days", "View Calendar", "Today", "Coming up (next 30 days)", "Announcements", "TIME WORKED"].every((t) => head.toUpperCase().includes(t.toUpperCase())));
   await s.page.getByRole("button", { name: "Check In", exact: true }).click();
   check("check in: from the office network (no location asked)", await toast(s.page, /Checked in on the office network/));
   const outBtn = s.page.getByRole("button", { name: "Check Out", exact: true });
   await outBtn.waitFor();
-  const worked = () => s.page.locator("p", { hasText: "Time worked" }).locator("span").last().innerText();
+  const worked = () => s.page.locator(".att-checkin .att-timer").innerText();
   const t1 = await worked();
   await s.page.waitForTimeout(2200);
   const t2 = await worked();
@@ -149,6 +151,7 @@ try {
     check("check out: enabled (green) once approved", (await outBtn.isEnabled()) && (await outBtn.getAttribute("class"))?.includes("att-btn-in"));
   }
   await outBtn.click();
+  check("check out: confirmed by the server", await toast(s.page, /Checked out/));
   check("check out: done for today", await s.page.getByText("Done for").waitFor({ timeout: 20000 }).then(() => true, () => false));
   const [rec] = await sql`select check_in_method, check_out_time from att_attendance where user_id = ${asha.id} and date = ${istDay()}`;
   check("check out: one row today, method ip, with a check-out", rec?.check_in_method === "ip" && !!rec.check_out_time, rec);
@@ -232,6 +235,77 @@ try {
     check(`HR report ${q.split("&")[0]} downloads as CSV`, r.status === 200 && /text\/csv/.test(r.type) && r.body.split("\n").length >= 2, r.status);
   }
   await h.ctx.close();
+
+  section("Phone app (PWA)");
+  {
+    const anon = await browser.newContext();
+    const res = await anon.request.get(BASE + "/attendance/manifest.json", { maxRedirects: 0 });
+    const man = res.status() === 200 ? await res.json() : null;
+    check("manifest: served without a sign-in, MCCIA People, standalone, green, from /attendance", !!man && man.name === "MCCIA People" && man.start_url === "/attendance" && man.scope === "/attendance" && man.display === "standalone" && man.theme_color === "#16A34A" && man.icons.some((i) => i.sizes === "512x512"), res.status());
+    for (const icon of ["/icons/attendance-192.png", "/icons/attendance-512.png", "/icons/attendance-180.png"]) {
+      const r = await anon.request.get(BASE + icon, { maxRedirects: 0 });
+      check(`icon ${icon} is there`, r.status() === 200 && /image\/png/.test(r.headers()["content-type"] ?? ""), r.status());
+    }
+    await anon.close();
+  }
+
+  const ph = await signedIn(mgr.email, { width: 375, height: 812 }, { hubPopupSeen: false });
+  await go(ph.page, "/attendance");
+  check("app: the page links the MCCIA People manifest and green theme colour", (await ph.page.locator('link[rel="manifest"]').getAttribute("href")) === "/attendance/manifest.json" && (await ph.page.locator('meta[name="theme-color"]').first().getAttribute("content"))?.toLowerCase() === "#16a34a");
+  const scope = await ph.page.evaluate(async () => { await navigator.serviceWorker.ready; return (await navigator.serviceWorker.getRegistration("/attendance"))?.scope ?? null; });
+  check("app: its service worker is registered for /attendance", scope === BASE + "/attendance", scope);
+  const banner = ph.page.getByRole("dialog", { name: "Install MCCIA People" });
+  check("install: a green banner offers to install on a phone's first visit", await banner.waitFor({ timeout: 8000 }).then(() => true, () => false));
+  check("install: the hub's own install popup is not shown in Attendance", !(await ph.page.getByText("Download the MCCIA App Hub").isVisible().catch(() => false)));
+  await banner.getByRole("button", { name: "Later" }).click();
+  check("install: Later hides it and remembers for 7 days", !(await banner.isVisible()) && Number(await ph.page.evaluate(() => localStorage.getItem("att-install-dismissed-until"))) > Date.now() + 6 * 864e5);
+  await go(ph.page, "/attendance");
+  await ph.page.waitForTimeout(2500);
+  check("install: not shown again after Later", !(await banner.isVisible()));
+
+  const inBtn = ph.page.getByRole("button", { name: "Check In", exact: true });
+  const box = await inBtn.boundingBox();
+  check("phone: Check In is full width and at least 56 px tall", !!box && box.height >= 56 && box.width >= 375 - 2 * 48, box);
+  await ph.ctx.setOffline(true);
+  await ph.page.waitForTimeout(300);
+  check("offline: the offline banner shows", await ph.page.getByText("You are offline").isVisible());
+  await inBtn.click();
+  check("offline: the check-in is kept on the phone", await ph.page.getByText("Check-in saved: sent when you are back online").waitFor({ timeout: 5000 }).then(() => true, () => false));
+  await ph.ctx.setOffline(false);
+  check("offline: back online, it is sent by itself", await ph.page.getByText(/Checked in on the office network/).first().waitFor({ timeout: 30000 }).then(() => true, () => false));
+  check("offline: the banner is gone", !(await ph.page.getByText("You are offline").isVisible()));
+  const [mrec] = await sql`select check_in_method from att_attendance where user_id = ${mgr.id} and date = ${istDay()}`;
+  check("offline: the check-in reached the server (one row, office network)", mrec?.check_in_method === "ip", mrec);
+  await ph.ctx.close();
+
+  section("Every page at every width");
+  const STAFF = ["/attendance", "/attendance?tab=team", "/attendance/leave", "/attendance/leave/apply", "/attendance/time", "/attendance/more", "/attendance/more/summary", "/attendance/more/profile", "/attendance/more/regularization", "/attendance/more/wfh"];
+  const ADMIN = ["/attendance/admin", "/attendance/admin/approvals", "/attendance/admin/people", "/attendance/admin/leave", "/attendance/admin/settings"];
+  for (const width of [320, 375, 414, 428, 768, 1024, 1280]) {
+    const vp = { width, height: width < 768 ? 800 : 900 };
+    const st = await signedIn(asha.email, vp);
+    const wide = [];
+    let navOk = true;
+    for (const p of STAFF) {
+      await go(st.page, p);
+      await st.page.evaluate(() => localStorage.setItem("att-install-dismissed-until", String(Date.now() + 864e6)));
+      const over = await st.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      if (over > 1) wide.push(`${p} +${over}px`);
+      const bottom = await st.page.locator(".att-bottom-nav").isVisible();
+      const side = await st.page.locator("aside nav").isVisible();
+      if (width < 768 ? !bottom || side : bottom || !side) navOk = false;
+    }
+    await st.ctx.close();
+    const hr2 = await signedIn(hr.email, vp);
+    for (const p of ADMIN) {
+      await go(hr2.page, p);
+      const over = await hr2.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      if (over > 1) wide.push(`${p} +${over}px`);
+    }
+    await hr2.ctx.close();
+    check(`${width}px: no page scrolls sideways (${STAFF.length + ADMIN.length} pages)`, wide.length === 0, wide);
+    check(`${width}px: ${width < 768 ? "bottom bar, no sidebar" : "sidebar, no bottom bar"}`, navOk);
+  }
 
   check("no page threw an error", pageErrors.length === 0, pageErrors);
   check("no console errors", consoleErrors.length === 0, consoleErrors);

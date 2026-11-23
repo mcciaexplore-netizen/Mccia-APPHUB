@@ -1,6 +1,7 @@
 import "server-only";
 import { getSettings } from "./config";
-import { email, hrIds, notify, peopleByIds } from "./host-adapter";
+import { email, hrIds, peopleByIds } from "./host-adapter";
+import { notify } from "./notice";
 import { REQUEST_KIND_LABEL, type RequestKind } from "./att.manifest";
 
 /**

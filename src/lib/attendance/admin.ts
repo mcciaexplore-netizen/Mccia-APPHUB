@@ -18,7 +18,8 @@ import {
 } from "@/db/attendance-schema";
 import { AttError } from "./dal";
 import { getSettings, listShifts, profilesFor, saveSettings } from "./config";
-import { listMembers, notify, peopleByIds, setManager } from "./host-adapter";
+import { listMembers, peopleByIds, setManager } from "./host-adapter";
+import { notify } from "./notice";
 import { ensureBalances, listLeaveTypes } from "./leave";
 import { accrued, balanceOf, entitlementFor } from "./leave-rules";
 import { compoffBalance } from "./compoff";

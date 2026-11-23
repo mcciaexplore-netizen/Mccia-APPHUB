@@ -524,9 +524,9 @@ function Holidays({ holidays, year }: { holidays: Holiday[]; year: number }) {
       ) : (
         <ul className="divide-y divide-[var(--att-line)]">
           {holidays.map((h) => (
-            <li key={h.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
-              <span className="w-28 shrink-0 font-semibold">{formatDayShort(h.date)}</span>
-              <span className="flex-1">{h.name}</span>
+            <li key={h.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm">
+              <span className="w-24 shrink-0 font-semibold">{formatDayShort(h.date)}</span>
+              <span className="min-w-[8rem] flex-1">{h.name}</span>
               <button
                 type="button"
                 className={`att-badge ${h.isOptional ? "att-tone-amber" : "att-tone-neutral"}`}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Paperclip } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { decideAction } from "@/lib/attendance/actions/staff";
@@ -30,9 +30,10 @@ export function Inbox({ items, mode, showApprover = false }: { items: InboxItem[
       {shown.length === 0 ? (
         <Empty title={mode === "pending" ? "Nothing waiting" : "No decisions yet"}>{mode === "pending" ? "Requests sent to you appear here." : ""}</Empty>
       ) : (
-        <ul className="divide-y divide-[var(--att-line)]">
+        <ul className="divide-y divide-[var(--att-line)] overflow-hidden">
+          {mode === "pending" && <li className="px-5 py-2 text-xs text-gray-500 md:hidden">Tip: swipe a request right to approve, left to reject.</li>}
           {shown.map((i) => (
-            <li key={`${i.kind}-${i.id}`} className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-start">
+            <SwipeRow key={`${i.kind}-${i.id}`} enabled={mode === "pending"} onApprove={() => setDeciding({ item: i, approve: true })} onReject={() => setDeciding({ item: i, approve: false })}>
               <Avatar name={i.person} size={34} />
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 text-sm">
@@ -58,20 +59,77 @@ export function Inbox({ items, mode, showApprover = false }: { items: InboxItem[
               </div>
               {mode === "pending" && (
                 <div className="flex shrink-0 gap-2">
-                  <button type="button" className="btn btn-ghost btn-sm text-[var(--att-red)]" onClick={() => setDeciding({ item: i, approve: false })}>
+                  <button type="button" className="btn btn-ghost btn-sm flex-1 text-[var(--att-red)] sm:flex-none" onClick={() => setDeciding({ item: i, approve: false })}>
                     Reject
                   </button>
-                  <button type="button" className="btn btn-primary btn-sm" onClick={() => setDeciding({ item: i, approve: true })}>
+                  <button type="button" className="btn btn-primary btn-sm flex-1 sm:flex-none" onClick={() => setDeciding({ item: i, approve: true })}>
                     Approve
                   </button>
                 </div>
               )}
-            </li>
+            </SwipeRow>
           ))}
         </ul>
       )}
       {deciding && <DecideDialog {...deciding} onClose={() => setDeciding(null)} />}
     </div>
+  );
+}
+
+/**
+ * One request in the list. On a touch screen it can be swiped: right past 90 px opens Approve, left opens Reject (both then ask for the
+ * remark as usual). The buttons are always there too.
+ */
+function SwipeRow({ enabled, onApprove, onReject, children }: { enabled: boolean; onApprove: () => void; onReject: () => void; children: ReactNode }) {
+  const start = useRef<{ x: number; y: number; id: number } | null>(null);
+  const [dx, setDx] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const THRESHOLD = 90;
+  const end = () => {
+    if (dx > THRESHOLD) onApprove();
+    else if (dx < -THRESHOLD) onReject();
+    start.current = null;
+    setDragging(false);
+    setDx(0);
+  };
+  return (
+    <li className="relative">
+      {enabled && dx !== 0 && (
+        <div className="att-swipe-hint" style={{ background: dx > 0 ? "var(--att-primary-tint)" : "var(--att-red-tint)" }} aria-hidden>
+          <span className="text-[var(--att-primary-2)]">{dx > 0 ? (dx > THRESHOLD ? "Release to approve" : "Approve") : ""}</span>
+          <span className="text-[var(--att-red)]">{dx < 0 ? (dx < -THRESHOLD ? "Release to reject" : "Reject") : ""}</span>
+        </div>
+      )}
+      <div
+        className={`att-swipe flex flex-col gap-2 bg-white px-5 py-4 sm:flex-row sm:items-start ${dragging ? "att-dragging" : ""}`}
+        style={dx ? { transform: `translateX(${dx}px)` } : undefined}
+        onPointerDown={(e) => {
+          if (!enabled || e.pointerType !== "touch") return;
+          start.current = { x: e.clientX, y: e.clientY, id: e.pointerId };
+        }}
+        onPointerMove={(e) => {
+          const s0 = start.current;
+          if (!s0 || s0.id !== e.pointerId) return;
+          const x = e.clientX - s0.x;
+          const y = e.clientY - s0.y;
+          if (!dragging && Math.abs(x) < 12) return;
+          if (!dragging && Math.abs(y) > Math.abs(x)) {
+            start.current = null; // a scroll, not a swipe
+            return;
+          }
+          setDragging(true);
+          setDx(Math.max(-140, Math.min(140, x)));
+        }}
+        onPointerUp={end}
+        onPointerCancel={() => {
+          start.current = null;
+          setDragging(false);
+          setDx(0);
+        }}
+      >
+        {children}
+      </div>
+    </li>
   );
 }
 

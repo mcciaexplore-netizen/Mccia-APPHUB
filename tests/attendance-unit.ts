@@ -15,9 +15,27 @@ import { canEditWeek, checkSubmitWeek, checkTimeEntry, weekDays } from "../src/l
 import { eventsBetween, fillTemplate, onYear, todaysEvents, upcomingEvents, cleanWish } from "../src/lib/attendance/feeds";
 import { approverFor, attRolesFor, canDecide, isAdmin, isMember, navFor } from "../src/lib/attendance/att.manifest";
 import { tally } from "../src/lib/attendance/summary";
+import { BOTTOM_NAV } from "../src/lib/attendance/att.manifest";
+import { b64urlToBytes, bytesToB64url, isPushHost, pushAudience, subscriptionGone, validSubscription, vapidJwk } from "../src/lib/attendance/push-rules";
+import { isIosSafari } from "../src/lib/attendance/pwa-rules";
+import { generateKeyPairSync } from "node:crypto";
+import { SignJWT, importJWK, jwtVerify } from "jose";
 import { layout, ORG_ROOT } from "../src/lib/attendance/org-layout";
 
 type Eq = (name: string, got: unknown, want: unknown) => void;
+
+/** The async checks (signing a VAPID token with a generated key pair). */
+export async function attendanceUnitAsync(eq: Eq): Promise<void> {
+  const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const pub = publicKey.export({ format: "jwk" });
+  const priv = privateKey.export({ format: "jwk" });
+  const rawPub = bytesToB64url(new Uint8Array([4, ...Buffer.from(pub.x!, "base64url"), ...Buffer.from(pub.y!, "base64url")]));
+  const jwk = vapidJwk(rawPub, priv.d);
+  eq("att push: a generated key pair gives a P-256 signing key", !!jwk && jwk.x === pub.x && jwk.y === pub.y && jwk.d === priv.d, true);
+  const token = await new SignJWT({ sub: "https://hub.example" }).setProtectedHeader({ alg: "ES256" }).setAudience("https://fcm.googleapis.com").setExpirationTime("1h").sign(await importJWK(jwk!, "ES256"));
+  const { payload } = await jwtVerify(token, await importJWK({ kty: "EC", crv: "P-256", x: pub.x!, y: pub.y! }, "ES256"));
+  eq("att push: the VAPID token verifies with the public key and names the push service", [payload.aud, payload.sub], ["https://fcm.googleapis.com", "https://hub.example"]);
+}
 
 export function attendanceUnit(eq: Eq): void {
   // ── Time (IST) ──────────────────────────────────────────────────────────
@@ -234,6 +252,28 @@ export function attendanceUnit(eq: Eq): void {
   const at = (id: string) => org.placed.find((p) => p.id === id)!;
   eq("att org: people with no manager sit under HR; reports under their manager; a manager is centred over their reports", [at("d").parent, at("c").parent, at("a").parent, at(ORG_ROOT).parent, at("d").x === (at("a").x + at("b").x) / 2, at("a").y > at("d").y], [ORG_ROOT, ORG_ROOT, "d", null, true, true]);
   eq("att org: a reporting loop is still drawn (everyone appears once)", layout([{ id: "x", name: "X", designation: null, managerId: "y" }, { id: "y", name: "Y", designation: null, managerId: "x" }]).placed.length, 3);
+
+  // ── App (PWA) ───────────────────────────────────────────────────────────
+  eq("att app: the phone's bottom bar is Home, Leave, Time, More, Profile", BOTTOM_NAV.map((i) => i.label), ["Home", "Leave", "Time", "More", "Profile"]);
+  eq("att app: iPhone Safari (not Chrome or Firefox on iPhone, not Android) is told to use Share → Add to Home Screen", [
+    isIosSafari("Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"),
+    isIosSafari("Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/124.0 Mobile/15E148 Safari/604.1"),
+    isIosSafari("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"),
+  ], [true, false, false]);
+  eq("att push: base64url round trip", bytesToB64url(b64urlToBytes("BPx-_w")), "BPx-_w");
+  eq("att push: bad or missing keys give no signing key", [vapidJwk(undefined, "x"), vapidJwk("abc", "def"), vapidJwk(bytesToB64url(new Uint8Array(65)), bytesToB64url(new Uint8Array(32)))], [null, null, null]);
+  eq("att push: only the browsers' push services are accepted as endpoints (never an address of someone's choosing)", [
+    pushAudience("https://fcm.googleapis.com/fcm/send/abc"),
+    pushAudience("https://updates.push.services.mozilla.com/wpush/v2/x"),
+    pushAudience("https://web.push.apple.com/QK"),
+    pushAudience("http://fcm.googleapis.com/fcm/send/abc"),
+    pushAudience("https://evil.example/fcm.googleapis.com"),
+    pushAudience("https://fcm.googleapis.com.evil.example/x"),
+    pushAudience("https://user:pw@fcm.googleapis.com/x"),
+    pushAudience("not a url"),
+  ], ["https://fcm.googleapis.com", "https://updates.push.services.mozilla.com", "https://web.push.apple.com", null, null, null, null, null]);
+  eq("att push: host check", [isPushHost("wns2-par02p.notify.windows.com"), isPushHost("notify.windows.com.example")], [true, false]);
+  eq("att push: subscriptions are checked before they are kept; 404 and 410 mean gone", [validSubscription({ endpoint: "https://fcm.googleapis.com/x", keys: { p256dh: "a", auth: "b" } }), validSubscription({ endpoint: "https://x.example/y" }), validSubscription(null), subscriptionGone(410), subscriptionGone(404), subscriptionGone(429)], [true, false, false, true, true, false]);
 
   // ── Isolation ───────────────────────────────────────────────────────────
   const srcDir = new URL("../src/", import.meta.url);

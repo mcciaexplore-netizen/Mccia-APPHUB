@@ -1,8 +1,8 @@
 import "server-only";
 import { cache } from "react";
-import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db, rowsOf } from "./db";
-import { users, type User } from "@/db/schema";
+import { hubNotifications, users, type User } from "@/db/schema";
 import { getCurrentUser as hostCurrentUser } from "@/lib/permissions";
 import { notifyUsers } from "@/lib/notifications";
 import { logError as hostLogError } from "@/lib/log-error";
@@ -216,6 +216,20 @@ export async function email(to: string[], subject: string, lines: string[], link
       // email is a courtesy; the bell already has it
     }
   }
+}
+
+/** The site's own address (https://…), for the push services' contact. */
+export const siteOrigin = () => siteUrl().replace(/\/+$/, "");
+
+/** The newest Attendance notice for a person (what a phone notification shows), or null. */
+export async function latestNotice(userId: string): Promise<{ title: string; body: string | null; link: string | null; createdAt: Date } | null> {
+  const [n] = await db
+    .select({ title: hubNotifications.title, body: hubNotifications.body, link: hubNotifications.link, createdAt: hubNotifications.createdAt })
+    .from(hubNotifications)
+    .where(and(eq(hubNotifications.userId, userId), eq(hubNotifications.kind, "attendance")))
+    .orderBy(desc(hubNotifications.createdAt))
+    .limit(1);
+  return n ?? null;
 }
 
 /** The address the current request came from (set by Vercel, so the visitor cannot choose it). */

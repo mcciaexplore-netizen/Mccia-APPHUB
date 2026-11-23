@@ -34,7 +34,7 @@ export function PeopleTable({ people, shifts }: { people: PersonRow[]; shifts: {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--att-line)] px-5 py-3">
-        <input className="input max-w-xs" placeholder="Search people…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search people" />
+        <input className="input w-full sm:max-w-xs" type="search" placeholder="Search people…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search people" />
         <span className="text-xs att-muted">
           {shown.length} of {people.length} · {people.filter((p) => !p.managerId).length} without a manager (their requests go to HR)
         </span>
@@ -42,7 +42,24 @@ export function PeopleTable({ people, shifts }: { people: PersonRow[]; shifts: {
       {shown.length === 0 ? (
         <Empty title="Nobody found" />
       ) : (
-        <div className="att-scroll">
+        <>
+        <ul className="divide-y divide-[var(--att-line)] md:hidden">
+          {shown.map((p) => (
+            <li key={p.id}>
+              <button type="button" className="flex w-full items-center gap-3 px-5 py-3.5 text-left" onClick={() => setEditing(p)}>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold text-gray-900">{p.name}</span>
+                  <span className="block truncate text-xs text-gray-500">{[p.designation, p.teamName].filter(Boolean).join(" · ") || p.email}</span>
+                  <span className="mt-1 block text-xs text-gray-600">
+                    {p.managerName ? `Reports to ${p.managerName}` : "No manager: requests go to HR"} · {p.shiftName} · {EMPLOYMENT_LABEL[p.employmentType]}
+                  </span>
+                </span>
+                <span className="shrink-0 text-sm font-semibold text-[var(--att-primary-2)]">Edit</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="att-scroll hidden md:block">
           <table className="att-table">
             <thead>
               <tr>
@@ -75,6 +92,7 @@ export function PeopleTable({ people, shifts }: { people: PersonRow[]; shifts: {
             </tbody>
           </table>
         </div>
+        </>
       )}
       {editing && <EditPerson person={editing} people={people} shifts={shifts} onClose={() => setEditing(null)} />}
     </div>
