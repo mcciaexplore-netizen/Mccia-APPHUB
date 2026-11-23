@@ -107,9 +107,15 @@ try {
     const wrongTxt = await html(ap0); check("a wrong password shows an error and stays on the login page", /Incorrect email or password/.test(wrongTxt) && new URL(ap0.url()).pathname === "/login");
     await signIn(ap0, "nobody-here@example.com", "definitely-wrong-1");
     check("an unknown email gets exactly the same message (no hint which emails exist)", /Incorrect email or password/.test(await html(ap0)));
+    // The sign-in limits (src/lib/sign-in-rules.ts): after 5 wrong passwords for one email from one place, even the right one is refused
+    // for 15 minutes, with exactly the same message as a wrong password. The Support Admin is never locked out for good: the refusal ends
+    // on its own. This run's attempts are then cleared so the rest of the suite can sign in.
     for (let i = 0; i < 6; i++) await signIn(ap0, ADMIN_EMAIL, "wrong-attempt-" + i + "x");
     await signIn(ap0, ADMIN_EMAIL, ADMIN_PW);
-    check("after many wrong passwords the right one still works (no lockout)", new URL(ap0.url()).pathname === "/", ap0.url());
+    check("after many wrong passwords even the right one is refused for a while (same message, no hint)", new URL(ap0.url()).pathname === "/login" && /Incorrect email or password/.test(await html(ap0)), ap0.url());
+    await sql`delete from login_attempts where email in (${ADMIN_EMAIL}, 'nobody-here@example.com') and created_at >= ${new Date(startedAt.getTime() - 60000)}`;
+    await signIn(ap0, ADMIN_EMAIL, ADMIN_PW);
+    check("once the refusal has ended, the right password works again (no lockout for good)", new URL(ap0.url()).pathname === "/", ap0.url());
     const sess = (await anon.cookies()).find((c) => c.name === "hub_session");
     check("the sign-in cookie is HttpOnly, SameSite=Lax" + (BASE.startsWith("https") ? " and Secure" : ""), sess && sess.httpOnly && sess.sameSite === "Lax" && (!BASE.startsWith("https") || sess.secure), JSON.stringify(sess && { httpOnly: sess.httpOnly, sameSite: sess.sameSite, secure: sess.secure }));
     await anon.close();

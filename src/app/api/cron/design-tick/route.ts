@@ -2,7 +2,9 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { designEnabled } from "@/lib/design/flags";
 import { runJobs } from "@/lib/design/jobs";
+import { logError } from "@/lib/log-error";
 
+export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -15,5 +17,12 @@ export async function GET(req: NextRequest) {
   const given = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!secret || !same(given, secret)) return new NextResponse("Unauthorized", { status: 401 });
   if (!designEnabled()) return NextResponse.json({ ok: true, skipped: "DesignDesk is switched off (DESIGN_ENABLED)." });
-  return NextResponse.json({ ok: true, ...(await runJobs()) });
+  try {
+    const counts = await runJobs();
+    console.log(`[cron] designdesk jobs: ${Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(", ")}`);
+    return NextResponse.json({ ok: true, ...counts });
+  } catch (e) {
+    logError("[cron] designdesk jobs failed", e);
+    return NextResponse.json({ ok: false }, { status: 500 });
+  }
 }

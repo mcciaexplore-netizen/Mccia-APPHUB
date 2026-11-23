@@ -16,7 +16,7 @@ export function CabsTopBar({ label, right, narrow = false, hubLink = true }: { l
           </Link>
         )}
         {/* eslint-disable-next-line @next/next/no-img-element -- a small static logo, the same file the hub serves */}
-        <img src="/mccia-logo.png" alt="MCCIA" className="h-7 w-auto" />
+        <img src="/mccia-logo.png" alt="MCCIA" width={104} height={28} className="h-7 w-auto" />
         <span className="border-l border-black/10 pl-3 text-sm font-medium text-muted">{label}</span>
         <div className="ml-auto flex items-center">{right}</div>
       </div>

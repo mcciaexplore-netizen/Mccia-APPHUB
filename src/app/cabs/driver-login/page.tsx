@@ -18,7 +18,7 @@ export default async function DriverLoginPage() {
       <main className="w-full max-w-[400px] space-y-6 rounded-2xl bg-white p-6 shadow-sm sm:p-8">
         <div className="space-y-3 text-center">
           {/* eslint-disable-next-line @next/next/no-img-element -- a small static logo, the same file the hub serves */}
-          <img src="/mccia-logo.png" alt="MCCIA" className="mx-auto h-10 w-auto" />
+          <img src="/mccia-logo.png" alt="MCCIA" width={149} height={40} className="mx-auto h-10 w-auto" />
           <h1 className="text-2xl font-extrabold text-ink">Driver Login</h1>
         </div>
         <DriverLoginForm />

@@ -431,7 +431,6 @@ try {
   const ed = Mb.page.locator(".eru-prose");
   const tool = (name) => Mb.page.getByRole("button", { name, exact: true });
   const shape = async () => ({ rows: await ed.locator("table tr").count(), cols: await ed.locator("table tr").first().locator("th, td").count(), th: await ed.locator("table th").count() });
-  const contentHas = async (id, text) => JSON.stringify((await docRow(id)).content).includes(text);
   /** The stored document's tables, as rows of cell texts (walking the jsonb, whose key order is not kept). */
   const storedTables = async (id) => {
     const out = [];

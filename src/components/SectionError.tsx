@@ -13,7 +13,7 @@ const digestOf = (error: unknown) => (error instanceof Error && "digest" in erro
 export function SectionError({ error, retry, home = "/", homeLabel = "App Hub" }: { error: unknown; retry: () => void; home?: string; homeLabel?: string }) {
   const digest = digestOf(error);
   return (
-    <div role="alert" data-section-error className="mx-auto w-full max-w-md rounded-[14px] border border-line bg-white p-8 text-center">
+    <div role="alert" data-section-error className="mx-auto w-full max-w-md rounded-[14px] border border-line bg-(--c-white) p-8 text-center">
       <div className="icon-tile mx-auto mb-4 !border-red-tint-line !bg-red-tint !text-brand-red"><AlertTriangle size={18} /></div>
       <h2 className="text-2xl">This page could not be loaded</h2>
       <p className="mt-2 text-sm text-muted">Please try again. If it keeps happening, contact the Support Admin{digest ? " and quote the reference below" : ""}.</p>

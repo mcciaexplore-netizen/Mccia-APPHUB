@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { attEnabled } from "@/lib/attendance/flags";
 import { sendReminders } from "@/lib/attendance/jobs";
 
+export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -15,5 +16,12 @@ export async function GET(req: NextRequest) {
   const given = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!secret || !same(given, secret)) return new NextResponse("Unauthorized", { status: 401 });
   if (!attEnabled()) return NextResponse.json({ ok: true, skipped: "Attendance is switched off (ATT_ENABLED)." });
-  return NextResponse.json({ ok: true, ...(await sendReminders()) });
+  try {
+    const result = await sendReminders();
+    console.log(`[cron] attendance reminders: ${result.checkIn} check-in, ${result.checkOut} check-out${result.skipped ? ` (${result.skipped})` : ""}`);
+    return NextResponse.json({ ok: true, ...result });
+  } catch (e) {
+    console.error("[cron] attendance reminders failed:", e instanceof Error ? e.message : "unknown error");
+    return NextResponse.json({ ok: false }, { status: 500 });
+  }
 }

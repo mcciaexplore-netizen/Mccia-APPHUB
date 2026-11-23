@@ -46,7 +46,6 @@ const appIds = (await db.select({ id: S.apps.id }).from(S.apps).where(like(S.app
 if (ids.length < 200 || appIds.length < 10) { console.error("Run tests/load/seed.mts first (needs 200+ people and 10+ applications)."); process.exit(2); }
 await db.delete(S.users).where(eq(S.users.email, "zz-load-admin@example.com"));
 const [admin] = await db.insert(S.users).values({ name: "ZL Admin", email: "zz-load-admin@example.com", role: "head_admin", passwordHash: "x", signupSource: "load" }).returning();
-const rnd = (n: number) => Math.floor(Math.random() * n);
 const sample = <T,>(arr: T[], k: number) => [...arr].sort(() => Math.random() - 0.5).slice(0, k);
 const result: Record<string, unknown> = { concurrency: CONC, poolMax: Number(process.env.DB_POOL_MAX) || 5, database: name };
 

@@ -93,7 +93,6 @@ const signIn = async (page, email, password) => {
 };
 // An application's menu used to be a row of section tabs and a row of pages under it; there is none now, only the form or list itself.
 const menuRows = (page) => page.locator('main nav[aria-label$=" sections"], main nav[aria-label$=" pages"]');
-const hubApps = (page) => page.locator("aside:visible nav a[href^='/approvals/']");
 const toast = (page, t) => page.getByText(t).first().waitFor({ timeout: 20000 }).then(() => true).catch(() => false);
 const status = async (page, p, opts) => (await page.goto(BASE + p, opts)).status();
 

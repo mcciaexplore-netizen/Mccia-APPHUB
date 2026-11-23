@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment -- deliberate until the suite is rewritten, see below */
 // @ts-nocheck
 // OUT OF DATE: this suite still describes the approver rules screen, typed and category budgets and the HR / Expenditure / Super Admin
 // accounts in the environment, all removed in favour of approvers chosen by role (HR Admin, Expense Admin, Super Admin). It must be
@@ -24,7 +25,7 @@ process.env.DB_DRIVER = process.env.INTEGRATION_DB_DRIVER ?? "pg";
 process.env.APPROVALS_ENABLED = "true";
 delete process.env.SMTP_HOST; // no real email from a test
 
-const { and, eq, like, sql } = await import("drizzle-orm");
+const { and, eq, like } = await import("drizzle-orm");
 const { db } = await import("../src/db");
 const { users } = await import("../src/db/schema");
 const T = await import("../src/db/approvals-schema");

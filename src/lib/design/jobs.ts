@@ -35,6 +35,15 @@ async function each<T>(items: T[], step: string, fn: (item: T) => Promise<void>)
   }
 }
 
+/** Runs one stage of the jobs; if it fails as a whole it is logged, and the next stage still runs. */
+async function stage(name: string, fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (e) {
+    logError(`[design] job stage ${name} failed`, e);
+  }
+}
+
 /** True the first time it is asked for this ticket, action and key (each warning or reminder goes out once); notes it in the history. */
 async function once(ticketId: string, action: string, key: string): Promise<boolean> {
   const [seen] = await db
@@ -56,51 +65,58 @@ export async function runJobs(): Promise<Record<string, number>> {
   const now = new Date();
   const counts = { closed: 0, warned: 0, overdue: 0, reminded: 0, expired: 0, cleaned: 0 };
 
-  const ended = await db.select().from(tickets).where(and(eq(tickets.status, "delivered"), isNotNull(tickets.editWindowEndsAt), lt(tickets.editWindowEndsAt, now)));
-  await each(ended, "edit-window", async (t) => {
-    const [approved] = await db.select({ id: approvalRequests.id }).from(approvalRequests).where(and(eq(approvalRequests.ticketId, t.id), eq(approvalRequests.status, "approved"))).limit(1);
-    const status = approved ? "closed" : "closed_without_approval";
-    const [done] = await db.update(tickets).set({ status, isLocked: true, updatedAt: now }).where(and(eq(tickets.id, t.id), eq(tickets.status, "delivered"))).returning({ id: tickets.id });
-    if (!done) return;
-    counts.closed++;
-    await audit(t.id, null, "Auto-closed", { status, reason: "Edit window ended" }, "System");
+  // Each stage on its own: one that cannot even read its list (a database hiccup) is logged and the others still run.
+  await stage("edit-window", async () => {
+    const ended = await db.select().from(tickets).where(and(eq(tickets.status, "delivered"), isNotNull(tickets.editWindowEndsAt), lt(tickets.editWindowEndsAt, now)));
+    await each(ended, "edit-window", async (t) => {
+      const [approved] = await db.select({ id: approvalRequests.id }).from(approvalRequests).where(and(eq(approvalRequests.ticketId, t.id), eq(approvalRequests.status, "approved"))).limit(1);
+      const status = approved ? "closed" : "closed_without_approval";
+      const [done] = await db.update(tickets).set({ status, isLocked: true, updatedAt: now }).where(and(eq(tickets.id, t.id), eq(tickets.status, "delivered"))).returning({ id: tickets.id });
+      if (!done) return;
+      counts.closed++;
+      await audit(t.id, null, "Auto-closed", { status, reason: "Edit window ended" }, "System");
+    });
   });
 
-  const open = await db.select().from(tickets).where(and(inArray(tickets.status, OPEN), isNotNull(tickets.dueAt), lt(tickets.dueAt, new Date(+now + 6 * 3_600_000))));
-  await each(open, "sla", async (t) => {
-    if (+t.dueAt! <= +now) {
-      if (t.isOverdue) return;
-      const [flagged] = await db.update(tickets).set({ isOverdue: true }).where(and(eq(tickets.id, t.id), eq(tickets.isOverdue, false))).returning({ id: tickets.id });
-      if (!flagged) return;
-      counts.overdue++;
-      await notice.overdue(t);
-    } else {
-      if (!(await once(t.id, "Due-soon warning sent", t.dueAt!.toISOString()))) return;
-      counts.warned++;
-      await notice.dueSoon(t);
-    }
+  await stage("sla", async () => {
+    const open = await db.select().from(tickets).where(and(inArray(tickets.status, OPEN), isNotNull(tickets.dueAt), lt(tickets.dueAt, new Date(+now + 6 * 3_600_000))));
+    await each(open, "sla", async (t) => {
+      if (+t.dueAt! <= +now) {
+        if (t.isOverdue) return;
+        const [flagged] = await db.update(tickets).set({ isOverdue: true }).where(and(eq(tickets.id, t.id), eq(tickets.isOverdue, false))).returning({ id: tickets.id });
+        if (!flagged) return;
+        counts.overdue++;
+        await notice.overdue(t);
+      } else {
+        if (!(await once(t.id, "Due-soon warning sent", t.dueAt!.toISOString()))) return;
+        counts.warned++;
+        await notice.dueSoon(t);
+      }
+    });
   });
 
-  const pending = await db
-    .select({ r: approvalRequests, t: tickets })
-    .from(approvalRequests)
-    .innerJoin(tickets, eq(tickets.id, approvalRequests.ticketId))
-    .where(and(eq(approvalRequests.status, "pending"), eq(tickets.status, "in_review"), eq(tickets.isLocked, false)));
-  await each(pending, "review", async ({ r, t }) => {
-    if (+r.expiresAt <= +now) {
-      const [settled] = await db.update(approvalRequests).set({ status: "expired" }).where(and(eq(approvalRequests.id, r.id), eq(approvalRequests.status, "pending"))).returning({ id: approvalRequests.id });
-      if (!settled) return;
-      await db.update(tickets).set({ status: "closed_without_approval", isLocked: true, updatedAt: now }).where(eq(tickets.id, t.id));
-      await audit(t.id, null, "Auto-closed", { status: "Closed without approval", reason: "No reply to the review within 2 days" }, "System");
-      await notice.autoClosed(t, "The requester did not reply to the review within 2 days.");
-      counts.expired++;
-      return;
-    }
-    if (+now - +r.createdAt >= REVIEW_REMINDER_AFTER_HOURS * 3_600_000) {
-      if (!(await once(t.id, "Review reminder sent", r.id))) return;
-      await notice.reviewReminder(t, `${siteUrl()}/design/my-requests`, istText(r.expiresAt));
-      counts.reminded++;
-    }
+  await stage("review", async () => {
+    const pending = await db
+      .select({ r: approvalRequests, t: tickets })
+      .from(approvalRequests)
+      .innerJoin(tickets, eq(tickets.id, approvalRequests.ticketId))
+      .where(and(eq(approvalRequests.status, "pending"), eq(tickets.status, "in_review"), eq(tickets.isLocked, false)));
+    await each(pending, "review", async ({ r, t }) => {
+      if (+r.expiresAt <= +now) {
+        const [settled] = await db.update(approvalRequests).set({ status: "expired" }).where(and(eq(approvalRequests.id, r.id), eq(approvalRequests.status, "pending"))).returning({ id: approvalRequests.id });
+        if (!settled) return;
+        await db.update(tickets).set({ status: "closed_without_approval", isLocked: true, updatedAt: now }).where(eq(tickets.id, t.id));
+        await audit(t.id, null, "Auto-closed", { status: "Closed without approval", reason: "No reply to the review within 2 days" }, "System");
+        await notice.autoClosed(t, "The requester did not reply to the review within 2 days.");
+        counts.expired++;
+        return;
+      }
+      if (+now - +r.createdAt >= REVIEW_REMINDER_AFTER_HOURS * 3_600_000) {
+        if (!(await once(t.id, "Review reminder sent", r.id))) return;
+        await notice.reviewReminder(t, `${siteUrl()}/design/my-requests`, istText(r.expiresAt));
+        counts.reminded++;
+      }
+    });
   });
 
   counts.cleaned = await removeUnclaimed(new Date(+now - 86_400_000)).catch(() => 0);
