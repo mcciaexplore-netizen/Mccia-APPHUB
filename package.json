@@ -35,7 +35,8 @@
     "test:e2e:approvals:branch": "node tests/e2e/approvals-expense-branch.mjs",
     "test:e2e:eru": "node tests/e2e/eru.mjs",
     "test:e2e:attendance:dark": "node tests/e2e/attendance-dark.mjs",
-    "test:e2e:payment-desk": "node tests/e2e/payment-desk.mjs"
+    "test:e2e:payment-desk": "node tests/e2e/payment-desk.mjs",
+    "test:e2e:password-reset": "node tests/e2e/password-reset.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

@@ -180,6 +180,23 @@ export const userInvites = pgTable(
 );
 
 /**
+ * "Forgot password?" links (src/lib/password-reset.ts): one row per link emailed. `token` holds the SHA-256 of the link's secret, never the
+ * secret itself, so a copy of the database cannot be used to reset anyone's password. A link works for one hour and once: using it deletes
+ * every link of that person.
+ */
+export const hubPasswordResetTokens = pgTable(
+  "hub_password_reset_tokens",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    token: text("token").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("hub_password_reset_tokens_user_idx").on(t.userId)],
+);
+
+/**
  * Who changed what, for access, people and applications. Names are copied in so the record still reads correctly after a person or
  * application is deleted. Never holds a password, a token or a link.
  */

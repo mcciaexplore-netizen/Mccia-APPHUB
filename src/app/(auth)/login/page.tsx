@@ -1,7 +1,9 @@
 import Image from "next/image";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AlertCircle } from "lucide-react";
 import { login } from "@/actions/auth";
+import { PasswordInput } from "@/components/PasswordInput";
 import { getCurrentUser } from "@/lib/permissions";
 import { safeNext } from "@/lib/session";
 
@@ -40,8 +42,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           </label>
           <label className="block">
             <span className="label-xs mb-1.5 block">Password</span>
-            <input name="password" type="password" className="input" autoComplete="current-password" required />
+            <PasswordInput name="password" autoComplete="current-password" required />
           </label>
+          <p className="-mt-1 text-right">
+            <Link href="/forgot-password" className="text-xs text-subtle hover:text-primary hover:underline">Forgot password?</Link>
+          </p>
           <button type="submit" className="btn btn-primary w-full">Sign in</button>
         </form>
         <p className="mt-5 text-xs text-subtle">Accounts are created by the administrator.</p>

@@ -27,7 +27,8 @@ export function proxy(req: NextRequest) {
   const here = encodeURIComponent(pathname + search);
 
   // The sign-in page sends signed-in people on by itself. /set-password is where a new person opens their one-time link, before they have a password.
-  if (pathname === "/login" || pathname === "/set-password") return NextResponse.next();
+  // /forgot-password and /reset-password are "Forgot password?": for people who cannot sign in (the emailed link's secret is the key).
+  if (pathname === "/login" || pathname === "/set-password" || pathname === "/forgot-password" || pathname === "/reset-password") return NextResponse.next();
 
   const session = verify(req.cookies.get(SESSION_COOKIE)?.value, "session");
   if (!session) return DRIVER_PATH.test(pathname) || DESIGN_PUBLIC_PATH.test(pathname) ? NextResponse.next() : to(`/login?next=${here}`);

@@ -15,12 +15,13 @@ import { clientIp } from "../src/lib/ip";
 import { isAdminPath } from "../src/lib/admin-paths";
 import { errorSummary } from "../src/lib/log-error";
 import { sitePath, siteUrl } from "../src/lib/site-url";
+import { PASSWORD_RULES, RESET_LIMITS, RESET_SUBJECT, RESET_TTL_MS, isResetToken, overResetLimit, resetEmailHtml, resetLink, resetPasswordSchema } from "../src/lib/password-reset-rules";
 import { PAYMENT_DESK_PATH, embeddedHubPath, paymentDeskEmbedUrl } from "../src/lib/paymentdesk/paymentdesk.manifest";
 import { WINDOW_MS as SIR_WINDOW, refusedUntil as sirRefusedUntil, slowDownMs as sirSlowDownMs } from "../src/lib/sign-in-rules";
 import { adminTabsFor } from "../src/lib/admin-tabs";
 import { scrub } from "../src/lib/scrub";
 import { xlsxToTable } from "../src/lib/xlsx-read";
-import { createPublicKey, generateKeyPairSync } from "node:crypto";
+import { createPublicKey, generateKeyPairSync, randomBytes } from "node:crypto";
 import { SSO_ISSUER, SSO_KID, SsoConfigError, buildClaims, loadSigningKey, signSsoToken, verifySsoToken } from "../src/lib/sso";
 import { SSO_ROLES, callbackProblem, slugProblem, ssoTokenRole } from "../src/lib/sso-rules";
 import { autoPostHtml, launchHeaders, messageHtml } from "../src/lib/sso-page";
@@ -540,7 +541,7 @@ eq("xlsx: entities, inline strings, shared strings with formatting runs, and spa
 eq("xlsx: a file that is not a spreadsheet gives a plain-language error", (() => { try { xlsxToTable(new Uint8Array([1, 2, 3, 4])); return "no error"; } catch (e) { return (e as Error).message; } })(), "That does not look like a valid Excel (.xlsx) file.");
 
 // Every server action must prove who is asking. This reads the source of src/actions/*.ts, so an action added later without a guard fails here.
-const SELF_CHECKING = new Set(["login", "logout", "unlockAdmin", "lockAdmin", "changePassword", "finishSetup", "markNotificationRead", "markAllNotificationsRead"]); // sign-in itself, the person's own password, the one-time link page, and a person marking their own notifications read
+const SELF_CHECKING = new Set(["login", "logout", "unlockAdmin", "lockAdmin", "changePassword", "finishSetup", "sendResetLink", "resetPassword", "markNotificationRead", "markAllNotificationsRead"]); // sign-in itself, the person's own password, the one-time link page, "Forgot password?" (public by design: the emailed link's secret is the key), and a person marking their own notifications read
 const actionsDir = new URL("../src/actions/", import.meta.url);
 const unguarded: string[] = [];
 let actionCount = 0;
@@ -1793,6 +1794,46 @@ eq("payment desk: a hub path is not it", embeddedHubPath("/inventory"), null);
 eq("payment desk: rubbish is not it", embeddedHubPath("not a url"), null);
 eq("payment desk: frame address carries the email, encoded", paymentDeskEmbedUrl("a.b+c@mcciapune.com"), "https://payment-advice.vercel.app/?embed=1&email=a.b%2Bc%40mcciapune.com");
 eq("payment desk: nothing can be smuggled into the address", paymentDeskEmbedUrl("x@y.com&embed=0#z"), "https://payment-advice.vercel.app/?embed=1&email=x%40y.com%26embed%3D0%23z");
+
+// Forgot password: link format, limits, https-only links, password rules, the email
+{
+  const T = "a".repeat(64);
+  eq("reset: 64 lowercase hex is a link secret", isResetToken(T), true);
+  eq("reset: 32 random bytes in hex is one", isResetToken(randomBytes(32).toString("hex")), true);
+  eq("reset: too short is not", isResetToken("a".repeat(63)), false);
+  eq("reset: too long is not", isResetToken("a".repeat(65)), false);
+  eq("reset: upper case is not", isResetToken("A".repeat(64)), false);
+  eq("reset: not hex is not", isResetToken("g".repeat(64)), false);
+  eq("reset: not a string is not", isResetToken(undefined), false);
+  eq("reset: a link works one hour", RESET_TTL_MS, 3_600_000);
+  eq("reset: 3 an hour per email", RESET_LIMITS.perEmail, 3);
+  eq("reset: the 3rd request is allowed", overResetLimit(3, 3), false);
+  eq("reset: the 4th is not", overResetLimit(4, 4), true);
+  eq("reset: 10 from one address allowed", overResetLimit(1, 10), false);
+  eq("reset: the 11th from one address is not", overResetLimit(1, 11), true);
+  eq("reset: https link", resetLink("https://mcciapune.app", T), `https://mcciapune.app/reset-password?token=${T}`);
+  eq("reset: base with a path or slash still lands on /reset-password", resetLink("https://mcciapune.app/", T), `https://mcciapune.app/reset-password?token=${T}`);
+  eq("reset: plain http is refused", resetLink("http://mcciapune.app", T), null);
+  eq("reset: http only for this computer", resetLink("http://localhost:3000", T), `http://localhost:3000/reset-password?token=${T}`);
+  eq("reset: http 127.0.0.1 is this computer", resetLink("http://127.0.0.1:3100", T), `http://127.0.0.1:3100/reset-password?token=${T}`);
+  eq("reset: a non-address is refused", resetLink("not a site", T), null);
+  eq("reset: javascript: is refused", resetLink("javascript:alert(1)", T), null);
+  const ok = (p: string) => resetPasswordSchema.safeParse(p).success;
+  eq("reset: Abcdefg1 meets every rule", ok("Abcdefg1"), true);
+  eq("reset: 7 characters is too short", ok("Abcdef1"), false);
+  eq("reset: no uppercase is refused", ok("abcdefg1"), false);
+  eq("reset: no number is refused", ok("Abcdefgh"), false);
+  eq("reset: over 128 is refused", ok("A1" + "x".repeat(127)), false);
+  eq("reset: rules shown are the three asked for", PASSWORD_RULES.map((r) => r.label), ["Minimum 8 characters", "At least one uppercase letter", "At least one number"]);
+  eq("reset: rules tick one by one", PASSWORD_RULES.map((r) => r.test("Abc")), [false, true, false]);
+  eq("reset: subject", RESET_SUBJECT, "Reset your MCCIA AppHub password");
+  const html = resetEmailHtml("Asha <script>", `https://mcciapune.app/reset-password?token=${T}`);
+  eq("reset: email greets by name, escaped", html.includes("Hi Asha &lt;script&gt;,") && !html.includes("<script>"), true);
+  eq("reset: email button links to the reset page", html.includes(`href="https://mcciapune.app/reset-password?token=${T}"`) && html.includes("Reset Password →"), true);
+  eq("reset: email says it expires in 1 hour", html.includes("This link expires in 1 hour."), true);
+  eq("reset: email says what to do if not requested", html.includes("If you didn't request this, ignore this email. Your password will not be changed."), true);
+  eq("reset: email signed by the team", html.includes("MCCIA AppHub Team"), true);
+}
 
 // Attendance: check-in, calendar, leave, comp-off, regularization, timesheets, feeds, roles (tests/attendance-unit.ts)
 attendanceUnit(eq);

@@ -337,6 +337,13 @@
       "when": 1795417247505,
       "tag": "0047_approvals_watch_user",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795429078361,
+      "tag": "0048_password_reset",
+      "breakpoints": true
     }
   ]
 }
