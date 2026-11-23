@@ -19,7 +19,11 @@ export const PAGES_SEEN = "hub:pagesSeen";
  * The frame of every page: a top bar (the hub's name, which goes home, the bell and the person's menu) and the page under it. There is no
  * sidebar; everything is reached from the cards on the home page and on the pages they open.
  */
-export function HubShell({ user, unread, children }: { user: ShellUser | null; /** Unread notifications; the bell is shown when this is given. */ unread?: number; children: React.ReactNode }) {
+export function HubShell({ user, unread, bleed = false, children }: {
+  user: ShellUser | null; /** Unread notifications; the bell is shown when this is given. */ unread?: number;
+  /** The page fills the space under the top bar edge to edge, without the usual margins (Payment Desk's frame). */ bleed?: boolean;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const inAdmin = isAdminPath(pathname);
   // Administrator locks itself the moment you leave it (the proxy only re-checks on the way in).
@@ -47,7 +51,7 @@ export function HubShell({ user, unread, children }: { user: ShellUser | null; /
           </div>
         ) : null}
       </header>
-      <main className="page-slot px-5 py-6 sm:px-8 sm:py-8 lg:px-12">{children}</main>
+      <main className={bleed ? "page-slot" : "page-slot px-5 py-6 sm:px-8 sm:py-8 lg:px-12"}>{children}</main>
     </div>
   );
 }

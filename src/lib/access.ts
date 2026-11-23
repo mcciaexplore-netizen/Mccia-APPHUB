@@ -6,12 +6,14 @@ import { activityLog, appAdmins, appStaff, apps, departments, userAppAccess, typ
 import { hideApprovalsCard } from "@/lib/approvals/flags";
 import { isSuper } from "@/lib/rbac";
 import { sitePath } from "@/lib/site-url";
+import { embeddedHubPath } from "@/lib/paymentdesk/paymentdesk.manifest";
 
 /**
  * What the hub is allowed to know about an app. The URL of an outside application is deliberately absent. `ssoSlug` is set only for an
  * application with single sign-on switched on: its card then opens /launch/<ssoSlug> instead of /go/<id>. (The callback address stays on
  * the server.) `path` is set only for an application built into the hub, whose address is a page of this site (/cabs, /inventory): there is
- * nothing to hide in it, and its card opens it without a page reload.
+ * nothing to hide in it, and its card opens it without a page reload. Payment Desk too: its own address stays hidden, and its card opens the
+ * hub page that frames it (/payment-desk, see paymentdesk.manifest.ts).
  */
 export type HubApp = { id: string; name: string; description: string | null; icon: string; departmentId: string; status: "active" | "testing" | "unavailable"; ssoSlug: string | null; path: string | null };
 
@@ -32,7 +34,7 @@ export const getAccessibleApps = cache(async (user: Pick<User, "id" | "role">): 
         .innerJoin(userAppAccess, and(eq(userAppAccess.appId, apps.id), eq(userAppAccess.userId, user.id)))
         .where(live)
         .orderBy(asc(apps.sortOrder), asc(apps.name));
-  return rows.map(({ ssoEnabled, ssoSlug, url, ...a }): HubApp => ({ ...a, ssoSlug: ssoEnabled ? ssoSlug : null, path: sitePath(url) }));
+  return rows.map(({ ssoEnabled, ssoSlug, url, ...a }): HubApp => ({ ...a, ssoSlug: ssoEnabled ? ssoSlug : null, path: sitePath(url) ?? embeddedHubPath(url) }));
 });
 
 

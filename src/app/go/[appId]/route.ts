@@ -7,6 +7,7 @@ import { getLaunchTarget } from "@/lib/access";
 import { isSuper } from "@/lib/rbac";
 import { clientIp } from "@/lib/ip";
 import { sitePath } from "@/lib/site-url";
+import { embeddedHubPath } from "@/lib/paymentdesk/paymentdesk.manifest";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +45,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ appI
   // An application marked unavailable cannot be opened. Nothing is logged: nothing was opened.
   if (target.status === "unavailable" && !isSuper(user)) return text(UNAVAILABLE, 503, { "Retry-After": "600" });
   await logLaunch(req, user.id, target);
-  // A built-in app is stored as a path on this site (for example /approvals); redirect() needs a full address.
-  return NextResponse.redirect(new URL(target.url, req.url), 302);
+  // A built-in app is stored as a path on this site (for example /approvals); redirect() needs a full address. Payment Desk opens in the
+  // hub page that frames it.
+  return NextResponse.redirect(new URL(embeddedHubPath(target.url) ?? target.url, req.url), 302);
 }
 
 /**
@@ -58,7 +60,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
   const r = await resolve(req, (await params).appId);
   if (r.stop) return r.stop.status >= 300 && r.stop.status < 400 ? new NextResponse(null, { status: 401 }) : new NextResponse(null, { status: r.stop.status });
   const { user, target } = r;
-  if (!sitePath(target.url) || (target.ssoEnabled && target.ssoSlug)) return new NextResponse(null, { status: 404 });
+  if (!(sitePath(target.url) ?? embeddedHubPath(target.url)) || (target.ssoEnabled && target.ssoSlug)) return new NextResponse(null, { status: 404 });
   if (target.status === "unavailable" && !isSuper(user)) return new NextResponse(null, { status: 503 });
   await logLaunch(req, user.id, target);
   return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });

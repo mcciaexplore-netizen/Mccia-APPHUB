@@ -15,6 +15,7 @@ import { clientIp } from "../src/lib/ip";
 import { isAdminPath } from "../src/lib/admin-paths";
 import { errorSummary } from "../src/lib/log-error";
 import { sitePath, siteUrl } from "../src/lib/site-url";
+import { PAYMENT_DESK_PATH, embeddedHubPath, paymentDeskEmbedUrl } from "../src/lib/paymentdesk/paymentdesk.manifest";
 import { WINDOW_MS as SIR_WINDOW, refusedUntil as sirRefusedUntil, slowDownMs as sirSlowDownMs } from "../src/lib/sign-in-rules";
 import { adminTabsFor } from "../src/lib/admin-tabs";
 import { scrub } from "../src/lib/scrub";
@@ -1778,6 +1779,20 @@ const eruImports = (async () => {
   const HOST = /from "@\/(?:db|db\/schema|lib\/permissions|lib\/notifications|lib\/site-url|lib\/log-error|lib\/notice-feed|lib\/audit)"/;
   eq("eru isolation: only the host-adapter (and db.ts) reach the hub's own code", all.filter(isEru).filter((f) => f !== "lib/eru/host-adapter.ts" && f !== "lib/eru/db.ts" && HOST.test(readFileSync(new URL(f, srcDir), "utf8"))), []);
 }
+
+// Payment Desk: its tile opens the hub page that frames it; only its own site counts, by exact host
+eq("payment desk: its address opens /payment-desk", embeddedHubPath("https://payment-advice.vercel.app"), PAYMENT_DESK_PATH);
+eq("payment desk: any page of its site too", embeddedHubPath("https://payment-advice.vercel.app/login?x=1"), "/payment-desk");
+eq("payment desk: spaces around the address", embeddedHubPath("  https://payment-advice.vercel.app/  "), "/payment-desk");
+eq("payment desk: plain http is not it", embeddedHubPath("http://payment-advice.vercel.app"), null);
+eq("payment desk: a look-alike host is not it", embeddedHubPath("https://payment-advice.vercel.app.evil.example"), null);
+eq("payment desk: a sub-domain is not it", embeddedHubPath("https://x.payment-advice.vercel.app"), null);
+eq("payment desk: another port is not it", embeddedHubPath("https://payment-advice.vercel.app:8443"), null);
+eq("payment desk: other applications keep their own address", embeddedHubPath("https://example.com"), null);
+eq("payment desk: a hub path is not it", embeddedHubPath("/inventory"), null);
+eq("payment desk: rubbish is not it", embeddedHubPath("not a url"), null);
+eq("payment desk: frame address carries the email, encoded", paymentDeskEmbedUrl("a.b+c@mcciapune.com"), "https://payment-advice.vercel.app/?embed=1&email=a.b%2Bc%40mcciapune.com");
+eq("payment desk: nothing can be smuggled into the address", paymentDeskEmbedUrl("x@y.com&embed=0#z"), "https://payment-advice.vercel.app/?embed=1&email=x%40y.com%26embed%3D0%23z");
 
 // Attendance: check-in, calendar, leave, comp-off, regularization, timesheets, feeds, roles (tests/attendance-unit.ts)
 attendanceUnit(eq);
