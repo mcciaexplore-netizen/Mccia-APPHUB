@@ -12,7 +12,10 @@ import { useAct } from "../use-act";
 
 const KIND_TONE: Record<RequestKind, "blue" | "teal" | "amber" | "purple" | "green" | "red"> = { leave: "blue", wfh: "teal", early: "red", regularization: "amber", compoff: "purple", timesheet: "green" };
 
-/** Requests waiting for a decision (approve, or reject with a remark), or past decisions. Used by managers and by HR. */
+/**
+ * Requests waiting for a decision, or past decisions. Approve / Reject (with a remark) only on what the viewer may decide (item.canAct): a
+ * manager their team's requests, HR only what was sent to HR. Everything else is read only and says who it is waiting for or who decided it.
+ */
 export function Inbox({ items, mode, showApprover = false }: { items: InboxItem[]; mode: "pending" | "history"; showApprover?: boolean }) {
   const [kind, setKind] = useState<RequestKind | "all">("all");
   const [deciding, setDeciding] = useState<{ item: InboxItem; approve: boolean } | null>(null);
@@ -31,9 +34,9 @@ export function Inbox({ items, mode, showApprover = false }: { items: InboxItem[
         <Empty title={mode === "pending" ? "Nothing waiting" : "No decisions yet"}>{mode === "pending" ? "Requests sent to you appear here." : ""}</Empty>
       ) : (
         <ul className="divide-y divide-[var(--att-line)] overflow-hidden">
-          {mode === "pending" && <li className="px-5 py-2 text-xs text-gray-500 md:hidden">Tip: swipe a request right to approve, left to reject.</li>}
+          {mode === "pending" && shown.some((i) => i.canAct) && <li className="px-5 py-2 text-xs text-gray-500 md:hidden">Tip: swipe a request right to approve, left to reject.</li>}
           {shown.map((i) => (
-            <SwipeRow key={`${i.kind}-${i.id}`} enabled={mode === "pending"} onApprove={() => setDeciding({ item: i, approve: true })} onReject={() => setDeciding({ item: i, approve: false })}>
+            <SwipeRow key={`${i.kind}-${i.id}`} enabled={mode === "pending" && i.canAct} onApprove={() => setDeciding({ item: i, approve: true })} onReject={() => setDeciding({ item: i, approve: false })}>
               <Avatar name={i.person} size={34} />
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 text-sm">
@@ -52,12 +55,22 @@ export function Inbox({ items, mode, showApprover = false }: { items: InboxItem[
                   </a>
                 )}
                 <p className="mt-1 text-xs att-muted">
-                  {mode === "pending" ? `Asked ${formatMoment(i.createdAt)}` : `Decided ${i.decidedAt ? formatMoment(i.decidedAt) : ""}`}
-                  {showApprover && ` · sent to ${i.approver ?? "HR"}`}
+                  {mode === "pending"
+                    ? `Asked ${formatMoment(i.createdAt)}`
+                    : `${i.status === "rejected" ? "Rejected" : i.status === "cancelled" ? "Decided" : "Approved"} by ${i.decider ?? "—"}${i.decidedAt ? ` on ${formatMoment(i.decidedAt)}` : ""}${i.status === "cancelled" ? " (later withdrawn)" : ""}`}
                   {mode === "history" && i.remark && ` · “${i.remark}”`}
                 </p>
+                {mode === "pending" && (showApprover || !i.canAct) && (
+                  <p className="mt-1.5 text-xs font-semibold">
+                    {i.toHr ? (
+                      <span className="text-[#b45309]">{i.approverId ? `Manager ${i.approver} is no longer active - sent to HR for approval` : "No manager assigned - sent to HR for approval"}</span>
+                    ) : (
+                      <span className="text-gray-500">Waiting for {i.approver} (reporting manager)</span>
+                    )}
+                  </p>
+                )}
               </div>
-              {mode === "pending" && (
+              {mode === "pending" && i.canAct && (
                 <div className="flex shrink-0 gap-2">
                   <button type="button" className="btn btn-ghost btn-sm flex-1 text-[var(--att-red)] sm:flex-none" onClick={() => setDeciding({ item: i, approve: false })}>
                     Reject

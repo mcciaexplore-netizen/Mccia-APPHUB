@@ -232,7 +232,10 @@ try {
   await go(h.page, "/attendance/admin");
   check("HR today: Asha in office", (await mainText(h.page)).includes("ZZA Asha"));
   await go(h.page, "/attendance/admin/approvals?tab=history");
-  check("HR history: the manager's decision is there", (await mainText(h.page)).includes("ZZA Asha"));
+  check("HR history: the manager's decision is there, with who decided it", (await mainText(h.page)).includes("ZZA Asha") && /Approved by ZZA Manju/.test(await mainText(h.page)));
+  await go(h.page, "/attendance/admin/approvals?tab=pending");
+  const withMgr = await mainText(h.page);
+  check("HR approvals: requests waiting for a manager are read only (no Approve / Reject)", withMgr.includes("Waiting for ZZA Manju (reporting manager)") && (await h.page.locator("main").getByRole("button", { name: /^(Approve|Reject)$/ }).count()) === 0, withMgr.slice(0, 300));
   await go(h.page, "/attendance/admin/settings");
   const hol = h.page.locator("section").filter({ has: h.page.getByRole("heading", { name: /^Holidays \d{4}$/ }) });
   await hol.locator('input[type="date"]').fill(`${istDay().slice(0, 4)}-12-25`);

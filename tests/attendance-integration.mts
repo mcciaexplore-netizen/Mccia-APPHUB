@@ -188,18 +188,22 @@ try {
   check("leave: pending holds the day (CL 11 left)", (await LV.balancesFor(asha.id, year)).find((b) => b.type.id === CL.id)?.balance === 11);
   check("leave: overlapping leave is refused", (await refused(() => LV.applyLeave(A, { leaveTypeId: CL.id, startDate: d1, endDate: d1, halfDay: "first", reason: "" }), /already have leave/)) === true);
   const notices = await db.select().from(H.hubNotifications).where(inArray(H.hubNotifications.userId, [mgr.id, ben.id]));
-  check("leave: the manager is told on the bell, and the CC'd colleague too", notices.some((n) => n.userId === mgr.id && /Leave request from Asha/.test(n.title)) && notices.some((n) => n.userId === ben.id && /CC/.test(n.title)));
+  check("leave: the manager is told on the bell, and the CC'd colleague too", notices.some((n) => n.userId === mgr.id && n.title === "New leave request from Asha") && notices.some((n) => n.userId === ben.id && /CC/.test(n.title)));
   const mInbox = await AP.pendingFor({ ...M, hr: false });
   const hrInbox = await AP.pendingFor(HR, true);
-  check("inbox: the manager sees it; HR sees everything pending; a colleague's inbox is empty", mInbox.some((i) => i.id === leaveId) && hrInbox.some((i) => i.id === leaveId) && (await AP.pendingFor({ ...B, hr: false })).length === 0);
-  check("decide: someone it was not sent to cannot decide", (await refused(() => AP.decide({ ...B, hr: false }, "leave", leaveId, true, ""), /not yours/)) === true);
-  check("decide: nobody decides their own", (await refused(() => AP.decide({ ...A, hr: true }, "leave", leaveId, true, ""), /not yours/)) === true);
+  check("inbox: the manager sees it (and may decide it); HR see it, read only; a colleague's inbox is empty", mInbox.some((i) => i.id === leaveId && i.canAct) && hrInbox.some((i) => i.id === leaveId && !i.canAct && !i.toHr) && (await AP.pendingFor({ ...B, hr: false })).length === 0);
+  check("inbox: a request sent to a manager is not in HR's queue", !(await AP.hrQueue(HR)).some((i) => i.id === leaveId));
+  check("decide: someone it was not sent to cannot decide", (await refused(() => AP.decide({ ...B, hr: false }, "leave", leaveId, true, ""), /not yours|Only the reporting manager/)) === true);
+  check("decide: HR cannot approve a request sent to a manager", (await refused(() => AP.decide(HR, "leave", leaveId, true, ""), /Only the reporting manager this was sent to can decide it/)) === true);
+  check("decide: nobody decides their own (not even as HR)", (await refused(() => AP.decide({ ...A, hr: true }, "leave", leaveId, true, ""), /You cannot decide your own request/)) === true);
   check("decide: rejecting needs a remark", (await refused(() => AP.decide({ ...M, hr: false }, "leave", leaveId, false, " "), /remark/)) === true);
   await AP.decide({ ...M, hr: false }, "leave", leaveId, true, "Enjoy");
   const afterApprove = (await LV.balancesFor(asha.id, year)).find((b) => b.type.id === CL.id)!;
   check("decide: approved → booked 1, pending 0, CL 11", afterApprove.booked === 1 && afterApprove.pending === 0 && afterApprove.balance === 11, afterApprove);
   check("decide: deciding again is refused (already decided)", (await refused(() => AP.decide(HR, "leave", leaveId, false, "no"), /already been decided/)) === true);
-  check("decide: Asha is told", (await db.select().from(H.hubNotifications).where(eq(H.hubNotifications.userId, asha.id))).some((n) => /leave request was approved/.test(n.title)));
+  check("decide: Asha is told “Manju approved your leave request”", (await db.select().from(H.hubNotifications).where(eq(H.hubNotifications.userId, asha.id))).some((n) => n.title === "Manju approved your leave request"));
+  check("decide: HR are told “Asha's leave was approved by Manju”", (await db.select().from(H.hubNotifications).where(eq(H.hubNotifications.userId, hr.id))).some((n) => n.title === "Asha's leave was approved by Manju"));
+  check("new request: the manager was told “New leave request from Asha”, HR were not", (await db.select().from(H.hubNotifications).where(eq(H.hubNotifications.userId, mgr.id))).some((n) => n.title === "New leave request from Asha") && !(await db.select().from(H.hubNotifications).where(eq(H.hubNotifications.userId, hr.id))).some((n) => n.title === "New leave request from Asha"));
   await LV.cancelLeave(asha.id, leaveId);
   check("cancel: approved leave not started can be cancelled; CL back to 12", (await LV.balancesFor(asha.id, year)).find((b) => b.type.id === CL.id)?.balance === 12);
   check("history: the manager's history has the decision", (await AP.historyFor({ ...M, hr: false })).some((i) => i.id === leaveId));
@@ -212,6 +216,23 @@ try {
   check("wfh: only HR can decide one sent to HR (not Asha)", (await refused(() => AP.decide({ ...A, hr: false }, "wfh", wfhId, true, ""), /not yours/)) === true);
   await AP.decide(HR, "wfh", wfhId, true, "");
   check("wfh: approved; that day's view is WFH", (await (await import("../src/lib/attendance/days")).personDays(ben.id, d2, d2)).views[0].wfh === true);
+
+  check("wfh: sent to HR, HR are told it has no manager", (await db.select().from(H.hubNotifications).where(eq(H.hubNotifications.userId, hr.id))).some((n) => n.title === "New work from home request from Ben" && /No manager assigned - sent to HR for approval/.test(n.body ?? "")));
+
+  // A manager who leaves: what waits for them goes to HR.
+  const d5 = await nextWorking(addDays(today, 3));
+  const { id: orphanId } = await RQ.applyWfh(A, { date: d5, reason: "visit" });
+  check("left manager: before, HR cannot decide it", (await refused(() => AP.decide(HR, "wfh", orphanId, true, ""), /Only the reporting manager/)) === true);
+  await db.update(H.users).set({ isActive: false }).where(eq(H.users.id, mgr.id));
+  try {
+    const q = await AP.hrQueue(HR);
+    check("left manager: the request is now in HR's queue, marked as sent to HR", q.some((i) => i.id === orphanId && i.toHr && i.canAct));
+    check("left manager: HR's sidebar count includes it", (await AP.pendingCountAll()) >= 1);
+    await AP.decide(HR, "wfh", orphanId, false, "please ask your new manager");
+  } finally {
+    await db.update(H.users).set({ isActive: true }).where(eq(H.users.id, mgr.id));
+  }
+  check("left manager: HR decided it", (await db.select().from(T.wfhRequests).where(eq(T.wfhRequests.id, orphanId)))[0].decidedBy === hr.id);
 
   // ── Regularization ────────────────────────────────────────────────────
   const past = await nextWorking(addDays(today, -10));
@@ -254,9 +275,10 @@ try {
   await AP.decide({ ...M, hr: false }, "timesheet", sheet.id, false, "add Friday");
   await TS.addTimeLog(asha.id, { projectId: proj.id, date: wk, hours: 1, description: "fix" });
   await TS.submitWeek(A, wk);
-  await AP.decide(HR, "timesheet", sheet.id, true, "");
+  check("timesheet: HR cannot approve one sent to the manager", (await refused(() => AP.decide(HR, "timesheet", sheet.id, true, ""), /Only the reporting manager/)) === true);
+  await AP.decide({ ...M, hr: false }, "timesheet", sheet.id, true, "");
   const [sheet2] = await db.select().from(T.timesheets).where(eq(T.timesheets.id, sheet.id));
-  check("timesheet: rejected opens it; resubmitted 4.5 h; approved by HR", sheet2.status === "approved" && Number(sheet2.totalHours) === 4.5 && sheet2.decidedBy === hr.id, sheet2);
+  check("timesheet: rejected opens it; resubmitted 4.5 h; approved by the manager", sheet2.status === "approved" && Number(sheet2.totalHours) === 4.5 && sheet2.decidedBy === mgr.id, sheet2);
   check("timesheet: a project with time logged is closed, not deleted", (await AD.deleteProject(proj.id)) === "deactivated");
 
   // ── HR: balances, manager field, people ───────────────────────────────

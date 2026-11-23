@@ -18,7 +18,7 @@ import {
 } from "@/db/attendance-schema";
 import { AttError } from "./dal";
 import { getSettings, listShifts, profilesFor, saveSettings } from "./config";
-import { listMembers, peopleByIds, setManager } from "./host-adapter";
+import { activeUserIds, listMembers, peopleByIds, setManager } from "./host-adapter";
 import { notify } from "./notice";
 import { ensureBalances, listLeaveTypes } from "./leave";
 import { accrued, balanceOf, entitlementFor } from "./leave-rules";
@@ -361,8 +361,10 @@ export async function leaveHistory(filter: { userId?: string | null; from?: stri
 export async function allTimesheets(status: string | null, limit = 200) {
   const valid = ["draft", "submitted", "approved", "rejected"].includes(status ?? "") ? (status as "draft" | "submitted" | "approved" | "rejected") : null;
   const rows = await db.select().from(timesheets).where(valid ? eq(timesheets.status, valid) : sql`${timesheets.status} <> 'draft'`).orderBy(desc(timesheets.weekStartDate)).limit(limit);
-  const people = await peopleByIds(rows.flatMap((r) => [r.userId, r.decidedBy, r.approverId]));
+  const [people, active] = await Promise.all([peopleByIds(rows.flatMap((r) => [r.userId, r.decidedBy, r.approverId])), activeUserIds(rows.map((r) => r.approverId))]);
   return rows.map((r) => ({
+    // HR decide a timesheet only when it was sent to HR (no manager), or its manager is no longer active.
+    hrDecides: !r.approverId || !active.has(r.approverId),
     id: r.id,
     userId: r.userId,
     person: people.get(r.userId)?.name ?? "Former member",

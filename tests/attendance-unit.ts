@@ -221,13 +221,16 @@ export function attendanceUnit(eq: Eq): void {
   eq("att roles: isMember / isAdmin", [isMember(["attendance_admin"]), isAdmin(["attendance_member"])], [true, false]);
   eq("att roles: staff menu (HR also see Attendance Admin); admin menu only for HR", [navFor("staff", ["attendance_member"]).map((i) => i.label), navFor("staff", ["attendance_member", "attendance_admin"]).length, navFor("admin", ["attendance_member"]).length, navFor("admin", ["attendance_admin"])[0].label], [["Dashboard", "Attendance", "Leave", "Time", "More"], 6, 0, "Today"]);
   eq("att approvals: to the active manager; no manager, inactive manager or self → HR (null)", [approverFor({ id: "u", managerId: "m" }, true), approverFor({ id: "u", managerId: null }, true), approverFor({ id: "u", managerId: "m" }, false), approverFor({ id: "u", managerId: "u" }, true)], ["m", null, null, null]);
-  eq("att approvals: who decides: the manager it went to; HR anything; nobody their own; another manager no", [
+  eq("att approvals: who decides: the reporting manager it was sent to; HR cannot decide a manager's request; HR decide what was sent to HR (no manager) or what waits for a manager who left; nobody decides their own", [
     canDecide({ id: "m", hr: false }, { userId: "u", approverId: "m" }),
     canDecide({ id: "h", hr: true }, { userId: "u", approverId: "m" }),
+    canDecide({ id: "h", hr: true }, { userId: "u", approverId: null }),
+    canDecide({ id: "h", hr: true }, { userId: "u", approverId: "m" }, false),
     canDecide({ id: "h", hr: true }, { userId: "h", approverId: null }),
     canDecide({ id: "x", hr: false }, { userId: "u", approverId: "m" }),
     canDecide({ id: "m", hr: false }, { userId: "u", approverId: null }),
-  ], [true, true, false, false, false]);
+    canDecide({ id: "m", hr: true }, { userId: "u", approverId: "m" }),
+  ], [true, false, true, true, false, false, false, true]);
 
   // ── Month tally ─────────────────────────────────────────────────────────
   const days = ["2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20", "2026-11-21", "2026-11-22", "2026-11-23"];

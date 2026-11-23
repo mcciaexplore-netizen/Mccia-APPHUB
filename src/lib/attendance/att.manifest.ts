@@ -110,12 +110,18 @@ export function approverFor(person: { id: string; managerId: string | null }, ac
   return person.managerId && activeManager && person.managerId !== person.id ? person.managerId : null;
 }
 
-/** Whether `actor` may decide a request: never their own; HR always; otherwise only the person it was sent to. */
-export function canDecide(actor: { id: string; hr: boolean }, request: { userId: string; approverId: string | null }): boolean {
+/**
+ * Whether `actor` may decide a request: the reporting manager it was sent to decides it. HR decide only what was sent to HR (no manager
+ * assigned), or a request whose manager is no longer an active user (it would otherwise wait for nobody). Nobody decides their own.
+ */
+export function canDecide(actor: { id: string; hr: boolean }, request: { userId: string; approverId: string | null }, approverActive = true): boolean {
   if (actor.id === request.userId) return false;
-  if (actor.hr) return true;
-  return !!request.approverId && request.approverId === actor.id;
+  if (request.approverId && request.approverId === actor.id) return true;
+  return actor.hr && (!request.approverId || !approverActive);
 }
+
+/** What the forms say when a person has no reporting manager. */
+export const NO_MANAGER_NOTE = "No manager assigned - sent to HR for approval";
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (s: unknown): s is string => typeof s === "string" && UUID_RE.test(s);

@@ -20,7 +20,7 @@ export type AttSettings = {
   compoffExpiryDays: number;
   /** Bell reminders, at IST clock times ("10:30"). */
   reminders: { enabled: boolean; checkIn: string; checkOut: string };
-  /** Also email approvers and requesters (the bell is always used). Off by default. */
+  /** Also email managers about new requests and requesters about decisions (the bell is always used). On by default. */
   emailEnabled: boolean;
   /**
    * The day attendance starts counting, set by HR (null = not set). Days before it are not tracked: shown as "—", never absent, never in
@@ -39,7 +39,7 @@ export const DEFAULT_SETTINGS: AttSettings = {
   earlyOutMinutes: 30,
   compoffExpiryDays: 90,
   reminders: { enabled: true, checkIn: "10:00", checkOut: "17:30" },
-  emailEnabled: false,
+  emailEnabled: true,
   goLiveDate: null,
   firstEnabledOn: null,
 };

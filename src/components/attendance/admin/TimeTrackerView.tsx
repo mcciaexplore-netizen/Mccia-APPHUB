@@ -9,7 +9,7 @@ import { addDays, formatDay, formatDayShort, formatHours } from "@/lib/attendanc
 import { Badge, Card, Empty, Field, RequestStatus } from "../ui";
 import { useAct } from "../use-act";
 
-type Sheet = { id: string; userId: string; person: string; weekStartDate: string; status: string; total: number; approver: string; decidedBy: string | null; remark: string | null };
+type Sheet = { id: string; userId: string; person: string; weekStartDate: string; status: string; total: number; approver: string; decidedBy: string | null; remark: string | null; hrDecides: boolean };
 type Project = { id: string; name: string; description: string; isActive: boolean };
 
 /** Every submitted timesheet (open one to see its entries; approve, or reject with a remark), and the projects time is logged against. */
@@ -55,7 +55,7 @@ export function TimeTrackerView({ sheets, projects, status }: { sheets: Sheet[];
                       <RequestStatus status={s.status} />
                       {s.remark && <p className="mt-0.5 text-xs att-muted">“{s.remark}”</p>}
                     </td>
-                    <td className="text-xs">{s.decidedBy ? `Decided by ${s.decidedBy}` : s.approver}</td>
+                    <td className="text-xs">{s.decidedBy ? `Decided by ${s.decidedBy}` : s.hrDecides ? "HR (no manager assigned)" : s.approver}</td>
                     <td className="text-right">
                       <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(s)}>
                         Open
@@ -109,7 +109,8 @@ function SheetDialog({ sheet, onClose }: { sheet: Sheet; onClose: () => void }) 
         </ul>
       )}
       <p className="mt-2 text-sm font-semibold">Total {formatHours(sheet.total)}</p>
-      {sheet.status === "submitted" && (
+      {sheet.status === "submitted" && !sheet.hrDecides && <p className="mt-3 text-sm text-gray-500">Waiting for {sheet.approver} (reporting manager) to approve or reject it. HR can see it but not change it.</p>}
+      {sheet.status === "submitted" && sheet.hrDecides && (
         <>
           <label className="mt-3 flex flex-col gap-1 text-xs font-semibold att-muted">
             Remark (required to reject)

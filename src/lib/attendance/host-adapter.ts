@@ -138,6 +138,14 @@ export async function personFacts(id: string): Promise<(Person & { managerId: st
   return u ? { id: u.id, name: u.name, email: u.email, managerId: u.managerId, active: u.isActive && u.status === "approved" } : null;
 }
 
+/** Which of these hub users are active, approved accounts. */
+export async function activeUserIds(ids: (string | null | undefined)[]): Promise<Set<string>> {
+  const want = [...new Set(ids.filter((x): x is string => !!x))];
+  if (!want.length) return new Set();
+  const rows = await db.select({ id: users.id }).from(users).where(and(inArray(users.id, want), eq(users.isActive, true), eq(users.status, "approved")));
+  return new Set(rows.map((r) => r.id));
+}
+
 /** These hub users (active or not), by id. */
 export async function peopleByIds(ids: (string | null | undefined)[]): Promise<Map<string, Person>> {
   const want = [...new Set(ids.filter((x): x is string => !!x))];

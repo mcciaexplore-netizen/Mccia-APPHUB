@@ -5,6 +5,7 @@ import { requireMember } from "@/lib/attendance/dal";
 import { approverIdFor, balancesFor } from "@/lib/attendance/leave";
 import { peopleByIds } from "@/lib/attendance/host-adapter";
 import { istDay } from "@/lib/attendance/time";
+import { NO_MANAGER_NOTE } from "@/lib/attendance/att.manifest";
 
 export const metadata = { title: "Apply leave · Attendance" };
 
@@ -18,7 +19,7 @@ export default async function ApplyLeavePage() {
       <PageHeader title="Apply leave" subtitle="Balances are for this year." actions={<Link href="/attendance/leave" className="btn btn-ghost">Back to Leave</Link>} />
       <ApplyLeaveForm
         today={today}
-        approver={approverId ? `${approver} (your manager)` : "HR (you have no reporting manager set)"}
+        approver={approverId ? `${approver} (your manager)` : `HR (${NO_MANAGER_NOTE})`}
         types={balances.map((b) => ({
           id: b.type.id,
           name: b.type.name,

@@ -6,7 +6,7 @@ import { attendance, compoffRequests, earlyDepartures, leaveRequests, leaveTypes
 import { AttError } from "./dal";
 import { getSettings, profileOf } from "./config";
 import { loadDays, viewOf } from "./days";
-import { peopleByIds } from "./host-adapter";
+import { activeUserIds, peopleByIds } from "./host-adapter";
 import { syncBalance } from "./leave";
 import { notifyDecision } from "./notify";
 import { computeDay } from "./checkin-rules";
@@ -15,9 +15,11 @@ import { canDecide, isUuid, MAX_REASON, REQUEST_KINDS, type RequestKind } from "
 import { addDays, formatDay, istDay, istMinutes, istMoment, parseHm } from "./time";
 
 /**
- * One inbox for every kind of request (leave, WFH, regularization, comp-off, timesheets), the decision and what it changes, and the history.
- * A manager sees what was sent to them; HR see everything. Nobody decides their own request (att.manifest.ts canDecide). A decision only
- * changes a request that is still pending (the update says so), so two people deciding at once cannot both win.
+ * One inbox for every kind of request (leave, WFH, early check-out, regularization, comp-off, timesheets), the decision and what it changes,
+ * and the history. The reporting manager a request was sent to decides it (Team approvals). HR decide only what was sent to HR (no manager
+ * assigned) or what waits for a manager who is no longer active; everything else they can see but not change (att.manifest.ts canDecide).
+ * Nobody decides their own request. A decision only changes a request that is still pending (the update says so), so two people deciding
+ * at once cannot both win.
  */
 
 export type InboxItem = {
@@ -37,10 +39,16 @@ export type InboxItem = {
   remark: string | null;
   createdAt: Date;
   attachment: boolean;
+  /** Who decided it (a name), for the history. */
+  decider: string | null;
+  /** Sent to HR: no manager assigned, or the manager is no longer active. */
+  toHr: boolean;
+  /** Whether the person looking at the list may decide it. */
+  canAct: boolean;
 };
 
 type Actor = { id: string; name: string; hr: boolean };
-type Scope = { mode: "pending" | "history"; actor: Actor; all: boolean; limit?: number };
+type Scope = { mode: "pending" | "history"; actor: Actor; all: boolean; limit?: number; hrOnly?: boolean };
 
 const range = (a: string, b: string) => (a === b ? formatDay(a) : `${formatDay(a)} – ${formatDay(b)}`);
 
@@ -81,7 +89,7 @@ async function items(s: Scope): Promise<InboxItem[]> {
     remark: r.approverRemark,
     createdAt: r.createdAt,
   });
-  const out: Omit<InboxItem, "person" | "approver">[] = [
+  const out: Omit<InboxItem, "person" | "approver" | "decider" | "toHr" | "canAct">[] = [
     ...leave.map(({ r, typeName }) => ({
       ...base(r),
       kind: "leave" as const,
@@ -121,14 +129,27 @@ async function items(s: Scope): Promise<InboxItem[]> {
       attachment: false,
     })),
   ];
-  const people = await peopleByIds(out.flatMap((i) => [i.userId, i.approverId, i.decidedBy]));
+  const [people, active] = await Promise.all([peopleByIds(out.flatMap((i) => [i.userId, i.approverId, i.decidedBy])), activeUserIds(out.map((i) => i.approverId))]);
   return out
-    .map((i) => ({ ...i, person: people.get(i.userId)?.name ?? "Former member", approver: i.approverId ? (people.get(i.approverId)?.name ?? "Former member") : null }))
+    .map((i) => {
+      const approverActive = !i.approverId || active.has(i.approverId);
+      return {
+        ...i,
+        person: people.get(i.userId)?.name ?? "Former member",
+        approver: i.approverId ? (people.get(i.approverId)?.name ?? "Former member") : null,
+        decider: i.decidedBy ? (people.get(i.decidedBy)?.name ?? "Former member") : null,
+        toHr: !i.approverId || !approverActive,
+        canAct: (i.status === "pending" || i.status === "submitted") && canDecide(s.actor, i, approverActive),
+      };
+    })
+    .filter((i) => !s.hrOnly || i.toHr)
     .sort((a, b) => (s.mode === "pending" ? +a.createdAt - +b.createdAt : +(b.decidedAt ?? b.createdAt) - +(a.decidedAt ?? a.createdAt)));
 }
 
-/** What waits for the actor: sent to them, or (HR, `all`) everything pending. */
+/** What waits for the actor as a reporting manager: sent to them by name (Team approvals). With `all` (HR), every pending request, to see. */
 export const pendingFor = (actor: Actor, all = false) => items({ mode: "pending", actor, all: all && actor.hr });
+/** What waits for HR to decide: sent to HR (no manager assigned), or waiting for a manager who is no longer active. */
+export const hrQueue = (actor: Actor) => (actor.hr ? items({ mode: "pending", actor, all: true, hrOnly: true }) : Promise.resolve([] as InboxItem[]));
 /** Past decisions the actor made or was sent; HR with `all` see every decision. */
 export const historyFor = (actor: Actor, all = false) => items({ mode: "history", actor, all: all && actor.hr, limit: 100 });
 
@@ -144,15 +165,32 @@ export async function pendingCountFor(userId: string): Promise<number> {
   return Number(rowsOf<{ n: string }>(res)[0]?.n ?? 0);
 }
 
-/** Every pending request, for HR's sidebar. */
+/** What waits for HR to decide (sent to HR, or its manager is no longer active), for HR's sidebar. */
 export async function pendingCountAll(): Promise<number> {
+  const toHr = sql`(approver_id is null or approver_id not in (select id from users where is_active and status = 'approved'))`;
   const res = await db.execute(sql`
-    select (select count(*) from att_leave_requests where status = 'pending') + (select count(*) from att_wfh_requests where status = 'pending')
-      + (select count(*) from att_early_departures where status = 'pending')
-      + (select count(*) from att_regularization_requests where status = 'pending') + (select count(*) from att_compoff_requests where status = 'pending')
-      + (select count(*) from att_timesheets where status = 'submitted') as n`);
+    select (select count(*) from att_leave_requests where status = 'pending' and ${toHr}) + (select count(*) from att_wfh_requests where status = 'pending' and ${toHr})
+      + (select count(*) from att_early_departures where status = 'pending' and ${toHr})
+      + (select count(*) from att_regularization_requests where status = 'pending' and ${toHr}) + (select count(*) from att_compoff_requests where status = 'pending' and ${toHr})
+      + (select count(*) from att_timesheets where status = 'submitted' and ${toHr}) as n`);
   return Number(rowsOf<{ n: string }>(res)[0]?.n ?? 0);
 }
+
+/** canDecide with the manager's standing looked up (HR may take over only from a manager who is no longer active). */
+async function mayDecide(actor: Actor, r: { userId: string; approverId: string | null }): Promise<boolean> {
+  if (canDecide(actor, r)) return true;
+  if (!actor.hr || !r.approverId) return false;
+  return canDecide(actor, r, (await activeUserIds([r.approverId])).has(r.approverId));
+}
+
+const NOT_YOURS = (r: { approverId: string | null; userId?: string }, actorId?: string) =>
+  new AttError(
+    actorId && r.userId === actorId
+      ? "You cannot decide your own request."
+      : r.approverId
+        ? "Only the reporting manager this was sent to can decide it. HR can see it but not change it."
+        : "This request is not yours to decide.",
+  );
 
 // ── Deciding ──────────────────────────────────────────────────────────────
 
@@ -169,7 +207,7 @@ export async function decide(actor: Actor, kind: RequestKind, id: string, approv
   if (kind === "leave") {
     const [r] = await db.select({ r: leaveRequests, typeName: leaveTypes.name, isCompoff: leaveTypes.isCompoff }).from(leaveRequests).innerJoin(leaveTypes, eq(leaveTypes.id, leaveRequests.leaveTypeId)).where(eq(leaveRequests.id, id));
     if (!r || r.r.status !== "pending") throw stale();
-    if (!canDecide(actor, r.r)) throw new AttError("This request is not yours to decide.");
+    if (!(await mayDecide(actor, r.r))) throw NOT_YOURS(r.r, actor.id);
     if (approve) {
       const punched = await db
         .select({ date: attendance.date })
@@ -180,34 +218,34 @@ export async function decide(actor: Actor, kind: RequestKind, id: string, approv
     const done = await db.update(leaveRequests).set(decidedSet(actor.id, approve, remark)).where(and(eq(leaveRequests.id, id), eq(leaveRequests.status, "pending"))).returning({ id: leaveRequests.id });
     if (!done.length) throw stale();
     if (!r.isCompoff) await syncBalance(r.r.userId, r.r.leaveTypeId, Number(r.r.startDate.slice(0, 4)));
-    await notifyDecision({ kind, id, requesterId: r.r.userId, approved: approve, by: actor.name, remark, summary: `${r.typeName}, ${range(r.r.startDate, r.r.endDate)}`, link: "/attendance/leave" });
+    await notifyDecision({ kind, id, requesterId: r.r.userId, approved: approve, by: actor.name, deciderId: actor.id, remark, summary: `${r.typeName}, ${range(r.r.startDate, r.r.endDate)}`, link: "/attendance/leave" });
     return `${word}.`;
   }
 
   if (kind === "wfh") {
     const [r] = await db.select().from(wfhRequests).where(eq(wfhRequests.id, id));
     if (!r || r.status !== "pending") throw stale();
-    if (!canDecide(actor, r)) throw new AttError("This request is not yours to decide.");
+    if (!(await mayDecide(actor, r))) throw NOT_YOURS(r, actor.id);
     const done = await db.update(wfhRequests).set(decidedSet(actor.id, approve, remark)).where(and(eq(wfhRequests.id, id), eq(wfhRequests.status, "pending"))).returning({ id: wfhRequests.id });
     if (!done.length) throw stale();
-    await notifyDecision({ kind, id, requesterId: r.userId, approved: approve, by: actor.name, remark, summary: `Work from home on ${formatDay(r.date)}`, link: "/attendance/more/wfh" });
+    await notifyDecision({ kind, id, requesterId: r.userId, approved: approve, by: actor.name, deciderId: actor.id, remark, summary: `Work from home on ${formatDay(r.date)}`, link: "/attendance/more/wfh" });
     return `${word}.`;
   }
 
   if (kind === "early") {
     const [r] = await db.select().from(earlyDepartures).where(eq(earlyDepartures.id, id));
     if (!r || r.status !== "pending") throw stale();
-    if (!canDecide(actor, r)) throw new AttError("This request is not yours to decide.");
+    if (!(await mayDecide(actor, r))) throw NOT_YOURS(r, actor.id);
     const done = await db.update(earlyDepartures).set(decidedSet(actor.id, approve, remark)).where(and(eq(earlyDepartures.id, id), eq(earlyDepartures.status, "pending"))).returning({ id: earlyDepartures.id });
     if (!done.length) throw stale();
-    await notifyDecision({ kind, id, requesterId: r.userId, approved: approve, by: actor.name, remark, summary: approve ? `You can check out now (${formatDay(r.date)})` : `Early check-out on ${formatDay(r.date)}`, link: "/attendance" });
+    await notifyDecision({ kind, id, requesterId: r.userId, approved: approve, by: actor.name, deciderId: actor.id, remark, summary: approve ? `You can check out now (${formatDay(r.date)})` : `Early check-out on ${formatDay(r.date)}`, link: "/attendance" });
     return `${word}${approve ? ": they can check out now" : ""}.`;
   }
 
   if (kind === "regularization") {
     const [r] = await db.select().from(regularizationRequests).where(eq(regularizationRequests.id, id));
     if (!r || r.status !== "pending") throw stale();
-    if (!canDecide(actor, r)) throw new AttError("This request is not yours to decide.");
+    if (!(await mayDecide(actor, r))) throw NOT_YOURS(r, actor.id);
     const done = await db
       .update(regularizationRequests)
       .set(decidedSet(actor.id, approve, remark))
@@ -215,14 +253,14 @@ export async function decide(actor: Actor, kind: RequestKind, id: string, approv
       .returning({ id: regularizationRequests.id });
     if (!done.length) throw stale();
     if (approve) await applyRegularization(r);
-    await notifyDecision({ kind, id, requesterId: r.userId, approved: approve, by: actor.name, remark, summary: `Regularization for ${formatDay(r.date)}`, link: "/attendance/more/regularization" });
+    await notifyDecision({ kind, id, requesterId: r.userId, approved: approve, by: actor.name, deciderId: actor.id, remark, summary: `Regularization for ${formatDay(r.date)}`, link: "/attendance/more/regularization" });
     return `${word}${approve ? ": the day is corrected" : ""}.`;
   }
 
   if (kind === "compoff") {
     const [r] = await db.select().from(compoffRequests).where(eq(compoffRequests.id, id));
     if (!r || r.status !== "pending") throw stale();
-    if (!canDecide(actor, r)) throw new AttError("This request is not yours to decide.");
+    if (!(await mayDecide(actor, r))) throw NOT_YOURS(r, actor.id);
     const expiry = expiryFor(r.workedDate, (await getSettings()).compoffExpiryDays);
     const done = await db
       .update(compoffRequests)
@@ -230,16 +268,16 @@ export async function decide(actor: Actor, kind: RequestKind, id: string, approv
       .where(and(eq(compoffRequests.id, id), eq(compoffRequests.status, "pending")))
       .returning({ id: compoffRequests.id });
     if (!done.length) throw stale();
-    await notifyDecision({ kind, id, requesterId: r.userId, approved: approve, by: actor.name, remark, summary: `Comp-off for working ${formatDay(r.workedDate)}${approve ? ` (use by ${formatDay(expiry)})` : ""}`, link: "/attendance/more/compoff" });
+    await notifyDecision({ kind, id, requesterId: r.userId, approved: approve, by: actor.name, deciderId: actor.id, remark, summary: `Comp-off for working ${formatDay(r.workedDate)}${approve ? ` (use by ${formatDay(expiry)})` : ""}`, link: "/attendance/more/compoff" });
     return `${word}.`;
   }
 
   const [t] = await db.select().from(timesheets).where(eq(timesheets.id, id));
   if (!t || t.status !== "submitted") throw stale();
-  if (!canDecide(actor, t)) throw new AttError("This timesheet is not yours to decide.");
+  if (!(await mayDecide(actor, t))) throw NOT_YOURS(t, actor.id);
   const done = await db.update(timesheets).set(decidedSet(actor.id, approve, remark)).where(and(eq(timesheets.id, id), eq(timesheets.status, "submitted"))).returning({ id: timesheets.id });
   if (!done.length) throw stale();
-  await notifyDecision({ kind, id: `${id}:${Date.now()}`, requesterId: t.userId, approved: approve, by: actor.name, remark, summary: `Week of ${formatDay(t.weekStartDate)}${approve ? "" : ": it is open again for changes"}`, link: `/attendance/time?week=${t.weekStartDate}` });
+  await notifyDecision({ kind, id: `${id}:${Date.now()}`, requesterId: t.userId, approved: approve, by: actor.name, deciderId: actor.id, remark, summary: `Week of ${formatDay(t.weekStartDate)}${approve ? "" : ": it is open again for changes"}`, link: `/attendance/time?week=${t.weekStartDate}` });
   return `${word}.`;
 }
 
