@@ -209,6 +209,22 @@ try {
 
   section("HR pages");
   const h = await signedIn(hr.email);
+  await go(h.page, "/attendance");
+  await h.page.locator("aside nav").getByRole("link", { name: "Attendance Admin" }).click();
+  await h.page.waitForURL((u) => u.pathname === "/attendance/admin");
+  check("HR: the sidebar's Attendance Admin link opens /attendance/admin (Today)", pathOf(h.page) === "/attendance/admin" && (await mainText(h.page)).includes("Attendance Admin ·"), pathOf(h.page));
+  {
+    const hp = await signedIn(hr.email, { width: 390, height: 844 });
+    await go(hp.page, "/attendance/more");
+    await hp.page.getByRole("link", { name: /Attendance Admin/ }).click();
+    await hp.page.waitForURL((u) => u.pathname === "/attendance/admin");
+    check("HR on a phone: More has Attendance Admin, and it opens /attendance/admin", pathOf(hp.page) === "/attendance/admin");
+    await hp.ctx.close();
+    const sp = await signedIn(asha.email, { width: 390, height: 844 });
+    await go(sp.page, "/attendance/more");
+    check("staff on a phone: no Attendance Admin in More", !(await mainText(sp.page)).includes("Attendance Admin"));
+    await sp.ctx.close();
+  }
   for (const p of ["/attendance/admin", "/attendance/admin/approvals", "/attendance/admin/approvals?tab=history", "/attendance/admin/people", "/attendance/admin/attendance", "/attendance/admin/leave", "/attendance/admin/time", "/attendance/admin/reports", "/attendance/admin/settings", "/attendance"]) {
     const r = await go(h.page, p);
     check(`HR page ${p} opens`, r?.status() === 200 && pathOf(h.page) === p.split("?")[0], r?.status());

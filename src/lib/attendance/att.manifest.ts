@@ -95,6 +95,8 @@ export const MORE_LINKS = [
   { label: "Comp-off", href: "/attendance/more/compoff", note: "Claim a day off for working a holiday or weekly off", icon: "compoff" },
   { label: "Org chart", href: "/attendance/more/org-chart", note: "Who reports to whom", icon: "org" },
   { label: "Profile", href: "/attendance/more/profile", note: "Your shift, manager, dates and notifications", icon: "profile" },
+  // HR only. On a phone the sidebar (which has this link) is hidden, so More is where HR find Attendance Admin.
+  { label: "Attendance Admin", href: "/attendance/admin", note: "HR: today, approvals, people, reports, settings", icon: "admin", adminOnly: true },
 ] as const;
 
 // ── Requests and who decides them ─────────────────────────────────────────

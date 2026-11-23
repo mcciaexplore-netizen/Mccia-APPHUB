@@ -21,7 +21,7 @@ export default async function AdminTodayPage({ searchParams }: PageProps<"/atten
     <>
       <PageHeader
         title="Today"
-        subtitle={formatDayShort(board.day)}
+        subtitle={`Attendance Admin · ${formatDayShort(board.day)}`}
         actions={
           <form className="flex flex-wrap gap-2" method="get">
             <select name="team" defaultValue={teamId ?? ""} className="input w-auto" aria-label="Team">

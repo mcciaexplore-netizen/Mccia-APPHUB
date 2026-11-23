@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarCheck, CheckSquare, Clock, Gift, Home, Network, UserRound, type LucideIcon } from "lucide-react";
+import { CalendarCheck, CheckSquare, Clock, Gift, Home, Network, Settings, UserRound, type LucideIcon } from "lucide-react";
 import { PageHeader } from "@/components/attendance/ui";
 import { requireMember } from "@/lib/attendance/dal";
 import { pendingCountFor } from "@/lib/attendance/approvals";
@@ -16,9 +16,10 @@ const ICON: Record<(typeof MORE_LINKS)[number]["icon"], { icon: LucideIcon; tone
   compoff: { icon: Gift, tone: "att-icon-purple" },
   org: { icon: Network, tone: "att-icon-blue" },
   profile: { icon: UserRound, tone: "att-icon-grey" },
+  admin: { icon: Settings, tone: "att-icon-green" },
 };
 
-/** More: a grid of everything else (2 per row on a phone): the summary, requests, the org chart, the profile; Team approvals for managers. */
+/** More: a grid of everything else (2 per row on a phone): the summary, requests, the org chart, the profile; Team approvals for managers; Attendance Admin for HR. */
 export default async function MorePage() {
   const user = await requireMember();
   const [waiting, members] = await Promise.all([pendingCountFor(user.id), listMembers()]);
@@ -27,7 +28,7 @@ export default async function MorePage() {
     <>
       <PageHeader title="More" />
       <ul className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
-        {MORE_LINKS.filter((l) => !("managerOnly" in l) || manages).map((l) => {
+        {MORE_LINKS.filter((l) => (!("managerOnly" in l) || manages) && (!("adminOnly" in l) || user.admin)).map((l) => {
           const { icon: I, tone } = ICON[l.icon];
           return (
             <li key={l.href}>
