@@ -106,7 +106,7 @@ export const formatRequestNo = (prefix: string, financialYear: string, n: number
 /* ---------------------------------------------------------------- labels */
 
 export const TYPE_LABEL = { hr: "HR request", expenditure_large: "Expenditure request", expenditure_small: "Expense request", budget: "Budget approval" } as const;
-export const STATUS_LABEL = { draft: "Draft", pending: "Pending", approved: "Approved", rejected: "Rejected", withdrawn: "Withdrawn", returned: "Returned" } as const;
+export const STATUS_LABEL = { draft: "Draft", pending: "Pending", approved: "Approved", rejected: "Rejected", withdrawn: "Withdrawn", returned: "Returned", historical: "Historical" } as const;
 
 /* ---------------------------------------------------------------- what "approve" means at a step */
 

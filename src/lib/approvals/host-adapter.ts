@@ -1,6 +1,6 @@
 import "server-only";
 import { cache } from "react";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { branches, departments, users } from "@/db/schema";
 import { aprUserRoles } from "@/db/approvals-schema";
@@ -74,6 +74,20 @@ export async function getDirectoryUsers(ids: string[]): Promise<DirectoryUser[]>
     .from(users)
     .where(inArray(users.id, [...new Set(ids)]));
   return rows.map((u) => ({ id: u.id, name: u.name, email: u.email, headAdmin: u.role === "head_admin", active: u.active }));
+}
+
+/**
+ * People by email, active or not (a historical import links an old record to the person who raised it, who may have left since). Emails
+ * are compared in lower case; one that matches nobody is simply absent from the result.
+ */
+export async function getDirectoryUsersByEmail(emails: string[]): Promise<DirectoryUser[]> {
+  const wanted = [...new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))];
+  if (wanted.length === 0) return [];
+  const rows = await db
+    .select({ id: users.id, name: users.name, email: users.email, role: users.role, active: users.isActive })
+    .from(users)
+    .where(inArray(sql`lower(${users.email})`, wanted));
+  return rows.map((u) => ({ id: u.id, name: u.name, email: u.email.toLowerCase(), headAdmin: u.role === "head_admin", active: u.active }));
 }
 
 /** The hub's departments (its organisation units, not the application groups), active ones, by name: the Budget form's Department list. */

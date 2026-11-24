@@ -70,6 +70,8 @@ async function sidebarFor(user: ApprovalsUser): Promise<SideLink[]> {
         ]
       : []),
     ...(watching ? [{ label: "All Approvals", href: WATCHING_HREF, count: watchedCount }] : []),
+    // Approvals admins: bring old approval records in from another system (Setup & Configuration; opening it asks for the password again).
+    ...(hasRole(user, "approvals_admin") ? [{ label: "Historical Import", href: "/approvals/admin/import" }] : []),
   ];
 }
 

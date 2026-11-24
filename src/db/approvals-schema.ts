@@ -32,7 +32,10 @@ import { users } from "./schema";
 // and each revision of an approved budget is a request of its own, linked to the original by parent_request_id.
 export const aprRequestType = pgEnum("apr_request_type", ["hr", "expenditure_small", "expenditure_large", "budget"]);
 // "returned": an approver sent the request back to the person who raised it, to be corrected and resubmitted to the same approver.
-export const aprRequestStatus = pgEnum("apr_request_status", ["draft", "pending", "approved", "rejected", "withdrawn", "returned"]);
+// "historical": an archived record imported from an older approval system (migration 0049). It never takes part in the live workflow: no
+// steps, no approver, no queue, no reminders, never counted as approved. Its own status in that system (Approved, Recommend, Pending...) is
+// kept exactly in apr_historical_records.source_status.
+export const aprRequestStatus = pgEnum("apr_request_status", ["draft", "pending", "approved", "rejected", "withdrawn", "returned", "historical"]);
 export const aprStepStatus = pgEnum("apr_step_status", ["waiting", "pending", "approved", "rejected", "skipped", "returned"]);
 export const aprAttachmentSlot = pgEnum("apr_attachment_slot", ["file_upload", "file_upload_2", "tax_invoice", "quotation", "supporting"]);
 export const aprEventAction = pgEnum("apr_event_action", [
@@ -454,6 +457,70 @@ export const aprApprovalEvents = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("apr_approval_events_request_idx").on(t.requestId, t.createdAt)],
+);
+
+/* ------------------------------------------------------ historical imports (migration 0049) */
+
+/**
+ * One upload of old approval records (Approval System → Setup & Configuration → Historical Import): the file exactly as it was uploaded,
+ * what the administrator decided about its categories, and what happened to every record. An import can be undone while nobody has acted
+ * on its tickets; the batch row stays, marked undone, for the audit trail.
+ */
+export const aprImportBatches = pgTable(
+  "apr_import_batches",
+  {
+    id: id(),
+    // Which reader understood the file ("zoho_expenditures"), and the system it came from ("zoho_creator").
+    sourceKey: text("source_key").notNull(),
+    sourceSystem: text("source_system").notNull(),
+    fileName: text("file_name").notNull(),
+    fileSha256: text("file_sha256").notNull(),
+    recordCount: integer("record_count").notNull(),
+    // The file as uploaded (parsed JSON), kept for auditing.
+    raw: jsonb("raw").notNull(),
+    // Category decisions: { "<source category>": { "categoryId": "..." } | { "created": "<new category id>" } }.
+    mapping: jsonb("mapping").notNull().default(sql`'{}'::jsonb`),
+    // Counts and one line per record that was not imported: { imported, skipped, failed, rows: [{ legacyId, outcome, message }] }.
+    summary: jsonb("summary").notNull().default(sql`'{}'::jsonb`),
+    importedById: uuid("imported_by_id"),
+    importedByName: text("imported_by_name").notNull(),
+    createdAt: createdAt(),
+    undoneAt: timestamp("undone_at", { withTimezone: true }),
+    undoneByName: text("undone_by_name"),
+  },
+  (t) => [index("apr_import_batches_created_idx").on(t.createdAt)],
+);
+
+/** What a historical ticket keeps from its source record, beside the ordinary request row (status "historical"). */
+export type HistoricalTimelineEntry = { key: string; label: string; at: string | null; sourceText: string | null; actor: string | null; note: string | null };
+export type HistoricalField = { label: string; value: string };
+export const aprHistoricalRecords = pgTable(
+  "apr_historical_records",
+  {
+    requestId: uuid("request_id").primaryKey().references(() => aprRequests.id, { onDelete: "cascade" }),
+    batchId: uuid("batch_id").notNull().references(() => aprImportBatches.id, { onDelete: "restrict" }),
+    sourceSystem: text("source_system").notNull(),
+    // The record's own ID in the source system (Zoho's ID), unique per source system: a second import of the same file skips it.
+    legacyId: text("legacy_id").notNull(),
+    // The status exactly as the source system had it (Approved, Recommend, Pending, Rejected...).
+    sourceStatus: text("source_status").notNull(),
+    // The requester as the source recorded them, and whether (and why not) they were linked to a hub user.
+    requester: jsonb("requester").$type<{ name: string; email: string; linkedUserId: string | null; linkedName: string | null; note: string | null }>().notNull(),
+    // The source's category, its own ID, and the hub category it was filed under.
+    category: jsonb("category").$type<{ name: string; sourceId: string | null; hubCategoryId: string | null; hubName: string | null }>().notNull(),
+    // The source's dates and amount as written there (before any conversion).
+    sourceDates: jsonb("source_dates").$type<HistoricalField[]>().notNull().default(sql`'[]'::jsonb`),
+    // What the source shows about the approval, in time order. Only what the source records: no approver is ever guessed.
+    timeline: jsonb("timeline").$type<HistoricalTimelineEntry[]>().notNull().default(sql`'[]'::jsonb`),
+    // Things an administrator should know (no amount, no email, approved without a DG time, requester not matched...).
+    notes: text("notes").array().notNull().default(sql`'{}'::text[]`),
+    // Source fields the Approval System has no place for, kept as label and value.
+    extra: jsonb("extra").$type<HistoricalField[]>().notNull().default(sql`'[]'::jsonb`),
+    // The record exactly as it was in the uploaded file.
+    sourceRecord: jsonb("source_record").notNull(),
+    importedAt: createdAt(),
+  },
+  (t) => [unique("apr_historical_records_source_legacy_uq").on(t.sourceSystem, t.legacyId), index("apr_historical_records_batch_idx").on(t.batchId)],
 );
 
 /* ------------------------------------------------------ notifications, audit */

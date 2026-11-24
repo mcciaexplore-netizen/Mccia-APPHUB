@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gte, inArray, lt, ne, sql, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, notInArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { aprCategories, aprExpenditureDetails, aprHrCategories, aprHrDetails, aprRequestSteps, aprRequests, type AprRequestType } from "@/db/approvals-schema";
 
@@ -23,7 +23,8 @@ export type HrReportRow = { name: string; total: number; approved: number; pendi
 export type HrMonthRow = { month: string; total: number; amountPaise: number };
 
 export async function hrReport(range: { from?: string; to?: string }): Promise<{ byCategory: HrReportRow[]; byMonth: HrMonthRow[]; total: number; amountPaise: number }> {
-  const where = and(eq(aprRequests.type, "hr"), ne(aprRequests.status, "draft"), ...inRange(range));
+  // Live requests only: historical tickets imported from an older system are archives, never counted here.
+  const where = and(eq(aprRequests.type, "hr"), notInArray(aprRequests.status, ["draft", "historical"]), ...inRange(range));
   const month = sql<string>`to_char(${aprRequests.requestedAt} at time zone 'Asia/Kolkata', 'YYYY-MM')`;
   const [byCategory, byMonth] = await Promise.all([
     db

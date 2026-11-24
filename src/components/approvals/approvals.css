@@ -126,6 +126,8 @@
 .apr-root .apr-pill-rejected { background: #fee2e2; color: #b91c1c; }
 .apr-root .apr-pill-returned { background: #fff7ed; color: #c2410c; }
 .apr-root .apr-pill-withdrawn, .apr-root .apr-pill-draft { background: #f3f4f6; color: #6b7280; }
+/* An archived ticket imported from an older system: a cool slate-blue, unlike any live status. */
+.apr-root .apr-pill-historical { background: #e8eef7; color: #334e73; border: 1px dashed #8aa2c2; }
 
 /* ------------------------------------------------------------------ dashboards on the Approval System page */
 .apr-root .apr-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; border-radius: var(--radius-md); padding: 0.9rem 1.1rem; font-size: 0.92rem; }

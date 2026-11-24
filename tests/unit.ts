@@ -15,6 +15,7 @@ import { clientIp } from "../src/lib/ip";
 import { isAdminPath } from "../src/lib/admin-paths";
 import { errorSummary } from "../src/lib/log-error";
 import { sitePath, siteUrl } from "../src/lib/site-url";
+import * as HI from "../src/lib/approvals/historical/rules";
 import { PASSWORD_RULES, RESET_LIMITS, RESET_SUBJECT, RESET_TTL_MS, isResetToken, overResetLimit, resetEmailHtml, resetLink, resetPasswordSchema } from "../src/lib/password-reset-rules";
 import { PAYMENT_DESK_PATH, embeddedHubPath, paymentDeskEmbedUrl } from "../src/lib/paymentdesk/paymentdesk.manifest";
 import { WINDOW_MS as SIR_WINDOW, refusedUntil as sirRefusedUntil, slowDownMs as sirSlowDownMs } from "../src/lib/sign-in-rules";
@@ -1794,6 +1795,73 @@ eq("payment desk: a hub path is not it", embeddedHubPath("/inventory"), null);
 eq("payment desk: rubbish is not it", embeddedHubPath("not a url"), null);
 eq("payment desk: frame address carries the email, encoded", paymentDeskEmbedUrl("a.b+c@mcciapune.com"), "https://payment-advice.vercel.app/?embed=1&email=a.b%2Bc%40mcciapune.com");
 eq("payment desk: nothing can be smuggled into the address", paymentDeskEmbedUrl("x@y.com&embed=0#z"), "https://payment-advice.vercel.app/?embed=1&email=x%40y.com%26embed%3D0%23z");
+
+// Historical import (Approval System): reading old records, never inventing anything
+{
+  eq("hist: Zoho date is read as Indian time", HI.parseSourceDateTime("28-Oct-2026 14:49:47"), "2026-10-28T09:19:47.000Z");
+  eq("hist: a date without time is midnight IST", HI.parseSourceDateTime("01-Apr-2026"), "2026-03-31T18:30:00.000Z");
+  eq("hist: month names any case", HI.parseSourceDateTime("05-JUN-2025 10:37:50"), "2025-06-05T05:07:50.000Z");
+  eq("hist: 31-Feb is not a date", HI.parseSourceDateTime("31-Feb-2026 10:00:00"), null);
+  eq("hist: 25:00 is not a time", HI.parseSourceDateTime("01-Jan-2026 25:00:00"), null);
+  eq("hist: another format is refused, not guessed", HI.parseSourceDateTime("2026-10-28 14:49"), null);
+  eq("hist: amount with paise", HI.parseSourceAmount("2339508.12"), { ok: true, paise: 233950812 });
+  eq("hist: amount with one decimal", HI.parseSourceAmount("10.5"), { ok: true, paise: 1050 });
+  eq("hist: empty amount stays empty", HI.parseSourceAmount(""), { ok: true, paise: null });
+  eq("hist: commas are refused", HI.parseSourceAmount("1,000.00").ok, false);
+  eq("hist: a rupee sign is refused", HI.parseSourceAmount("₹1000").ok, false);
+  eq("hist: three decimals are refused", HI.parseSourceAmount("1.005").ok, false);
+  eq("hist: a negative is refused", HI.parseSourceAmount("-5").ok, false);
+  const rec = (o: Record<string, unknown> = {}) => ({ Status: "Approved", Nature_of_Expenditure: "Chairs", Date_of_Request: "03-Apr-2026 16:38:19", Email: "Asha@Example.com", Category: "Office expenses ",
+    DG: "07-Apr-2026 12:11:16", Recommended: "06-Apr-2026 13:31:43", Amount: "42000.00", "Category.ID": "1927", ID: "1557008", Name: "Asha Patil", ...o });
+  const file = (rows: unknown[]) => JSON.stringify({ All_Expenditures: rows });
+  const one = (o: Record<string, unknown> = {}) => { const r = HI.readSource(file([rec(o)])); if (!r.ok) throw new Error(r.error); return r.records[0]; };
+  const a = one();
+  eq("hist: recognised as Zoho expenditures", (HI.readSource(file([rec()])) as { adapter: { key: string } }).adapter.key, "zoho_expenditures");
+  eq("hist: a clean record has no errors or notes", [a.errors, a.notes], [[], []]);
+  eq("hist: fields mapped", [a.legacyId, a.requesterName, a.requesterEmail, a.categoryName, a.categorySourceId, a.amountPaise, a.description, a.sourceStatus, a.financialYear],
+    ["1557008", "Asha Patil", "asha@example.com", "Office expenses", "1927", 4200000, "Chairs", "Approved", "2026-27"]);
+  eq("hist: kept as the DG expenditure form", a.type, "expenditure_large");
+  eq("hist: the final decision time is the DG time when the status is final", a.decidedAt, "2026-04-07T06:41:16.000Z");
+  eq("hist: timeline in time order, with who acted only where the source says", a.timeline.map((t) => [t.key, t.actor]), [["submitted", "Asha Patil"], ["recommended", null], ["dg", null]]);
+  eq("hist: the original text of every date and the amount is kept", a.sourceDates.map((f) => f.value), ["03-Apr-2026 16:38:19", "06-Apr-2026 13:31:43", "07-Apr-2026 12:11:16", "42000.00"]);
+  eq("hist: the whole source record is kept", a.source.ID, "1557008");
+  const rc = one({ Status: "Recommend", DG: "" });
+  eq("hist: Recommend is kept exactly, never turned into Approved", rc.sourceStatus, "Recommend");
+  eq("hist: Recommend has no decision time", rc.decidedAt, null);
+  eq("hist: Recommend says no DG decision is recorded", rc.notes.some((n) => n.includes("no final DG decision")), true);
+  eq("hist: Recommend has no DG entry in its timeline", rc.timeline.map((t) => t.key), ["submitted", "recommended"]);
+  const pend = one({ Status: "Pending", DG: "", Recommended: "" });
+  eq("hist: Pending is archived, not queued", pend.notes.some((n) => n.includes("not sent to anyone's queue")), true);
+  eq("hist: Pending has only the submission", pend.timeline.map((t) => t.key), ["submitted"]);
+  eq("hist: Approved without a DG time is noted", one({ DG: "" }).notes.some((n) => n.includes("no DG action time")), true);
+  eq("hist: Approved without a DG time has no decision time", one({ DG: "" }).decidedAt, null);
+  eq("hist: no amount is a note, not an error, and stays empty", [one({ Amount: "" }).errors, one({ Amount: "" }).amountPaise, one({ Amount: "" }).notes.includes("No amount in the source record.")], [[], null, true]);
+  eq("hist: no email is a note", one({ Email: "" }).notes.includes("No email in the source record."), true);
+  eq("hist: below ₹10,000 on the DG form is noted and kept as EXP", [one({ Amount: "9865.00" }).type, one({ Amount: "9865.00" }).notes.some((n) => n.includes("below ₹10,000"))], ["expenditure_large", true]);
+  eq("hist: an unknown status is kept and noted", [one({ Status: "On hold" }).sourceStatus, one({ Status: "On hold" }).notes.some((n) => n.includes("not one of Zoho's usual"))], ["On hold", true]);
+  eq("hist: a bad amount is an error", one({ Amount: "about 5k" }).errors.length, 1);
+  eq("hist: a bad date is an error", one({ Date_of_Request: "yesterday" }).errors.length, 1);
+  eq("hist: a bad DG time is an error", one({ DG: "soon" }).errors.length, 1);
+  eq("hist: no ID is an error", one({ ID: "" }).errors.some((e) => e.includes("No ID")), true);
+  eq("hist: an ID with odd characters is an error", one({ ID: "12; drop" }).errors.length > 0, true);
+  eq("hist: no name is an error", one({ Name: " " }).errors.some((e) => e.includes("requester name")), true);
+  eq("hist: no category is an error", one({ Category: "" }).errors.some((e) => e.includes("No category")), true);
+  eq("hist: an object where text belongs is an error, not coerced", one({ Name: { x: 1 } }).errors.some((e) => e.includes("Name is not text")), true);
+  eq("hist: an over-long field is an error", one({ Nature_of_Expenditure: "x".repeat(10_001) }).errors.some((e) => e.includes("too long")), true);
+  eq("hist: a field the hub has no place for is kept", one({ Vendor_GSTIN: "27ABC" }).extra, [{ label: "Vendor GSTIN", value: "27ABC" }]);
+  eq("hist: DG before recommendation is noted", one({ DG: "01-Apr-2026 10:00:00" }).notes.some((n) => n.includes("before the recommendation")), true);
+  const two = HI.readSource(file([rec(), rec()]));
+  eq("hist: the same ID twice in a file: the second is an error", two.ok && two.records.map((r) => r.errors.length), [0, 1]);
+  eq("hist: not JSON", HI.readSource("{oops").ok, false);
+  eq("hist: unknown layout", HI.readSource(JSON.stringify({ rows: [] })).ok, false);
+  eq("hist: no records", HI.readSource(file([])).ok, false);
+  eq("hist: a record that is not an object", HI.readSource(file(["x"])).ok && (HI.readSource(file(["x"])) as { records: { errors: string[] }[] }).records[0].errors.length, 1);
+  eq("hist: over 4 MB is refused", HI.readSource(" ".repeat(HI.MAX_IMPORT_BYTES + 1)).ok, false);
+  eq("hist: a byte-order mark is fine", HI.readSource("﻿" + file([rec()])).ok, true);
+  eq("hist: names compare ignoring case and spaces", [HI.sameName("Anuja Deshpande ", "anuja  deshpande"), HI.sameName("Neeraj Thakur", "Gauri")], [true, false]);
+  eq("hist: category keys ignore case and spacing", HI.categoryKey(" Office  Revamp "), "office revamp");
+  eq("hist: the unlinked requester is nobody's id", HI.UNLINKED_REQUESTER_ID, "00000000-0000-0000-0000-000000000000");
+}
 
 // Forgot password: link format, limits, https-only links, password rules, the email
 {

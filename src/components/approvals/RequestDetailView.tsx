@@ -8,6 +8,7 @@ import { DeleteBudgetButton } from "@/components/approvals/DeleteBudgetButton";
 import { PrintButton, PrintedOn } from "@/components/approvals/PrintRequest";
 import { Timeline } from "@/components/approvals/Timeline";
 import { RevisionChanges } from "@/components/approvals/RevisionChanges";
+import { HistoricalDetails, HistoricalNotice, HistoricalTimeline } from "@/components/approvals/HistoricalDetails";
 import { TYPE_LABEL } from "@/lib/approvals/calc";
 import { BALANCE_LABEL, versionLabel, type BudgetLine } from "@/lib/approvals/budget";
 import { formatDate, formatDateTime, formatINR, isoToDisplay } from "@/lib/approvals/format";
@@ -192,7 +193,8 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
   const e = d.expenditure;
   const b = d.budget;
   const name = d.hr ? `${d.hr.firstName} ${d.hr.lastName}` : d.requesterName;
-  const status = <StatusPill status={d.status} currentStepNo={d.steps.find((s) => s.status === "pending")?.stepNo} />;
+  const h = d.historical;
+  const status = <StatusPill status={d.status} currentStepNo={d.steps.find((s) => s.status === "pending")?.stepNo} sourceStatus={h?.sourceStatus} />;
 
   // With at least one revision, a budget's page has a second column: what changed between its versions (not printed).
   const compare = b && b.history.length > 1 ? b.history.map((h) => ({
@@ -233,6 +235,8 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
         <p className="apr-no-print -mt-4 text-sm text-[var(--z-muted)]" data-testid="budget-revise-blocked">{b.reviseBlocked}</p>
       )}
 
+      {h && <HistoricalNotice h={h} />}
+
       {d.status === "returned" && (
         <div role="status" className="apr-notice max-w-3xl space-y-2">
           <p><b>Returned for corrections{d.returned ? ` by ${d.returned.byName}` : ""}.</b></p>
@@ -266,7 +270,7 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
             <Item label="Amount">{money(d.amountPaise)}</Item>
           </>}
           {d.hr && <Item label="Description"><span className="whitespace-pre-wrap">{d.hr.description}</span></Item>}
-          {e && <Item label="Vendor Name"><span className="whitespace-pre-wrap">{e.vendorName}</span></Item>}
+          {e && (!h || e.vendorName) && <Item label="Vendor Name"><span className="whitespace-pre-wrap">{e.vendorName}</span></Item>}
           {e && (d.type === "expenditure_small" || e.expenseDate) && <Item label="Date of expense">{isoToDisplay(e.expenseDate)}</Item>}
           {e?.publicationType && <Item label="Type of Publication">{e.publicationType}</Item>}
           {e?.publication && <Item label="Publication">{e.publication}</Item>}
@@ -275,6 +279,8 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
         </dl>
       </section>
 
+
+      {h && <HistoricalDetails h={h} />}
 
       {b && <BudgetHistory b={b} currentId={d.id} />}
 
@@ -290,7 +296,15 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
         <ul>{d.steps.map((s) => { const line = chainLine(s, s.stepNo === d.steps.length); return line && <li key={s.stepNo}>{line}</li>; })}</ul>
       </section>
 
-      <section aria-labelledby="req-steps" className="apr-no-print">
+      {h && (
+        <section aria-labelledby="req-hist-timeline">
+          <h2 id="req-hist-timeline" className="mb-1">Historical approval timeline</h2>
+          <p className="mb-3 text-sm text-[var(--z-muted)]">From {h.systemLabel}, kept apart from the hub&apos;s own timeline.</p>
+          <HistoricalTimeline h={h} />
+        </section>
+      )}
+
+      {!h && <section aria-labelledby="req-steps" className="apr-no-print">
         <h2 id="req-steps" className="mb-3">Approval</h2>
         <ul className="max-w-2xl space-y-2">
           {d.steps.map((s) => (
@@ -309,12 +323,14 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
             {d.status === "withdrawn" ? "Withdrawn" : d.status === "approved" ? "Approved" : "Rejected"} on {formatDate(d.decidedAt)}.
           </p>
         )}
-      </section>
+      </section>}
 
-      <section aria-labelledby="req-timeline" className="apr-no-print">
-        <h2 id="req-timeline" className="mb-3">Timeline</h2>
-        <Timeline events={d.events} />
-      </section>
+      {(!h || d.events.length > 0) && (
+        <section aria-labelledby="req-timeline" className="apr-no-print">
+          <h2 id="req-timeline" className="mb-3">{h ? "Timeline in the hub" : "Timeline"}</h2>
+          <Timeline events={d.events} />
+        </section>
+      )}
 
       <footer className="apr-print-only apr-print-foot"><PrintedOn by={viewerName} /></footer>
     </div>

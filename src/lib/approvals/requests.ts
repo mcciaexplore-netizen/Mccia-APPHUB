@@ -84,7 +84,8 @@ async function addEvent(e: typeof aprApprovalEvents.$inferInsert) {
 }
 
 /** The next serial number for a prefix in a financial year. One atomic statement, so two submissions never get the same number. */
-async function nextSerial(prefix: string, financialYear: string): Promise<number> {
+/** The next number of a prefix and financial year ("EXP", "2026-27"): one atomic statement, so two requests never get the same one. */
+export async function nextSerial(prefix: string, financialYear: string): Promise<number> {
   const [row] = await db
     .insert(aprCounters)
     .values({ key: `${prefix}-${financialYear}`, lastValue: 1 })

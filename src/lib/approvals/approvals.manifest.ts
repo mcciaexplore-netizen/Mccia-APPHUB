@@ -118,6 +118,7 @@ export const approvalsApps: NavApp[] = [
           { label: "User Permissions", href: "/approvals/admin/access", roles: ADMIN },
           { label: "Notification Settings", href: "/approvals/admin/settings", roles: ADMIN },
           { label: "Full Audit Log", href: "/approvals/admin/audit", roles: ADMIN },
+          { label: "Historical Import", href: "/approvals/admin/import", roles: ADMIN },
         ],
       },
     ],

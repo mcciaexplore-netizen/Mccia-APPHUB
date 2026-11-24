@@ -4,16 +4,18 @@ import type { AprRequestStatus } from "@/db/approvals-schema";
 /** Small pieces shared by the module's screens. No hooks here, so they render on the server and inside client components alike. */
 
 const PILL_LABEL: Record<AprRequestStatus | "dg", string> = {
-  pending: "Under Review", dg: "With Director General", approved: "Approved ✓", rejected: "Rejected", returned: "Needs Correction", withdrawn: "Withdrawn", draft: "Draft",
+  pending: "Under Review", dg: "With Director General", approved: "Approved ✓", rejected: "Rejected", returned: "Needs Correction", withdrawn: "Withdrawn", draft: "Draft", historical: "Historical",
 };
 
 /**
  * A request's status as a coloured pill, the same everywhere. A pending request past its first step is with the Director General (their step
  * is the last), so it is told apart from one still under review by the first approver.
  */
-export function StatusPill({ status, currentStepNo }: { status: AprRequestStatus; currentStepNo?: number }) {
+export function StatusPill({ status, currentStepNo, sourceStatus }: { status: AprRequestStatus; currentStepNo?: number; /** A historical ticket's status in the system it came from. */ sourceStatus?: string | null }) {
   const key = status === "pending" && (currentStepNo ?? 1) > 1 ? "dg" : status;
-  return <span className={`apr-pill apr-pill-${key} status-pill`}>{PILL_LABEL[key]}</span>;
+  // A historical ticket says so, with its status in the old system as it was there ("Historical · Recommend").
+  const label = status === "historical" && sourceStatus ? `Historical · ${sourceStatus}` : PILL_LABEL[key];
+  return <span className={`apr-pill apr-pill-${key} status-pill`} title={status === "historical" ? "Imported from an older approval system: archived and read-only" : undefined}>{label}</span>;
 }
 
 const EMPTY = {

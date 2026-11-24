@@ -14,6 +14,7 @@ import { BRANCH_KEY, splitBranch } from "./expense-branch";
 import { decisionMode, type DecisionMode } from "./calc";
 import { REVIEW_KEYS, isDgOnly, type ReviewItem, type ReviewKey } from "./approvals.manifest";
 import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
+import { historicalView, type HistoricalView } from "./historical/view";
 import type { SortKey } from "./list-params";
 
 /** Who may see every request: viewers, Approvals admins and the DG. (An admin can also change masters, but never decides.) */
@@ -111,6 +112,8 @@ export type RequestRow = {
   totalSteps: number;
   /** Waiting for the person asking, so Approve and Reject can be shown on the row. */
   mineToDecide: boolean;
+  /** A historical ticket's status in the system it was imported from ("Recommend"); null for a live request. */
+  sourceStatus: string | null;
 };
 
 /** The Category column: the HR or expense category, or for a budget its event. */
@@ -176,6 +179,8 @@ function conditions(user: ApprovalsUser, f: ListFilter, rules: readonly WatchRul
     needle
       ? or(
           ilike(aprRequests.requestNo, `%${likeEscape(needle)}%`),
+          // A historical ticket is also found by its ID in the system it came from.
+          ilike(aprRequests.legacyId, `%${likeEscape(needle)}%`),
           ilike(aprRequests.requesterName, `%${likeEscape(needle)}%`),
           ilike(aprExpenditureDetails.vendorName, `%${likeEscape(needle)}%`),
           ilike(aprCategories.name, `%${likeEscape(needle)}%`),
@@ -203,6 +208,7 @@ export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Pro
         approverName, overBudget: aprRequests.overBudget, vendorName: aprExpenditureDetails.vendorName, taxInvoiceDate: aprExpenditureDetails.taxInvoiceDate,
         currentStep: aprRequests.currentStep, totalSteps: aprRequests.totalSteps,
         mineToDecide: sql<boolean>`(${aprRequests.status} = 'pending' and ${aprRequests.currentApproverUserId} = ${user.id})`,
+        sourceStatus: sql<string | null>`(select h.source_status from apr_historical_records h where h.request_id = ${aprRequests.id})`,
       })
       .from(aprRequests)
       .leftJoin(aprHrDetails, eq(aprHrDetails.requestId, aprRequests.id))
@@ -380,6 +386,8 @@ export type RequestDetail = {
   attachments: AttachmentRow[];
   /** While the request is returned: who sent it back and what they asked to be corrected. */
   returned: { byName: string; comment: string | null; at: Date | null } | null;
+  /** A ticket imported from an older approval system: what it keeps from there (read-only, never part of the live workflow). */
+  historical: HistoricalView | null;
   /**
    * Whether this person sees it only through their watching rules (they did not raise it and are not one of its approvers): view only, they
    * read, print and export it, and decide nothing.
@@ -560,7 +568,10 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
     hr = { firstName: d.firstName, lastName: d.lastName, categoryName: hrRow.categoryName, description: d.description, budget: d.budgetAllocatedPaise != null ? budgetOf(d) : null };
   }
 
-  const budget = await budgetViewOf(req, user, steps);
+  const [budget, historical] = await Promise.all([
+    budgetViewOf(req, user, steps),
+    req.status === "historical" ? historicalView(requestId, hasAnyRole(user, ["approvals_admin"])) : Promise.resolve(null),
+  ]);
   const pending = req.status === "pending";
   const returnedStep = req.status === "returned" ? steps.find((x) => x.stepNo === req.currentStep && x.status === "returned") : undefined;
   const mine = pending && req.currentApproverUserId === user.id && req.requesterUserId !== user.id;
@@ -573,6 +584,7 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
     custom: splitBranch(req.customValues).rest.map((c) => ({ label: c.label, value: c.value })),
     hr, expenditure, budget, steps, events, attachments,
     returned: returnedStep ? { byName: returnedStep.approverName, comment: returnedStep.comment, at: returnedStep.decidedAt } : null,
+    historical,
     watching,
     can: {
       decide: mine,

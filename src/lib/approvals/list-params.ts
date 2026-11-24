@@ -9,7 +9,7 @@ import type { AprRequestStatus } from "@/db/approvals-schema";
 const SORT_KEYS = ["requestNo", "name", "category", "branch", "amount", "requestedAt", "status", "approver", "decidedAt"] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 
-export const STATUS_FILTERS = ["pending", "returned", "approved", "rejected", "withdrawn"] as const satisfies readonly AprRequestStatus[];
+export const STATUS_FILTERS = ["pending", "returned", "approved", "rejected", "withdrawn", "historical"] as const satisfies readonly AprRequestStatus[];
 
 /** The Type filter of a mixed list: an approval type (see watching.ts). */
 export const TYPE_FILTERS = ["hr", "expenditure", "budget"] as const;
