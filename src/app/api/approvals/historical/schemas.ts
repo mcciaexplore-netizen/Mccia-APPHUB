@@ -14,3 +14,6 @@ export const importInput = fileInput.extend({
     z.union([z.object({ categoryId: z.string().uuid() }).strict(), z.object({ create: z.literal(true) }).strict()]),
   ).default({}),
 });
+
+/** A recovered copy of a file the source names: the upload's id, and the file name the source gave (which reference it recovers). */
+export const recoveredInput = z.object({ fileId: z.string().uuid(), reference: z.string().min(1).max(500) });

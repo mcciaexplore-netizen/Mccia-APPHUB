@@ -493,7 +493,14 @@ export const aprImportBatches = pgTable(
 
 /** What a historical ticket keeps from its source record, beside the ordinary request row (status "historical"). */
 export type HistoricalTimelineEntry = { key: string; label: string; at: string | null; sourceText: string | null; actor: string | null; note: string | null };
-export type HistoricalField = { label: string; value: string };
+/**
+ * A source value kept as label and text. Two kinds carry more:
+ *   "attachment"  a file the source names (value: its file name). The source's export has the name only; attachmentId is set once an
+ *                 administrator attaches a recovered copy in the hub.
+ *   "listed_by"   when the source has no request date: the time the ticket is sorted and filtered by instead (value: as the source wrote
+ *                 it; note: where it came from). It is not the request date, and no financial year or number is taken from it.
+ */
+export type HistoricalField = { label: string; value: string; kind?: "attachment" | "listed_by"; attachmentId?: string | null; note?: string };
 export const aprHistoricalRecords = pgTable(
   "apr_historical_records",
   {

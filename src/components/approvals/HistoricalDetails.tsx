@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { formatDateTime } from "@/lib/approvals/format";
 import type { HistoricalView } from "@/lib/approvals/historical/view";
 
@@ -43,6 +44,7 @@ export function HistoricalTimeline({ h }: { h: HistoricalView }) {
           </li>
         ))}
       </ol>
+      {h.form === "hr" && !h.timeline.some((t) => t.key === "hr_stage") && <p className="mt-1 text-sm text-[var(--z-muted)]" data-testid="historical-no-hr-stage">No HR-stage action is recorded in the source.</p>}
       {!dg && <p className="mt-1 text-sm text-[var(--z-muted)]" data-testid="historical-no-dg">No DG action is recorded in the source.</p>}
     </>
   );
@@ -57,11 +59,31 @@ export function HistoricalDetails({ h }: { h: HistoricalView }) {
         <Item label="Source system">{h.systemLabel}</Item>
         <Item label={`ID in ${h.systemLabel}`}><span className="font-mono">{h.legacyId}</span></Item>
         <Item label={`Status in ${h.systemLabel}`}><b>{h.sourceStatus}</b></Item>
-        <Item label="Requester there">{h.requester.name}{h.requester.email ? ` · ${h.requester.email}` : ""}</Item>
+        <Item label="Requester there">
+          {h.requester.name}{h.requester.email ? ` · ${h.requester.email}` : ""}
+          {h.form === "hr" && <span className="block text-sm text-[var(--z-muted)]">The person who raised the request in {h.systemLabel}. The source does not name the employee it was about.</span>}
+        </Item>
         <Item label="Requester in the hub">{h.requester.linkedName ? `Linked to ${h.requester.linkedName}` : <span>Not linked{h.requester.note ? <span className="block text-sm text-[var(--z-muted)]">{h.requester.note}</span> : null}</span>}</Item>
         <Item label={`Category in ${h.systemLabel}`}>{h.category.name}{h.category.sourceId ? <span className="ml-2 font-mono text-xs text-[var(--z-muted)]">ID {h.category.sourceId}</span> : null}</Item>
         {h.category.hubName && h.category.hubName.trim() !== h.category.name.trim() && <Item label="Filed under (hub)">{h.category.hubName}</Item>}
         {h.sourceDates.map((f) => <Item key={f.label} label={`${f.label} (as written there)`}>{f.value}</Item>)}
+        {h.listedBy && (
+          <Item label="Listed by (not the request date)">
+            <span data-testid="historical-listed-by">{h.listedBy.value || "The time of the import"}</span>
+            {h.listedBy.note && <span className="block text-sm text-[var(--z-muted)]">{h.listedBy.note}</span>}
+          </Item>
+        )}
+        {h.attachments.map((a, i) => (
+          <Item key={`a-${i}`} label={`Attached file in ${h.systemLabel}`}>
+            <span className="break-all font-mono text-sm" data-testid="historical-file">{a.name}</span>
+            {a.attachmentId
+              ? <span className="block text-sm" data-testid="historical-file-recovered">Recovered: the copy is under Attachments.</span>
+              : <span className="block text-sm text-[var(--z-muted)]" data-testid="historical-file-missing">Not available: the export has the file&apos;s name only.</span>}
+            {!a.attachmentId && h.canAttach && (
+              <Link href="/approvals/admin/import#hist-files" className="apr-link block text-sm" data-testid="recover-link">Attach a recovered copy (Historical Import)</Link>
+            )}
+          </Item>
+        ))}
         {h.extra.map((f) => <Item key={`x-${f.label}`} label={f.label}><span className="whitespace-pre-wrap">{f.value}</span></Item>)}
         <Item label="Imported">{formatDateTime(h.importedAt)} by {h.importedByName}, from {h.fileName}</Item>
       </dl>

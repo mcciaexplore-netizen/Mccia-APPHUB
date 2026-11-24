@@ -43,6 +43,10 @@ function watchedByRules(rules: readonly WatchRule[]): SQL {
  * Who may see a request: the people who oversee everything, the person who raised it, anyone who is (or was) one of its approvers, and the
  * watchers whose rules match it (read only). Everyone else gets nothing back, as if it did not exist. Drafts are never visible. `rules`: this
  * person's watching rules (watchRules).
+ *
+ * A historical ticket (imported, status "historical") has no approvers, so it follows its form's rule instead: the HR Admin, who is the first
+ * approver of every live HR request, sees the historical HR tickets, and the Expense Admin the historical expenditures. Neither sees the
+ * other's, so HR records are never shown through expense permissions.
  */
 function visibility(user: ApprovalsUser, rules: readonly WatchRule[]): SQL | undefined {
   const notDraft = ne(aprRequests.status, "draft");
@@ -53,6 +57,7 @@ function visibility(user: ApprovalsUser, rules: readonly WatchRule[]): SQL | und
       eq(aprRequests.requesterUserId, user.id),
       sql`exists (select 1 from ${aprRequestSteps} s where s.request_id = ${aprRequests.id} and s.approver_user_id = ${user.id})`,
       rules.length ? watchedByRules(rules) : undefined,
+      user.place ? and(eq(aprRequests.status, "historical"), inArray(aprRequests.type, user.place === "hr" ? ["hr"] : ["expenditure_large", "expenditure_small"])) : undefined,
     ),
   );
 }
@@ -114,6 +119,8 @@ export type RequestRow = {
   mineToDecide: boolean;
   /** A historical ticket's status in the system it was imported from ("Recommend"); null for a live request. */
   sourceStatus: string | null;
+  /** A historical ticket whose source has no request date: requestedAt is only what it is listed by. */
+  requestDateMissing: boolean;
 };
 
 /** The Category column: the HR or expense category, or for a budget its event. */
@@ -209,6 +216,7 @@ export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Pro
         currentStep: aprRequests.currentStep, totalSteps: aprRequests.totalSteps,
         mineToDecide: sql<boolean>`(${aprRequests.status} = 'pending' and ${aprRequests.currentApproverUserId} = ${user.id})`,
         sourceStatus: sql<string | null>`(select h.source_status from apr_historical_records h where h.request_id = ${aprRequests.id})`,
+        requestDateMissing: sql<boolean>`exists (select 1 from apr_historical_records h, jsonb_array_elements(h.source_dates) f where h.request_id = ${aprRequests.id} and f->>'kind' = 'listed_by')`,
       })
       .from(aprRequests)
       .leftJoin(aprHrDetails, eq(aprHrDetails.requestId, aprRequests.id))

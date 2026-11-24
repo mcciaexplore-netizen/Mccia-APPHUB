@@ -85,7 +85,7 @@ export function HistoricalImport({ batches }: { batches: BatchRow[] }) {
       <section aria-labelledby="hist-upload" className="space-y-3">
         <h2 id="hist-upload" className="text-lg">1. Choose the file</h2>
         <p className="max-w-3xl text-sm text-subtle">
-          A JSON export from the old system. Supported today: Zoho Creator&apos;s <b>All Expenditures</b> export. Nothing is saved until you press
+          A JSON export from the old system. Supported today: Zoho Creator&apos;s <b>All Expenditures</b> and <b>All Hr</b> exports, recognised by their contents. Nothing is saved until you press
           Import: first you see what would happen to every record. Imported records are archived tickets: they are never routed to an approver,
           nobody is notified, and nobody can approve, reject or change them.
         </p>
@@ -102,7 +102,10 @@ export function HistoricalImport({ batches }: { batches: BatchRow[] }) {
       {preview && (
         <section aria-labelledby="hist-preview" className="space-y-5" data-testid="hist-preview">
           <h2 id="hist-preview" className="text-lg">2. Check what would happen</h2>
-          <p className="text-sm text-subtle">{preview.sourceLabel} · {preview.fileName}</p>
+          <p className="text-sm text-subtle" data-testid="hist-source">
+            {preview.sourceLabel} · {preview.fileName} · They become <b>{preview.form === "hr" ? "HR requests" : "Expenditure requests"}</b>
+            {preview.form === "hr" ? ", shown only to those who may see HR requests." : "."}
+          </p>
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <Count label="Records in the file" value={preview.total} testId="hist-total" />
             <Count label="Ready to import" value={preview.ready + preview.review} tone="text-[var(--z-green)]" testId="hist-ready" />
@@ -111,6 +114,19 @@ export function HistoricalImport({ batches }: { batches: BatchRow[] }) {
             <Count label="Cannot import" value={preview.errors} tone={preview.errors ? "text-[var(--z-red)]" : undefined} testId="hist-errors" />
             <Count label="Requesters not linked" value={preview.unmatchedRequesters.reduce((n, u) => n + u.count, 0)} testId="hist-unlinked" />
           </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Count label="No date of request" value={preview.missingDates} testId="hist-missing-dates" />
+            <Count label="No amount" value={preview.missingAmounts} testId="hist-missing-amounts" />
+            <Count label="No requester email" value={preview.missingEmails} testId="hist-missing-emails" />
+            <Count label="Files named (names only)" value={preview.attachmentRefs} testId="hist-attachments" />
+          </div>
+          {(preview.missingDates > 0 || preview.attachmentRefs > 0) && (
+            <p className="max-w-3xl text-xs text-subtle">
+              Nothing missing is filled in. A record with no date of request keeps none: it gets no financial year, is numbered in the
+              undated series ({preview.form === "hr" ? "HR" : "EXP"}-UNDATED-0001, …) and is listed by the earliest time it does record, shown as
+              such. A file the source names is kept by name; a recovered copy can be attached to the ticket later.
+            </p>
+          )}
 
           <div className="grid gap-5 lg:grid-cols-2">
             <div>
@@ -155,8 +171,8 @@ export function HistoricalImport({ batches }: { batches: BatchRow[] }) {
                           ) : (
                             <select aria-label={`Hub category for ${c.source}`} className="input min-w-64" value={decisions[key] ?? ""} onChange={(e) => setDecisions({ ...decisions, [key]: e.target.value })} data-testid="hist-category-choice">
                               <option value="">Choose…</option>
-                              <option value={CREATE}>Add &quot;{c.source}&quot; as a historical category (not offered on forms)</option>
-                              <optgroup label="File under an existing category">
+                              <option value={CREATE}>Add &quot;{c.source}&quot; as a historical {preview.form === "hr" ? "HR request type" : "category"} (not offered on forms)</option>
+                              <optgroup label={preview.form === "hr" ? "File under an existing HR request type" : "File under an existing category"}>
                                 {preview.hubCategories.map((h) => <option key={h.id} value={h.id}>{h.name}{h.active ? "" : " (inactive)"}</option>)}
                               </optgroup>
                             </select>
@@ -169,8 +185,11 @@ export function HistoricalImport({ batches }: { batches: BatchRow[] }) {
               </table>
             </div>
             <p className="mt-2 text-xs text-subtle">
-              Filing under an existing category saves the old name as that category&apos;s old spelling, so the next import matches it by itself. A
-              historical category is added inactive: the live forms never offer it. The original category and its ID stay on every ticket.
+              {preview.form === "hr"
+                ? "Only an exact name matches by itself: file a category under an existing HR request type only when it is the same thing. "
+                : "Filing under an existing category saves the old name as that category's old spelling, so the next import matches it by itself. "}
+              A historical {preview.form === "hr" ? "HR request type" : "category"} is added inactive: the live forms never offer it. The original
+              category stays on every ticket.
             </p>
           </div>
 
@@ -195,7 +214,7 @@ export function HistoricalImport({ batches }: { batches: BatchRow[] }) {
                     <tr key={r.index}>
                       <td>{r.index}</td>
                       <td className="font-mono text-xs">{r.legacyId || "—"}</td>
-                      <td className="whitespace-nowrap">{r.requestedAt ? formatDateTime(r.requestedAt) : "—"}</td>
+                      <td className="whitespace-nowrap">{r.requestedAt ? formatDateTime(r.requestedAt) : <span className="text-subtle">Not recorded</span>}</td>
                       <td>{r.requesterName || "—"}{r.linkedName ? <span className="block text-xs text-subtle">Linked to {r.linkedName}</span> : null}</td>
                       <td>{r.categoryName || "—"}</td>
                       <td className="whitespace-nowrap text-right">{r.amountPaise == null ? "—" : formatINR(r.amountPaise, { symbol: true })}</td>
