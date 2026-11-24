@@ -1863,6 +1863,76 @@ eq("payment desk: nothing can be smuggled into the address", paymentDeskEmbedUrl
   eq("hist: the unlinked requester is nobody's id", HI.UNLINKED_REQUESTER_ID, "00000000-0000-0000-0000-000000000000");
 }
 
+// Historical import of Zoho HR records (All Hr): no email, no employee, many without a date; nothing made up
+{
+  const hrRec = (o: Record<string, unknown> = {}) => ({ Status: "Approved", Satavisha_Natu: "21-Mar-2026 11:46:39", Date_of_Request: "", Category: "Other", DG: "26-Mar-2026 10:30:09",
+    File_upload: "", Amount: "25000.00", ID: "192778000001521005", Name: "Rajnikant Gaikwad", ...o });
+  const hrFile = (rows: unknown[]) => JSON.stringify({ All_Hr: rows });
+  const hrOne = (o: Record<string, unknown> = {}) => { const r = HI.readSource(hrFile([hrRec(o)])); if (!r.ok) throw new Error(r.error); return r.records[0]; };
+  const read = HI.readSource(hrFile([hrRec()]));
+  eq("hist-hr: recognised by its structure as Zoho HR", read.ok && [read.adapter.key, read.adapter.form, read.adapter.requestPrefix, read.adapter.system], ["zoho_hr", "hr", "HR", "zoho_creator_hr"]);
+  eq("hist-hr: expenditures are still recognised as expenditures", (HI.readSource(JSON.stringify({ All_Expenditures: [{}] })) as { adapter: { key: string } }).adapter.key, "zoho_expenditures");
+  eq("hist-hr: a file with both layouts is the first one's, not guessed from its name", (HI.readSource(JSON.stringify({ All_Hr: [hrRec()] })) as { adapter: { form: string } }).adapter.form, "hr");
+  const u = hrOne();
+  eq("hist-hr: an undated record still imports", u.errors, []);
+  eq("hist-hr: becomes an HR request", u.type, "hr");
+  eq("hist-hr: no request date is made up", [u.requestedAt, u.financialYear], [null, null]);
+  eq("hist-hr: listed by the earliest time it records (HR stage)", u.listedAt, "2026-03-21T06:16:39.000Z");
+  eq("hist-hr: the listing time is kept as such, never as the request date",
+    u.sourceDates.filter((f) => f.kind === "listed_by").map((f) => [f.label, f.value]), [["Listed by", "21-Mar-2026 11:46:39"]]);
+  eq("hist-hr: the missing date is noted", u.notes.some((n) => n.startsWith("No date of request in Zoho. The ticket is listed by the HR-stage time")), true);
+  eq("hist-hr: no email, none invented", u.requesterEmail, "");
+  eq("hist-hr: the name is kept exactly", u.requesterName, "Rajnikant Gaikwad");
+  eq("hist-hr: amount read", u.amountPaise, 2500000);
+  eq("hist-hr: an approved record's decision time is its DG-stage time", u.decidedAt, "2026-03-26T05:00:09.000Z");
+  eq("hist-hr: the timeline names nobody for the HR and DG stages", u.timeline.map((t) => [t.key, t.actor, t.at !== null]), [["submitted", "Rajnikant Gaikwad", false], ["hr_stage", null, true], ["dg", null, true]]);
+  eq("hist-hr: the stage field's name is not taken as the approver", u.timeline.some((t) => /satavisha/i.test(t.actor ?? "")), false);
+  eq("hist-hr: a stage is not labelled approved or rejected", u.timeline.filter((t) => t.key !== "submitted").every((t) => !/approved|rejected/i.test(t.label)), true);
+  const d = hrOne({ Date_of_Request: "22-Jan-2026 18:06:44", Status: "Rejected", DG: "", Amount: "" });
+  eq("hist-hr: a dated record has its date and financial year", [d.requestedAt, d.listedAt, d.financialYear], ["2026-01-22T12:36:44.000Z", "2026-01-22T12:36:44.000Z", "2025-26"]);
+  eq("hist-hr: a dated record has no listing time", d.sourceDates.some((f) => f.kind === "listed_by"), false);
+  eq("hist-hr: Rejected is kept exactly", d.sourceStatus, "Rejected");
+  eq("hist-hr: a rejection's stage is not guessed, so it has no decision time", d.decidedAt, null);
+  eq("hist-hr: the stage of a rejection is noted as unknown", d.notes.includes("Zoho does not record at which stage it was rejected."), true);
+  eq("hist-hr: no amount stays empty, and is noted", [d.amountPaise, d.notes.includes("No amount in the source record.")], [null, true]);
+  eq("hist-hr: a missing DG time adds no DG entry", d.timeline.map((t) => t.key), ["submitted", "hr_stage"]);
+  const f = hrOne({ File_upload: "1701165739733_Trip_November_2023_.docx" });
+  eq("hist-hr: the file name is kept as a reference with no file", f.extra.filter((x) => x.kind === "attachment").map((x) => [x.value, x.attachmentId]), [["1701165739733_Trip_November_2023_.docx", null]]);
+  eq("hist-hr: the missing file is noted", f.notes.some((n) => n.includes("has only its name")), true);
+  const dgOnly = hrOne({ Satavisha_Natu: "", DG: "21-Mar-2025 09:51:59" });
+  eq("hist-hr: with no HR-stage time, listed by the DG-stage time", dgOnly.listedAt, "2025-03-21T04:21:59.000Z");
+  eq("hist-hr: approved with no HR-stage time is noted", dgOnly.notes.includes("Approved in Zoho, but no HR-stage time is recorded."), true);
+  const none = hrOne({ Satavisha_Natu: "", DG: "" });
+  eq("hist-hr: no time at all: no listing time either (the import uses its own time, said so)", [none.listedAt, none.sourceDates.find((x) => x.kind === "listed_by")?.value], [null, ""]);
+  eq("hist-hr: a bad date is an error, not guessed", hrOne({ Date_of_Request: "2026-01-22" }).errors.length, 1);
+  eq("hist-hr: no category is an error", hrOne({ Category: "" }).errors, ["No category."]);
+  eq("hist-hr: no name is an error", hrOne({ Name: " " }).errors, ["No requester name."]);
+  eq("hist-hr: an object for a field is an error, not coerced", hrOne({ Amount: { v: 1 } }).errors.includes("Amount is not text."), true);
+  eq("hist-hr: an unknown field is kept", hrOne({ Remarks: "x" }).extra.map((x) => [x.label, x.value]), [["Remarks", "x"]]);
+  const dup = HI.readSource(hrFile([hrRec(), hrRec()]));
+  eq("hist-hr: a repeated ID in the file is an error on the second", dup.ok && dup.records.map((r) => r.errors.length), [0, 1]);
+
+  // The real export (12 records), when its path is given: it holds staff names, so it is not kept in the repository.
+  const realPath = process.env.ZOHO_HR_FILE;
+  if (!realPath) console.log("  (hist-hr real: skipped, set ZOHO_HR_FILE to the All Hr.json export to run them)");
+  else {
+  const realText = readFileSync(realPath, "utf8");
+  const real = HI.readSource(realText);
+  if (!real.ok) throw new Error(real.error);
+  const rs = real.records;
+  eq("hist-hr real: 12 records, none with errors", [rs.length, rs.filter((r) => r.errors.length).length], [12, 0]);
+  eq("hist-hr real: 10 Approved, 2 Rejected", [rs.filter((r) => r.sourceStatus === "Approved").length, rs.filter((r) => r.sourceStatus === "Rejected").length], [10, 2]);
+  eq("hist-hr real: 5 amounts, 7 without", [rs.filter((r) => r.amountPaise !== null).length, rs.filter((r) => r.amountPaise === null).length], [5, 7]);
+  eq("hist-hr real: 4 dated, 8 undated (none given a date)", [rs.filter((r) => r.requestedAt).length, rs.filter((r) => !r.requestedAt && !r.financialYear).length], [4, 8]);
+  eq("hist-hr real: every undated record has a listing time from its own stages", rs.filter((r) => !r.requestedAt).every((r) => r.listedAt && r.sourceDates.some((x) => x.kind === "listed_by" && x.value)), true);
+  eq("hist-hr real: 5 file references", rs.reduce((n, r) => n + r.extra.filter((x) => x.kind === "attachment").length, 0), 5);
+  eq("hist-hr real: no email anywhere", rs.every((r) => r.requesterEmail === ""), true);
+  eq("hist-hr real: every ID kept", rs.map((r) => r.legacyId).filter((x) => /^1927780000\d+$/.test(x)).length, 12);
+  eq("hist-hr real: 5 categories exactly as written", [...new Set(rs.map((r) => r.categorySourceName))].sort(), ["Celebration", "Certificate", "Expenses", "Letter Draft(Offer Letter)", "Other"]);
+  eq("hist-hr real: the whole record is kept", rs[0].source, JSON.parse(realText).All_Hr[0]);
+  }
+}
+
 // Forgot password: link format, limits, https-only links, password rules, the email
 {
   const T = "a".repeat(64);

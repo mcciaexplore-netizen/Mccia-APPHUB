@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 const HEADER = ["Request No.", "Type", "Name", "Category", "Branch", "Vendor", "Amount (INR)", "Date of Request", "Status", "Approver", "Decision Date"];
 const line = (r: RequestRow) => [
   r.type === "budget" ? requestNoText(r) : (r.requestNo ?? ""), TYPE_LABEL[r.type], r.name, r.categoryName ?? "", r.branchName ?? "", r.vendorName ?? "",
-  r.amountPaise == null ? "" : formatINR(r.amountPaise), formatDateTime(r.requestedAt), r.sourceStatus ? `${STATUS_LABEL[r.status]} (${r.sourceStatus})` : STATUS_LABEL[r.status],
+  r.amountPaise == null ? "" : formatINR(r.amountPaise), r.requestDateMissing ? `Not recorded (listed by ${formatDateTime(r.requestedAt)})` : formatDateTime(r.requestedAt), r.sourceStatus ? `${STATUS_LABEL[r.status]} (${r.sourceStatus})` : STATUS_LABEL[r.status],
   r.approverName ?? "", formatDateTime(r.decidedAt),
 ];
 

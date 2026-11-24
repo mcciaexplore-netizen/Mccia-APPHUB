@@ -192,8 +192,13 @@ function statusDate(d: RequestDetail): string {
 export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDetail; submitter: { name: string; department: string | null }; viewerName: string }) {
   const e = d.expenditure;
   const b = d.budget;
-  const name = d.hr ? `${d.hr.firstName} ${d.hr.lastName}` : d.requesterName;
   const h = d.historical;
+  // A historical HR ticket names no employee (its source does not), so it shows the requester's name as the source gave it.
+  const name = d.hr && (d.hr.firstName || d.hr.lastName) ? `${d.hr.firstName} ${d.hr.lastName}` : d.requesterName;
+  // With no request date in the source, the ticket's date is only what it is listed by, never shown as the request date.
+  const requestDate = h?.listedBy
+    ? <span data-testid="request-date-not-recorded">Not recorded in {h.systemLabel}<span className="block text-sm text-[var(--z-muted)]">Listed by {formatDateTime(d.requestedAt)}; see Historical Approval Details.</span></span>
+    : formatDateTime(d.requestedAt);
   const status = <StatusPill status={d.status} currentStepNo={d.steps.find((s) => s.status === "pending")?.stepNo} sourceStatus={h?.sourceStatus} />;
 
   // With at least one revision, a budget's page has a second column: what changed between its versions (not printed).
@@ -209,7 +214,7 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
         <dl className="zdl">
           <Item label="Submitted by">{submitter.name}</Item>
           <Item label="Department">{submitter.department}</Item>
-          <Item label="Submitted on">{formatDateTime(d.requestedAt)}</Item>
+          <Item label="Submitted on">{requestDate}</Item>
           <Item label="Status"><>{status} {statusDate(d)}</></Item>
         </dl>
       </div>
@@ -264,7 +269,7 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
           {!b && <Item label="Category">{d.hr?.categoryName ?? e?.categoryName}</Item>}
           {e?.branchName && <Item label="Branch">{e.branchName}</Item>}
           {e && <Item label="Nature of Expenditure"><span className="whitespace-pre-wrap">{e.nature}</span></Item>}
-          <Item label="Date of Request">{formatDateTime(d.requestedAt)}</Item>
+          <Item label="Date of Request">{requestDate}</Item>
           {b ? <BudgetItems b={b} amountPaise={d.amountPaise} requestNo={d.requestNo} status={d.status} /> : <>
             <Item label="Financial year">{d.financialYear}</Item>
             <Item label="Amount">{money(d.amountPaise)}</Item>
@@ -288,6 +293,11 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
         <section aria-labelledby="req-files">
           <h2 id="req-files" className="mb-3">Attachments</h2>
           <div className="max-w-2xl"><Files items={d.attachments} /></div>
+          {h?.attachments.some((x) => !x.attachmentId) && (
+            <p className="mt-2 max-w-2xl text-sm text-[var(--z-muted)]" data-testid="historical-files-note">
+              {h.systemLabel} names {h.attachments.filter((x) => !x.attachmentId).map((x) => x.name).join(", ")}, but only the name was exported: the file is not available here.
+            </p>
+          )}
         </section>
       )}
 

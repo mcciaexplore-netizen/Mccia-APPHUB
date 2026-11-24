@@ -100,7 +100,9 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
                   {screen.vendor && <td className="hidden md:table-cell max-w-48 truncate" title={r.vendorName ?? ""}>{r.vendorName ?? ""}</td>}
                   {screen.vendor && <td className="hidden md:table-cell whitespace-nowrap">{isoToDisplay(r.taxInvoiceDate)}</td>}
                   <td className="whitespace-nowrap text-right">{r.amountPaise == null ? "" : formatINR(r.amountPaise)}</td>
-                  <td className="hidden md:table-cell whitespace-nowrap">{formatDate(r.requestedAt)}</td>
+                  <td className="hidden md:table-cell whitespace-nowrap">{r.requestDateMissing
+                    ? <span className="text-[var(--z-muted)]" title={`No date of request in the source: listed by ${formatDate(r.requestedAt)}`} data-testid="date-not-recorded">Not recorded</span>
+                    : formatDate(r.requestedAt)}</td>
                   <td className="whitespace-nowrap"><span className="inline-flex flex-wrap items-center gap-1"><StatusPill status={r.status} currentStepNo={r.currentStep} sourceStatus={r.sourceStatus} /></span></td>
                   <td className="hidden md:table-cell">{r.approverName ?? ""}</td>
                   <td className="hidden md:table-cell whitespace-nowrap">{r.decidedAt ? formatDateTime(r.decidedAt) : ""}</td>

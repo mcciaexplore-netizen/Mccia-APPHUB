@@ -6,8 +6,9 @@ import { financialYearOf, formatINR } from "../format";
  * part (no database, no server code), so the unit tests and the preview share it: reading a source file, checking each record, and turning
  * it into the Approval System's shape. src/lib/approvals/historical/import.ts does the database work.
  *
- * A source is read by an adapter that knows its file format. Today there is one, Zoho Creator's "All Expenditures" JSON export; another
- * system (or a CSV or Excel sheet) is one more adapter that returns the same HistoricalRecord.
+ * A source is read by an adapter that knows its file format, recognised by the file's structure (never by its name). Today there are two,
+ * Zoho Creator's "All Expenditures" and "All Hr" JSON exports; another system (or a CSV or Excel sheet) is one more adapter that returns
+ * the same HistoricalRecord.
  *
  * Rules that hold for every source:
  *   - Nothing is invented. A value the source does not have stays empty and is noted; no approver is ever guessed from a timestamp.
@@ -30,10 +31,16 @@ export type HistoricalRecord = {
   sourceStatus: string;
   requesterName: string;
   requesterEmail: string;
-  /** ISO instant, read as Indian time. */
+  /** ISO instant, read as Indian time. Null when the source has no request date (allowed for HR records only). */
   requestedAt: string | null;
+  /**
+   * The time the ticket is sorted and filtered by: the request date, or when the source has none, the earliest action time it records
+   * (kept as a "listed_by" field, so it is never shown as the request date). Null when the source records no time at all.
+   */
+  listedAt: string | null;
+  /** Only from a real request date: a record without one has no financial year. */
   financialYear: string | null;
-  type: "expenditure_large";
+  type: "expenditure_large" | "hr";
   /** The category for matching with the hub's (trimmed). */
   categoryName: string;
   /** The category exactly as the source wrote it (a trailing space included), kept for the record. */
@@ -60,6 +67,10 @@ export type SourceAdapter = {
   systemLabel: string;
   /** What the file holds, in words. */
   label: string;
+  /** Which of the hub's forms the records become: HR requests (HR categories) or expenditures (expense categories). */
+  form: "hr" | "expenditure";
+  /** The hub's request number prefix for that form (HR, EXP). */
+  requestPrefix: string;
   /** The prefix of the legacy id kept on the request ("zoho:192778000002062013"), unique across sources. */
   legacyPrefix: string;
   detect(data: unknown): boolean;
@@ -94,9 +105,32 @@ export function parseSourceAmount(text: string): { ok: true; paise: number | nul
 
 const str = (v: unknown): string | null => (typeof v === "string" ? v : typeof v === "number" && Number.isFinite(v) ? String(v) : v == null ? "" : null);
 
-/** The time-ordered timeline, entries with no time last (in the order given). */
-const byTime = (entries: HistoricalTimelineEntry[]) =>
-  entries.map((e, i) => ({ e, i })).sort((a, b) => (a.e.at && b.e.at ? a.e.at.localeCompare(b.e.at) : a.e.at ? -1 : b.e.at ? 1 : a.i - b.i) || a.i - b.i).map((x) => x.e);
+/** The time-ordered timeline, entries with no time last (in the order given); the submission stays first even when its time is unknown. */
+const byTime = (entries: HistoricalTimelineEntry[]) => {
+  const first = entries.filter((e) => e.key === "submitted" && !e.at);
+  const rest = entries.filter((e) => !first.includes(e));
+  return [...first, ...rest.map((e, i) => ({ e, i })).sort((a, b) => (a.e.at && b.e.at ? a.e.at.localeCompare(b.e.at) : a.e.at ? -1 : b.e.at ? 1 : a.i - b.i) || a.i - b.i).map((x) => x.e)];
+};
+
+/** Reads a record's fields as text, each within its length limit; anything else (an object, a list) is an error, never coerced. */
+function readFields(rec: Record<string, unknown>, fields: readonly string[], limits: Record<string, number>, errors: string[]): Record<string, string> {
+  const v: Record<string, string> = {};
+  for (const f of fields) {
+    const s = str(rec[f]);
+    if (s === null) errors.push(`${f} is not text.`);
+    else if (s.length > (limits[f] ?? 1000)) errors.push(`${f} is too long (${s.length} characters).`);
+    v[f] = (s ?? "").replace(/\r\n/g, "\n");
+  }
+  return v;
+}
+
+/** The source's fields the hub has no place for, kept as label and value. */
+const extraFields = (rec: Record<string, unknown>, known: readonly string[]): HistoricalField[] =>
+  Object.entries(rec)
+    .filter(([k]) => !known.includes(k))
+    .map(([k, val]) => ({ label: k.replace(/_/g, " ").slice(0, 100), value: (typeof val === "string" ? val : JSON.stringify(val) ?? "").slice(0, 4000) }));
+
+const ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
 
 /* ---------------------------------------------------------------- Zoho Creator: All Expenditures */
 
@@ -109,6 +143,8 @@ export const zohoExpenditures: SourceAdapter = {
   system: "zoho_creator",
   systemLabel: "Zoho Creator",
   label: "Zoho Creator expenditure approvals (All Expenditures)",
+  form: "expenditure",
+  requestPrefix: "EXP",
   legacyPrefix: "zoho",
   detect: (data) => !!data && typeof data === "object" && !Array.isArray(data) && Array.isArray((data as Record<string, unknown>).All_Expenditures),
   records: (data) => (data as { All_Expenditures: unknown[] }).All_Expenditures,
@@ -117,7 +153,7 @@ export const zohoExpenditures: SourceAdapter = {
     const notes: string[] = [];
     const rec = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
     const blank: HistoricalRecord = {
-      index, legacyId: "", sourceStatus: "", requesterName: "", requesterEmail: "", requestedAt: null, financialYear: null, type: "expenditure_large",
+      index, legacyId: "", sourceStatus: "", requesterName: "", requesterEmail: "", requestedAt: null, listedAt: null, financialYear: null, type: "expenditure_large",
       categoryName: "", categorySourceName: "", categorySourceId: null, amountPaise: null, description: "", decidedAt: null, sourceDates: [], timeline: [], extra: [], notes, errors, source: rec ?? {},
     };
     if (!rec) {
@@ -194,7 +230,7 @@ export const zohoExpenditures: SourceAdapter = {
 
     return {
       ...blank,
-      legacyId: id, sourceStatus: status, requesterName: name, requesterEmail: email.toLowerCase(), requestedAt,
+      legacyId: id, sourceStatus: status, requesterName: name, requesterEmail: email.toLowerCase(), requestedAt, listedAt: requestedAt,
       financialYear: requestedAt ? financialYearOf(new Date(requestedAt)) : null,
       categoryName: category, categorySourceName: v.Category, categorySourceId: v["Category.ID"].trim() || null, amountPaise: paise, description: v.Nature_of_Expenditure.trim(),
       decidedAt: (status === "Approved" || status === "Rejected") && dgAt ? dgAt : null,
@@ -210,7 +246,121 @@ export const zohoExpenditures: SourceAdapter = {
   },
 };
 
-export const ADAPTERS: SourceAdapter[] = [zohoExpenditures];
+/* ---------------------------------------------------------------- Zoho Creator: All Hr */
+
+const ZOHO_HR_FIELDS = ["ID", "Name", "Date_of_Request", "Status", "Category", "Amount", "Satavisha_Natu", "DG", "File_upload"] as const;
+const HR_LIMITS: Record<string, number> = { ID: 40, Name: 200, Date_of_Request: 40, Status: 60, Category: 200, Amount: 20, Satavisha_Natu: 40, DG: 40, File_upload: 500 };
+
+/**
+ * Zoho's HR approvals. The export has no email and no employee: Name is the person who raised the request in Zoho, and is never taken as
+ * the employee a letter or certificate was for. Satavisha_Natu is Zoho's HR-stage field and DG its DG-stage field; both hold a time only,
+ * so neither names who acted (the field's name is not taken as the approver) nor what was decided at that step. Many records have no date
+ * of request: they are kept without one (no financial year, numbered in their own series), and sorted by the earliest time they do record.
+ */
+export const zohoHr: SourceAdapter = {
+  key: "zoho_hr",
+  system: "zoho_creator_hr",
+  systemLabel: "Zoho Creator",
+  label: "Zoho Creator HR approvals (All Hr)",
+  form: "hr",
+  requestPrefix: "HR",
+  legacyPrefix: "zoho-hr",
+  detect: (data) => !!data && typeof data === "object" && !Array.isArray(data) && Array.isArray((data as Record<string, unknown>).All_Hr),
+  records: (data) => (data as { All_Hr: unknown[] }).All_Hr,
+  read(raw, index) {
+    const errors: string[] = [];
+    const notes: string[] = [];
+    const rec = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
+    const blank: HistoricalRecord = {
+      index, legacyId: "", sourceStatus: "", requesterName: "", requesterEmail: "", requestedAt: null, listedAt: null, financialYear: null, type: "hr",
+      categoryName: "", categorySourceName: "", categorySourceId: null, amountPaise: null, description: "", decidedAt: null, sourceDates: [], timeline: [], extra: [], notes, errors, source: rec ?? {},
+    };
+    if (!rec) {
+      errors.push("This entry is not a record (expected an object with ID, Name, Status...).");
+      return blank;
+    }
+    const v = readFields(rec, ZOHO_HR_FIELDS, HR_LIMITS, errors);
+    const id = v.ID.trim();
+    if (!id) errors.push("No ID: the record cannot be told apart from others.");
+    else if (!ID_PATTERN.test(id)) errors.push("The ID has characters an ID cannot have.");
+    const name = v.Name.trim();
+    if (!name) errors.push("No requester name.");
+    const status = v.Status.trim();
+    if (!status) errors.push("No status.");
+    else if (!ZOHO_STATUSES.includes(status)) notes.push(`"${status}" is not one of Zoho's usual statuses; it is kept as it is.`);
+    const category = v.Category.trim();
+    if (!category) errors.push("No category.");
+
+    const dateText = v.Date_of_Request.trim();
+    const requestedAt = dateText ? parseSourceDateTime(dateText) : null;
+    if (dateText && !requestedAt) errors.push(`The date of request "${dateText}" is not a date and time (expected like 28-Oct-2026 14:49:47).`);
+    const hrText = v.Satavisha_Natu.trim();
+    const hrAt = hrText ? parseSourceDateTime(hrText) : null;
+    if (hrText && !hrAt) errors.push(`The HR-stage time "${hrText}" is not a date and time.`);
+    const dgText = v.DG.trim();
+    const dgAt = dgText ? parseSourceDateTime(dgText) : null;
+    if (dgText && !dgAt) errors.push(`The DG-stage time "${dgText}" is not a date and time.`);
+
+    const amount = parseSourceAmount(v.Amount);
+    if (!amount.ok) errors.push(`The amount "${v.Amount}" is not a number (expected like 25000.00).`);
+    const paise = amount.ok ? amount.paise : null;
+    if (amount.ok && paise === null) notes.push("No amount in the source record.");
+    const file = v.File_upload.trim();
+
+    // With no request date, the earliest time the record does have decides only where the ticket is listed; it is never shown or used as
+    // the request date, and gives no financial year.
+    const earliest = [hrAt && { at: hrAt, text: hrText, from: "the HR-stage time" }, dgAt && { at: dgAt, text: dgText, from: "the DG-stage time" }]
+      .filter((x): x is { at: string; text: string; from: string } => !!x)
+      .sort((a, b) => a.at.localeCompare(b.at))[0];
+    if (!dateText) {
+      notes.push(earliest
+        ? `No date of request in Zoho. The ticket is listed by ${earliest.from} (${earliest.text}), which is not the request date; it has no financial year and is numbered in the undated series.`
+        : "No date of request in Zoho, and no other time either: the ticket is listed by the time of the import, has no financial year and is numbered in the undated series.");
+    }
+    if (status === "Approved" && !dgAt) notes.push("Approved in Zoho, but no DG-stage time is recorded.");
+    if (status === "Approved" && !hrAt) notes.push("Approved in Zoho, but no HR-stage time is recorded.");
+    if (status === "Rejected" && !dgAt && !hrAt) notes.push("Rejected in Zoho, but no time of the rejection is recorded.");
+    if (status === "Rejected") notes.push("Zoho does not record at which stage it was rejected.");
+    if (status === "Pending") notes.push("Still pending in Zoho. Archived as it was, not sent to anyone's queue.");
+    if (requestedAt && hrAt && hrAt < requestedAt) notes.push("The HR-stage time is before the date of request.");
+    if (hrAt && dgAt && dgAt < hrAt) notes.push("The DG-stage time is before the HR-stage time.");
+    if (file) notes.push(`Zoho names an attached file (${file}), but the export has only its name: the file itself is not in the hub until a recovered copy is attached.`);
+
+    const stageNote = (field: string) => `Zoho records only a time in its ${field} field: not who acted, and not what was decided at that step. The record's final status in Zoho is ${status || "not given"}.`;
+    const timeline: HistoricalTimelineEntry[] = [
+      { key: "submitted", label: "Request submitted", at: requestedAt, sourceText: dateText || null, actor: name || null, note: dateText ? null : "Zoho has no date of request for this record." },
+    ];
+    if (hrText) timeline.push({ key: "hr_stage", label: "HR-stage action recorded", at: hrAt, sourceText: hrText, actor: null, note: stageNote('HR-stage ("Satavisha_Natu")') });
+    if (dgText) timeline.push({ key: "dg", label: "DG-stage action recorded", at: dgAt, sourceText: dgText, actor: null, note: stageNote("DG") });
+
+    const sourceDates: HistoricalField[] = [
+      { label: "Date of Request", value: dateText },
+      { label: "HR stage, Satavisha_Natu field", value: hrText },
+      { label: "DG stage", value: dgText },
+      { label: "Amount", value: v.Amount.trim() },
+    ];
+    if (!dateText) {
+      sourceDates.push(earliest
+        ? { label: "Listed by", value: earliest.text, kind: "listed_by", note: `No date of request in Zoho: listed by ${earliest.from}, which is not the request date.` }
+        : { label: "Listed by", value: "", kind: "listed_by", note: "No time at all in Zoho: listed by the time of the import." });
+    }
+
+    return {
+      ...blank,
+      legacyId: id, sourceStatus: status, requesterName: name, requesterEmail: "", requestedAt, listedAt: requestedAt ?? earliest?.at ?? null,
+      financialYear: requestedAt ? financialYearOf(new Date(requestedAt)) : null,
+      categoryName: category, categorySourceName: v.Category, amountPaise: paise,
+      // Approval needs the DG, the last stage, so an approved record's decision time is its DG-stage time. A rejection's stage is not
+      // recorded, so its time is left unknown rather than read from a timestamp.
+      decidedAt: status === "Approved" && dgAt ? dgAt : null,
+      sourceDates,
+      timeline: byTime(timeline),
+      extra: [...(file ? [{ label: "File upload", value: file, kind: "attachment" as const, attachmentId: null }] : []), ...extraFields(rec, ZOHO_HR_FIELDS)],
+    };
+  },
+};
+
+export const ADAPTERS: SourceAdapter[] = [zohoExpenditures, zohoHr];
 export const adapterByKey = (key: string) => ADAPTERS.find((a) => a.key === key) ?? null;
 
 export type ReadResult = { ok: true; adapter: SourceAdapter; data: unknown; records: HistoricalRecord[] } | { ok: false; error: string };
