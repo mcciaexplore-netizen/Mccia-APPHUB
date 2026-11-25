@@ -104,9 +104,11 @@ async function items(s: Scope): Promise<InboxItem[]> {
     ...reg.map((r) => ({
       ...base(r),
       kind: "regularization" as const,
-      title: r.missed === "checkout" ? "Missed check-out" : r.missed === "checkin" ? "Missed check-in" : "Missed both punches",
+      title: r.isFuture ? "Planned working day" : r.missed === "checkout" ? "Missed check-out" : r.missed === "checkin" ? "Missed check-in" : "Missed both punches",
       when: formatDay(r.date),
-      detail: [r.requestedCheckin ? `In ${r.requestedCheckin.slice(0, 5)}` : null, r.requestedCheckout ? `Out ${r.requestedCheckout.slice(0, 5)}` : null].filter(Boolean).join(" · "),
+      detail: r.isFuture
+        ? `Plans to work ${r.plannedCheckin?.slice(0, 5) ?? "?"} – ${r.plannedCheckout?.slice(0, 5) ?? "?"}`
+        : [r.requestedCheckin ? `In ${r.requestedCheckin.slice(0, 5)}` : null, r.requestedCheckout ? `Out ${r.requestedCheckout.slice(0, 5)}` : null].filter(Boolean).join(" · "),
       reason: r.reason,
       attachment: false,
     })),
@@ -252,9 +254,11 @@ export async function decide(actor: Actor, kind: RequestKind, id: string, approv
       .where(and(eq(regularizationRequests.id, id), eq(regularizationRequests.status, "pending")))
       .returning({ id: regularizationRequests.id });
     if (!done.length) throw stale();
-    if (approve) await applyRegularization(r);
-    await notifyDecision({ kind, id, requesterId: r.userId, approved: approve, by: actor.name, deciderId: actor.id, remark, summary: `Regularization for ${formatDay(r.date)}`, link: "/attendance/more/regularization" });
-    return `${word}${approve ? ": the day is corrected" : ""}.`;
+    // A plan for a day ahead is only agreed: the person still checks in and out that day.
+    if (approve && !r.isFuture) await applyRegularization(r);
+    const summary = r.isFuture ? `Planned working day ${formatDay(r.date)} (${r.plannedCheckin?.slice(0, 5)} – ${r.plannedCheckout?.slice(0, 5)})` : `Regularization for ${formatDay(r.date)}`;
+    await notifyDecision({ kind, id, requesterId: r.userId, approved: approve, by: actor.name, deciderId: actor.id, remark, summary, link: "/attendance/more/regularization" });
+    return `${word}${approve ? (r.isFuture ? ": the day is planned" : ": the day is corrected") : ""}.`;
   }
 
   if (kind === "compoff") {
@@ -283,6 +287,7 @@ export async function decide(actor: Actor, kind: RequestKind, id: string, approv
 
 /** Writes an approved regularization onto the day: the corrected punch(es), method "manual", figures recomputed, linked to the request. */
 async function applyRegularization(r: typeof regularizationRequests.$inferSelect): Promise<void> {
+  if (r.isFuture) return;
   const [profile, settings, data] = await Promise.all([profileOf(r.userId), getSettings(), loadDays([r.userId], r.date, r.date)]);
   const view = viewOf(data, r.userId, r.date, istDay());
   const [existing] = await db.select().from(attendance).where(and(eq(attendance.userId, r.userId), eq(attendance.date, r.date)));

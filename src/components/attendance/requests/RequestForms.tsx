@@ -1,14 +1,13 @@
 "use client";
 
-import { Clock, Gift, Home as HomeIcon } from "lucide-react";
+import { Gift, Home as HomeIcon } from "lucide-react";
 import { useState } from "react";
-import type { MissedPunch } from "@/db/attendance-schema";
-import { applyCompoffAction, applyRegularizationAction, applyWfhAction, cancelRequestAction } from "@/lib/attendance/actions/staff";
+import { applyCompoffAction, applyWfhAction, cancelRequestAction } from "@/lib/attendance/actions/staff";
 import { formatDayShort, formatHours } from "@/lib/attendance/time";
 import { Card, Empty, Field, RequestStatus } from "../ui";
 import { useAct } from "../use-act";
 
-/** The forms and lists under More: work from home, regularization and comp-off. */
+/** The forms and lists under More: work from home and comp-off, and every kind's request list (regularization's cards are in Regularization.tsx). */
 
 export function WfhForm({ today, approver }: { today: string; approver: string }) {
   const { act, pending } = useAct();
@@ -39,62 +38,6 @@ export function WfhForm({ today, approver }: { today: string; approver: string }
         </Field>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs att-muted">Goes to {approver}. Once approved, you can check in from anywhere that day.</p>
-          <button type="submit" className="btn btn-primary w-full sm:w-auto" disabled={pending}>
-            Send request
-          </button>
-        </div>
-      </form>
-    </Card>
-  );
-}
-
-export function RegularizationForm({ days, approver, windowDays }: { days: { day: string; missed: MissedPunch[]; checkIn: string | null }[]; approver: string; windowDays: number }) {
-  const { act, pending } = useAct();
-  const [day, setDay] = useState(days[0]?.day ?? "");
-  const d = days.find((x) => x.day === day);
-  const missed = d?.missed[0] ?? "both";
-  const [inTime, setIn] = useState("10:00");
-  const [outTime, setOut] = useState("17:30");
-  const [reason, setReason] = useState("");
-  if (!days.length) return <Card title="Correct a missed punch" icon={Clock} iconTone="orange"><Empty title="Nothing to correct">In the last {windowDays} days there is no working day with a missed check-in or check-out (or a request is already in for it).</Empty></Card>;
-  return (
-    <Card title="Correct a missed punch" icon={Clock} iconTone="orange">
-      <form
-        className="grid gap-3"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const r = await act(() => applyRegularizationAction({ date: day, missed, checkIn: missed === "checkout" ? undefined : inTime, checkOut: outTime, reason }));
-          if (r.ok) setReason("");
-        }}
-      >
-        <Field label="Day" hint={`Only days in the last ${windowDays} days with a genuinely missed punch are listed.`}>
-          <select className="input max-w-sm" value={day} onChange={(e) => setDay(e.target.value)}>
-            {days.map((x) => (
-              <option key={x.day} value={x.day}>
-                {formatDayShort(x.day)} · {x.missed[0] === "checkout" ? `missed check-out (in at ${x.checkIn})` : "no check-in or check-out"}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <div className="grid max-w-sm grid-cols-2 gap-3">
-          {missed !== "checkout" ? (
-            <Field label="Check-in time">
-              <input type="time" className="input" value={inTime} onChange={(e) => setIn(e.target.value)} required />
-            </Field>
-          ) : (
-            <Field label="Check-in (recorded)">
-              <input className="input" value={d?.checkIn ?? ""} disabled />
-            </Field>
-          )}
-          <Field label="Check-out time">
-            <input type="time" className="input" value={outTime} onChange={(e) => setOut(e.target.value)} required />
-          </Field>
-        </div>
-        <Field label="Reason">
-          <textarea className="input" rows={2} maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} required />
-        </Field>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs att-muted">Goes to {approver}. Once approved, the day is corrected.</p>
           <button type="submit" className="btn btn-primary w-full sm:w-auto" disabled={pending}>
             Send request
           </button>

@@ -391,6 +391,126 @@ try {
     await sql`update att_settings set value = value || ${JSON.stringify({ officeIps: ["127.0.0.1", "::1"] })}::jsonb where key = 'config'`;
   }
 
+  section("Regularization: day cards, planned days, scroll time picker");
+  {
+    // Six past days with a check-in and no check-out (a weekly off among them is extra work: still correctable).
+    for (let i = 2; i <= 7; i++) {
+      const d = addDays(istDay(), -i);
+      await sql`insert into att_attendance (user_id, date, check_in_time, check_in_method, status) values (${asha.id}, ${d}, ${new Date(Date.parse(`${d}T10:15:00+05:30`))}, 'ip', 'present') on conflict (user_id, date) do nothing`;
+    }
+    const wheelVal = (page, id) => page.getByTestId(`${id}-value`).innerText();
+    const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const cols = (page, id) => page.getByTestId(id).evaluate((el) => getComputedStyle(el).display === "grid" ? getComputedStyle(el).gridTemplateColumns.split(" ").length : 0);
+
+    // A phone (375 px): cards, swiping, the picker by touch, arrows and keys.
+    const ph = await signedIn(asha.email, { width: 375, height: 800 });
+    await go(ph.page, "/attendance/more/regularization");
+    const past = ph.page.getByTestId("reg-day");
+    const missing = ph.page.locator('[data-testid=reg-day][data-state=missing_checkout]');
+    check("regularization: each past day with a missed check-out is a card", (await missing.count()) >= 6, await missing.count());
+    const first = missing.first();
+    const firstText = await first.innerText();
+    check("regularization: a card shows the day, ⚠ Missed check-out, Checked in: 10:15 AM and the button", /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} \w{3} \d{4}/.test(firstText) && /Missed check-out/.test(firstText) && /Checked in: 10:15 AM/.test(firstText) && /Add check-out time/.test(firstText), firstText);
+    const swipe = await ph.page.getByTestId("reg-past").evaluate((el) => ({ cls: el.className, scrolls: el.scrollWidth > el.clientWidth }));
+    check("regularization (375px): many cards become a row to swipe, and the page itself does not scroll sideways", swipe.cls.includes("att-cards-swipe") && swipe.scrolls && (await overflow(ph.page)) <= 1, swipe);
+    const btnH = await first.getByRole("button").evaluate((b) => b.getBoundingClientRect().height);
+    check("regularization (375px): the card button is at least 44 px tall", btnH >= 44, btnH);
+    const day1 = await first.getAttribute("data-day");
+    await first.getByRole("button", { name: "Add check-out time" }).click();
+    const dlg = ph.page.getByRole("dialog", { name: /Add check-out time/ });
+    await dlg.getByTestId("pick-out").waitFor();
+    check("regularization: the form has the check-out wheel only (check-in recorded), starting at 5:30 PM", (await dlg.getByTestId("pick-in").count()) === 0 && (await wheelVal(ph.page, "pick-out")) === "5:30 PM");
+    await dlg.getByRole("button", { name: "Check-out time: hours: later" }).click();
+    await ph.page.waitForTimeout(150);
+    check("picker: the ▼ arrow turns the hours on one (6:30 PM)", (await wheelVal(ph.page, "pick-out")) === "6:30 PM", await wheelVal(ph.page, "pick-out"));
+    await dlg.getByRole("spinbutton", { name: "Check-out time: minutes" }).focus();
+    await ph.page.keyboard.press("ArrowDown");
+    await ph.page.waitForTimeout(150);
+    check("picker: ↓ on the minutes moves 5 minutes (6:35 PM)", (await wheelVal(ph.page, "pick-out")) === "6:35 PM", await wheelVal(ph.page, "pick-out"));
+    // A swipe: the hours wheel scrolled up by about two rows comes to rest on 16.
+    await dlg.getByRole("spinbutton", { name: "Check-out time: hours" }).evaluate((el) => el.scrollBy({ top: -85 }));
+    await ph.page.waitForTimeout(700);
+    check("picker: a swipe settles on the nearest number (4:35 PM)", (await wheelVal(ph.page, "pick-out")) === "4:35 PM", await wheelVal(ph.page, "pick-out"));
+    const wheelScroll = await dlg.getByRole("spinbutton", { name: "Check-out time: hours" }).evaluate((el) => el.scrollTop);
+    check("picker: the wheel snaps exactly onto the row (16 × 44 px)", Math.abs(wheelScroll - 16 * 44) <= 1, wheelScroll);
+    const dlgOver = await dlg.evaluate((el) => el.scrollWidth - el.clientWidth);
+    check("regularization (375px): the form fits the screen", dlgOver <= 1, dlgOver);
+    await dlg.locator("textarea").fill("ZZA forgot to check out");
+    await dlg.getByRole("button", { name: "Send request" }).click();
+    check("regularization: sent (toast)", await toast(ph.page, /Regularization requested/));
+    await ph.page.locator(`[data-testid=reg-day][data-day="${day1}"][data-state=pending]`).waitFor({ timeout: 20000 }).catch(() => {});
+    const sent = ph.page.locator(`[data-testid=reg-day][data-day="${day1}"]`);
+    check("regularization: the card turns grey, waiting for approval, with no button", (await sent.getAttribute("data-state")) === "pending" && (await sent.getByRole("button").count()) === 0 && /att-daycard-muted/.test((await sent.getAttribute("class")) ?? ""));
+    const [rq] = await sql`select requested_checkout, is_future from att_regularization_requests where user_id = ${asha.id} and date = ${day1}`;
+    check("regularization: stored with the chosen time (16:35), not a plan", rq?.requested_checkout?.startsWith("16:35") && rq.is_future === false, rq);
+    check("regularization (375px): no page error", true);
+    await ph.ctx.close();
+
+    // A tablet (768 px): two columns; plan a day with the mouse wheel.
+    const tb = await signedIn(asha.email, { width: 768, height: 900 });
+    await go(tb.page, "/attendance/more/regularization");
+    check("regularization (768px): cards in two columns", (await cols(tb.page, "reg-plans")) === 2, await cols(tb.page, "reg-plans"));
+    const openPlans = tb.page.locator('[data-testid=plan-day][data-status=open]');
+    const planCount = await openPlans.count();
+    const planDays = await openPlans.evaluateAll((els) => els.map((e) => e.getAttribute("data-day")));
+    const weekend = planDays.filter((d) => new Date(`${d}T00:00:00Z`).getUTCDay() === 0);
+    check("plan: the next 30 days as cards, working days only (no Sunday), from tomorrow", planCount >= 15 && planCount <= 30 && weekend.length === 0 && planDays[0] > istDay() && planDays.every((d) => d <= addDays(istDay(), 30)), { planCount, weekend, first: planDays[0] });
+    const pc = openPlans.first();
+    const planDay = await pc.getAttribute("data-day");
+    check("plan: a card reads Working day with Plan this day →", /Working day/.test(await pc.innerText()) && (await pc.getByRole("button", { name: /Plan this day/ }).count()) === 1);
+    await pc.getByRole("button", { name: /Plan this day/ }).click();
+    const pd = tb.page.getByRole("dialog", { name: /^Plan / });
+    await pd.getByTestId("pick-in").waitFor();
+    check("plan: the form has check-in and check-out wheels and an optional note", (await pd.getByTestId("pick-out").count()) === 1 && /Note \(optional\)/.test(await pd.innerText()));
+    const hoursIn = pd.getByRole("spinbutton", { name: "Check-in time: hours" });
+    await hoursIn.hover();
+    await tb.page.mouse.wheel(0, 100);
+    await tb.page.waitForTimeout(250);
+    check("picker: one mouse-wheel notch turns the hours one step (11:00 AM)", (await wheelVal(tb.page, "pick-in")) === "11:00 AM", await wheelVal(tb.page, "pick-in"));
+    await pd.getByRole("spinbutton", { name: "Check-in time: minutes" }).hover();
+    await tb.page.mouse.wheel(0, 100);
+    await tb.page.mouse.wheel(0, 100);
+    await tb.page.mouse.wheel(0, 100);
+    await tb.page.waitForTimeout(250);
+    check("picker: three notches on the minutes, 5 minutes each (11:15 AM)", (await wheelVal(tb.page, "pick-in")) === "11:15 AM", await wheelVal(tb.page, "pick-in"));
+    await pd.getByRole("button", { name: "Submit plan" }).click();
+    check("plan: sent for approval (toast)", await toast(tb.page, /Plan sent for approval/));
+    const planned = tb.page.locator(`[data-testid=plan-day][data-day="${planDay}"]`);
+    await tb.page.locator(`[data-testid=plan-day][data-day="${planDay}"][data-status=pending]`).waitFor({ timeout: 20000 }).catch(() => {});
+    check("plan: the card shows the planned times, Pending", (await planned.getAttribute("data-status")) === "pending" && /Planned 11:15 AM – 5:30 PM/.test(await planned.innerText()), await planned.innerText());
+    const [pr] = await sql`select is_future, planned_date, planned_checkin, planned_checkout, approver_id from att_regularization_requests where user_id = ${asha.id} and is_future`;
+    check("plan: stored as a plan for that day, sent to the reporting manager", pr?.is_future === true && istDay(new Date(pr.planned_date)) <= planDay && pr.planned_checkin.startsWith("11:15") && pr.planned_checkout.startsWith("17:30") && pr.approver_id === mgr.id, pr);
+    await tb.ctx.close();
+
+    // The manager sees it in Approvals as a planned working day.
+    const mg = await signedIn(mgr.email);
+    await go(mg.page, "/attendance/more/approvals");
+    const inbox = await mainText(mg.page);
+    check("plan: the manager's Approvals shows 'Planned working day' with the times", /Planned working day/.test(inbox) && /Plans to work 11:15 – 17:30/.test(inbox), inbox.slice(0, 400));
+    await mg.ctx.close();
+
+    // HR Settings: the reminder and shift times use the same wheels.
+    const hs = await signedIn(hr.email);
+    await go(hs.page, "/attendance/admin/settings");
+    check("picker: HR Settings has no browser time boxes, only the wheels (the form still carries HH:MM)", (await hs.page.locator("input[type=time]").count()) === 0 && (await hs.page.getByRole("spinbutton", { name: "Check-in reminder at: hours" }).count()) === 1 && /^\d\d:\d\d$/.test(await hs.page.locator("input[name=remIn]").inputValue()));
+    await hs.ctx.close();
+
+    // A desktop: three columns. The narrowest phone (320 px): the form still fits.
+    const dt = await signedIn(asha.email, { width: 1280, height: 900 });
+    await go(dt.page, "/attendance/more/regularization");
+    check("regularization (1280px): cards side by side, three columns", (await cols(dt.page, "reg-plans")) === 3, await cols(dt.page, "reg-plans"));
+    await dt.ctx.close();
+    const sm = await signedIn(asha.email, { width: 320, height: 700 });
+    await go(sm.page, "/attendance/more/regularization");
+    await sm.page.locator('[data-testid=reg-day][data-state=missing_checkout]').first().getByRole("button").click();
+    const sd = sm.page.getByRole("dialog", { name: /Add check-out time/ });
+    await sd.getByTestId("pick-out").waitFor();
+    const fit = await sd.evaluate((el) => ({ over: el.scrollWidth - el.clientWidth, right: el.getBoundingClientRect().right, vw: innerWidth }));
+    check("regularization (320px): the form and its wheels fit the screen", fit.over <= 1 && fit.right <= fit.vw, fit);
+    check("regularization (320px): the page does not scroll sideways", (await overflow(sm.page)) <= 1);
+    await sm.ctx.close();
+  }
+
   section("Every page at every width");
   const STAFF = ["/attendance", "/attendance?tab=team", "/attendance/leave", "/attendance/leave/apply", "/attendance/time", "/attendance/more", "/attendance/more/summary", "/attendance/more/profile", "/attendance/more/regularization", "/attendance/more/wfh"];
   const ADMIN = ["/attendance/admin", "/attendance/admin/daily-report", "/attendance/admin/approvals", "/attendance/admin/people", "/attendance/admin/leave", "/attendance/admin/settings"];

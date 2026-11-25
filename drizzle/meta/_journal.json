@@ -365,6 +365,13 @@
       "when": 1795599965967,
       "tag": "0051_design_multi_deliverables",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1795603306985,
+      "tag": "0052_attendance_regularization_plans",
+      "breakpoints": true
     }
   ]
 }

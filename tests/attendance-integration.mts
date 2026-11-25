@@ -258,6 +258,37 @@ try {
   const [fixed] = await db.select().from(T.attendance).where(and(eq(T.attendance.userId, asha.id), eq(T.attendance.date, missedDay)));
   check("regularization: approval writes the check-out (17:40), hours 7.67, present, linked to the request", fixed.regularizationId === regId && Number(fixed.hoursWorked) === 7.67 && fixed.status === "present" && fixed.checkOutMethod === "manual", fixed);
   check("regularization: the day is no longer offered", !(await RQ.regularizableDays(asha.id)).some((d) => d.day === missedDay));
+  const cards = await RQ.pastDayCards(asha.id);
+  check("regularization cards: the corrected day stays as a grey 'regularized' card with its times", cards.some((c) => c.day === missedDay && c.state === "regularized" && c.checkOut === "17:40"), cards.slice(0, 3));
+
+  // ── Planned working days ──────────────────────────────────────────────
+  const planDay = await nextWorking(addDays(today, 3));
+  const planList = await RQ.planCards(asha.id);
+  check("plan: the next 30 days list working days only, from tomorrow", planList.length > 0 && planList.every((p) => p.day > today && p.day <= addDays(today, 30)) && planList.some((p) => p.day === planDay && !p.plan), planList.slice(0, 3));
+  check("plan: today cannot be planned", (await refused(() => RQ.applyPlan(A, { date: today, checkIn: "10:00", checkOut: "18:00" }), /from tomorrow/)) === true);
+  check("plan: a check-out before the check-in is refused", (await refused(() => RQ.applyPlan(A, { date: planDay, checkIn: "18:00", checkOut: "10:00" }), /after the check-in/)) === true);
+  const { id: planId } = await RQ.applyPlan(A, { date: planDay, checkIn: "09:30", checkOut: "18:15" });
+  check("plan: a second plan for the day is refused", (await refused(() => RQ.applyPlan(A, { date: planDay, checkIn: "10:00", checkOut: "18:00" }), /already planned/)) === true);
+  const [planRow] = await db.select().from(T.regularizationRequests).where(eq(T.regularizationRequests.id, planId));
+  check("plan: stored as a future request with its planned day and times, sent to the manager", planRow.isFuture && planRow.plannedDate === planDay && planRow.plannedCheckin?.startsWith("09:30") && planRow.plannedCheckout?.startsWith("18:15") && planRow.approverId === mgr.id && planRow.status === "pending", planRow);
+  check("plan: it is not a past correction (the day is not offered or carded as missed)", !(await RQ.regularizableDays(asha.id)).some((d) => d.day === planDay) && !(await RQ.pastDayCards(asha.id)).some((c) => c.day === planDay));
+  const mq = await AP.pendingFor({ ...M, hr: false });
+  const inQueue = mq.find((i) => i.id === planId);
+  check("plan: the manager sees it as a planned working day with its times", inQueue?.title === "Planned working day" && inQueue.detail === "Plans to work 09:30 – 18:15", inQueue);
+  await AP.decide({ ...M, hr: false }, "regularization", planId, true, "ok");
+  const planDayRec = await db.select().from(T.attendance).where(and(eq(T.attendance.userId, asha.id), eq(T.attendance.date, planDay)));
+  check("plan: approving it writes nothing onto the day (the person still checks in)", planDayRec.length === 0, planDayRec);
+  check("plan: the card shows the approved plan", (await RQ.planCards(asha.id)).some((p) => p.day === planDay && p.plan?.status === "approved" && p.plan.checkIn === "09:30" && p.plan.checkOut === "18:15"));
+  const { id: planId2 } = await RQ.applyPlan(A, { date: await nextWorking(addDays(planDay, 1)), checkIn: "10:00", checkOut: "17:30", reason: "client visit" });
+  await AP.decide({ ...M, hr: false }, "regularization", planId2, false, "not that day");
+  const rejected = (await RQ.planCards(asha.id)).find((p) => p.plan?.id === planId2);
+  check("plan: a rejected plan shows with its remark and the day can be planned again", rejected?.plan?.status === "rejected" && rejected.plan.remark === "not that day", rejected);
+  const { id: planId3 } = await RQ.applyPlan(A, { date: rejected!.day, checkIn: "10:00", checkOut: "17:30" });
+  await RQ.cancelRequest(asha.id, "regularization", planId3);
+  const { id: benPlan } = await RQ.applyPlan(B, { date: planDay, checkIn: "10:00", checkOut: "17:30" });
+  check("plan: with no manager it goes to HR's queue", (await AP.hrQueue(HR)).some((i) => i.id === benPlan && i.toHr && i.title === "Planned working day"));
+  await AP.decide(HR, "regularization", benPlan, false, "test over");
+  check("plan: a pending plan can be withdrawn", (await db.select().from(T.regularizationRequests).where(eq(T.regularizationRequests.id, planId3)))[0].status === "cancelled");
 
   // ── Comp-off ──────────────────────────────────────────────────────────
   const off = await lastWeeklyOff(today);

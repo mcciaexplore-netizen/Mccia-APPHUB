@@ -10,7 +10,8 @@ import { dayKind, isWeeklyOff, nthOfMonth, resolveDay, statusForHours, type Cale
 import * as C from "../src/lib/attendance/checkin-rules";
 import * as L from "../src/lib/attendance/leave-rules";
 import * as CO from "../src/lib/attendance/compoff";
-import { checkRegularizationTimes, regularizationEligibility } from "../src/lib/attendance/regularization";
+import { checkPlanTimes, checkRegularizationTimes, pastCardState, planEligibility, PAST_CARD_TEXT, regularizationEligibility } from "../src/lib/attendance/regularization";
+import * as W from "../src/lib/attendance/time-wheel";
 import { canEditWeek, checkSubmitWeek, checkTimeEntry, weekDays } from "../src/lib/attendance/timesheet";
 import { eventsBetween, fillTemplate, onYear, todaysEvents, upcomingEvents, cleanWish } from "../src/lib/attendance/feeds";
 import { approverFor, attRolesFor, canDecide, isAdmin, isMember, navFor } from "../src/lib/attendance/att.manifest";
@@ -202,6 +203,34 @@ export function attendanceUnit(eq: Eq): void {
     checkRegularizationTimes({ missed: "checkout", checkIn: null, checkOut: "09:30", recordedCheckInMin: 600 }).ok,
     checkRegularizationTimes({ missed: "checkout", checkIn: null, checkOut: "", recordedCheckInMin: 600 }).ok,
   ], [{ ok: true, checkInMin: 605, checkOutMin: 1060 }, false, false, false, false]);
+  eq("att regularization: a check-out with no check-in recorded → the check-in", re({ record: { checkIn: false, checkOut: true } }), { ok: true, missed: ["checkin"] });
+  eq("att regularization: times: a missed check-in must be before the recorded check-out", [
+    checkRegularizationTimes({ missed: "checkin", checkIn: "10:00", checkOut: null, recordedCheckOutMin: 1050 }).ok,
+    checkRegularizationTimes({ missed: "checkin", checkIn: "18:00", checkOut: null, recordedCheckOutMin: 1050 }).ok,
+  ], [true, false]);
+  eq("att regularization cards: what is missing, or grey once asked for (pending) or corrected (approved)", [
+    pastCardState({ missed: "checkin", request: null }), pastCardState({ missed: "checkout", request: null }), pastCardState({ missed: "both", request: null }),
+    pastCardState({ missed: "checkout", request: "pending" }), pastCardState({ missed: "both", request: "approved" }), pastCardState({ missed: null, request: null }),
+  ], ["missing_checkin", "missing_checkout", "missing_both", "pending", "regularized", null]);
+  eq("att regularization cards: only a missing punch has an action", (Object.keys(PAST_CARD_TEXT) as (keyof typeof PAST_CARD_TEXT)[]).filter((k) => PAST_CARD_TEXT[k].action), ["missing_checkin", "missing_checkout", "missing_both"]);
+  eq("att regularization cards: the missed check-out button reads as asked", PAST_CARD_TEXT.missing_checkout.action, "Add check-out time");
+
+  // ── Planned working days ────────────────────────────────────────────────
+  const pe = (o: Partial<Parameters<typeof planEligibility>[0]>) => planEligibility({ day: "2026-12-01", today: "2026-11-25", kind: "working", onFullLeave: false, livePlan: false, ...o });
+  eq("att plan: a working day ahead can be planned", pe({}), { ok: true });
+  eq("att plan: today, the past, beyond 30 days, a weekly off, a holiday, on leave, already planned → refused", [pe({ day: "2026-11-25" }), pe({ day: "2026-11-20" }), pe({ day: "2026-12-26" }), pe({ kind: "weekly_off" }), pe({ kind: "holiday" }), pe({ onFullLeave: true }), pe({ livePlan: true })].map((x) => x.ok), [false, false, false, false, false, false, false]);
+  eq("att plan: tomorrow and exactly 30 days ahead are allowed", [pe({ day: "2026-11-26" }).ok, pe({ day: "2026-12-25" }).ok], [true, true]);
+  eq("att plan: times: both needed, from 06:00, check-out after check-in", [
+    checkPlanTimes("10:00", "18:30"), checkPlanTimes("", "18:00").ok, checkPlanTimes("10:00", null).ok, checkPlanTimes("05:30", "12:00").ok, checkPlanTimes("18:00", "18:00").ok,
+  ], [{ ok: true, checkInMin: 600, checkOutMin: 1110 }, false, false, false, false]);
+
+  // ── Time picker wheels ──────────────────────────────────────────────────
+  eq("att wheel: hours 00–23", [W.WHEEL_HOURS.length, W.WHEEL_HOURS[0], W.WHEEL_HOURS[23]], [24, 0, 23]);
+  eq("att wheel: minutes in 5-minute steps", W.wheelMinutes(30), [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]);
+  eq("att wheel: a saved minute off the grid keeps its place", W.wheelMinutes(47), [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 47, 50, 55]);
+  eq("att wheel: split and join HH:MM (bad input falls back)", [W.splitHm("09:45"), W.splitHm("9:05"), W.splitHm("25:00"), W.splitHm(""), W.joinHm(7, 5)], [[9, 45], [9, 5], [10, 0], [10, 0], "07:05"]);
+  eq("att wheel: 12-hour reading", [W.hm12("00:05"), W.hm12("10:15"), W.hm12("12:00"), W.hm12("17:30")], ["12:05 AM", "10:15 AM", "12:00 PM", "5:30 PM"]);
+  eq("att wheel: a scroll settles on the nearest row, inside the list", [W.snapIndex(0, 44, 24), W.snapIndex(65, 44, 24), W.snapIndex(67, 44, 24), W.snapIndex(-30, 44, 24), W.snapIndex(5000, 44, 24)], [0, 1, 2, 0, 23]);
 
   // ── Timesheets ──────────────────────────────────────────────────────────
   eq("att timesheet: draft and rejected weeks are editable; submitted and approved are locked", [canEditWeek(null), canEditWeek("draft"), canEditWeek("rejected"), canEditWeek("submitted"), canEditWeek("approved")], [true, true, true, false, false]);
