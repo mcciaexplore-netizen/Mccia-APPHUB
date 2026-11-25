@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { DailyRow } from "@/lib/attendance/daily";
+import { dailyStatus, type DailyRow } from "@/lib/attendance/daily";
 import { formatDistance } from "@/lib/attendance/checkin-rules";
 import { formatHours, istClock } from "@/lib/attendance/time";
-import { Avatar, Badge, Card, Empty, PlaceBadge } from "../ui";
+import { Avatar, Badge, Card, Empty, PlaceBadge, type Tone } from "../ui";
+
+const STATUS_TONE: Record<ReturnType<typeof dailyStatus>, Tone> = { Present: "green", Late: "amber", Absent: "red", "On Leave": "blue" };
 
 type Filter = "all" | "in_office" | "remote" | "late";
 type Sort = "name" | "checkIn" | "location";
@@ -20,7 +22,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 const placeRank = (r: DailyRow) => (r.place === "in_office" ? 0 : r.place === "remote" ? 1 : 2);
 
 /**
- * The Daily Report's table: everyone who checked in that day, searchable by name, filtered (All / In Office / Remote / Late) and sorted (Name,
+ * The Daily Report's table (Name, Status, In, Out, Location, Hours, Marks): everyone who checked in that day, searchable by name, filtered (All / In Office / Remote / Late) and sorted (Name,
  * Check In time, Location). Someone still in today shows the hours so far.
  */
 export function DailyReportView({ rows }: { rows: DailyRow[] }) {
@@ -73,52 +75,55 @@ export function DailyReportView({ rows }: { rows: DailyRow[] }) {
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Check In</th>
-                <th>Check Out</th>
-                <th>Location</th>
-                <th>Hours Worked</th>
                 <th>Status</th>
+                <th>In</th>
+                <th>Out</th>
+                <th>Location</th>
+                <th>Hours</th>
+                <th>Marks</th>
               </tr>
             </thead>
             <tbody>
-              {shown.map((r) => (
-                <tr key={r.userId}>
-                  <td>
-                    <span className="flex items-center gap-2">
-                      <Avatar name={r.name} size={28} />
-                      <span className="font-semibold text-ink">{r.name}</span>
-                    </span>
-                  </td>
-                  <td className="tabular-nums">{istClock(r.checkIn)}</td>
-                  <td className="tabular-nums">{r.checkOut ? istClock(r.checkOut) : "—"}</td>
-                  <td>
-                    {r.place ? (
-                      <span title={r.distanceM != null ? `${formatDistance(r.distanceM)} from the office` : undefined}>
-                        <PlaceBadge place={r.place} area={r.area} distanceM={r.area ? null : r.distanceM} />
+              {shown.map((r) => {
+                const status = dailyStatus(r);
+                return (
+                  <tr key={r.userId}>
+                    <td>
+                      <span className="flex items-center gap-2">
+                        <Avatar name={r.name} size={28} />
+                        <span className="font-semibold text-ink">{r.name}</span>
                       </span>
-                    ) : (
-                      <span className="text-xs att-muted">{r.regularized ? "Regularized" : "—"}</span>
-                    )}
-                  </td>
-                  <td className="tabular-nums">
-                    {r.hoursWorked != null ? (
-                      formatHours(r.hoursWorked)
-                    ) : r.hoursSoFar != null ? (
-                      <span className="att-muted">{formatHours(r.hoursSoFar)} so far</span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td>
-                    <span className="flex flex-wrap gap-1">
-                      {!r.isLate && !r.isEarlyOut && <Badge tone="green">Present</Badge>}
-                      {r.isLate && <Badge tone="amber">Late</Badge>}
-                      {r.isEarlyOut && <Badge tone="amber">Early Out</Badge>}
-                      {r.isWfh && <Badge tone="teal">WFH</Badge>}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td>
+                      <Badge tone={STATUS_TONE[status]}>{status}</Badge>
+                    </td>
+                    <td className="tabular-nums">{istClock(r.checkIn)}</td>
+                    <td className="tabular-nums">{r.checkOut ? istClock(r.checkOut) : "—"}</td>
+                    <td>
+                      {r.place ? (
+                        <span title={r.distanceM != null ? `${formatDistance(r.distanceM)} from the office` : undefined}>
+                          <PlaceBadge place={r.place} area={r.area} distanceM={r.area ? null : r.distanceM} />
+                        </span>
+                      ) : (
+                        <span className="text-xs att-muted">{r.regularized ? "Regularized" : "—"}</span>
+                      )}
+                    </td>
+                    <td className="tabular-nums">
+                      {r.hoursWorked != null ? formatHours(r.hoursWorked) : r.hoursSoFar != null ? <span className="att-muted">{formatHours(r.hoursSoFar)} so far</span> : "—"}
+                    </td>
+                    <td>
+                      {r.isLate || r.isEarlyOut ? (
+                        <span className="flex flex-wrap gap-1">
+                          {r.isLate && <Badge tone="amber">Late</Badge>}
+                          {r.isEarlyOut && <Badge tone="amber">Early Out</Badge>}
+                        </span>
+                      ) : (
+                        <span className="att-muted">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

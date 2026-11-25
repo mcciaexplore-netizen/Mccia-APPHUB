@@ -22,10 +22,15 @@ export type DailyRow = {
   isEarlyOut: boolean;
   isWfh: boolean;
   regularized: boolean;
+  /** The day counts absent: a missed check-out on a day that is over, or too few hours worked. */
+  absent: boolean;
+  /** Half-day leave on the day (they checked in for the other half). */
+  onLeave: boolean;
 };
 
-/** Present / Late / Early Out (both when both: "Late · Early Out"). */
-export const dailyStatus = (r: Pick<DailyRow, "isLate" | "isEarlyOut">) => [r.isLate && "Late", r.isEarlyOut && "Early Out"].filter(Boolean).join(" · ") || "Present";
+/** The day's status: Absent (missed check-out, or too few hours), On Leave (half-day leave), Late, else Present. */
+export const dailyStatus = (r: Pick<DailyRow, "isLate" | "absent" | "onLeave">): "Present" | "Late" | "Absent" | "On Leave" =>
+  r.absent ? "Absent" : r.onLeave ? "On Leave" : r.isLate ? "Late" : "Present";
 
 export const dailyRows = (rows: DailyRow[]): unknown[][] => [
   ["Name", "Email", "Check In", "Check Out", "Location", "Distance from Office", "Hours Worked", "Status", "Late"],
