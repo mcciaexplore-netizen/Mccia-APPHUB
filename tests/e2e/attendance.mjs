@@ -357,7 +357,11 @@ try {
     const names = async () => (await table.locator("tbody tr td:first-child .font-semibold").allInnerTexts()).map((t) => t.trim());
     const all = await names();
     check("daily report: only people who checked in (Asha, Manju, Rhea; not Nisha or Hema)", all.includes("ZZA Asha") && all.includes("ZZA Rhea") && !all.includes("ZZA Nisha") && !all.includes("ZZA Hema"), all);
-    check("daily report: Rhea's row shows 📍 Remote and — for check-out", /📍 Remote[\s\S]*/.test(await table.locator("tr", { hasText: "ZZA Rhea" }).innerText()) && (await table.locator("tr", { hasText: "ZZA Rhea" }).locator("td").nth(2).innerText()).trim() === "—");
+    check("daily report: Rhea's row shows 📍 Remote and — for check-out", /📍 Remote[\s\S]*/.test(await table.locator("tr", { hasText: "ZZA Rhea" }).innerText()) && (await table.locator("tr", { hasText: "ZZA Rhea" }).locator("td").nth(3).innerText()).trim() === "—");
+    const heads = (await table.locator("thead th").allInnerTexts()).map((t) => t.trim().toUpperCase());
+    check("daily report: columns are exactly Name, Status, In, Out, Location, Hours, Marks", JSON.stringify(heads) === JSON.stringify(["NAME", "STATUS", "IN", "OUT", "LOCATION", "HOURS", "MARKS"]), heads);
+    const rheaCells = (await table.locator("tr", { hasText: "ZZA Rhea" }).locator("td").allInnerTexts()).map((t) => t.trim());
+    check("daily report: Rhea's status is Late or Present and Marks has Late when late", ["Late", "Present"].includes(rheaCells[1]) && (rheaCells[1] !== "Late" || rheaCells[6].includes("Late")), rheaCells);
     await d.page.getByRole("button", { name: "Remote", exact: true }).click();
     const remoteOnly = await names();
     check("daily report: filter Remote shows only Rhea", remoteOnly.length >= 1 && remoteOnly.every((n) => !n.startsWith("ZZA ") || n === "ZZA Rhea") && remoteOnly.includes("ZZA Rhea"), remoteOnly);

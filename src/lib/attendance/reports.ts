@@ -104,6 +104,7 @@ export async function dailyReport(day: string): Promise<DailyRow[]> {
   for (const m of members) {
     const r = recordOf(data, m.id, day);
     if (!r?.checkInTime) continue;
+    const v = viewOf(data, m.id, day, today);
     rows.push({
       userId: m.id,
       name: m.name,
@@ -119,6 +120,8 @@ export async function dailyReport(day: string): Promise<DailyRow[]> {
       isEarlyOut: r.isEarlyOut,
       isWfh: r.isWfh,
       regularized: !!r.regularizationId,
+      absent: v.missedCheckout || v.status === "absent",
+      onLeave: !!v.leave && v.leave.half !== "none",
     });
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));
