@@ -258,9 +258,19 @@ export const regularizationRequests = pgTable(
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     approverRemark: text("approver_remark"),
     createdAt: createdAt(),
+    /**
+     * A planned working day (a day ahead, with the times the person plans to work, for the manager to approve) rather than a correction of
+     * a past day. `date` is the planned day too; `missed` is "both" and the requested times stay empty. An approved plan never writes the
+     * day: the person still checks in and out.
+     */
+    isFuture: boolean("is_future").notNull().default(false),
+    plannedDate: date("planned_date"),
+    plannedCheckin: time("planned_checkin"),
+    plannedCheckout: time("planned_checkout"),
   },
   (t) => [
-    uniqueIndex("att_regularization_live_uq").on(t.userId, t.date).where(sql`status in ('pending', 'approved')`),
+    // One live correction and one live plan per day each.
+    uniqueIndex("att_regularization_live_uq").on(t.userId, t.date, t.isFuture).where(sql`status in ('pending', 'approved')`),
     index("att_regularization_status_idx").on(t.status, t.approverId),
   ],
 );

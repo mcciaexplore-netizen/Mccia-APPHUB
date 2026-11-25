@@ -206,6 +206,36 @@
 .att-swipe.att-dragging { transition: none; }
 .att-swipe-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 1.25rem; font-size: 0.8rem; font-weight: 800; pointer-events: none; }
 
+/* ── Time picker: scroll wheels (TimePicker.tsx). One row is 44 px, three rows show, the middle one is chosen. ── */
+.att-wheel-box { display: flex; align-items: center; justify-content: center; gap: 0.25rem; padding: 0.25rem; border: 1px solid var(--att-line); border-radius: 14px; background: var(--att-card); }
+.att-wheel { display: flex; flex-direction: column; align-items: stretch; width: 4.25rem; }
+.att-wheel-arrow { display: grid; place-items: center; height: 44px; border-radius: 10px; color: var(--att-grey); }
+.att-wheel-arrow:hover:not(:disabled) { background: var(--att-grey-tint); color: var(--att-text); }
+.att-wheel-arrow:disabled { opacity: 0.3; }
+.att-wheel-window { position: relative; height: 132px; }
+.att-wheel-band { position: absolute; inset: 44px 0; border-radius: 10px; background: var(--att-primary-tint); border: 1px solid var(--att-primary-line); pointer-events: none; }
+.att-wheel-scroll { position: relative; height: 132px; overflow-y: auto; scroll-snap-type: y mandatory; overscroll-behavior: contain; padding: 44px 0; scrollbar-width: none; -webkit-mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent); mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent); border-radius: 10px; }
+.att-wheel-scroll::-webkit-scrollbar { display: none; }
+.att-wheel-scroll:focus-visible { outline: 2px solid var(--att-primary); outline-offset: 2px; }
+.att-wheel-item { height: 44px; display: grid; place-items: center; scroll-snap-align: center; font-size: 1.15rem; font-variant-numeric: tabular-nums; color: var(--att-grey); cursor: pointer; user-select: none; }
+.att-wheel-item.is-on { color: var(--att-text); font-weight: 700; font-size: 1.35rem; }
+.att-wheel-colon { font-size: 1.4rem; font-weight: 700; color: var(--att-text); padding-bottom: 2px; }
+.att-wheel-caption { display: flex; justify-content: center; gap: 2.4rem; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--att-grey); }
+
+/* ── Day cards (Regularization): one column on a phone, two on a tablet, three on a desktop. Many cards on a phone become a row to swipe. ── */
+.att-cards { display: grid; gap: 0.75rem; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 768px) { .att-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1024px) { .att-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 767.98px) {
+  .att-cards-swipe { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; padding-bottom: 0.5rem; margin-inline: -0.25rem; padding-inline: 0.25rem; scrollbar-width: thin; }
+  .att-cards-swipe > * { flex: 0 0 86%; scroll-snap-align: start; }
+}
+.att-daycard { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; padding: 1rem; border: 1px solid var(--att-line); border-radius: 14px; background: var(--att-card); }
+.att-daycard-warn { border-color: color-mix(in srgb, var(--att-amber) 40%, var(--att-line)); background: color-mix(in srgb, var(--att-amber-tint) 60%, var(--att-card)); }
+.att-daycard-muted { background: var(--att-grey-tint); color: var(--att-grey); }
+.att-daycard-ok { border-color: var(--att-primary-line); background: var(--att-primary-tint); }
+.att-daycard .btn { min-height: 44px; margin-top: auto; }
+
 /* ── Dark mode ────────────────────────────────────────────────────────────
    html.att-dark is set only while an Attendance page is open (components/attendance/pwa/Theme.tsx: the person's choice in Profile, else the
    device's setting), so nothing here reaches a hub page. It switches Attendance's variables, the hub's own variables (header, buttons,

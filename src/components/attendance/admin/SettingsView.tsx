@@ -21,6 +21,7 @@ import { EMPLOYMENT_LABEL, EMPLOYMENT_TYPES, LEAVE_COLORS, leaveColor } from "@/
 import { formatDayShort } from "@/lib/attendance/time";
 import { Badge, Card, Field } from "../ui";
 import { useAct } from "../use-act";
+import { TimePicker } from "../TimePicker";
 
 /** The office network addresses a laptop may check in from (also on People). */
 export function IpEditor({ settings }: { settings: AttSettings }) {
@@ -176,12 +177,8 @@ function General({ settings: s }: { settings: AttSettings }) {
           <label className="inline-flex items-center gap-2 text-sm sm:col-span-3">
             <input type="checkbox" name="remind" defaultChecked={s.reminders.enabled} /> Send check-in and check-out reminders on the bell
           </label>
-          <Field label="Check-in reminder at">
-            <input name="remIn" type="time" className="input" defaultValue={s.reminders.checkIn} required />
-          </Field>
-          <Field label="Check-out reminder at">
-            <input name="remOut" type="time" className="input" defaultValue={s.reminders.checkOut} required />
-          </Field>
+          <TimePicker label="Check-in reminder at" name="remIn" defaultValue={s.reminders.checkIn} />
+          <TimePicker label="Check-out reminder at" name="remOut" defaultValue={s.reminders.checkOut} />
           <span />
           <label className="inline-flex items-center gap-2 text-sm sm:col-span-3">
             <input type="checkbox" name="email" defaultChecked={s.emailEnabled} /> Also email approvers about new requests and requesters about decisions (the bell is always used)
@@ -256,19 +253,11 @@ function Shifts({ shifts }: { shifts: Shift[] }) {
             <Field label="Name">
               <input name="name" className="input" defaultValue={editing.name ?? ""} required maxLength={60} />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Starts">
-                <input name="start" type="time" className="input" defaultValue={editing.startTime?.slice(0, 5) ?? "10:00"} required />
-              </Field>
-              <Field label="Ends">
-                <input name="end" type="time" className="input" defaultValue={editing.endTime?.slice(0, 5) ?? "17:30"} required />
-              </Field>
-              <Field label="First half ends">
-                <input name="fhe" type="time" className="input" defaultValue={editing.firstHalfEnd?.slice(0, 5) ?? "14:00"} required />
-              </Field>
-              <Field label="Second half starts">
-                <input name="shs" type="time" className="input" defaultValue={editing.secondHalfStart?.slice(0, 5) ?? "14:00"} required />
-              </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <TimePicker label="Starts" name="start" defaultValue={editing.startTime?.slice(0, 5) ?? "10:00"} />
+              <TimePicker label="Ends" name="end" defaultValue={editing.endTime?.slice(0, 5) ?? "17:30"} />
+              <TimePicker label="First half ends" name="fhe" defaultValue={editing.firstHalfEnd?.slice(0, 5) ?? "14:00"} />
+              <TimePicker label="Second half starts" name="shs" defaultValue={editing.secondHalfStart?.slice(0, 5) ?? "14:00"} />
               <Field label="Grace (minutes)">
                 <input name="grace" type="number" min={0} max={240} className="input" defaultValue={editing.graceMinutes ?? 45} required />
               </Field>

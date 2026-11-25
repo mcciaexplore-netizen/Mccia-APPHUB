@@ -6,7 +6,7 @@ import { AttError } from "./dal";
 import { calendarFor, getSettings, profileOf } from "./config";
 import { loadDays, recordOf, viewOf } from "./days";
 import { dayKind } from "./calendar";
-import { regularizationEligibility, checkRegularizationTimes } from "./regularization";
+import { regularizationEligibility, checkRegularizationTimes, checkPlanTimes, pastCardState, planEligibility, PLAN_AHEAD_DAYS, type PastCardState } from "./regularization";
 import { checkCompoffClaim, compoffDays, expiryFor } from "./compoff";
 import { approverIdFor } from "./leave";
 import { notifyNewRequest } from "./notify";
@@ -79,7 +79,7 @@ export async function applyEarlyDeparture(user: { id: string; name: string }, in
 
 // ── Regularization ────────────────────────────────────────────────────────
 
-export type RegularizableDay = { day: string; missed: MissedPunch[]; checkIn: string | null };
+export type RegularizableDay = { day: string; missed: MissedPunch[]; checkIn: string | null; checkOut: string | null };
 
 /** The days in the window the person may still regularize (newest first). */
 export async function regularizableDays(userId: string): Promise<RegularizableDay[]> {
@@ -94,7 +94,7 @@ export async function regularizableDays(userId: string): Promise<RegularizableDa
     db
       .select({ date: regularizationRequests.date })
       .from(regularizationRequests)
-      .where(and(eq(regularizationRequests.userId, userId), inArray(regularizationRequests.status, ["pending", "approved"]), gte(regularizationRequests.date, from))),
+      .where(and(eq(regularizationRequests.userId, userId), eq(regularizationRequests.isFuture, false), inArray(regularizationRequests.status, ["pending", "approved"]), gte(regularizationRequests.date, from))),
   ]);
   const liveDays = new Set(live.map((l) => l.date));
   const out: RegularizableDay[] = [];
@@ -111,7 +111,7 @@ export async function regularizableDays(userId: string): Promise<RegularizableDa
       record: r ? { checkIn: !!r.checkInTime, checkOut: !!r.checkOutTime } : null,
       goLive,
     });
-    if (e.ok) out.push({ day, missed: e.missed, checkIn: r?.checkInTime ? formatHm(istMinutes(r.checkInTime)) : null });
+    if (e.ok) out.push({ day, missed: e.missed, checkIn: r?.checkInTime ? formatHm(istMinutes(r.checkInTime)) : null, checkOut: r?.checkOutTime ? formatHm(istMinutes(r.checkOutTime)) : null });
   }
   return out;
 }
@@ -126,7 +126,7 @@ export async function applyRegularization(user: { id: string; name: string }, in
   const live = await db
     .select({ id: regularizationRequests.id })
     .from(regularizationRequests)
-    .where(and(eq(regularizationRequests.userId, user.id), eq(regularizationRequests.date, input.date), inArray(regularizationRequests.status, ["pending", "approved"])));
+    .where(and(eq(regularizationRequests.userId, user.id), eq(regularizationRequests.date, input.date), eq(regularizationRequests.isFuture, false), inArray(regularizationRequests.status, ["pending", "approved"])));
   const e = regularizationEligibility({
     day: input.date,
     today,
@@ -139,7 +139,13 @@ export async function applyRegularization(user: { id: string; name: string }, in
   });
   if (!e.ok) throw new AttError(e.reason);
   if (!e.missed.includes(input.missed)) throw new AttError("Choose what was missed on that day.");
-  const t = checkRegularizationTimes({ missed: input.missed, checkIn: input.checkIn, checkOut: input.checkOut, recordedCheckInMin: r?.checkInTime ? istMinutes(r.checkInTime) : null });
+  const t = checkRegularizationTimes({
+    missed: input.missed,
+    checkIn: input.checkIn,
+    checkOut: input.checkOut,
+    recordedCheckInMin: r?.checkInTime ? istMinutes(r.checkInTime) : null,
+    recordedCheckOutMin: r?.checkOutTime ? istMinutes(r.checkOutTime) : null,
+  });
   if (!t.ok) throw new AttError(t.error);
   const [row] = await db
     .insert(regularizationRequests)
@@ -157,6 +163,117 @@ export async function applyRegularization(user: { id: string; name: string }, in
   if (!row) throw new AttError("There is already a regularization request for that day.");
   const times = [t.checkInMin != null ? `in ${formatHm(t.checkInMin)}` : null, t.checkOutMin != null ? `out ${formatHm(t.checkOutMin)}` : null].filter(Boolean).join(", ");
   await notifyNewRequest({ kind: "regularization", id: row.id, requester: user, approverId: row.approverId, summary: `${formatDay(input.date)}: ${times}. ${reason}` });
+  return { id: row.id };
+}
+
+/** A past day's card on the Regularization page: a missed punch to correct, or (grey) a correction already asked for or made. */
+export type PastDayCard = {
+  day: string;
+  state: PastCardState;
+  missed: MissedPunch;
+  /** What is recorded ("HH:MM"), or what was asked for when a request is in. */
+  checkIn: string | null;
+  checkOut: string | null;
+};
+
+const hm = (t: string | null) => (t ? t.slice(0, 5) : null);
+
+/** Every day of the window with something missing or a correction asked for (newest first): what the Regularization page lays out as cards. */
+export async function pastDayCards(userId: string): Promise<PastDayCard[]> {
+  const [settings, today] = [await getSettings(), istDay()];
+  const windowStart = addDays(today, -settings.regularizationWindowDays);
+  const goLive = effectiveGoLive(settings, today);
+  const from = goLive > windowStart ? goLive : windowStart;
+  const to = addDays(today, -1);
+  if (from > to) return [];
+  const [open, asked] = await Promise.all([
+    regularizableDays(userId),
+    db
+      .select()
+      .from(regularizationRequests)
+      .where(and(eq(regularizationRequests.userId, userId), eq(regularizationRequests.isFuture, false), inArray(regularizationRequests.status, ["pending", "approved"]), gte(regularizationRequests.date, from), lte(regularizationRequests.date, to))),
+  ]);
+  const cards: PastDayCard[] = open.map((d) => ({ day: d.day, state: pastCardState({ missed: d.missed[0], request: null })!, missed: d.missed[0], checkIn: d.checkIn, checkOut: d.checkOut }));
+  for (const r of asked) {
+    cards.push({ day: r.date, state: pastCardState({ missed: r.missed, request: r.status as "pending" | "approved" })!, missed: r.missed, checkIn: hm(r.requestedCheckin), checkOut: hm(r.requestedCheckout) });
+  }
+  return cards.sort((a, b) => b.day.localeCompare(a.day));
+}
+
+// ── Planned working days ──────────────────────────────────────────────────
+
+export type PlanCard = {
+  day: string;
+  /** The plan for the day, if one is in (pending or approved), or the last one turned down (the day can be planned again). */
+  plan: { id: string; status: "pending" | "approved" | "rejected"; checkIn: string; checkOut: string; reason: string; remark: string | null } | null;
+};
+
+/** The working days from tomorrow to PLAN_AHEAD_DAYS ahead, with any plan made for each. Weekly offs, holidays and full-day leave are left out. */
+export async function planCards(userId: string): Promise<PlanCard[]> {
+  const today = istDay();
+  const from = addDays(today, 1);
+  const to = addDays(today, PLAN_AHEAD_DAYS);
+  const [data, plans] = await Promise.all([
+    loadDays([userId], from, to),
+    db
+      .select()
+      .from(regularizationRequests)
+      .where(and(eq(regularizationRequests.userId, userId), eq(regularizationRequests.isFuture, true), inArray(regularizationRequests.status, ["pending", "approved", "rejected"]), gte(regularizationRequests.date, from), lte(regularizationRequests.date, to)))
+      .orderBy(desc(regularizationRequests.createdAt)),
+  ]);
+  const byDay = new Map<string, (typeof plans)[number]>();
+  for (const p of plans) {
+    const had = byDay.get(p.date);
+    // A live plan wins over a rejected one; among the same kind, the newest (the list is newest first).
+    if (!had || (had.status === "rejected" && p.status !== "rejected")) byDay.set(p.date, p);
+  }
+  const out: PlanCard[] = [];
+  for (const day of eachDay(from, to)) {
+    const p = byDay.get(day);
+    const live = p && p.status !== "rejected";
+    const v = viewOf(data, userId, day, today);
+    if (!live && (v.kind !== "working" || v.leave?.half === "none")) continue;
+    out.push({
+      day,
+      plan: p ? { id: p.id, status: p.status as "pending" | "approved" | "rejected", checkIn: hm(p.plannedCheckin) ?? "", checkOut: hm(p.plannedCheckout) ?? "", reason: p.reason, remark: p.approverRemark } : null,
+    });
+  }
+  return out;
+}
+
+/** Plans a working day ahead: the check-in and check-out times the person means to keep, sent to the manager (or HR) to approve. */
+export async function applyPlan(user: { id: string; name: string }, input: { date: string; checkIn: string; checkOut: string; reason?: string }): Promise<{ id: string }> {
+  if (!isDay(input.date)) throw new AttError("Choose the day.");
+  const today = istDay();
+  const reason = String(input.reason ?? "").trim().slice(0, MAX_REASON);
+  const data = await loadDays([user.id], input.date, input.date);
+  const v = viewOf(data, user.id, input.date, today);
+  const live = await db
+    .select({ id: regularizationRequests.id })
+    .from(regularizationRequests)
+    .where(and(eq(regularizationRequests.userId, user.id), eq(regularizationRequests.date, input.date), eq(regularizationRequests.isFuture, true), inArray(regularizationRequests.status, ["pending", "approved"])));
+  const e = planEligibility({ day: input.date, today, kind: v.kind, onFullLeave: v.leave?.half === "none", livePlan: live.length > 0 });
+  if (!e.ok) throw new AttError(e.reason);
+  const t = checkPlanTimes(input.checkIn, input.checkOut);
+  if (!t.ok) throw new AttError(t.error);
+  const [checkIn, checkOut] = [formatHm(t.checkInMin), formatHm(t.checkOutMin)];
+  const [row] = await db
+    .insert(regularizationRequests)
+    .values({
+      userId: user.id,
+      date: input.date,
+      missed: "both",
+      reason,
+      approverId: await approverIdFor(user.id),
+      isFuture: true,
+      plannedDate: input.date,
+      plannedCheckin: checkIn,
+      plannedCheckout: checkOut,
+    })
+    .onConflictDoNothing()
+    .returning({ id: regularizationRequests.id, approverId: regularizationRequests.approverId });
+  if (!row) throw new AttError("That day is already planned.");
+  await notifyNewRequest({ kind: "regularization", id: row.id, requester: user, approverId: row.approverId, summary: `Planned working day ${formatDay(input.date)}: ${checkIn} – ${checkOut}${reason ? `. ${reason}` : ""}` });
   return { id: row.id };
 }
 
@@ -223,6 +340,7 @@ export async function applyCompoff(user: { id: string; name: string }, input: { 
 // ── Lists and cancelling ──────────────────────────────────────────────────
 
 export const myWfh = (userId: string) => db.select().from(wfhRequests).where(eq(wfhRequests.userId, userId)).orderBy(desc(wfhRequests.date)).limit(100);
+/** The person's corrections and plans, newest day first (a plan has isFuture set). */
 export const myRegularizations = (userId: string) => db.select().from(regularizationRequests).where(eq(regularizationRequests.userId, userId)).orderBy(desc(regularizationRequests.date)).limit(100);
 export const myCompoffs = (userId: string) => db.select().from(compoffRequests).where(eq(compoffRequests.userId, userId)).orderBy(desc(compoffRequests.workedDate)).limit(100);
 
