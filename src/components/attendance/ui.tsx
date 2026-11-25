@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Inbox, type LucideIcon } from "lucide-react";
 import { initials } from "@/lib/attendance/att.manifest";
 import { STATUS_LABEL, STATUS_TONE, type DayView } from "@/lib/attendance/calendar";
+import { formatDistance } from "@/lib/attendance/checkin-rules";
 
 /** Attendance's small shared pieces (server- and client-safe: no hooks). Styles are in src/app/attendance/attendance.css (att-). */
 
@@ -67,7 +68,7 @@ export function Card({
   );
 }
 
-export type Tone = "neutral" | "blue" | "amber" | "purple" | "green" | "red" | "teal" | "grey" | "none";
+export type Tone = "neutral" | "blue" | "amber" | "purple" | "green" | "red" | "teal" | "grey" | "orange" | "none";
 
 export function Badge({ tone = "neutral", children, title }: { tone?: Tone; children: ReactNode; title?: string }) {
   return (
@@ -76,6 +77,22 @@ export function Badge({ tone = "neutral", children, title }: { tone?: Tone; chil
     </span>
   );
 }
+
+/** Where a punch was made: green "✓ In Office", or orange "📍 Remote" with the area (staff) or the distance from the office (HR). */
+export function PlaceBadge({ place, area, distanceM }: { place: "in_office" | "remote" | null; area?: string | null; distanceM?: number | null }) {
+  if (!place) return null;
+  if (place === "in_office") return <Badge tone="green">✓ In Office</Badge>;
+  const extra = area ?? (distanceM != null ? `${formatDistance(distanceM)} from office` : null);
+  return (
+    <Badge tone="orange" title={area && distanceM != null ? `${formatDistance(distanceM)} from the office` : undefined}>
+      📍 Remote{extra ? ` · ${extra}` : ""}
+    </Badge>
+  );
+}
+
+/** The same as a dot, for a calendar day or a list row. */
+export const PlaceDot = ({ place }: { place: "in_office" | "remote" | null }) =>
+  place ? <span className={`att-place-dot att-place-${place}`} role="img" aria-label={place === "in_office" ? "In office" : "Remote"} title={place === "in_office" ? "In office" : "Remote"} /> : null;
 
 export const DayBadge = ({ view }: { view: DayView }) => <Badge tone={view.missedCheckout ? "red" : STATUS_TONE[view.status]}>{view.missedCheckout ? "Missed check-out" : STATUS_LABEL[view.status]}</Badge>;
 
@@ -90,9 +107,9 @@ export function Avatar({ name, size = 28 }: { name: string; size?: number }) {
   );
 }
 
-export function Kpi({ label, value, tone, href }: { label: string; value: ReactNode; tone?: "green" | "red" | "amber" | "blue" | "teal" | "dark"; href?: string }) {
+export function Kpi({ label, value, tone, href }: { label: string; value: ReactNode; tone?: "green" | "red" | "amber" | "blue" | "teal" | "orange" | "dark"; href?: string }) {
   // Theme variables, so each number stays readable in dark mode too.
-  const colors: Record<string, string> = { green: "var(--att-primary-2)", red: "var(--att-red)", amber: "var(--att-amber-text)", blue: "var(--att-info)", teal: "var(--att-teal-text)" };
+  const colors: Record<string, string> = { green: "var(--att-primary-2)", red: "var(--att-red)", amber: "var(--att-amber-text)", blue: "var(--att-info)", teal: "var(--att-teal-text)", orange: "var(--att-orange)" };
   const color = colors[tone ?? "dark"] ?? "var(--att-text)";
   const body = (
     <>

@@ -43,7 +43,7 @@ export function statusForHours(hours: number, shift: ShiftHours, wfh = false): D
   return "absent";
 }
 
-export type PunchRecord = { checkIn: Date | null; checkOut: Date | null; status: DayStatus; isWfh: boolean; isExtraWork: boolean; isLate: boolean; isEarlyOut: boolean; hoursWorked: number | null; deficitHours?: number | null; excessHours?: number | null };
+export type PunchRecord = { checkIn: Date | null; checkOut: Date | null; status: DayStatus; isWfh: boolean; isExtraWork: boolean; isLate: boolean; isEarlyOut: boolean; hoursWorked: number | null; deficitHours?: number | null; excessHours?: number | null; place?: "in_office" | "remote" | null; distanceM?: number | null };
 export type DayView = {
   day: string;
   kind: DayKind;

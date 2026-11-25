@@ -8,12 +8,28 @@ import { loadDays, recordOf, viewOf } from "./days";
 import { cleanWish, todaysEvents, upcomingEvents, type FeedEvent, type FeedType } from "./feeds";
 import { AttError } from "./dal";
 import { addDays, istClock, istDay } from "./time";
+import { placeOfPunch } from "./checkin-rules";
 import { isUuid } from "./att.manifest";
 
 /** Who is where today (Home → Team, HR's Today), the feed (birthdays, anniversaries, joiners, announcements) and wishes. */
 
-export type TodayPerson = { id: string; name: string; teamName: string | null; branchName: string | null; designation: string | null; checkIn: string | null; checkOut: string | null; note: string | null; late: boolean };
-export type TodayBoard = { day: string; inOffice: TodayPerson[]; wfh: TodayPerson[]; onLeave: TodayPerson[]; notIn: TodayPerson[]; off: TodayPerson[] };
+export type TodayPerson = {
+  id: string;
+  name: string;
+  teamName: string | null;
+  branchName: string | null;
+  designation: string | null;
+  checkIn: string | null;
+  checkOut: string | null;
+  note: string | null;
+  late: boolean;
+  /** Where today's check-in was made, its distance from the office and (remote) the area, when known. */
+  place: "in_office" | "remote" | null;
+  distanceM: number | null;
+  area: string | null;
+};
+/** `remote` = checked in away from the office (with or without WFH approved), and WFH-approved people not in yet. */
+export type TodayBoard = { day: string; inOffice: TodayPerson[]; remote: TodayPerson[]; onLeave: TodayPerson[]; notIn: TodayPerson[]; off: TodayPerson[] };
 
 export async function todayBoard(filter: { teamId?: string | null; branchId?: string | null } = {}): Promise<TodayBoard> {
   const day = istDay();
@@ -25,7 +41,7 @@ export async function todayBoard(filter: { teamId?: string | null; branchId?: st
     day,
     day,
   );
-  const board: TodayBoard = { day, inOffice: [], wfh: [], onLeave: [], notIn: [], off: [] };
+  const board: TodayBoard = { day, inOffice: [], remote: [], onLeave: [], notIn: [], off: [] };
   for (const m of members) {
     const v = viewOf(data, m.id, day, day);
     const r = recordOf(data, m.id, day);
@@ -39,11 +55,16 @@ export async function todayBoard(filter: { teamId?: string | null; branchId?: st
       checkOut: r?.checkOutTime ? istClock(r.checkOutTime) : null,
       note: v.leave ? `${v.leave.typeName}${v.leave.half !== "none" ? ` (${v.leave.half} half)` : ""}` : null,
       late: !!r?.isLate,
+      place: r ? placeOfPunch(r.checkInPlace, r.checkInMethod) : null,
+      distanceM: r?.checkInDistanceM ?? null,
+      area: r?.checkInArea ?? null,
     };
-    if (r?.checkInTime) (r.isWfh ? board.wfh : board.inOffice).push(p);
+    if (r?.isWfh && !p.note) p.note = "WFH approved";
+    // A regularized day has no place: it counts where the person said they were (WFH or the office).
+    if (r?.checkInTime) ((p.place ?? (r.isWfh ? "remote" : "in_office")) === "remote" ? board.remote : board.inOffice).push(p);
     else if (v.leave?.half === "none") board.onLeave.push(p);
     else if (v.kind !== "working") board.off.push({ ...p, note: v.holidayName ?? "Weekly off" });
-    else if (v.wfh) board.wfh.push({ ...p, note: "WFH approved, not checked in yet" });
+    else if (v.wfh) board.remote.push({ ...p, note: "WFH approved, not checked in yet" });
     else if (v.leave) board.onLeave.push(p);
     else board.notIn.push(p);
   }

@@ -127,7 +127,8 @@ try {
   const ben = await mk("Ben");
   const hr = await mk("Hema");
   const outsider = await mk("Omar");
-  for (const u of [mgr, asha, ben]) await db.insert(H.userAppAccess).values({ userId: u.id, appId: userApp.id, appRole: "user" });
+  const rhea = await mk("Rhea");
+  for (const u of [mgr, asha, ben, rhea]) await db.insert(H.userAppAccess).values({ userId: u.id, appId: userApp.id, appRole: "user" });
   await db.insert(H.appAdmins).values({ appId: adminApp.id, userId: hr.id });
   const A = { id: asha.id, name: asha.name };
   const M = { id: mgr.id, name: mgr.name };
@@ -142,7 +143,7 @@ try {
 
   // ── Check-in / out ────────────────────────────────────────────────────
   const kindToday = dayKind(today, await cfg.calendarFor(today, today));
-  check("check-in: refused outside the office with the exact message", (await refused(() => CI.checkIn(asha.id, { ip: "8.8.8.8", position: { lat: 18.6, lng: 73.9 } }), /^You must be in the office or on the office network to check in\.$/)) === true);
+  check("check-in: refused without a location (and not on the office network) with the exact message", (await refused(() => CI.checkIn(asha.id, { ip: "8.8.8.8", position: null }), /^Location access is required to check in\. Please allow location in your browser settings\.$/)) === true);
   const inMsg = await CI.checkIn(asha.id, { ip: OFFICE_IP, position: null });
   const [rec] = await db.select().from(T.attendance).where(and(eq(T.attendance.userId, asha.id), eq(T.attendance.date, today)));
   check("check-in: from the office network, recorded as ip; extra work exactly when today is not a working day", rec?.checkInMethod === "ip" && rec.isExtraWork === (kindToday !== "working") && /network/.test(inMsg.message), { rec, kindToday });
@@ -150,7 +151,13 @@ try {
   const near = { lat: 18.5195 + 50 / 111_320, lng: 73.8553 };
   await CI.checkIn(ben.id, { ip: null, position: near });
   const card = await CI.todayCard(ben.id);
-  check("check-in: within 150 m by phone, recorded as gps; the card shows it open", card.record?.method === "gps" && !!card.record.checkIn && !card.record.checkOut, card.record);
+  check("check-in: within 150 m by phone, recorded as gps, in office, with its distance; the card shows it open", card.record?.method === "gps" && card.record.place === "in_office" && card.record.distanceM === 50 && !!card.record.checkIn && !card.record.checkOut, card.record);
+  const away = { lat: 18.5195 + 2300 / 111_320, lng: 73.8553, accuracy: 12 };
+  const remoteMsg = await CI.checkIn(rhea.id, { ip: "8.8.8.8", position: away });
+  const [rr] = await db.select().from(T.attendance).where(and(eq(T.attendance.userId, rhea.id), eq(T.attendance.date, today)));
+  check("check-in: from anywhere: 2.3 km away is allowed, tagged remote with coordinates, accuracy and distance", rr?.checkInPlace === "remote" && rr.checkInMethod === "gps" && rr.checkInDistanceM === 2297 && rr.checkInLat === away.lat && rr.checkInAccuracyM === 12 && /remotely \(2\.3 km from the office\)/.test(remoteMsg.message), { rr, remoteMsg });
+  check("check-in: late is judged the same remotely as in the office (Rhea remote and Asha on the office network, moments apart)", rr?.isLate === rec?.isLate, { remote: rr?.isLate, office: rec?.isLate });
+  check("card: the remote check-in shows remote with its distance", (await CI.todayCard(rhea.id)).record?.place === "remote");
   check("check-out: refused before the shift's 7.5 hours are worked (when today is a working day)", kindToday !== "working" || (await refused(() => CI.checkOut(ben.id, { ip: OFFICE_IP, position: null }), /once you have worked 7h 30m/)) === true);
   check("check-out: the card says 7.5 hours are required (0 on extra work)", card.requiredHours === (kindToday === "working" ? 7.5 : 0), card.requiredHours);
   if (kindToday === "working") {
@@ -164,9 +171,13 @@ try {
   await CI.checkOut(ben.id, { ip: OFFICE_IP, position: null });
   const card2 = await CI.todayCard(ben.id);
   check("check-out: fills the check-out once, with hours", !!card2.record?.checkOut && card2.record.hoursWorked != null, card2.record);
+  const [bo] = await db.select().from(T.attendance).where(and(eq(T.attendance.userId, ben.id), eq(T.attendance.date, today)));
+  check("check-out: on the office network without a position is in office (ip); its place is stored", bo?.checkOutPlace === "in_office" && bo.checkOutMethod === "ip" && bo.checkOutLat === null, bo);
   check("check-out: a second check-out is refused", (await refused(() => CI.checkOut(ben.id, { ip: OFFICE_IP, position: null }), /already checked out/)) === true);
   const board = await OV.todayBoard();
   check("today board: Asha and Ben in office; Manju not in yet on a working day (off otherwise)", board.inOffice.some((p) => p.id === asha.id) && board.inOffice.some((p) => p.id === ben.id) && (kindToday === "working" ? board.notIn : board.off).some((p) => p.id === mgr.id));
+  const rb = board.remote.find((p) => p.id === rhea.id);
+  check("today board: Rhea under Remote, with her distance from the office", rb?.place === "remote" && rb.distanceM === 2297, rb);
 
   // ── Leave ─────────────────────────────────────────────────────────────
   const bal = await LV.balancesFor(asha.id, year);

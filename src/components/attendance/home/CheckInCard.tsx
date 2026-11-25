@@ -2,14 +2,14 @@
 
 import { useEffect, useEffectEvent, useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, CheckCircle2, Clock, CloudOff, Home as HomeIcon, Lock, LogIn, LogOut, MapPin, Wifi } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock, CloudOff, Lock, LogIn, LogOut, MapPin, Wifi } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import type { TodayCard } from "@/lib/attendance/checkin";
 import { applyEarlyDepartureAction, cancelRequestAction, checkInAction, checkOutAction } from "@/lib/attendance/actions/staff";
-import { checkoutGate, formatWait } from "@/lib/attendance/checkin-rules";
+import { checkoutGate, formatWait, LOCATION_REQUIRED } from "@/lib/attendance/checkin-rules";
 import { formatClockDuration, formatDayCaps, formatHours, istClock12 } from "@/lib/attendance/time";
-import { Badge, IconBadge } from "../ui";
+import { Badge, IconBadge, PlaceBadge } from "../ui";
 import { useAct } from "../use-act";
 import { useOnline } from "../pwa/AttPwa";
 
@@ -18,7 +18,7 @@ import { useOnline } from "../pwa/AttPwa";
 type Fix = { lat: number; lng: number; accuracy: number };
 type Loc = { state: "unknown" | "prompt" | "granted" | "denied" | "unavailable"; accuracy?: number };
 
-/** Asks the browser where it is (10 s at most). Without a position the office network may still work. */
+/** Asks the browser where it is (10 s at most). A position is required to punch, except on the office network (the server decides). */
 function locate(): Promise<{ fix: Fix | null; state: Loc["state"] }> {
   return new Promise((resolve) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return resolve({ fix: null, state: "unavailable" });
@@ -32,7 +32,8 @@ function locate(): Promise<{ fix: Fix | null; state: Loc["state"] }> {
 
 // ── Offline queue ─────────────────────────────────────────────────────────
 // A check-in or check-out tapped with no connection is kept on this device and sent when it reconnects. The time recorded is the moment it
-// reaches the server (the server never takes a time from the phone), and it must still pass the usual checks then (office network or GPS).
+// reaches the server (the server never takes a time from the phone), and it must still pass the usual checks then (a position, or the office
+// network).
 
 type Queued = { kind: "in" | "out"; userId: string; savedAt: number };
 const QUEUE = "att-punch-queue";
@@ -78,8 +79,6 @@ function useQueued(userId: string): Queued | null {
 
 const METHOD: Record<string, { label: string; icon: typeof Wifi }> = {
   ip: { label: "Office network", icon: Wifi },
-  gps: { label: "At the office (GPS)", icon: MapPin },
-  wfh: { label: "Work from home", icon: HomeIcon },
   manual: { label: "Regularized", icon: MapPin },
 };
 
@@ -208,18 +207,17 @@ export function CheckInCard({ card, userId }: { card: TodayCard; userId: string 
     server?.isExtraWork && <Badge key="x" tone="purple">Extra work</Badge>,
   ].filter(Boolean);
 
-  const locHint =
-    card.wfhApproved || done
-      ? null
-      : loc.state === "denied"
-        ? "Location is blocked. Check in on the office Wi-Fi, or allow location for this site in your phone's settings."
-        : loc.state === "unavailable"
-          ? "Your location could not be found. On the office Wi-Fi you can still check in."
-          : loc.accuracy != null
-            ? `Location found (±${loc.accuracy} m)${loc.accuracy > 100 ? ": low accuracy, try near a window or use the office Wi-Fi" : ""}.`
-            : loc.state === "prompt"
-              ? "You will be asked for your location to confirm you are at the office (not needed on the office Wi-Fi)."
-              : null;
+  const locHint = done
+    ? null
+    : loc.state === "denied"
+      ? LOCATION_REQUIRED
+      : loc.state === "unavailable"
+        ? "Your location could not be found. Turn on location (GPS) and try again. On the office Wi-Fi you can still check in."
+        : loc.accuracy != null
+          ? `Location found (±${loc.accuracy} m)${loc.accuracy > 100 ? ": low accuracy, try near a window" : ""}.`
+          : loc.state === "prompt"
+            ? "You will be asked for your location: it is needed to check in and out, and recorded with each."
+            : null;
 
   return (
     <section className="att-card att-checkin">
@@ -253,7 +251,17 @@ export function CheckInCard({ card, userId }: { card: TodayCard; userId: string 
               </p>
             )}
             {server?.checkOut && server.hoursWorked != null && <p className="text-xs text-gray-500">{formatHours(server.hoursWorked)} recorded</p>}
-            {m && (
+            {server?.place && (
+              <p className="flex flex-wrap items-center gap-1.5" data-testid="checkin-place">
+                <PlaceBadge place={server.place} area={server.area} distanceM={server.area ? null : server.distanceM} />
+                {m && (
+                  <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+                    <m.icon size={12} aria-hidden /> {m.label}
+                  </span>
+                )}
+              </p>
+            )}
+            {!server?.place && m && (
               <p className="inline-flex items-center gap-1 text-xs text-gray-500">
                 <m.icon size={12} aria-hidden /> {m.label}
               </p>
@@ -319,8 +327,8 @@ export function CheckInCard({ card, userId }: { card: TodayCard; userId: string 
           : card.kind !== "working" && !server
             ? "Today is not a working day: checking in records extra work, which you can claim as a comp-off."
             : card.wfhApproved && !server
-              ? "Work from home is approved for today: you can check in from anywhere."
-              : "Check in from the office: on the office network, or with your phone's location within the office."}
+              ? "Work from home is approved for today. Allow your location when asked: it is recorded with each check-in and check-out."
+              : `Check in from anywhere. Allow your location when asked: it is recorded, and within ${card.officeRadiusM} m of the office (or on the office Wi-Fi) counts as in office.`}
       </p>
       {asking && <EarlyDialog approver={card.approver} onClose={() => setAsking(false)} />}
     </section>

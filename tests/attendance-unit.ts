@@ -96,16 +96,28 @@ export function attendanceUnit(eq: Eq): void {
 
   const s = { ...DEFAULT_SETTINGS, officeIps: ["203.0.113.10"] };
   const ci = (o: Partial<Parameters<typeof C.decideCheckIn>[0]>) => C.decideCheckIn({ alreadyCheckedIn: false, leaveToday: null, kind: "working", wfhApproved: false, ip: null, position: null, settings: s, ...o });
-  eq("att checkin: office IP wins (recorded as ip)", ci({ ip: "203.0.113.10", position: near }), { ok: true, method: "ip", isWfh: false, isExtraWork: false });
-  eq("att checkin: phone within 150 m (recorded as gps)", ci({ position: near }), { ok: true, method: "gps", isWfh: false, isExtraWork: false });
-  eq("att checkin: outside both is blocked with the exact message", ci({ position: far, ip: "8.8.8.8" }), { ok: false, error: "You must be in the office or on the office network to check in." });
-  eq("att checkin: approved WFH checks in from anywhere", ci({ position: far, wfhApproved: true }), { ok: true, method: "wfh", isWfh: true, isExtraWork: false });
-  eq("att checkin: WFH approved but in the office is recorded as in office", ci({ position: near, wfhApproved: true }), { ok: true, method: "gps", isWfh: false, isExtraWork: false });
+  const far2k = { lat: 18.5195 + 2300 / 111_320, lng: 73.8553 };
+  eq("att checkin: within 150 m is in office (gps), with the distance", ci({ position: near }), { ok: true, method: "gps", place: "in_office", distanceM: 100, isWfh: false, isExtraWork: false });
+  eq("att checkin: anywhere is allowed: 2.3 km away is remote", ci({ position: far2k }), { ok: true, method: "gps", place: "remote", distanceM: 2297, isWfh: false, isExtraWork: false });
+  eq("att checkin: just outside the radius (200 m) is remote", ci({ position: far, ip: "8.8.8.8" }), { ok: true, method: "gps", place: "remote", distanceM: 200, isWfh: false, isExtraWork: false });
+  eq("att checkin: no position and not the office network is refused with the exact message", ci({ ip: "8.8.8.8" }), { ok: false, error: "Location access is required to check in. Please allow location in your browser settings." });
+  eq("att checkin: office network without a position is in office (ip)", ci({ ip: "203.0.113.10" }), { ok: true, method: "ip", place: "in_office", distanceM: null, isWfh: false, isExtraWork: false });
+  eq("att checkin: office network with a far position is still in office (ip), distance kept", ci({ ip: "203.0.113.10", position: far2k }), { ok: true, method: "ip", place: "in_office", distanceM: 2297, isWfh: false, isExtraWork: false });
+  eq("att checkin: GPS within the radius is preferred over the network (gps)", ci({ ip: "203.0.113.10", position: near }).ok && (ci({ ip: "203.0.113.10", position: near }) as { method: string }).method, "gps");
+  eq("att checkin: remote with WFH approved is WFH; in office with WFH approved is not", [ci({ position: far2k, wfhApproved: true }), ci({ position: near, wfhApproved: true })].map((d) => d.ok && d.isWfh), [true, false]);
+  eq("att checkin: an invalid position counts as none", ci({ position: { lat: 200, lng: 0 } }).ok, false);
+  eq("att checkin: the radius comes from Settings (300 m makes 200 m in office)", (C.decideCheckIn({ alreadyCheckedIn: false, leaveToday: null, kind: "working", wfhApproved: false, ip: null, position: far, settings: { ...s, office: { ...s.office, radiusM: 300 } } }) as { place: string }).place, "in_office");
   eq("att checkin: a holiday or weekly off is extra work", [ci({ kind: "holiday", position: near }), ci({ kind: "weekly_off", ip: "203.0.113.10" })].map((d) => d.ok && d.isExtraWork), [true, true]);
   eq("att checkin: cannot check in twice", ci({ alreadyCheckedIn: true, position: near }).ok, false);
   eq("att checkin: cannot check in on full-day leave; can with half-day leave", [ci({ leaveToday: "none", position: near }).ok, ci({ leaveToday: "first", position: near }).ok], [false, true]);
-  const co = (o: Partial<Parameters<typeof C.decideCheckOut>[0]>) => C.decideCheckOut({ checkedIn: true, checkedOut: false, isWfhDay: false, ip: null, position: near, settings: s, ...o });
-  eq("att checkout: allowed once, from the office or anywhere on a WFH day", [co({}).ok, co({ checkedOut: true }).ok, co({ checkedIn: false }).ok, co({ position: far }).ok, co({ position: far, isWfhDay: true }).ok], [true, false, false, false, true]);
+  const co = (o: Partial<Parameters<typeof C.decideCheckOut>[0]>) => C.decideCheckOut({ checkedIn: true, checkedOut: false, ip: null, position: near, settings: s, ...o });
+  eq("att checkout: allowed once, from anywhere with a position", [co({}).ok, co({ checkedOut: true }).ok, co({ checkedIn: false }).ok, co({ position: far2k }).ok], [true, false, false, true]);
+  eq("att checkout: remote check-out is tagged with its distance", co({ position: far2k }), { ok: true, method: "gps", place: "remote", distanceM: 2297 });
+  eq("att checkout: no position: refused (check-out wording), unless on the office network", [co({ position: null }), co({ position: null, ip: "203.0.113.10" }).ok], [{ ok: false, error: "Location access is required to check out. Please allow location in your browser settings." }, true]);
+  eq("att place: old rows read their place from the method; regularized has none", [C.placeOfPunch(null, "ip"), C.placeOfPunch(null, "gps"), C.placeOfPunch(null, "wfh"), C.placeOfPunch(null, "manual"), C.placeOfPunch("remote", "gps"), C.placeOfPunch(null, null)], ["in_office", "in_office", "remote", null, "remote", null]);
+  eq("att place: labels and distances for the reports", [C.placeLabel("in_office", 40), C.placeLabel("remote", 2340), C.placeLabel("remote", 420), C.placeLabel("remote", null), C.placeLabel(null, null), C.formatDistance(12_600)], ["In Office", "Remote (2.3 km)", "Remote (420 m)", "Remote", "", "13 km"]);
+  eq("att place: area name: district then city; suburb by name; state alone; nothing", [C.areaName({ district: "Baner", city: "Pune" }), C.areaName({ osm_value: "suburb", name: "Kothrud", city: "Pune" }), C.areaName({ city: "Pune" }), C.areaName({ state: "Maharashtra" }), C.areaName({})], ["Baner, Pune", "Kothrud, Pune", "Pune", "Maharashtra", null]);
+  eq("att checkin: late still applies from anywhere (11:00 check-in is late, wherever it is made)", C.isLate(660, 600, 45), true);
 
   eq("att checkin: late = after 10:00 + 45 min grace (10:45 on time, 10:46 late)", [C.isLate(645, 600, 45), C.isLate(646, 600, 45)], [false, true]);
   eq("att checkin: early out = before 17:30 − 30 min (17:00 not early, 16:59 early)", [C.isEarlyOut(1020, 1050, 30), C.isEarlyOut(1019, 1050, 30)], [false, true]);
@@ -241,9 +253,15 @@ export function attendanceUnit(eq: Eq): void {
     "2026-11-22": rec({ status: "present", isExtraWork: true, hoursWorked: 3 }),
   };
   const views = days.map((d) => resolveDay({ day: d, today: "2026-11-22", cal, record: recs[d] ?? null, leave: d === "2026-11-19" ? { half: "none", typeName: "CL", color: "blue" } : null }));
-  eq("att tally: a week: present, half day, holiday, leave, WFH, absent 3rd Saturday, extra-work Sunday, future Monday", tally(views), { workingDays: 5, present: 1.5, absent: 1.5, late: 1, earlyOut: 1, leave: 1, wfh: 1, extraWork: 1, hours: 22.5 });
+  eq("att tally: a week: present, half day, holiday, leave, WFH, absent 3rd Saturday, extra-work Sunday, future Monday", tally(views), { workingDays: 5, present: 1.5, absent: 1.5, late: 1, earlyOut: 1, leave: 1, wfh: 1, extraWork: 1, hours: 22.5, inOffice: 0, remote: 0 });
+  eq("att tally: days checked in counted by place (regularized = neither)", (({ inOffice, remote }) => [inOffice, remote])(tally([
+    { day: "2026-11-16", kind: "working", status: "present", record: rec({ place: "in_office" }) },
+    { day: "2026-11-17", kind: "working", status: "present", record: rec({ place: "remote", distanceM: 2300 }) },
+    { day: "2026-11-18", kind: "working", status: "present", record: rec({ place: "remote" }) },
+    { day: "2026-11-19", kind: "working", status: "present", record: rec({ place: null }) },
+  ] as unknown as Parameters<typeof tally>[0])), [1, 2]);
   const fromWed = days.map((d) => resolveDay({ day: d, today: "2026-11-22", cal, record: recs[d] ?? null, goLive: "2026-11-18" }));
-  eq("att tally: days before go-live (Mon, Tue) are not counted at all, not even their hours", tally(fromWed), { workingDays: 3, present: 0, absent: 2, late: 0, earlyOut: 0, leave: 0, wfh: 1, extraWork: 1, hours: 10.5 });
+  eq("att tally: days before go-live (Mon, Tue) are not counted at all, not even their hours", tally(fromWed), { workingDays: 3, present: 0, absent: 2, late: 0, earlyOut: 0, leave: 0, wfh: 1, extraWork: 1, hours: 10.5, inOffice: 0, remote: 0 });
 
   // ── Org chart ───────────────────────────────────────────────────────────
   const org = layout([

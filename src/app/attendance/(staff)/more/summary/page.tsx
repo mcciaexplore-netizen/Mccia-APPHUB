@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Download } from "lucide-react";
-import { Card, DayBadge, Kpi, LinkTabs, PageHeader } from "@/components/attendance/ui";
+import { Card, DayBadge, Kpi, LinkTabs, PageHeader, PlaceDot } from "@/components/attendance/ui";
 import { MonthGrid } from "@/components/attendance/MonthGrid";
 import { MonthNav } from "@/components/attendance/MonthNav";
 import { requireMember } from "@/lib/attendance/dal";
@@ -68,7 +68,8 @@ export default async function SummaryPage({ searchParams }: PageProps<"/attendan
                 <>
                   <span className="font-semibold">{v.missedCheckout ? "Missed out" : v.status === "upcoming" || v.status === "pending" ? "" : STATUS_LABEL[v.status]}</span>
                   {v.record?.checkIn && (
-                    <span className="att-cal-extra tabular-nums">
+                    <span className="att-cal-extra inline-flex items-center gap-1 tabular-nums">
+                      <PlaceDot place={v.record.place ?? null} />
                       {istClock(v.record.checkIn)}–{v.record.checkOut ? istClock(v.record.checkOut) : "?"}
                     </span>
                   )}
@@ -86,6 +87,12 @@ export default async function SummaryPage({ searchParams }: PageProps<"/attendan
                 <span className={`att-st-${STATUS_TONE[s]} inline-block h-3 w-3 rounded`} aria-hidden /> {STATUS_LABEL[s]}
               </span>
             ))}
+            <span className="inline-flex items-center gap-1.5">
+              <PlaceDot place="in_office" /> Checked in at the office
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <PlaceDot place="remote" /> Checked in remotely
+            </span>
           </p>
         </Card>
       ) : (
@@ -98,6 +105,7 @@ export default async function SummaryPage({ searchParams }: PageProps<"/attendan
                   <th>Status</th>
                   <th>In</th>
                   <th>Out</th>
+                  <th>Location</th>
                   <th>Hours</th>
                   <th>vs shift</th>
                   <th>Marks</th>
@@ -116,6 +124,15 @@ export default async function SummaryPage({ searchParams }: PageProps<"/attendan
                         </td>
                         <td className="tabular-nums">{r?.checkIn ? istClock(r.checkIn) : "—"}</td>
                         <td className="tabular-nums">{r?.checkOut ? istClock(r.checkOut) : "—"}</td>
+                        <td className="whitespace-nowrap text-xs">
+                          {r?.place ? (
+                            <span className={`inline-flex items-center gap-1.5 ${r.place === "remote" ? "att-text-remote" : ""}`}>
+                              <PlaceDot place={r.place} /> {r.place === "in_office" ? "In office" : "Remote"}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
                         <td className="tabular-nums">{r?.hoursWorked != null ? formatHours(r.hoursWorked) : "—"}</td>
                         <td className="tabular-nums text-xs">
                           {r?.checkOut && r.excessHours ? <span className="text-[var(--att-green-dark)]">+{formatHours(r.excessHours)}</span> : null}

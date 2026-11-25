@@ -62,10 +62,10 @@ async function cleanup() {
 const pageErrors = [];
 const consoleErrors = [];
 let browser;
-const fresh = async (viewport = { width: 1366, height: 900 }, { hubPopupSeen = true } = {}) => {
-  // Below 768 px wide: a phone (touch screen), as the app sees it.
+const fresh = async (viewport = { width: 1366, height: 900 }, { hubPopupSeen = true, geo = null } = {}) => {
+  // Below 768 px wide: a phone (touch screen), as the app sees it. `geo`: the browser allows location and reports this position.
   const phone = viewport.width < 768;
-  const ctx = await browser.newContext({ viewport, acceptDownloads: true, isMobile: phone, hasTouch: phone });
+  const ctx = await browser.newContext({ viewport, acceptDownloads: true, isMobile: phone, hasTouch: phone, ...(geo ? { geolocation: geo, permissions: ["geolocation"] } : {}) });
   ctx.setDefaultTimeout(60000);
   if (hubPopupSeen) await ctx.addInitScript(() => { try { localStorage.setItem("mccia-install-popup-seen", "1"); localStorage.setItem("mccia-install-snoozed-until", String(Date.now() + 864e5)); } catch {} });
   const page = await ctx.newPage();
@@ -98,7 +98,9 @@ try {
   const asha = await mk("ZZA Asha", mgr.id);
   const hr = await mk("ZZA Hema");
   const out = await mk("ZZA Omar");
-  for (const u of [mgr, asha]) await sql`insert into user_app_access (user_id, app_id, app_role) values (${u.id}, ${userApp.id}, 'user')`;
+  const rhea = await mk("ZZA Rhea");
+  const nisha = await mk("ZZA Nisha");
+  for (const u of [mgr, asha, rhea, nisha]) await sql`insert into user_app_access (user_id, app_id, app_role) values (${u.id}, ${userApp.id}, 'user')`;
   await sql`insert into app_admins (app_id, user_id) values (${adminApp.id}, ${hr.id})`;
   await sql`insert into att_settings (key, value) values ('config', ${JSON.stringify({ officeIps: ["127.0.0.1", "::1"], goLiveDate: addDays(istDay(), -30), firstEnabledOn: addDays(istDay(), -30) })}::jsonb) on conflict (key) do update set value = excluded.value`;
 
@@ -297,6 +299,55 @@ try {
   const [mrec] = await sql`select check_in_method from att_attendance where user_id = ${mgr.id} and date = ${istDay()}`;
   check("offline: the check-in reached the server (one row, office network)", mrec?.check_in_method === "ip", mrec);
   await ph.ctx.close();
+
+  section("Check in from anywhere, with the location recorded");
+  {
+    // Away from the office network now (no office IPs), so only the phone's position decides.
+    await sql`update att_settings set value = value || ${JSON.stringify({ officeIps: [] })}::jsonb where key = 'config'`;
+    const n = await signedIn(nisha.email);
+    await go(n.page, "/attendance");
+    await n.page.getByRole("button", { name: "Check In", exact: true }).click();
+    check("no location: check-in is refused with the exact message", await toast(n.page, /^Location access is required to check in\. Please allow location in your browser settings\.$/));
+    const [nrec] = await sql`select id from att_attendance where user_id = ${nisha.id} and date = ${istDay()}`;
+    check("no location: nothing was recorded", !nrec, nrec);
+    check("no location: the card says how to allow it", (await mainText(n.page)).includes("Location access is required to check in."));
+    await n.ctx.close();
+
+    const away = { latitude: 18.5195 + 2300 / 111_320, longitude: 73.8553, accuracy: 15 };
+    const r = await signedIn(rhea.email, undefined, { geo: away });
+    await go(r.page, "/attendance");
+    await r.page.getByRole("button", { name: "Check In", exact: true }).click();
+    check("remote: check-in 2.3 km away is allowed and says so", await toast(r.page, /Checked in remotely \(2\.3 km from the office\)/));
+    const badge = r.page.getByTestId("checkin-place");
+    await badge.waitFor({ timeout: 20000 }).catch(() => {});
+    const badgeText = await badge.innerText().catch(() => "");
+    check("remote: the card shows the orange “📍 Remote” badge", /📍 Remote/.test(badgeText) && (await badge.locator(".att-tone-orange").count()) === 1, badgeText);
+    const [rrec] = await sql`select check_in_place, check_in_method, check_in_distance_m, check_in_lat, check_in_lng, check_in_accuracy_m, check_in_area, is_late from att_attendance where user_id = ${rhea.id} and date = ${istDay()}`;
+    check("remote: stored as remote, GPS, 2297 m, with the exact coordinates and accuracy", rrec?.check_in_place === "remote" && rrec.check_in_method === "gps" && rrec.check_in_distance_m === 2297 && Math.abs(rrec.check_in_lat - away.latitude) < 1e-9 && rrec.check_in_accuracy_m === 15, rrec);
+    console.log(`      (area found: ${rrec?.check_in_area ?? "none"})`);
+    await go(r.page, `/attendance/more/summary?month=${istDay().slice(0, 7)}&view=list`);
+    check("summary list: today's Location is Remote, with an orange dot", (await r.page.locator("main tr", { hasText: "Remote" }).count()) >= 1 && (await r.page.locator("main .att-place-remote").count()) >= 1);
+    await go(r.page, `/attendance/more/summary?month=${istDay().slice(0, 7)}`);
+    check("summary calendar: today has the orange remote dot, and the legend explains both dots", (await r.page.locator(".att-cal .att-place-remote").count()) >= 1 && (await mainText(r.page)).includes("Checked in remotely"));
+    await r.ctx.close();
+
+    const h2 = await signedIn(hr.email);
+    await go(h2.page, "/attendance/admin");
+    const todayText = await mainText(h2.page);
+    check("HR today: Rhea is under Remote with her distance (“Remote · 2.3 km from office”)", /ZZA Rhea[\s\S]{0,200}Remote · 2\.3 km from office/.test(todayText), todayText.slice(0, 400));
+    check("HR today: Asha shows In Office", /ZZA Asha[\s\S]{0,200}In Office/.test(todayText));
+    await go(h2.page, `/attendance/admin/attendance?user=${rhea.id}`);
+    const place = h2.page.getByTestId("punch-place").first();
+    const placeText = await place.innerText().catch(() => "");
+    check("HR attendance: Rhea's check-in shows Remote, the distance and the exact coordinates", /In: Remote/.test(placeText) && placeText.includes("2.3 km from office") && placeText.includes(away.latitude.toFixed(6)), placeText);
+    check("HR attendance: a remote check-in is flagged orange", (await h2.page.locator("main .att-remote-cell").count()) >= 1 && (await place.evaluate((el) => el.classList.contains("att-text-remote"))));
+    const csv = await fetchIn(h2.page, `/api/attendance/export?report=person&user=${rhea.id}&from=${istDay()}&to=${istDay()}`);
+    check("report: the Location column says Remote (2.3 km)", /,Location,/.test(csv.body.split("\n")[0]) && csv.body.includes("Remote (2.3 km)"), csv.body.slice(0, 300));
+    const month = await fetchIn(h2.page, `/api/attendance/export?report=monthly&month=${istDay().slice(0, 7)}`);
+    check("report: the monthly report counts days checked in remote", month.body.split("\n")[0].includes("Checked in remote"), month.body.split("\n")[0]);
+    await h2.ctx.close();
+    await sql`update att_settings set value = value || ${JSON.stringify({ officeIps: ["127.0.0.1", "::1"] })}::jsonb where key = 'config'`;
+  }
 
   section("Every page at every width");
   const STAFF = ["/attendance", "/attendance?tab=team", "/attendance/leave", "/attendance/leave/apply", "/attendance/time", "/attendance/more", "/attendance/more/summary", "/attendance/more/profile", "/attendance/more/regularization", "/attendance/more/wfh"];

@@ -6,12 +6,37 @@ import { personDays, recordOf } from "@/lib/attendance/days";
 import { tally } from "@/lib/attendance/summary";
 import { isUuid } from "@/lib/attendance/att.manifest";
 import { addDays, daysBetween, formatDayShort, formatHours, isDay, istClock, istDay } from "@/lib/attendance/time";
+import { formatDistance, placeOfPunch, type PlaceTag } from "@/lib/attendance/checkin-rules";
 
 export const metadata = { title: "Attendance · Attendance Admin" };
 
-const METHOD: Record<string, string> = { ip: "Office network", gps: "GPS", wfh: "WFH", manual: "Regularized" };
+const METHOD: Record<string, string> = { ip: "office network", gps: "GPS", wfh: "WFH", manual: "Regularized" };
 
-/** Anyone's days over a date range: status, in/out times, method, hours and marks. */
+/** One punch's location: In Office / Remote (orange), how it was known, the distance from the office, the coordinates (map link), the area. */
+function PunchPlace({ label, place, method, lat, lng, distanceM, accuracyM, area }: { label: string; place: PlaceTag | null; method: string | null; lat: number | null; lng: number | null; distanceM: number | null; accuracyM: number | null; area: string | null }) {
+  if (!place && !method) return null;
+  return (
+    <div className={place === "remote" ? "att-text-remote" : undefined} data-testid="punch-place">
+      <span className="font-semibold">
+        {label}: {place === "in_office" ? "In Office" : place === "remote" ? "Remote" : METHOD[method ?? ""] ?? "—"}
+      </span>
+      {place && method && <span className="att-muted"> ({METHOD[method] ?? method})</span>}
+      {distanceM != null && <span> · {formatDistance(distanceM)} from office</span>}
+      {area && <span> · {area}</span>}
+      {lat != null && lng != null && (
+        <span className="block tabular-nums att-muted">
+          {lat.toFixed(6)}, {lng.toFixed(6)}
+          {accuracyM != null ? ` ±${Math.round(accuracyM)} m` : ""}{" "}
+          <a className="text-[var(--att-primary)]" href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=18/${lat}/${lng}`} target="_blank" rel="noreferrer">
+            map
+          </a>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Anyone's days over a date range: status, in/out times, where each punch was made (remote ones in orange), hours and marks. */
 export default async function AdminAttendancePage({ searchParams }: PageProps<"/attendance/admin/attendance">) {
   await requireAdmin();
   const sp = await searchParams;
@@ -58,7 +83,7 @@ export default async function AdminAttendancePage({ searchParams }: PageProps<"/
         </Card>
       ) : (
         <Card
-          title={t ? `Present ${t.present} · WFH ${t.wfh} · Leave ${t.leave} · Absent ${t.absent} · Late ${t.late} · Early out ${t.earlyOut} · ${formatHours(t.hours)}` : undefined}
+          title={t ? `Present ${t.present} · WFH ${t.wfh} · Leave ${t.leave} · Absent ${t.absent} · Late ${t.late} · Early out ${t.earlyOut} · ${formatHours(t.hours)} · In office ${t.inOffice} · Remote ${t.remote}` : undefined}
           actions={
             <a href={`/api/attendance/export?report=person&user=${userId}&from=${from}&to=${to}`} className="btn btn-ghost btn-sm">
               <Download size={14} aria-hidden /> CSV
@@ -74,7 +99,7 @@ export default async function AdminAttendancePage({ searchParams }: PageProps<"/
                   <th>Status</th>
                   <th>In</th>
                   <th>Out</th>
-                  <th>Method</th>
+                  <th>Location</th>
                   <th>Hours</th>
                   <th>Marks</th>
                 </tr>
@@ -93,13 +118,14 @@ export default async function AdminAttendancePage({ searchParams }: PageProps<"/
                         </td>
                         <td className="tabular-nums">{r?.checkInTime ? istClock(r.checkInTime) : "—"}</td>
                         <td className="tabular-nums">{r?.checkOutTime ? istClock(r.checkOutTime) : "—"}</td>
-                        <td className="text-xs">
-                          {r?.checkInMethod ? METHOD[r.checkInMethod] : ""}
-                          {r?.checkInLat != null && (
-                            <a className="ml-1 text-[var(--att-primary)]" href={`https://www.openstreetmap.org/?mlat=${r.checkInLat}&mlon=${r.checkInLng}#map=18/${r.checkInLat}/${r.checkInLng}`} target="_blank" rel="noreferrer">
-                              map
-                            </a>
+                        <td className={`min-w-56 space-y-1 text-xs ${placeOfPunch(r?.checkInPlace, r?.checkInMethod) === "remote" || placeOfPunch(r?.checkOutPlace, r?.checkOutMethod) === "remote" ? "att-remote-cell" : ""}`}>
+                          {r && (
+                            <>
+                              <PunchPlace label="In" place={placeOfPunch(r.checkInPlace, r.checkInMethod)} method={r.checkInMethod} lat={r.checkInLat} lng={r.checkInLng} distanceM={r.checkInDistanceM} accuracyM={r.checkInAccuracyM} area={r.checkInArea} />
+                              <PunchPlace label="Out" place={placeOfPunch(r.checkOutPlace, r.checkOutMethod)} method={r.checkOutMethod} lat={r.checkOutLat} lng={r.checkOutLng} distanceM={r.checkOutDistanceM} accuracyM={r.checkOutAccuracyM} area={r.checkOutArea} />
+                            </>
                           )}
+                          {!r && "—"}
                         </td>
                         <td className="tabular-nums">{r?.hoursWorked != null ? formatHours(Number(r.hoursWorked)) : "—"}</td>
                         <td className="text-xs">

@@ -18,7 +18,7 @@ export default async function AdminReportsPage() {
       <PageHeader title="Reports" subtitle="Download as CSV (opens in Excel or Google Sheets). Days after today are not counted." />
       <div className="grid gap-5 lg:grid-cols-2">
         <Card title="Monthly attendance" icon={CalendarCheck} iconTone="green">
-          <p className="mb-3 text-sm att-muted">Per person: working days, present, absent, late, early out, leave, WFH, extra-work days and hours.</p>
+          <p className="mb-3 text-sm att-muted">Per person: working days, present, absent, late, early out, leave, WFH, extra-work days, hours, and days checked in at the office and remotely.</p>
           <form action="/api/attendance/export" method="get" className={box}>
             <input type="hidden" name="report" value="monthly" />
             <label className={lbl}>

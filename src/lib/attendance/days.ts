@@ -6,6 +6,7 @@ import { calendarFor, getSettings } from "./config";
 import { effectiveGoLive } from "./settings";
 import { resolveDay, type Calendar, type DayView, type PunchRecord } from "./calendar";
 import { eachDay, istDay } from "./time";
+import { placeOfPunch } from "./checkin-rules";
 
 /**
  * What each day was for each person: punches, approved leave and approved WFH over a range, resolved with the calendar (calendar.ts).
@@ -27,6 +28,8 @@ export const toPunch = (r: AttendanceRow): PunchRecord => ({
   hoursWorked: r.hoursWorked == null ? null : Number(r.hoursWorked),
   deficitHours: r.deficitHours == null ? null : Number(r.deficitHours),
   excessHours: r.excessHours == null ? null : Number(r.excessHours),
+  place: placeOfPunch(r.checkInPlace, r.checkInMethod),
+  distanceM: r.checkInDistanceM,
 });
 
 /** Everything recorded for these people from `from` to `to`, keyed "userId|day". */

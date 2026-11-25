@@ -49,10 +49,10 @@ export default async function AdminTodayPage({ searchParams }: PageProps<"/atten
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi label="Not in yet" value={board.notIn.length} tone="red" />
         <Kpi label="In office" value={board.inOffice.length} tone="green" />
-        <Kpi label="WFH" value={board.wfh.length} tone="teal" />
+        <Kpi label="Remote" value={board.remote.length} tone="orange" />
         <Kpi label="On leave" value={board.onLeave.length} tone="blue" />
       </div>
-      <TodayBoardView board={board} />
+      <TodayBoardView board={board} showDistance />
       <div className="mt-5">
         <Announcements items={ann} />
       </div>

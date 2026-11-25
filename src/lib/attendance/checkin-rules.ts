@@ -2,12 +2,14 @@
  * The check-in and check-out rules. Pure: the server calls these with what it knows (the request's IP, the browser's reported position, the
  * day, the person's shift and requests), and the unit tests call them directly.
  *
- * Where a person may punch from:
- *   - the office network: the request's IP (set by Vercel, so the visitor cannot fake it) is one of the office IPs in Settings; or
- *   - near the office: the phone's reported position is within the radius (150 m by default) of the office. The browser reports this
- *     itself, so it can be faked; the method is recorded on every punch so HR can see which was used; or
- *   - anywhere, on a day with an approved WFH request.
- * The office network is checked first, then the position, then WFH, so a person with WFH approved who comes in is recorded as in office.
+ * Where a person may punch from: anywhere. Every check-in and check-out is tagged with where it was made:
+ *   - in_office: the request's IP (set by Vercel, so the visitor cannot fake it) is one of the office IPs in Settings, or the phone's reported
+ *     position is within the office radius (150 m by default);
+ *   - remote: anywhere else.
+ * The phone's position is required, except on the office network (which alone proves the office): without either the punch is refused
+ * with LOCATION_REQUIRED. The position is recorded whenever the browser gives it, with its distance from the office, even on the office
+ * network. The browser reports the position itself, so it can be faked; the method ("ip" or "gps") is recorded so HR can see which was used.
+ * A remote punch on a day with approved WFH counts as WFH; remote without it is still present (and late is judged the same way anywhere).
  *
  * Late = check-in after shift start + grace. Early out = check-out more than `earlyOutMinutes` (30) before shift end. With first-half leave
  * the day starts at the second half; with second-half leave it ends at the first half's end. Extra-work days (holidays, weekly offs) are
@@ -19,7 +21,9 @@ import { statusForHours, type DayKind, type ShiftHours } from "./calendar";
 import type { AttSettings } from "./settings";
 import { round2 } from "./time";
 
-export const OUTSIDE_MESSAGE = "You must be in the office or on the office network to check in.";
+/** Shown when the browser gives no position and the request is not from the office network. */
+export const locationRequired = (verb: "check in" | "check out" = "check in") => `Location access is required to ${verb}. Please allow location in your browser settings.`;
+export const LOCATION_REQUIRED = locationRequired("check in");
 
 /** Distance in metres between two points on the Earth (haversine). */
 export function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
@@ -69,19 +73,26 @@ export function ipAllowed(ip: string | null | undefined, entries: readonly strin
   return false;
 }
 
-export type PunchPlace = { ok: true; method: "ip" | "gps" | "wfh"; isWfh: boolean } | { ok: false; error: string };
+export type PlaceTag = "in_office" | "remote";
+export type PunchSpot = { method: "ip" | "gps"; place: PlaceTag; distanceM: number | null };
+export type PunchPlace = ({ ok: true } & PunchSpot) | { ok: false; error: string };
 
-/** Where a punch is coming from (see the header), or the refusal. */
-export function punchPlace(input: { ip: string | null; position: Position | null; wfhApproved: boolean; settings: AttSettings }): PunchPlace {
-  if (ipAllowed(input.ip, input.settings.officeIps)) return { ok: true, method: "ip", isWfh: false };
-  if (withinGeofence(input.position, input.settings.office)) return { ok: true, method: "gps", isWfh: false };
-  if (input.wfhApproved) return { ok: true, method: "wfh", isWfh: true };
-  return { ok: false, error: OUTSIDE_MESSAGE };
+/**
+ * Where a punch is made (see the header), or the refusal when there is no position and no office network. Within the radius is "gps" even on
+ * the office network (the position is preferred); outside it, the office network still makes it in_office ("ip").
+ */
+export function punchPlace(input: { ip: string | null; position: Position | null; settings: AttSettings }, verb: "check in" | "check out" = "check in"): PunchPlace {
+  const p = input.position && validPosition(input.position) ? input.position : null;
+  const distanceM = p ? Math.round(distanceMeters(p, input.settings.office)) : null;
+  if (p && distanceM! <= input.settings.office.radiusM) return { ok: true, method: "gps", place: "in_office", distanceM };
+  if (ipAllowed(input.ip, input.settings.officeIps)) return { ok: true, method: "ip", place: "in_office", distanceM };
+  if (!p) return { ok: false, error: locationRequired(verb) };
+  return { ok: true, method: "gps", place: "remote", distanceM };
 }
 
-export type CheckInDecision = { ok: true; method: "ip" | "gps" | "wfh"; isWfh: boolean; isExtraWork: boolean } | { ok: false; error: string };
+export type CheckInDecision = ({ ok: true; isWfh: boolean; isExtraWork: boolean } & PunchSpot) | { ok: false; error: string };
 
-/** Whether a check-in is allowed now, and how it is recorded. */
+/** Whether a check-in is allowed now, and how it is recorded. A remote check-in counts as WFH only with WFH approved for the day. */
 export function decideCheckIn(input: {
   alreadyCheckedIn: boolean;
   /** Approved leave covering today: "none" = the whole day. */
@@ -94,20 +105,50 @@ export function decideCheckIn(input: {
 }): CheckInDecision {
   if (input.alreadyCheckedIn) return { ok: false, error: "You have already checked in today. There is one check-in and one check-out per day." };
   if (input.leaveToday === "none") return { ok: false, error: "You are on leave today. Cancel the leave first if you are working." };
-  const place = punchPlace(input);
+  const place = punchPlace(input, "check in");
   if (!place.ok) return place;
-  return { ...place, isExtraWork: input.kind !== "working" };
+  return { ...place, isWfh: input.wfhApproved && place.place === "remote", isExtraWork: input.kind !== "working" };
 }
 
-export type CheckOutDecision = { ok: true; method: "ip" | "gps" | "wfh" } | { ok: false; error: string };
+export type CheckOutDecision = ({ ok: true } & PunchSpot) | { ok: false; error: string };
 
-/** Whether a check-out is allowed: checked in today and not yet out, from the office (or anywhere on a WFH day). */
-export function decideCheckOut(input: { checkedIn: boolean; checkedOut: boolean; isWfhDay: boolean; ip: string | null; position: Position | null; settings: AttSettings }): CheckOutDecision {
+/** Whether a check-out is allowed: checked in today and not yet out, from anywhere, with a position (or on the office network). */
+export function decideCheckOut(input: { checkedIn: boolean; checkedOut: boolean; ip: string | null; position: Position | null; settings: AttSettings }): CheckOutDecision {
   if (!input.checkedIn) return { ok: false, error: "You have not checked in today." };
   if (input.checkedOut) return { ok: false, error: "You have already checked out today." };
-  const place = punchPlace({ ip: input.ip, position: input.position, wfhApproved: input.isWfhDay, settings: input.settings });
-  if (!place.ok) return { ok: false, error: "You must be in the office or on the office network to check out. If you forgot, ask for a regularization tomorrow." };
-  return { ok: true, method: place.method };
+  return punchPlace(input, "check out");
+}
+
+/** Where a recorded punch was made. Rows from before tagging have no place: the method says it (office network or GPS in the office = in
+ * office; WFH = remote); a regularized punch has none. */
+export function placeOfPunch(place: PlaceTag | null | undefined, method: string | null | undefined): PlaceTag | null {
+  if (place) return place;
+  if (method === "ip" || method === "gps") return "in_office";
+  if (method === "wfh") return "remote";
+  return null;
+}
+
+export type PhotonProps = Record<string, string | undefined>;
+
+/** A Photon (OpenStreetMap) place's area for a remote punch: the locality or district, then the city ("Baner, Pune"); area.ts asks for it. */
+export function areaName(p: PhotonProps): string | null {
+  const local = p.district ?? p.locality ?? p.suburb ?? p.neighbourhood ?? (p.osm_value === "suburb" || p.osm_value === "neighbourhood" ? p.name : undefined);
+  const city = p.city ?? p.town ?? p.village ?? p.county;
+  const parts = [local, city].filter((x, i, all): x is string => !!x && !!x.trim() && all.indexOf(x) === i);
+  if (!parts.length && p.state) parts.push(p.state);
+  return parts.length ? parts.join(", ").slice(0, 120) : null;
+}
+
+/** 2340 → "2.3 km", 420 → "420 m". */
+export function formatDistance(m: number): string {
+  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m < 10_000 ? 1 : 0)} km`;
+}
+
+/** "In Office", or "Remote (2.3 km)" (for the reports). */
+export function placeLabel(place: PlaceTag | null, distanceM: number | null | undefined): string {
+  if (place === "in_office") return "In Office";
+  if (place === "remote") return distanceM != null ? `Remote (${formatDistance(distanceM)})` : "Remote";
+  return "";
 }
 
 /** The part of the shift a person is expected to work, given half-day leave. */

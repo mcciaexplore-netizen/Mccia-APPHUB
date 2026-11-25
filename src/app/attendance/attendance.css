@@ -79,6 +79,14 @@
 .att-tone-amber { background: var(--att-amber-tint); color: var(--att-amber-text); border-color: rgba(217, 119, 6, 0.22); }
 .att-tone-purple { background: var(--att-purple-tint); color: var(--att-purple); border-color: rgba(124, 58, 237, 0.2); }
 .att-tone-teal { background: var(--att-teal-tint); color: var(--att-teal-text); border-color: rgba(13, 148, 136, 0.22); }
+.att-tone-orange { background: var(--att-orange-tint); color: var(--att-orange); border-color: rgba(234, 88, 12, 0.25); }
+
+/* Where a punch was made: a small dot (green = in office, orange = remote). */
+.att-place-dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 99px; flex-shrink: 0; }
+.att-place-in_office { background: var(--att-green); }
+.att-place-remote { background: var(--att-orange); }
+.att-text-remote { color: var(--att-orange); }
+.att-remote-cell { background: var(--att-orange-tint); box-shadow: inset 3px 0 0 var(--att-orange); }
 
 /* Time worked today. */
 .att-timer { font-variant-numeric: tabular-nums; font-size: clamp(1.6rem, 3vw, 2.1rem); font-weight: 800; letter-spacing: 0.02em; color: var(--att-text); line-height: 1.15; }

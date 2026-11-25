@@ -3,16 +3,17 @@
  *
  * Working days are Mon-Fri and working Saturdays, less holidays. A half day counts 0.5 present and 0.5 absent (or 0.5 leave with half-day
  * leave). A missed check-out counts absent until regularized. Holidays and weekly offs worked are counted as extra-work days, not present.
- * Days still to come, and days before the go-live date, are not counted.
+ * Days still to come, and days before the go-live date, are not counted. inOffice / remote count the days checked in by where the check-in
+ * was made.
  */
 
 import type { DayView } from "./calendar";
 import { round2 } from "./time";
 
-export type MonthLine = { userId: string; name: string; workingDays: number; present: number; absent: number; late: number; earlyOut: number; leave: number; wfh: number; extraWork: number; hours: number };
+export type MonthLine = { userId: string; name: string; workingDays: number; present: number; absent: number; late: number; earlyOut: number; leave: number; wfh: number; extraWork: number; hours: number; inOffice: number; remote: number };
 
 export function tally(views: readonly DayView[]): Omit<MonthLine, "userId" | "name"> {
-  const t = { workingDays: 0, present: 0, absent: 0, late: 0, earlyOut: 0, leave: 0, wfh: 0, extraWork: 0, hours: 0 };
+  const t = { workingDays: 0, present: 0, absent: 0, late: 0, earlyOut: 0, leave: 0, wfh: 0, extraWork: 0, hours: 0, inOffice: 0, remote: 0 };
   for (const v of views) {
     // Days to come and days before the go-live date are not counted at all.
     if (v.status === "upcoming" || v.status === "untracked") continue;
@@ -21,6 +22,9 @@ export function tally(views: readonly DayView[]): Omit<MonthLine, "userId" | "na
     if (r?.isLate) t.late++;
     if (r?.isEarlyOut) t.earlyOut++;
     t.hours += r?.hoursWorked ?? 0;
+    // Days checked in, by where the check-in was made (a regularized day has no place and is in neither).
+    if (r?.checkIn && r.place === "in_office") t.inOffice++;
+    if (r?.checkIn && r.place === "remote") t.remote++;
     if (r?.isExtraWork && r.checkOut) {
       t.extraWork++;
       continue;

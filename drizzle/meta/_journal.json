@@ -351,6 +351,13 @@
       "when": 1795506637077,
       "tag": "0049_approvals_historical_import",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1795586128916,
+      "tag": "0050_attendance_location",
+      "breakpoints": true
     }
   ]
 }

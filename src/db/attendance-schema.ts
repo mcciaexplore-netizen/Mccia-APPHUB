@@ -18,6 +18,8 @@ const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull(
 const days = (name: string) => numeric(name, { precision: 6, scale: 2, mode: "number" });
 
 export const checkInMethodEnum = pgEnum("att_check_in_method", ["gps", "ip", "manual", "wfh"]);
+/** Where a punch was made: within the office radius or on the office network = in_office; anywhere else = remote. */
+export const punchPlaceEnum = pgEnum("att_punch_place", ["in_office", "remote"]);
 export const dayStatusEnum = pgEnum("att_day_status", ["present", "absent", "half_day", "holiday", "weekly_off", "leave", "wfh"]);
 export const employmentTypeEnum = pgEnum("att_employment_type", ["intern", "consultant", "staff"]);
 export const halfDayEnum = pgEnum("att_half_day", ["none", "first", "second"]);
@@ -92,6 +94,17 @@ export const attendance = pgTable(
     checkInLat: doublePrecision("check_in_lat"),
     checkInLng: doublePrecision("check_in_lng"),
     checkInIp: text("check_in_ip"),
+    checkInAccuracyM: doublePrecision("check_in_accuracy_m"),
+    checkInPlace: punchPlaceEnum("check_in_place"),
+    checkInDistanceM: integer("check_in_distance_m"),
+    checkInArea: text("check_in_area"),
+    checkOutLat: doublePrecision("check_out_lat"),
+    checkOutLng: doublePrecision("check_out_lng"),
+    checkOutIp: text("check_out_ip"),
+    checkOutAccuracyM: doublePrecision("check_out_accuracy_m"),
+    checkOutPlace: punchPlaceEnum("check_out_place"),
+    checkOutDistanceM: integer("check_out_distance_m"),
+    checkOutArea: text("check_out_area"),
     isLate: boolean("is_late").notNull().default(false),
     isEarlyOut: boolean("is_early_out").notNull().default(false),
     isWfh: boolean("is_wfh").notNull().default(false),

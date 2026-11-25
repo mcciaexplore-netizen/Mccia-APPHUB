@@ -1,11 +1,15 @@
 import type { TodayBoard, TodayPerson } from "@/lib/attendance/overview";
+import { formatDistance } from "@/lib/attendance/checkin-rules";
 import { Avatar, Badge, Card } from "./ui";
 
-/** Who is where today: in office, WFH, on leave, not in yet (Home → Team, and HR's Today). */
-export function TodayBoardView({ board, showOff = true }: { board: TodayBoard; showOff?: boolean }) {
-  const groups: { key: keyof Omit<TodayBoard, "day">; title: string; tone: "green" | "teal" | "blue" | "red" | "grey"; empty: string }[] = [
+/**
+ * Who is where today: in office, remote, on leave, not in yet (Home → Team, and HR's Today). `showDistance` (HR) adds how far from the
+ * office a remote check-in was made ("Remote · 2.3 km from office").
+ */
+export function TodayBoardView({ board, showOff = true, showDistance = false }: { board: TodayBoard; showOff?: boolean; showDistance?: boolean }) {
+  const groups: { key: keyof Omit<TodayBoard, "day">; title: string; tone: "green" | "orange" | "blue" | "red" | "grey"; empty: string }[] = [
     { key: "inOffice", title: "In office", tone: "green", empty: "Nobody has checked in at the office yet." },
-    { key: "wfh", title: "Working from home", tone: "teal", empty: "Nobody is working from home today." },
+    { key: "remote", title: "Remote", tone: "orange", empty: "Nobody has checked in remotely today." },
     { key: "onLeave", title: "On leave", tone: "blue", empty: "Nobody is on leave today." },
     { key: "notIn", title: "Not checked in yet", tone: "red", empty: "Everyone expected has checked in." },
   ];
@@ -40,6 +44,13 @@ export function TodayBoardView({ board, showOff = true }: { board: TodayBoard; s
                         <p className="font-semibold tabular-nums text-ink">
                           {p.checkIn}
                           {p.checkOut ? ` – ${p.checkOut}` : ""}
+                        </p>
+                      )}
+                      {p.place === "in_office" && <p className="font-semibold text-[var(--att-green-dark)]">In Office</p>}
+                      {p.place === "remote" && (
+                        <p className="font-semibold att-text-remote" title={p.area ?? undefined}>
+                          Remote
+                          {showDistance && p.distanceM != null ? ` · ${formatDistance(p.distanceM)} from office` : !showDistance && p.area ? ` · ${p.area}` : ""}
                         </p>
                       )}
                       {p.late && <Badge tone="amber">Late</Badge>}

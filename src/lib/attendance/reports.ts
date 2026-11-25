@@ -7,6 +7,7 @@ import { loadDays, personDays, recordOf, viewOf } from "./days";
 import { leaveHistory, leaveTracker } from "./admin";
 import { STATUS_LABEL } from "./calendar";
 import { tally, type MonthLine } from "./summary";
+import { placeLabel, placeOfPunch } from "./checkin-rules";
 import { eachDay, istClock, istDay, monthRange } from "./time";
 
 /**
@@ -14,7 +15,7 @@ import { eachDay, istClock, istDay, monthRange } from "./time";
  *
  * Monthly attendance, per person: working days (Mon-Fri and working Saturdays, less holidays), present, absent, late, early out, leave, WFH,
  * extra-work days (holidays and weekly offs worked) and hours. A half day counts 0.5 present and 0.5 absent (or 0.5 leave with half-day
- * leave). A missed check-out counts absent until regularized.
+ * leave). A missed check-out counts absent until regularized. The day-by-day report has a Location column: In Office, or Remote (2.3 km).
  */
 
 export async function monthlyReport(month: string): Promise<MonthLine[]> {
@@ -22,7 +23,7 @@ export async function monthlyReport(month: string): Promise<MonthLine[]> {
   const today = istDay();
   const last = to > today ? today : to;
   const members = await listMembers();
-  if (last < from) return members.map((m) => ({ userId: m.id, name: m.name, workingDays: 0, present: 0, absent: 0, late: 0, earlyOut: 0, leave: 0, wfh: 0, extraWork: 0, hours: 0 }));
+  if (last < from) return members.map((m) => ({ userId: m.id, name: m.name, workingDays: 0, present: 0, absent: 0, late: 0, earlyOut: 0, leave: 0, wfh: 0, extraWork: 0, hours: 0, inOffice: 0, remote: 0 }));
   const data = await loadDays(
     members.map((m) => m.id),
     from,
@@ -32,8 +33,8 @@ export async function monthlyReport(month: string): Promise<MonthLine[]> {
   return members.map((m) => ({ userId: m.id, name: m.name, ...tally(days.map((d) => viewOf(data, m.id, d, today))) }));
 }
 
-export const MONTH_HEADER = ["Name", "Working days", "Present", "Absent", "Late", "Early out", "Leave", "WFH", "Extra work days", "Hours"];
-export const monthRows = (lines: MonthLine[]) => [MONTH_HEADER, ...lines.map((l) => [l.name, l.workingDays, l.present, l.absent, l.late, l.earlyOut, l.leave, l.wfh, l.extraWork, l.hours])];
+export const MONTH_HEADER = ["Name", "Working days", "Present", "Absent", "Late", "Early out", "Leave", "WFH", "Extra work days", "Hours", "Checked in at office", "Checked in remote"];
+export const monthRows = (lines: MonthLine[]) => [MONTH_HEADER, ...lines.map((l) => [l.name, l.workingDays, l.present, l.absent, l.late, l.earlyOut, l.leave, l.wfh, l.extraWork, l.hours, l.inOffice, l.remote])];
 
 export async function leaveBalanceRows(year: number): Promise<unknown[][]> {
   const { types, rows } = await leaveTracker(year);
@@ -63,13 +64,16 @@ export async function timeByProjectRows(from: string, to: string): Promise<unkno
 /** One person's month, day by day (the staff CSV download and HR's Attendance page). */
 export async function personMonthRows(userId: string, from: string, to: string): Promise<unknown[][]> {
   const { views, data } = await personDays(userId, from, to);
-  return [["Date", "Day status", "Check in", "Check out", "Method", "Hours", "Deficit", "Excess", "Late", "Early out", "WFH", "Extra work", "Leave"], ...views.map((v) => {
+  return [["Date", "Day status", "Check in", "Check out", "Location", "Check-out location", "Check-in coordinates", "Method", "Hours", "Deficit", "Excess", "Late", "Early out", "WFH", "Extra work", "Leave"], ...views.map((v) => {
     const r = recordOf(data, userId, v.day);
     return [
       v.day,
       v.missedCheckout ? "Absent (missed check-out)" : STATUS_LABEL[v.status],
       r?.checkInTime ? istClock(r.checkInTime) : "",
       r?.checkOutTime ? istClock(r.checkOutTime) : "",
+      placeLabel(placeOfPunch(r?.checkInPlace, r?.checkInMethod), r?.checkInDistanceM),
+      r?.checkOutTime ? placeLabel(placeOfPunch(r.checkOutPlace, r.checkOutMethod), r.checkOutDistanceM) : "",
+      r?.checkInLat != null && r.checkInLng != null ? `${r.checkInLat.toFixed(6)}, ${r.checkInLng.toFixed(6)}` : "",
       r?.checkInMethod ?? "",
       r?.hoursWorked ?? "",
       r?.deficitHours ?? "",
