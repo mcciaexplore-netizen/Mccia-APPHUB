@@ -369,8 +369,15 @@
     {
       "idx": 52,
       "version": "7",
+      "when": 1795603306985,
+      "tag": "0052_attendance_regularization_plans",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
       "when": 1795605240742,
-      "tag": "0052_inventory_amc",
+      "tag": "0053_inventory_amc",
       "breakpoints": true
     }
   ]

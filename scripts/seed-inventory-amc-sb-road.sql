@@ -1,5 +1,5 @@
 -- Puts the SB Road branch's eleven Annual Maintenance Contracts (FY 2025-26 and 2026-27) into Inventory > Maintenance > AMC. Paste the whole
--- file into the SQL Editor of the production database, AFTER scripts/apply-0052-inventory-amc.sql has run.
+-- file into the SQL Editor of the production database, AFTER scripts/apply-0053-inventory-amc.sql has run.
 --
 -- Safe to run more than once: a contract already there for the same branch, year, equipment and vendor is skipped, so nothing is doubled.
 -- It stops with a message (and adds nothing) if no branch, or more than one, has "SB Road" in its name: put the branch's exact name on the

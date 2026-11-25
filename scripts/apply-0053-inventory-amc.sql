@@ -1,4 +1,4 @@
--- Applies migration 0052 (Inventory: Annual Maintenance Contracts) to the live database, by hand. Paste the whole file into the SQL Editor of
+-- Applies migration 0053 (Inventory: Annual Maintenance Contracts) to the live database, by hand. Paste the whole file into the SQL Editor of
 -- the database production uses (DB_DRIVER "pg" in Vercel = Supabase, otherwise Neon; the database DATABASE_URL points to) and run it BEFORE
 -- the code on feat/inventory-amc is deployed. (The Inventory tables must already exist: scripts/apply-0021-inventory-in-neon-console.sql.)
 --
