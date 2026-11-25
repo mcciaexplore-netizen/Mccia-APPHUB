@@ -11,6 +11,8 @@ import { removeUnclaimed } from "./files";
 import { logError } from "@/lib/log-error";
 import * as notice from "./notify";
 import { REVIEW_REMINDER_AFTER_HOURS } from "./rules";
+import { statusAfterDecision } from "./deliverables";
+import { itemStatesOf } from "./deliverables-data";
 
 /**
  * The scheduled jobs. They run from the daily cron (/api/cron/design-tick) and, between those, after any DesignDesk page is served if they
@@ -20,6 +22,10 @@ import { REVIEW_REMINDER_AFTER_HOURS } from "./rules";
  *   3. reminds the requester after a day of an unanswered review, and closes it without approval after two days
  *   4. removes uploads that were never used, after a day
  * Every step works ticket by ticket; one failure is logged and the rest carry on. Notices are de-duplicated by the hub bell's key.
+ *
+ * Per-item tickets (see deliverables.ts) are never closed by a job: the requester closes them once every design is approved. An unanswered
+ * review on one of their items only expires that link; the ticket goes back to In progress (if nothing else waits) so the designer can
+ * send it again.
  */
 
 const OPEN: TicketStatus[] = ["new", "assigned", "in_progress"];
@@ -67,7 +73,7 @@ export async function runJobs(): Promise<Record<string, number>> {
 
   // Each stage on its own: one that cannot even read its list (a database hiccup) is logged and the others still run.
   await stage("edit-window", async () => {
-    const ended = await db.select().from(tickets).where(and(eq(tickets.status, "delivered"), isNotNull(tickets.editWindowEndsAt), lt(tickets.editWindowEndsAt, now)));
+    const ended = await db.select().from(tickets).where(and(eq(tickets.status, "delivered"), eq(tickets.perItem, false), isNotNull(tickets.editWindowEndsAt), lt(tickets.editWindowEndsAt, now)));
     await each(ended, "edit-window", async (t) => {
       const [approved] = await db.select({ id: approvalRequests.id }).from(approvalRequests).where(and(eq(approvalRequests.ticketId, t.id), eq(approvalRequests.status, "approved"))).limit(1);
       const status = approved ? "closed" : "closed_without_approval";
@@ -105,6 +111,13 @@ export async function runJobs(): Promise<Record<string, number>> {
       if (+r.expiresAt <= +now) {
         const [settled] = await db.update(approvalRequests).set({ status: "expired" }).where(and(eq(approvalRequests.id, r.id), eq(approvalRequests.status, "pending"))).returning({ id: approvalRequests.id });
         if (!settled) return;
+        if (t.perItem) {
+          const next = statusAfterDecision(await itemStatesOf(t));
+          if (next !== t.status) await db.update(tickets).set({ status: next, updatedAt: now }).where(and(eq(tickets.id, t.id), eq(tickets.status, t.status)));
+          await audit(t.id, null, "Review expired", { reason: "No reply to the review within 2 days" }, "System");
+          counts.expired++;
+          return;
+        }
         await db.update(tickets).set({ status: "closed_without_approval", isLocked: true, updatedAt: now }).where(eq(tickets.id, t.id));
         await audit(t.id, null, "Auto-closed", { status: "Closed without approval", reason: "No reply to the review within 2 days" }, "System");
         await notice.autoClosed(t, "The requester did not reply to the review within 2 days.");

@@ -5,15 +5,16 @@ import { useMemo, useState, useTransition } from "react";
 import { CheckCircle2, Copy, Plus, Trash2 } from "lucide-react";
 import type { DesignQuestion } from "@/db/design-schema";
 import { submitRequest } from "@/lib/design/actions/requests";
-import { MAX_FILES, MAX_FILE_MB, MAX_REFERENCE_LINKS } from "@/lib/design/form";
+import { LANGUAGES, MAX_FILES, MAX_FILE_MB, MAX_REFERENCE_LINKS, type Language } from "@/lib/design/form";
 import { dayLabel } from "@/lib/design/rules";
 import { priorityFor, priorityText } from "@/lib/design/sla";
 import { FileDrop } from "../file-drop";
 import { PriorityBadge } from "../ui";
 
 /**
- * The request form, in four cards: what is needed (each ticked design opens its own questions), the brief and event, when it is needed
- * (the priority follows from the date), and reference files. Files upload as they are added; the button waits for them.
+ * The request form, in four cards: what is needed (the designs, ticked), ONE request-details card for all of them (brief, languages, event,
+ * department), reference files, and when it is needed (the priority follows from the date). Files upload as they are added; the button
+ * waits for them. Each ticked design becomes its own deliverable on the ticket, approved one by one.
  */
 
 type FormType = { key: string; name: string; questions: DesignQuestion[] };
@@ -27,32 +28,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     </section>
   );
 }
-type Answers = Record<string, Record<string, string>>;
-
 const required = <span className="text-[var(--ds-red)]" aria-hidden> *</span>;
-
-function Question({ q, id, value, onChange }: { q: DesignQuestion; id: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <label className="flex flex-col gap-1 text-sm" htmlFor={id}>
-      <span className="font-medium text-ink">
-        {q.label}
-        {q.required && required}
-      </span>
-      {q.type === "select" ? (
-        <select id={id} className="input" value={value} required={q.required} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Choose…</option>
-          {q.options?.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input id={id} className="input" type={q.type === "number" ? "number" : "text"} min={q.type === "number" ? 1 : undefined} value={value} required={q.required} maxLength={200} onChange={(e) => onChange(e.target.value)} />
-      )}
-    </label>
-  );
-}
 
 export function RequestForm({
   types,
@@ -72,7 +48,7 @@ export function RequestForm({
   holidays: string[];
 }) {
   const [chosen, setChosen] = useState<string[]>([]);
-  const [answers, setAnswers] = useState<Answers>({});
+  const [languages, setLanguages] = useState<Language[]>([]);
   const [brief, setBrief] = useState("");
   const [content, setContent] = useState("");
   const [eventName, setEventName] = useState("");
@@ -88,14 +64,13 @@ export function RequestForm({
   const [formKey, setFormKey] = useState(0);
   const [pending, start] = useTransition();
 
-  const byKey = useMemo(() => new Map(types.map((t) => [t.key, t])), [types]);
   const holidaySet = useMemo(() => new Set(holidays), [holidays]);
   const toggle = (key: string) => setChosen((c) => (c.includes(key) ? c.filter((k) => k !== key) : [...c, key]));
-  const answer = (type: string, q: string, v: string) => setAnswers((a) => ({ ...a, [type]: { ...(a[type] ?? {}), [q]: v } }));
+  const toggleLanguage = (l: Language) => setLanguages((c) => (c.includes(l) ? c.filter((x) => x !== l) : LANGUAGES.filter((x) => x === l || c.includes(x))));
 
   const reset = () => {
     setChosen([]);
-    setAnswers({});
+    setLanguages([]);
     setBrief("");
     setContent("");
     setEventName("");
@@ -114,10 +89,11 @@ export function RequestForm({
     e.preventDefault();
     setError(null);
     if (!chosen.length) return setError("Choose at least one kind of design.");
+    if (!languages.length) return setError("Choose at least one language.");
     start(async () => {
       const res = await submitRequest({
         requirements: chosen,
-        details: Object.fromEntries(chosen.map((k) => [k, answers[k] ?? {}])),
+        languages,
         brief,
         content,
         eventName,
@@ -197,32 +173,31 @@ export function RequestForm({
             })}
           </div>
         </fieldset>
-        {chosen.length > 0 && (
-          <div className="mt-5 flex flex-col gap-4">
-            {chosen.map((k) => {
-              const t = byKey.get(k);
-              if (!t) return null;
-              return (
-                <div key={k} className="rounded-lg border border-[var(--ds-line)] bg-[#fafafa] p-4">
-                  <p className="ds-label mb-3">{t.name}</p>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {t.questions.map((q) => (
-                      <Question key={q.id} q={q} id={`q-${k}-${q.id}`} value={answers[k]?.[q.id] ?? ""} onChange={(v) => answer(k, q.id, v)} />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </Section>
 
       <Section title="Request details">
+        <p className="-mt-2 mb-4 text-sm ds-muted">One set of details for everything you ticked above.</p>
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1 text-sm" htmlFor="brief">
             <span className="font-medium text-ink">Title / brief{required}</span>
-            <textarea id="brief" className="input min-h-32" required minLength={5} maxLength={5000} value={brief} onChange={(e) => setBrief(e.target.value)} placeholder="What is the design for, what should it say, any colours, logos or wording to use…" />
+            <textarea id="brief" className="input min-h-32" required minLength={5} maxLength={5000} value={brief} onChange={(e) => setBrief(e.target.value)} placeholder="What is the design for, what should it say, sizes or formats you need, any colours, logos or wording to use…" />
           </label>
+          <fieldset className="flex flex-col gap-2 text-sm" aria-describedby="languages-hint">
+            <legend className="mb-1 font-medium text-ink">
+              Language{required}
+            </legend>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              {LANGUAGES.map((l) => (
+                <label key={l} className="flex cursor-pointer items-center gap-2 text-ink">
+                  <input type="checkbox" className="ds-check" checked={languages.includes(l)} onChange={() => toggleLanguage(l)} />
+                  {l}
+                </label>
+              ))}
+            </div>
+            <span id="languages-hint" className="text-xs ds-muted">
+              Choose one or more.
+            </span>
+          </fieldset>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm" htmlFor="event-name">
               <span className="font-medium text-ink">Event name (if applicable)</span>

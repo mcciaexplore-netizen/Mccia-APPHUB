@@ -26,6 +26,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ token: 
         <h1 className="text-[1.8rem] font-bold text-ink">Review your design</h1>
         <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-ink">
           <span className="font-bold text-[var(--ds-navy)]">{r.ticket.number}</span> — {r.ticket.title}
+          {r.proof.item && <Badge tone="neutral">{r.proof.item}</Badge>}
           <Badge tone="blue">V{r.proof.version}</Badge>
         </p>
       </div>

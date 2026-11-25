@@ -91,6 +91,10 @@ export const tickets = pgTable(
     declineReason: text("decline_reason"),
     estimateHours: real("estimate_hours"),
     timeSpentSeconds: integer("time_spent_seconds").notNull().default(0),
+    // Each design asked for (each key in `requirements`) is a deliverable of its own: the designer uploads one proof per deliverable, the
+    // requester approves each, and the ticket is Delivered only when all are approved; the requester then closes it. Tickets made before
+    // this (false) keep the older flow, where one approved proof delivers the whole ticket.
+    perItem: boolean("per_item").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -166,6 +170,8 @@ export const proofVersions = pgTable(
     ticketId: uuid("ticket_id").notNull(),
     version: integer("version").notNull(),
     fileId: uuid("file_id").notNull(),
+    // The deliverable (a design type key from the ticket's requirements) this proof is for; null on tickets without per-item deliverables.
+    itemKey: text("item_key"),
     note: text("note"),
     createdBy: uuid("created_by").notNull(),
     createdAt: createdAt(),

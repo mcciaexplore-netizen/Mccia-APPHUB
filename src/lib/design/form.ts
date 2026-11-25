@@ -1,7 +1,11 @@
 /**
- * The design request form: the eleven kinds of design and the questions each asks, the limits, and the checks on what is sent. Pure, so
- * the form page, the server and the unit tests share it. The kinds are seeded into design_types (scripts/apply-0037-design.sql); a lead
- * can rename them, change their turnaround or switch them off, and add new ones (which ask only the language question).
+ * The design request form: the eleven kinds of design, the limits, and the checks on what is sent. Pure, so the form page, the server and
+ * the unit tests share it. The kinds are seeded into design_types (scripts/apply-0037-design.sql); a lead can rename them, change their
+ * turnaround or switch them off, and add new ones.
+ *
+ * The form has ONE request-details section for the whole request, whatever designs are ticked: the brief, the languages, the event and the
+ * department. The per-design questions each kind still carries (size, print or email ...) are no longer asked on the form; they are kept on
+ * the types, and the answers on older tickets still show.
  */
 import { z } from "zod";
 import type { DesignQuestion } from "@/db/design-schema";
@@ -11,7 +15,6 @@ export const MAX_FILES = 5;
 export const MAX_FILE_MB = 10;
 export const MAX_CDR_MB = 50;
 export const MAX_REFERENCE_LINKS = 5;
-export const MAX_ANSWER_LENGTH = 200;
 /** The content box ("Share content for Design Creatives") has no limit on the form; this only stops a runaway paste. */
 export const MAX_CONTENT_LENGTH = 50_000;
 
@@ -21,6 +24,17 @@ export const MAX_CONTENT_LENGTH = 50_000;
  */
 export const CONTENT_KEY = "__content";
 export const contentOf = (details: Record<string, Record<string, string | number>> | null | undefined): string => String(details?.[CONTENT_KEY]?.text ?? "");
+
+/** The languages the design is wanted in, one or more, chosen once for the whole request. */
+export const LANGUAGES = ["English", "Marathi", "Hindi"] as const;
+export type Language = (typeof LANGUAGES)[number];
+/** Kept in the ticket's details under this key as { list: "English, Marathi" } (beside CONTENT_KEY; type keys never start with "__"). */
+export const LANGUAGES_KEY = "__languages";
+export const languagesOf = (details: Record<string, Record<string, string | number>> | null | undefined): string[] =>
+  String(details?.[LANGUAGES_KEY]?.list ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
 
 const q = (id: string, label: string, type: DesignQuestion["type"] = "text", options?: string[], required = false): DesignQuestion => ({
   id,
@@ -83,32 +97,9 @@ export const SEED_TYPES: SeedType[] = [
 export type FormType = { key: string; name: string; questions: DesignQuestion[] };
 export type Answers = Record<string, Record<string, string | number>>;
 
-/** Checks one design's answers against its questions. Returns only known, non-empty answers, or the first problem. */
-export function cleanAnswers(type: FormType, sent: Record<string, unknown>, prefix = ""): { ok: true; answers: Record<string, string | number> } | { ok: false; error: string } {
-  const answers: Record<string, string | number> = {};
-  for (const question of type.questions) {
-    const label = prefix + question.label;
-    const raw = sent?.[question.id];
-    let value: string | number = raw == null ? "" : String(raw).trim();
-    if (value && question.type === "select" && !question.options?.includes(value)) return { ok: false, error: `${label}: please choose from the list` };
-    if (value && question.type === "number") {
-      const n = Number(value);
-      if (!Number.isFinite(n)) return { ok: false, error: `${label} must be a number` };
-      if (!(n > 0 && n < 100000)) return { ok: false, error: `${label} must be a number above 0` };
-      value = n;
-    } else if (typeof value === "string" && value.length > MAX_ANSWER_LENGTH) return { ok: false, error: `${label} is too long` };
-    if (value === "") {
-      if (question.required) return { ok: false, error: `${label} is required` };
-      continue;
-    }
-    answers[question.id] = value;
-  }
-  return { ok: true, answers };
-}
-
 export const requestInput = z.object({
   requirements: z.array(z.string().min(1)).min(1, "Choose at least one kind of design").max(12),
-  details: z.record(z.string(), z.record(z.string(), z.unknown())).default({}),
+  languages: z.array(z.string()).max(LANGUAGES.length * 2).default([]),
   brief: z.string().trim().min(5, "Write a short brief: what the design is for and what it should say").max(5000, "The brief is too long"),
   eventName: z.string().trim().max(200, "The event name is too long").default(""),
   eventDate: z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a valid event date")]).default(""),
@@ -163,13 +154,10 @@ export function checkRequest(input: RequestInput, types: Map<string, FormType>, 
   if (unknown) return { ok: false, error: "One of the designs chosen is no longer offered. Reload the page and choose again." };
   if (v.deliveryDate < minDelivery) return { ok: false, error: `The delivery date must be ${dayLabel(minDelivery)} or later: every request needs at least 48 working hours. For urgent requirements, contact AI Studio at aistudio@mcciapune.com.` };
   if (v.eventDate && daysBetween(today, v.eventDate) < 0) return { ok: false, error: "The event date cannot be in the past" };
-  const details: Answers = {};
-  for (const r of requirements) {
-    const t = types.get(r)!;
-    const res = cleanAnswers(t, (v.details[r] ?? {}) as Record<string, unknown>, requirements.length > 1 ? `${t.name} – ` : "");
-    if (!res.ok) return res;
-    details[r] = res.answers;
-  }
+  const languages = LANGUAGES.filter((l) => v.languages.includes(l));
+  if (v.languages.some((l) => !(LANGUAGES as readonly string[]).includes(l))) return { ok: false, error: "Language: please choose from the list" };
+  if (!languages.length) return { ok: false, error: "Choose at least one language" };
+  const details: Answers = { [LANGUAGES_KEY]: { list: languages.join(", ") } };
   const content = v.content.replace(/\r\n/g, "\n").trim();
   if (content) details[CONTENT_KEY] = { text: content };
   const links = cleanLinks(v.referenceLinks);
@@ -197,7 +185,7 @@ export function ticketTitle(r: Pick<CleanRequest, "eventName" | "brief" | "requi
   return `${lead} – ${what}`.slice(0, 200);
 }
 
-/** The answers as readable lines, per design, for emails and the ticket page. */
+/** The answers as readable lines, per design, for emails and the ticket page (older tickets have per-design answers; new ones none). */
 export function answerLines(requirements: string[], details: Answers, types: Map<string, FormType>): { design: string; lines: string[] }[] {
   return requirements.map((k) => {
     const t = types.get(k);

@@ -37,7 +37,7 @@ export async function progressOf(t: Ticket): Promise<{ currentStep: number; step
   };
   const history: { at: string; text: string }[] = [{ at: t.createdAt.toISOString(), text: "Request received" }];
   for (const l of logs) {
-    const d = l.details as { status?: { to?: string }; assignee?: unknown; new_version?: string };
+    const d = l.details as { status?: { to?: string }; assignee?: unknown; new_version?: string; item?: string };
     const at = l.createdAt;
     if (l.action === "Accepted") {
       history.push({ at: at.toISOString(), text: "Accepted by the design team" });
@@ -49,12 +49,17 @@ export async function progressOf(t: Ticket): Promise<{ currentStep: number; step
     } else if (l.action === "Updated" && d.assignee) {
       mark(1, at);
     } else if (l.action === "Sent for review") {
-      history.push({ at: at.toISOString(), text: "Design sent for review" });
+      history.push({ at: at.toISOString(), text: d.item ? `${d.item} sent for review` : "Design sent for review" });
       for (let i = 1; i <= 3; i++) mark(i, at);
     } else if (l.action === "Requester approved") {
-      history.push({ at: at.toISOString(), text: "Design approved" });
+      // On a per-item request one approval is one design; the request is Delivered only once all are ("All designs approved").
+      history.push({ at: at.toISOString(), text: d.item ? `${d.item} approved` : "Design approved" });
+      for (let i = 1; i <= (d.item ? 3 : 4); i++) mark(i, at);
+    } else if (l.action === "All designs approved") {
+      history.push({ at: at.toISOString(), text: "All designs approved: ready to close" });
       for (let i = 1; i <= 4; i++) mark(i, at);
-    } else if (l.action === "Requester asked for changes") history.push({ at: at.toISOString(), text: "Changes requested" });
+    } else if (l.action === "Closed by requester") history.push({ at: at.toISOString(), text: "Closed" });
+    else if (l.action === "Requester asked for changes") history.push({ at: at.toISOString(), text: d.item ? `Changes requested on ${d.item}` : "Changes requested" });
     else if (l.action === "Superseded") history.push({ at: at.toISOString(), text: d.new_version ? `A new version was opened: ${d.new_version}` : "A new version was opened" });
     else if (l.action === "Declined") history.push({ at: at.toISOString(), text: "Request declined" });
     else if (l.action === "Auto-closed") history.push({ at: at.toISOString(), text: "Closed" });

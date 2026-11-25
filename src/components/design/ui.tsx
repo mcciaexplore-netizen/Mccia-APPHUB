@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Inbox } from "lucide-react";
 import type { Priority, TicketStatus } from "@/db/design-schema";
 import { PRIORITY_LABEL, STATUS_LABEL, STATUS_TONE, STEPS, dueHealth, stepOf, timeLeft } from "@/lib/design/rules";
+import { progressLabel, type Progress } from "@/lib/design/deliverables";
 
 /** DesignDesk's small shared pieces (server- and client-safe: no hooks). Styles are in src/app/design/design.css (ds-). */
 
@@ -38,6 +39,12 @@ export function Badge({ tone = "neutral", children, title }: { tone?: "neutral" 
       {children}
     </span>
   );
+}
+
+/** A per-item ticket's progress: "1 / 3 completed", green with "→ Ready to close" once every design is approved. */
+export function ProgressBadge({ progress }: { progress: Progress | null }) {
+  if (!progress || progress.total === 0) return null;
+  return <Badge tone={progress.done === progress.total ? "green" : "blue"}>{progressLabel(progress)}</Badge>;
 }
 
 export function StatusBadge({ status }: { status: TicketStatus }) {

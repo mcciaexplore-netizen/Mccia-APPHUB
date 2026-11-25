@@ -23,7 +23,9 @@ import {
 import { audit } from "./audit";
 import { DesignError, type SessionUser } from "./dal";
 import { claimFiles, deleteFiles, releaseFiles } from "./files";
-import { RETIRED_TYPE_KEYS, answerLines, checkRequest, ticketTitle, type RequestInput } from "./form";
+import { RETIRED_TYPE_KEYS, checkRequest, languagesOf, ticketTitle, type RequestInput } from "./form";
+import { deliverablesFor } from "./deliverables-data";
+import type { Progress } from "./deliverables";
 import { formTypes, getHolidays, getSettings, minDelivery, nextTicketSeq, typeNames, workingDeadline } from "./config";
 import { isAssignable, listDesigners, peopleByIds } from "./host-adapter";
 import * as notice from "./notify";
@@ -52,6 +54,8 @@ export type TicketCard = {
   requesterName: string | null;
   department: string | null;
   designs: string[];
+  /** The design type keys behind `designs`, in the same order. */
+  designKeys: string[];
   tags: string[];
   versionNumber: number;
   deliveryDate: string | null;
@@ -60,6 +64,8 @@ export type TicketCard = {
   updatedAt: string;
   deliveredAt: string | null;
   isLocked: boolean;
+  /** Per-item tickets: how many of the designs asked for are approved. Null for tickets without per-item deliverables. */
+  progress: Progress | null;
 };
 
 export type TicketFilter = {
@@ -101,7 +107,7 @@ export async function listTickets(f: TicketFilter = {}): Promise<TicketCard[]> {
 }
 
 export async function toCards(rows: Ticket[]): Promise<TicketCard[]> {
-  const [people, names] = await Promise.all([peopleByIds(rows.flatMap((r) => [r.assigneeId, r.requesterId])), typeNames()]);
+  const [people, names, items] = await Promise.all([peopleByIds(rows.flatMap((r) => [r.assigneeId, r.requesterId])), typeNames(), deliverablesFor(rows)]);
   return rows.map((r) => ({
     id: r.id,
     number: r.number,
@@ -116,6 +122,7 @@ export async function toCards(rows: Ticket[]): Promise<TicketCard[]> {
     requesterName: people.get(r.requesterId)?.name ?? null,
     department: r.department,
     designs: r.requirements.map((k) => names.get(k) ?? k),
+    designKeys: r.requirements,
     tags: r.tags,
     versionNumber: r.versionNumber,
     deliveryDate: r.deliveryDate,
@@ -124,6 +131,7 @@ export async function toCards(rows: Ticket[]): Promise<TicketCard[]> {
     updatedAt: r.updatedAt.toISOString(),
     deliveredAt: r.deliveredAt?.toISOString() ?? null,
     isLocked: r.isLocked,
+    progress: items.get(r.id)?.progress ?? null,
   }));
 }
 
@@ -193,13 +201,12 @@ export async function createRequest(u: SessionUser, input: RequestInput): Promis
         requesterId: u.id,
         dueAt: deliveryDueAt(r.deliveryDate),
         tags: ["request-form"],
+        perItem: true,
       })
       .returning();
     if (claimed.length) await db.insert(attachments).values(claimed.map((f) => ({ ticketId: t.id, fileId: f.id, uploadedBy: u.id })));
     await audit(t.id, u.id, "Created", { via: "request form", designs: r.requirements.map((k) => names.get(k) ?? k) });
-    const summary = answerLines(r.requirements, r.details, types)
-      .map((a) => [a.design, ...a.lines.map((l) => `  ${l}`)].join("\n"))
-      .join("\n");
+    const summary = `Designs: ${r.requirements.map((k) => names.get(k) ?? k).join(", ")}\nLanguage: ${languagesOf(r.details).join(", ")}`;
     await Promise.all([
       notice.newRequest(t, u.name, `${summary}\nNeeded by: ${r.deliveryDate}${t.department ? `\nDepartment: ${t.department}` : ""}`),
       notice.requestReceived(t),
@@ -362,6 +369,10 @@ export async function updateTicket(u: SessionUser, id: string, p: TicketPatch): 
   if (p.status && p.status !== t.status) {
     assertOpen(t);
     if (!MOVABLE.includes(p.status)) throw new DesignError("That status cannot be chosen.");
+    if (t.perItem && (p.status === "delivered" || p.status === "closed")) {
+      const left = (await deliverablesFor([t])).get(t.id)?.items.filter((i) => i.state !== "approved") ?? [];
+      if (left.length) throw new DesignError(`Every design must be approved first. Still open: ${left.map((i) => i.name).join(", ")}.`);
+    }
     if (p.status === "in_review") {
       const [pending] = await db.select({ id: approvalRequests.id }).from(approvalRequests).where(and(eq(approvalRequests.ticketId, id), eq(approvalRequests.status, "pending"))).limit(1);
       if (!pending) throw new DesignError("Send a proof for review (Proofs & approval) to move it to In review.");

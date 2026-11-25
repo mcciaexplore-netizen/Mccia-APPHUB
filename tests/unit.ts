@@ -77,7 +77,8 @@ import {
   DEFAULT_SCHEDULE as DESIGN_SCHEDULE, earliestDelivery as designEarliest, isWorkingDay as designIsWorking, minDeliveryDate as designMinDelivery, priorityFor as designPriority,
   priorityText as designPriorityText, slaHoursFor as designSla, workingDaysUntil as designDaysUntil, workingDue as designWorkingDue,
 } from "../src/lib/design/sla";
-import { MAX_FILES as DESIGN_MAX_FILES, RETIRED_TYPE_KEYS as DESIGN_RETIRED, contentOf as designContentOf, SEED_TYPES as DESIGN_SEED, checkRequest as designCheck, cleanLinks as designLinks, ticketTitle as designTitle } from "../src/lib/design/form";
+import { MAX_FILES as DESIGN_MAX_FILES, RETIRED_TYPE_KEYS as DESIGN_RETIRED, contentOf as designContentOf, languagesOf as designLanguagesOf, SEED_TYPES as DESIGN_SEED, checkRequest as designCheck, cleanLinks as designLinks, ticketTitle as designTitle } from "../src/lib/design/form";
+import { itemState as designItemState, itemStates as designItemStates, progressLabel as designProgressLabel, progressOf as designProgress, statusAfterDecision as designAfter } from "../src/lib/design/deliverables";
 import { loadTone as designTone, suggestAssignee as designSuggest, workingDays as designDays, workloadGrid as designGrid } from "../src/lib/design/capacity";
 import { mimeFor as designMime, safeFileName as designSafeName } from "../src/lib/design/file-types";
 import { aiRolesFor, navFor as aiNavFor, canMove as aiCanMove, checkRequest as aiCheck, formatRequestNumber as aiNumber, stepOf as aiStepOf, uploadLimit as aiUploadLimit, AISTUDIO_ADMIN_URL_PATTERN, AISTUDIO_USER_URL_PATTERN } from "../src/lib/aistudio/aistudio.manifest";
@@ -1295,20 +1296,42 @@ const ssoTests = (async () => {
 
   // The request form
   const types = new Map(DESIGN_SEED.map((t) => [t.key, t]));
-  const base = { requirements: ["flyer"], details: { flyer: { size: "A4", channel: "Print", language: "Marathi" } }, brief: "Annual meeting flyer", deliveryDate: "2026-11-10" };
+  const base = { requirements: ["flyer"], languages: ["Marathi"], brief: "Annual meeting flyer", deliveryDate: "2026-11-10" };
   const r = designCheck(base, types, "2026-11-02");
-  eq("design form: a good flyer request passes with its answers", r.ok && r.value.details, { flyer: { size: "A4", channel: "Print", language: "Marathi" } });
+  eq("design form: a good flyer request passes, with its languages as the only details", [r.ok && r.value.details, r.ok && designLanguagesOf(r.value.details)], [{ __languages: { list: "Marathi" } }, ["Marathi"]]);
   const withContent = designCheck({ ...base, content: "  Annual General Meeting\r\n12 Nov, 5 pm, MCCIA Hall  " }, types, "2026-11-02");
-  eq("design form: the content box is kept (trimmed) beside the answers, and read back; none is not stored", [withContent.ok && designContentOf(withContent.value.details), withContent.ok && withContent.value.details.flyer, r.ok && "__content" in r.value.details], ["Annual General Meeting\n12 Nov, 5 pm, MCCIA Hall", { size: "A4", channel: "Print", language: "Marathi" }, false]);
-  eq("design form: a required question", designCheck({ ...base, details: { flyer: { channel: "Print" } } }, types, "2026-11-02"), { ok: false, error: "Size is required" });
-  eq("design form: a select answer must be on the list", designCheck({ ...base, details: { flyer: { size: "A3", channel: "Print" } } }, types, "2026-11-02"), { ok: false, error: "Size: please choose from the list" });
-  eq("design form: with several designs the error names the design", designCheck({ ...base, requirements: ["flyer", "banner"] }, types, "2026-11-02"), { ok: false, error: "Banner / standee – Size (width x height) is required" });
+  eq("design form: the content box is kept (trimmed) and read back; none is not stored", [withContent.ok && designContentOf(withContent.value.details), r.ok && "__content" in r.value.details], ["Annual General Meeting\n12 Nov, 5 pm, MCCIA Hall", false]);
+  eq("design form: at least one language is required", designCheck({ ...base, languages: [] }, types, "2026-11-02"), { ok: false, error: "Choose at least one language" });
+  eq("design form: a language must be on the list", designCheck({ ...base, languages: ["English", "Tamil"] }, types, "2026-11-02"), { ok: false, error: "Language: please choose from the list" });
+  const all3 = designCheck({ ...base, requirements: ["flyer", "whatsapp", "instagram"], languages: ["Hindi", "English", "Marathi", "English"] }, types, "2026-11-02");
+  eq("design form: several designs need no per-design answers; all three languages, kept once in the form's order", [all3.ok && all3.value.requirements, all3.ok && designLanguagesOf(all3.value.details)], [["flyer", "whatsapp", "instagram"], ["English", "Marathi", "Hindi"]]);
   const tooSoon = designCheck({ ...base, deliveryDate: "2026-11-17" }, types, "2026-11-16", "2026-11-18");
   eq("design form: a delivery date before the 48-working-hour minimum is refused, saying why and who to ask", [tooSoon.ok, !tooSoon.ok && /must be Wed,? 18 Nov 2026 or later/.test(tooSoon.error) && /48 working hours/.test(tooSoon.error) && /aistudio@mcciapune\.com/.test(tooSoon.error)], [false, true]);
   eq("design form: the minimum date itself is allowed", designCheck({ ...base, deliveryDate: "2026-11-18" }, types, "2026-11-16", "2026-11-18").ok, true);
   eq("design form: an unknown design", designCheck({ ...base, requirements: ["poster"] }, types, "2026-11-02").ok, false);
   eq("design form: too many files", designCheck({ ...base, fileIds: Array.from({ length: DESIGN_MAX_FILES + 1 }, (_, i) => `00000000-0000-4000-8000-00000000000${i}`) }, types, "2026-11-02").ok, false);
-  eq("design form: numbers are numbers", designCheck({ requirements: ["book"], details: { book: { pages: "48", content_ready: "Partly" } }, brief: "Directory", deliveryDate: "2026-11-20" }, types, "2026-11-02").ok, true);
+
+  // Per-item deliverables: each design approved on its own; the ticket is delivered only when all are
+  const atHour = (h: number) => new Date(Date.UTC(2026, 10, 2, h));
+  const later = new Date(Date.now() + 86_400_000);
+  const proofs = [
+    { id: "p1", itemKey: "flyer", version: 1 },
+    { id: "p2", itemKey: "whatsapp", version: 2 },
+    { id: "p3", itemKey: "whatsapp", version: 3 },
+    { id: "p4", itemKey: "instagram", version: 4 },
+  ];
+  const reqs = [
+    { proofVersionId: "p1", status: "approved" as const, expiresAt: later, createdAt: atHour(1) },
+    { proofVersionId: "p2", status: "changes_requested" as const, expiresAt: later, createdAt: atHour(2) },
+    { proofVersionId: "p4", status: "pending" as const, expiresAt: later, createdAt: atHour(3) },
+  ];
+  const states = designItemStates(["flyer", "whatsapp", "instagram", "banner"], proofs, reqs);
+  eq("design deliverables: approved, re-uploaded after changes, waiting, not started", [...states.values()], ["approved", "uploaded", "in_review", "not_started"]);
+  eq("design deliverables: changes asked and nothing newer yet", designItemState("whatsapp", proofs.slice(0, 2), reqs), "changes_requested");
+  eq("design deliverables: an open link past its expiry no longer counts as waiting", designItemState("instagram", proofs, [{ ...reqs[2], expiresAt: new Date(Date.now() - 1000) }]), "uploaded");
+  eq("design deliverables: one of three approved keeps the ticket open", [designAfter(new Map([["a", "approved"], ["b", "uploaded"], ["c", "not_started"]])), designAfter(new Map([["a", "approved"], ["b", "in_review"]]))], ["in_progress", "in_review"]);
+  eq("design deliverables: all approved = delivered", designAfter(new Map([["a", "approved"], ["b", "approved"], ["c", "approved"]])), "delivered");
+  eq("design progress label", [designProgressLabel(designProgress(["approved", "uploaded", "in_review"])), designProgressLabel(designProgress(["approved", "approved", "approved"]))], ["1 / 3 completed", "3 / 3 completed → Ready to close"]);
   eq("design links: web links only (http or https), blanks ignored, at most five", [designLinks(["", "https://x.org/a"]), designLinks(["http://x.org"]).ok, designLinks(["ftp://x.org"]).ok, designLinks(["x.org"]).ok, designLinks(Array(6).fill("https://x.org")).ok], [{ ok: true, links: ["https://x.org/a"] }, true, false, false, false]);
   eq("design types: eleven on the form, Photo / video / reel retired", [DESIGN_SEED.length, DESIGN_SEED.some((t) => t.key === "media"), DESIGN_RETIRED.includes("media")], [11, false, true]);
   eq("design title: the event and the designs", designTitle({ eventName: "AGM", brief: "x", requirements: ["flyer", "banner"] }, new Map([["flyer", "Flyer"], ["banner", "Banner"]])), "AGM – Flyer, Banner");

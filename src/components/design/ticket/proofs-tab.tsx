@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Archive, Copy, Download, FileText, Library, Send, Undo2, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { Archive, CheckCircle2, Copy, Download, FileText, Library, Send, Undo2, Upload, X } from "lucide-react";
 import { zipSync } from "fflate";
 import { useToast } from "@/components/Toast";
 import type { TicketDetail } from "@/lib/design/detail";
@@ -10,7 +10,8 @@ import { addPastDesignAction, proofFromLibraryAction } from "@/lib/design/action
 import { MAX_FILE_MB } from "@/lib/design/form";
 import { formatBytes, isImage } from "@/lib/design/file-types";
 import { APPROVAL_LABEL, FINISHED_STATUSES } from "@/lib/design/rules";
-import { Badge, Card, Empty, formatDateTime } from "../ui";
+import { ITEM_STATE_LABEL, ITEM_STATE_TONE } from "@/lib/design/deliverables";
+import { Badge, Card, Empty, ProgressBadge, formatDateTime } from "../ui";
 import { FileDrop } from "../file-drop";
 import { fileHref } from "../upload";
 import { useAct } from "./use-act";
@@ -22,6 +23,9 @@ const APPROVAL_TONE = { pending: "purple", approved: "green", changes_requested:
 /**
  * Tab 2: upload a proof (V1, V2 ...), or pick one from the library, and send it to the requester; each version with its review links;
  * compare; download all. A lead keeps a delivered design in the library's Past Designs.
+ *
+ * On a per-item ticket the Deliverables card comes first: each design asked for, its state, and Upload, which picks it for the upload form.
+ * A proof is always for one design; the ticket is Delivered once every design is approved.
  */
 export function ProofsTab({ d, editable, lead }: { d: TicketDetail; editable: boolean; lead: boolean }) {
   const { act, pending } = useAct();
@@ -36,6 +40,11 @@ export function ProofsTab({ d, editable, lead }: { d: TicketDetail; editable: bo
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<PickedFile | null>(null);
   const images = d.proofs.filter((p) => isImage(p.file.mime));
+  const itemName = new Map(d.deliverables.map((i) => [i.key, i.name]));
+  const uploadable = d.deliverables.filter((i) => i.state !== "approved");
+  const [itemKey, setItemKey] = useState<string>(uploadable[0]?.key ?? "");
+  const uploadRef = useRef<HTMLDivElement>(null);
+  const forItem = d.perItem ? (uploadable.some((i) => i.key === itemKey) ? itemKey : "") : null;
 
   const copy = async (text: string) => {
     try {
@@ -72,8 +81,53 @@ export function ProofsTab({ d, editable, lead }: { d: TicketDetail; editable: bo
 
   return (
     <div className="flex flex-col gap-5">
-      {editable && (
+      {d.perItem && (
+        <Card title="Deliverables" actions={<ProgressBadge progress={d.card.progress} />}>
+          <ul className="flex flex-col divide-y divide-[var(--ds-line)]" data-testid="ds-deliverables">
+            {d.deliverables.map((i) => (
+              <li key={i.key} className="flex flex-wrap items-center gap-3 py-2.5">
+                {i.state === "approved" ? <CheckCircle2 size={18} className="shrink-0 text-[var(--ds-green)]" aria-label="Approved" /> : <span className="h-[18px] w-[18px] shrink-0 rounded border-2 border-[var(--ds-line)]" aria-hidden />}
+                <span className="min-w-0 flex-1 text-sm font-semibold text-ink">{i.name}</span>
+                <Badge tone={ITEM_STATE_TONE[i.state]}>{ITEM_STATE_LABEL[i.state]}</Badge>
+                {i.latest && (
+                  <a href={fileHref((i.approved ?? i.latest).fileId)} className="text-xs font-semibold text-[var(--ds-navy)] hover:underline">
+                    V{(i.approved ?? i.latest).version}
+                  </a>
+                )}
+                {editable && i.state !== "approved" && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      setItemKey(i.key);
+                      uploadRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                  >
+                    <Upload size={14} /> Upload
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {editable && (!d.perItem || uploadable.length > 0) && (
+        <div ref={uploadRef}>
         <Card title="Upload a proof">
+          {d.perItem && (
+            <label className="ds-label mb-3 flex flex-col gap-1">
+              For which design
+              <select className="input" value={forItem ?? ""} onChange={(e) => setItemKey(e.target.value)}>
+                <option value="">Choose…</option>
+                {uploadable.map((i) => (
+                  <option key={i.key} value={i.key}>
+                    {i.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {picked ? (
             <p className="flex items-center gap-2 rounded-lg border border-[var(--ds-navy-line)] bg-[var(--ds-navy-tint)] px-3 py-2 text-sm">
               <Library size={15} className="shrink-0 text-[var(--ds-navy)]" aria-hidden />
@@ -103,9 +157,9 @@ export function ProofsTab({ d, editable, lead }: { d: TicketDetail; editable: bo
           <button
             type="button"
             className="btn btn-sm ds-btn-navy mt-4"
-            disabled={(!picked && !fileId) || busy || pending}
+            disabled={(!picked && !fileId) || busy || pending || forItem === ""}
             onClick={async () => {
-              const r = await act(() => (picked ? proofFromLibraryAction(d.card.id, picked.fileId, note, send) : addProofAction(d.card.id, fileId!, note, send)));
+              const r = await act(() => (picked ? proofFromLibraryAction(d.card.id, picked.fileId, note, send, forItem) : addProofAction(d.card.id, fileId!, note, send, forItem)));
               if (r.ok) {
                 setPicked(null);
                 toast.success(`Version ${r.data.version} uploaded${r.data.link ? " and sent for review" : ""}`);
@@ -119,6 +173,7 @@ export function ProofsTab({ d, editable, lead }: { d: TicketDetail; editable: bo
             {send ? "Upload and send for review" : "Upload"}
           </button>
         </Card>
+        </div>
       )}
 
       {picking && (
@@ -183,6 +238,7 @@ export function ProofsTab({ d, editable, lead }: { d: TicketDetail; editable: bo
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-2">
                       <Badge tone="blue">V{p.version}</Badge>
+                      {p.itemKey && <Badge tone="neutral">{itemName.get(p.itemKey) ?? p.itemKey}</Badge>}
                       <a href={fileHref(p.file.id)} className="truncate text-sm font-semibold text-[var(--ds-navy)] hover:underline">
                         {p.file.fileName}
                       </a>
@@ -210,7 +266,7 @@ export function ProofsTab({ d, editable, lead }: { d: TicketDetail; editable: bo
                         ))}
                       </ul>
                     )}
-                    {editable && (
+                    {editable && !(p.itemKey && d.deliverables.find((i) => i.key === p.itemKey)?.state === "approved") && (
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           type="button"

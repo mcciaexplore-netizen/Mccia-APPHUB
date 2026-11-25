@@ -6,7 +6,8 @@ import { DesignError, type SessionUser } from "./dal";
 import { filesByIds } from "./files";
 import { formTypes, typeNames } from "./config";
 import { listAssignable, peopleByIds } from "./host-adapter";
-import { answerLines, contentOf } from "./form";
+import { answerLines, contentOf, languagesOf } from "./form";
+import { deliverablesFor, type DeliverableDto } from "./deliverables-data";
 import { proofsFor, type ProofDto } from "./approvals";
 import { cdrFor, type CdrDto } from "./cdr";
 import { runningTimer, timeFor, type TimeDto } from "./time";
@@ -24,6 +25,11 @@ export type TicketDetail = {
   brief: string;
   /** What the requester typed to go on the design (the request form's content box); empty when they wrote none. */
   content: string;
+  /** The languages chosen on the request form (empty on older tickets, which asked per design). */
+  languages: string[];
+  /** Per-item tickets: each design asked for, with its state and proofs (see deliverables.ts); empty otherwise. */
+  perItem: boolean;
+  deliverables: DeliverableDto[];
   eventName: string | null;
   referenceLinks: string[];
   answers: { design: string; lines: string[] }[];
@@ -53,7 +59,7 @@ export type TicketDetail = {
 export async function ticketDetail(u: SessionUser, id: string): Promise<TicketDetail> {
   const t = await ticketForTeam(u, id);
   const [card] = await toCards([t]);
-  const [types, subs, atts, proofs, cdr, time, running, pins, logs, versions, assignable, kept] = await Promise.all([
+  const [types, subs, atts, proofs, cdr, time, running, pins, logs, versions, assignable, kept, items] = await Promise.all([
     formTypes(),
     db.select().from(subtasks).where(eq(subtasks.ticketId, id)).orderBy(asc(subtasks.createdAt)),
     db.select().from(attachments).where(eq(attachments.ticketId, id)).orderBy(asc(attachments.createdAt)),
@@ -66,6 +72,7 @@ export async function ticketDetail(u: SessionUser, id: string): Promise<TicketDe
     versionChain(t),
     u.lead ? listAssignable() : Promise.resolve([]),
     inPastDesigns(id),
+    deliverablesFor([t]),
   ]);
   const fs = await filesByIds(atts.map((a) => a.fileId));
   const people = await peopleByIds([t.requesterId, ...atts.map((a) => a.uploadedBy), ...pins.map((p) => p.authorId), ...logs.map((l) => l.userId)]);
@@ -77,6 +84,9 @@ export async function ticketDetail(u: SessionUser, id: string): Promise<TicketDe
     card,
     brief: t.brief,
     content: contentOf(t.details),
+    languages: languagesOf(t.details),
+    perItem: t.perItem,
+    deliverables: items.get(t.id)?.items ?? [],
     eventName: t.eventName,
     referenceLinks: t.referenceLinks,
     answers: answerLines(t.requirements, t.details, allTypes),
@@ -139,15 +149,17 @@ const activityText = (action: string, d: Record<string, unknown>, who: string): 
   if (action === "Updated" && status?.to) return `moved → ${status.to}`;
   if (action === "Updated" && d.assignee) return `assigned by ${who}`;
   if (action === "Created") return d.revision_of ? `new version (changes requested)` : `new request from ${who}`;
-  if (action === "Requester approved") return `approved by ${who.replace(/ \(.*\)$/, "")}`;
-  if (action === "Requester asked for changes") return `changes requested by ${who.replace(/ \(.*\)$/, "")}`;
+  if (action === "Requester approved") return `${d.item ? `${String(d.item)} ` : ""}approved by ${who.replace(/ \(.*\)$/, "")}`;
+  if (action === "Requester asked for changes") return `changes requested${d.item ? ` on ${String(d.item)}` : ""} by ${who.replace(/ \(.*\)$/, "")}`;
+  if (action === "All designs approved") return "all designs approved: ready to close";
+  if (action === "Closed by requester") return `closed by ${who.replace(/ \(.*\)$/, "")}`;
   if (action === "Sent for review") return `V${d.proof_version ?? "?"} sent for review by ${who}`;
   if (action === "Accepted") return `accepted by ${who}`;
   if (action === "Auto-closed") return `closed (${String(d.reason ?? "automatically")})`;
   return `${action.toLowerCase()} · ${who}`;
 };
 
-const FEED_ACTIONS = ["Created", "Updated", "Requester approved", "Requester asked for changes", "Sent for review", "Accepted", "Declined", "Client changes added", "Auto-closed", "Uploaded proof"];
+const FEED_ACTIONS = ["Created", "Updated", "Requester approved", "Requester asked for changes", "Sent for review", "Accepted", "Declined", "Client changes added", "Auto-closed", "Uploaded proof", "All designs approved", "Closed by requester"];
 
 /** The newest events: every ticket, or only one designer's (`mine`). */
 export async function activity(mine: string | null, limit = 30): Promise<ActivityDto[]> {

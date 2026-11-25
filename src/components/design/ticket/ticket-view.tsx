@@ -10,7 +10,7 @@ import type { Priority, TicketStatus } from "@/db/design-schema";
 import type { TicketDetail } from "@/lib/design/detail";
 import { askAction, deleteTicketAction, updateTicketAction } from "@/lib/design/actions/tickets";
 import { PRIORITIES, PRIORITY_LABEL, STATUS_LABEL } from "@/lib/design/rules";
-import { DueText, PriorityBadge, StatusBadge, Steps } from "../ui";
+import { DueText, PriorityBadge, ProgressBadge, StatusBadge, Steps } from "../ui";
 import { PendingActions } from "../admin/PendingList";
 import { fromIstInput, toIstInput, useAct } from "./use-act";
 import { OverviewTab } from "./overview-tab";
@@ -65,6 +65,7 @@ export function TicketView({ d, viewer }: { d: TicketDetail; viewer: Viewer }) {
               <span className="min-w-0 break-words">{t.title}</span>
               <StatusBadge status={t.status} />
               <PriorityBadge priority={t.priority} />
+              <ProgressBadge progress={t.progress} />
             </h1>
             {d.versions.length > 1 && (
               <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs ds-muted">

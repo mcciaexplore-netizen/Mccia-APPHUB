@@ -12,7 +12,7 @@ import { BOARD_FILTERS, type BoardFilter } from "@/lib/design/board-filters";
 import { bulkAction, deleteViewAction, saveViewAction, updateTicketAction } from "@/lib/design/actions/tickets";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { Avatar, Badge, PriorityBadge, formatDateTime } from "../ui";
+import { Avatar, Badge, PriorityBadge, ProgressBadge, formatDateTime } from "../ui";
 
 /**
  * The creative team's kanban board (/design/admin/board): every ticket (scope "all"; "mine" is kept for a board of one person's tickets). Columns are the seven stages, or one per person. Cards drag between columns (a native drag, no
@@ -488,6 +488,7 @@ function TicketCardView({
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <PriorityBadge priority={t.priority} />
+        <ProgressBadge progress={t.progress} />
         {t.status === "closed_without_approval" && <Badge tone="neutral">No approval</Badge>}
         {flags.map((f) => (
           <Badge key={f} tone={f === LAST_MINUTE_TAG ? "red" : "amber"}>

@@ -94,26 +94,33 @@ export async function assigned(t: T & { assigneeId: string | null }, by: string 
   await tellTeam([p], t, by ? `${by} assigned you ${t.number}` : `${t.number} was assigned to you`, t.title, `assigned:${t.id}:${t.assigneeId}:${Date.now()}`);
 }
 
-export async function proofSent(t: T & { requesterId: string }, version: number, link: string): Promise<string | null> {
-  const lead = version > 1 ? `The changes you asked for are done: version ${version} of "${t.title}" (${t.number}) is ready.` : `Your design "${t.title}" (${t.number}) is ready.`;
+export async function proofSent(t: T & { requesterId: string }, version: number, link: string, item: string | null = null): Promise<string | null> {
+  const lead = item
+    ? `The ${item} for "${t.title}" (${t.number}) is ready (version ${version}).`
+    : version > 1
+      ? `The changes you asked for are done: version ${version} of "${t.title}" (${t.number}) is ready.`
+      : `Your design "${t.title}" (${t.number}) is ready.`;
   return tellRequester(
     t,
-    `Design ready for your approval: ${t.number}`,
+    `${item ? `${item} ready` : "Design ready"} for your approval: ${t.number}`,
     `${lead}\n\nOpen it, then approve it or tell us what to change (the link works for 2 days):\n${link}\n\nYou can also approve it from My Requests in the App Hub.`,
     `proof:${t.id}:${version}:${Date.now()}`,
     "/design/my-requests",
   );
 }
 
-export async function decided(t: T & { assigneeId: string | null }, approved: boolean, by: string, newTicket: T | null) {
+/** `item` names the deliverable decided on a per-item ticket (each item's decision is its own notice). */
+export async function decided(t: T & { assigneeId: string | null }, approved: boolean, by: string, newTicket: T | null, item: string | null = null) {
   const designer = t.assigneeId ? [...(await peopleByIds([t.assigneeId])).values()] : [];
+  const what = item ? `the ${item} on ${t.number}` : t.number;
+  const key = item ? `:${item}:${Date.now()}` : "";
   if (approved) {
-    await tellTeam([...designer, ...(await listLeads())], t, `${by} approved ${t.number}`, t.title, `approved:${t.id}`);
-    await postSlack("approved", `:white_check_mark: ${slackSafe(by)} approved ${slackSafe(ref(t))}`);
+    await tellTeam([...designer, ...(await listLeads())], t, `${by} approved ${what}`, t.title, `approved:${t.id}${key}`);
+    await postSlack("approved", `:white_check_mark: ${slackSafe(by)} approved ${item ? `the ${slackSafe(item)} on ` : ""}${slackSafe(ref(t))}`);
   } else {
     const target = newTicket ?? t;
-    await tellTeam(designer, target, `${by} asked for changes on ${t.number}`, newTicket ? `The changes are on the new version ${newTicket.number}.` : t.title, `changes:${t.id}`);
-    await postSlack("escalate", `:pencil2: ${slackSafe(by)} asked for changes on ${slackSafe(ref(t))}`);
+    await tellTeam(designer, target, `${by} asked for changes on ${what}`, newTicket ? `The changes are on the new version ${newTicket.number}.` : t.title, `changes:${t.id}${key}`);
+    await postSlack("escalate", `:pencil2: ${slackSafe(by)} asked for changes on ${item ? `the ${slackSafe(item)} on ` : ""}${slackSafe(ref(t))}`);
   }
 }
 

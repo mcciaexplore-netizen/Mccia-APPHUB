@@ -3,7 +3,8 @@ import { requesterProofs } from "./approvals";
 import { cdrFor, type CdrDto } from "./cdr";
 import type { SessionUser } from "./dal";
 import { filesByIds } from "./files";
-import { contentOf } from "./form";
+import { contentOf, languagesOf } from "./form";
+import { deliverablesFor, type DeliverableDto } from "./deliverables-data";
 import { progressOf } from "./public";
 import { getTicket, listTickets, ticketForRequester, toCards, type TicketCard } from "./tickets";
 
@@ -19,6 +20,9 @@ export type MyRequest = RequesterCard & {
   approved: Proof | null;
   cdr: Pick<CdrDto, "id" | "status" | "createdAt" | "file"> | null;
   declineReason: string | null;
+  /** Per-item tickets: each design asked for, approved and reviewed one by one; empty for older tickets. */
+  perItem: boolean;
+  deliverables: DeliverableDto[];
 };
 
 const withoutAssignee = (c: TicketCard): RequesterCard => {
@@ -30,10 +34,12 @@ const withoutAssignee = (c: TicketCard): RequesterCard => {
 
 async function decorate(cards: TicketCard[]): Promise<MyRequest[]> {
   const ids = cards.map((c) => c.id);
-  const [proofs, cdr, declined] = await Promise.all([
+  const [proofs, cdr, declined, items] = await Promise.all([
     requesterProofs(ids),
     cdrFor(ids),
     Promise.all(cards.filter((c) => c.status === "declined").map((c) => getTicket(c.id))),
+    // Only per-item cards have progress.
+    deliverablesFor(cards.map((c) => ({ id: c.id, requirements: c.designKeys, perItem: !!c.progress }))),
   ]);
   const reasons = new Map(declined.filter((t) => !!t).map((t) => [t!.id, t!.declineReason]));
   return cards.map((c) => {
@@ -44,6 +50,8 @@ async function decorate(cards: TicketCard[]): Promise<MyRequest[]> {
       approved: proofs.get(c.id)?.approved ?? null,
       cdr: req ? { id: req.id, status: req.status, createdAt: req.createdAt, file: req.file } : null,
       declineReason: reasons.get(c.id) ?? null,
+      perItem: !!c.progress,
+      deliverables: items.get(c.id)?.items ?? [],
     };
   });
 }
@@ -56,6 +64,7 @@ export async function myRequests(userId: string): Promise<MyRequest[]> {
 export type RequesterTicket = MyRequest & {
   brief: string;
   content: string;
+  languages: string[];
   eventName: string | null;
   /** The proof to show: the one waiting for review, else the approved one. */
   proof: { fileId: string; version: number; mime: string; fileName: string; approved: boolean } | null;
@@ -73,6 +82,7 @@ export async function requesterTicket(u: SessionUser, id: string): Promise<Reque
     ...r,
     brief: t.brief,
     content: contentOf(t.details),
+    languages: languagesOf(t.details),
     eventName: t.eventName,
     proof: shown && f ? { fileId: f.id, version: shown.version, mime: f.mime, fileName: f.fileName, approved: !r.pending } : null,
     steps: progress.steps,

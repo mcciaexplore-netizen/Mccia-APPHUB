@@ -29,7 +29,7 @@ export default async function RequesterTicketPage({ params }: { params: Promise<
     throw e;
   }
   const finished = FINISHED_STATUSES.includes(r.status);
-  const p = r.proof;
+  const p = r.perItem ? null : r.proof;
 
   return (
     <div className="flex flex-col gap-5">
@@ -108,6 +108,12 @@ export default async function RequesterTicketPage({ params }: { params: Promise<
                 {r.eventName}
                 {r.eventDate ? ` · ${formatDay(r.eventDate)}` : ""}
               </span>
+            </p>
+          )}
+          {r.languages.length > 0 && (
+            <p className="mb-2 text-sm">
+              <span className="ds-muted">Language: </span>
+              <span className="font-semibold text-ink">{r.languages.join(", ")}</span>
             </p>
           )}
           <p className="whitespace-pre-wrap text-sm text-ink">{r.brief}</p>

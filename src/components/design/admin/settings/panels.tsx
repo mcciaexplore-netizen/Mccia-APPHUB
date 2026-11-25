@@ -88,7 +88,6 @@ export function TypesPanel({ types }: { types: TypeRow[] }) {
               <tr key={t.id} className={t.isActive ? "" : "opacity-60"}>
                 <td className="px-5 py-2.5 font-semibold text-ink">
                   {t.name}
-                  <span className="block text-xs font-normal ds-muted">{t.questions} question{t.questions === 1 ? "" : "s"} on the form</span>
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{t.slaHours}h</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{t.effortHours}h</td>

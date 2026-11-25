@@ -226,7 +226,7 @@ export async function isLibraryFile(fileId: string): Promise<boolean> {
  * A designer uses a library file as the next proof on their ticket instead of uploading it again: a copy of the file becomes the proof
  * (see copyFile), then it goes on exactly like an upload (addProof checks the ticket is theirs).
  */
-export async function proofFromLibrary(u: SessionUser, ticketId: string, libraryFileId: string, note: string, send: boolean) {
+export async function proofFromLibrary(u: SessionUser, ticketId: string, libraryFileId: string, note: string, send: boolean, itemKey: string | null = null) {
   const [v] = await db
     .select({ id: libraryVersions.id })
     .from(libraryVersions)
@@ -234,7 +234,7 @@ export async function proofFromLibrary(u: SessionUser, ticketId: string, library
     .where(and(eq(libraryVersions.fileId, libraryFileId), eq(libraryItems.isDeleted, false)))
     .limit(1);
   if (!v) throw new DesignError("That library file was not found.");
-  return addProof(u, ticketId, await copyFile(u.id, libraryFileId, "proof"), note, send);
+  return addProof(u, ticketId, await copyFile(u.id, libraryFileId, "proof"), note, send, itemKey);
 }
 
 /** Whether a ticket's design is already kept in Past Designs. */

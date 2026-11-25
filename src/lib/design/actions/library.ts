@@ -49,9 +49,9 @@ export async function libraryPickerAction(search: string): Promise<ActionResult<
     return (await listItems({ search: search.slice(0, 100) })).slice(0, 60);
   });
 }
-export async function proofFromLibraryAction(ticketId: string, libraryFileId: string, note: string, send: boolean): Promise<ActionResult<{ version: number; link: string | null; emailedTo: string | null }>> {
+export async function proofFromLibraryAction(ticketId: string, libraryFileId: string, note: string, send: boolean, itemKey: string | null = null): Promise<ActionResult<{ version: number; link: string | null; emailedTo: string | null }>> {
   return run(async () => {
-    const r = await proofFromLibrary(await assertTeam(), ticketId, libraryFileId, note, send);
+    const r = await proofFromLibrary(await assertTeam(), ticketId, libraryFileId, note, send, itemKey);
     revalidatePath("/design", "layout");
     return r;
   });

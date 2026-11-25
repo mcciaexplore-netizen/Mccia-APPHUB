@@ -5,7 +5,7 @@ import type { FilePurpose } from "@/db/design-schema";
 import { assertRequester, assertTeam, run, type ActionResult } from "../dal";
 import { startUpload } from "../files";
 import { createRequest } from "../tickets";
-import { decideAsRequester } from "../approvals";
+import { closeAsRequester, decideAsRequester } from "../approvals";
 import { cdrDownloadLink, requestCdr } from "../cdr";
 import type { RequestInput } from "../form";
 
@@ -30,13 +30,23 @@ export async function submitRequest(input: RequestInput): Promise<ActionResult<{
   });
 }
 
-export async function decideMyRequest(ticketId: string, decision: "approve" | "request_changes", comment: string): Promise<ActionResult<{ status: string; newNumber: string | null }>> {
+/** `itemKey` names the design decided on, for a request whose designs are approved one by one. */
+export async function decideMyRequest(ticketId: string, decision: "approve" | "request_changes", comment: string, itemKey: string | null = null): Promise<ActionResult<{ status: string; newNumber: string | null }>> {
   return run(async () => {
     const u = await assertRequester();
-    const r = await decideAsRequester(u, ticketId, { decision, comment });
+    const r = await decideAsRequester(u, ticketId, { decision, comment }, itemKey);
     refresh();
     return r;
   });
+}
+
+/** The requester closes their request once every design on it is approved. */
+export async function closeMyRequest(ticketId: string): Promise<ActionResult> {
+  return run(async () => {
+    await closeAsRequester(await assertRequester(), ticketId);
+    refresh();
+    return undefined;
+  }, "Request closed. Thank you!");
 }
 
 export async function requestSourceFiles(ticketId: string): Promise<ActionResult> {

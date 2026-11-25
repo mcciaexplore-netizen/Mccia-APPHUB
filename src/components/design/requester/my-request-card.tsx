@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { MyRequest } from "@/lib/design/requester-queries";
 import { FINISHED_STATUSES, timeLeft } from "@/lib/design/rules";
-import { Badge, StatusBadge, Steps, formatDay } from "../ui";
+import { Badge, ProgressBadge, StatusBadge, Steps, formatDay } from "../ui";
 import { RequestActions } from "./request-actions";
 
 /** One of the person's requests on My Requests: progress, deadline, the actions that apply at its stage, and a link to its page. */
@@ -29,7 +29,10 @@ export function MyRequestCard({ r }: { r: MyRequest }) {
             ))}
           </div>
         </div>
-        <StatusBadge status={r.status} />
+        <span className="flex flex-wrap items-center gap-1.5">
+          <ProgressBadge progress={r.progress} />
+          <StatusBadge status={r.status} />
+        </span>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">

@@ -86,8 +86,8 @@ export async function removeAttachmentAction(attachmentId: string): Promise<Acti
   return ok(async () => removeAttachment(await assertTeam(), attachmentId), "Removed");
 }
 
-export async function addProofAction(ticketId: string, fileId: string, note: string, send: boolean): Promise<ActionResult<{ version: number; link: string | null; emailedTo: string | null }>> {
-  return ok(async () => addProof(await assertTeam(), ticketId, fileId, note, send));
+export async function addProofAction(ticketId: string, fileId: string, note: string, send: boolean, itemKey: string | null = null): Promise<ActionResult<{ version: number; link: string | null; emailedTo: string | null }>> {
+  return ok(async () => addProof(await assertTeam(), ticketId, fileId, note, send, itemKey));
 }
 
 export async function sendForReviewAction(proofId: string): Promise<ActionResult<{ link: string; emailedTo: string | null }>> {

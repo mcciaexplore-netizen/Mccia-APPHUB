@@ -57,6 +57,7 @@ export function OverviewTab({ d, viewer, editable }: { d: TicketDetail; viewer: 
               {d.requesterEmail && <span className="block text-xs ds-muted">{d.requesterEmail}</span>}
             </Fact>
             <Fact label="Department">{t.department ?? "–"}</Fact>
+            {d.languages.length > 0 && <Fact label="Language">{d.languages.join(", ")}</Fact>}
             <Fact label="Event">{d.eventName ?? "–"}{t.eventDate && <span className="block text-xs ds-muted">{formatDay(t.eventDate)}</span>}</Fact>
             <Fact label="Needed by">{t.deliveryDate ? formatDay(t.deliveryDate) : "–"}</Fact>
             <Fact label="Requested on">{formatDateTime(t.createdAt)}</Fact>

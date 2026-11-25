@@ -222,9 +222,10 @@ try {
   await R.page.getByPlaceholder("https://...").fill("http://example.org/brief");
 
   await R.page.getByLabel("Flyer", { exact: true }).check();
-  await R.page.selectOption("#q-flyer-size", "A4");
-  await R.page.selectOption("#q-flyer-channel", "Print");
-  await R.page.selectOption("#q-flyer-language", "Marathi");
+  await R.page.getByLabel("WhatsApp creative", { exact: true }).check();
+  check("ticking several designs opens no box of questions per design", (await R.page.locator("[id^=q-]").count()) === 0);
+  await R.page.getByRole("checkbox", { name: "Marathi", exact: true }).check();
+  await R.page.getByRole("checkbox", { name: "English", exact: true }).check();
   await R.page.fill("#brief", "ZZD annual meeting flyer: logo top left, date and venue large.");
   await R.page.fill("#event-name", "ZZD AGM");
   await R.page.fill("#content", "ZZD Annual General Meeting\n12 November, 5 pm, MCCIA Hall");
@@ -250,7 +251,7 @@ try {
   check("success screen: the ticket number and the tracking link", !!number && !!trackPath, formText.slice(0, 160));
   let t1 = await ticketByNumber(number);
   check("the request waits in Pending Review, Normal priority, due 18:00 IST on the day asked", t1?.status === "pending_review" && t1.priority === "normal" && t1.department === "ZZD Marketing" && new Date(t1.due_at).toISOString() === new Date(`${deliveryDay}T12:30:00Z`).toISOString());
-  check("the answers are kept per design", JSON.stringify(t1.details.flyer) === JSON.stringify({ size: "A4", channel: "Print", language: "Marathi" }), JSON.stringify(t1.details));
+  check("the languages are kept once for the request, and it is a per-item ticket", t1.details.__languages?.list === "English, Marathi" && t1.per_item === true && JSON.stringify(t1.requirements) === JSON.stringify(["flyer", "whatsapp"]), JSON.stringify(t1.details));
   const att = await sql`select f.storage_key, f.size from design_attachments a join design_files f on f.id = a.file_id where a.ticket_id = ${t1.id}`;
   check("the file is attached, its size checked in storage", att.length === 1 && att[0].size === PNG.length);
   if (STUB) check("the file really is in the storage bucket", (await (await fetch(`${STUB}/_stub/count`)).json()).keys.some((k) => k.endsWith(att[0].storage_key)));
