@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Archive, CheckCircle2, Copy, Download, FileText, Library, Send, Undo2, Upload, X } from "lucide-react";
+import { Archive, CheckCircle2, Copy, CornerUpLeft, Download, FileText, Library, Send, Undo2, Upload, X } from "lucide-react";
 import { zipSync } from "fflate";
 import { useToast } from "@/components/Toast";
 import type { TicketDetail } from "@/lib/design/detail";
@@ -9,7 +9,7 @@ import { addProofAction, revokeReviewAction, sendForReviewAction } from "@/lib/d
 import { addPastDesignAction, proofFromLibraryAction } from "@/lib/design/actions/library";
 import { MAX_FILE_MB } from "@/lib/design/form";
 import { formatBytes, isImage } from "@/lib/design/file-types";
-import { APPROVAL_LABEL, FINISHED_STATUSES } from "@/lib/design/rules";
+import { APPROVAL_LABEL, FINISHED_STATUSES, TEAM_SUFFIX } from "@/lib/design/rules";
 import { ITEM_STATE_LABEL, ITEM_STATE_TONE } from "@/lib/design/deliverables";
 import { Badge, Card, Empty, ProgressBadge, formatDateTime } from "../ui";
 import { FileDrop } from "../file-drop";
@@ -17,6 +17,7 @@ import { fileHref } from "../upload";
 import { useAct } from "./use-act";
 import { ProofCompare } from "./proof-compare";
 import { LibraryPicker, type PickedFile } from "./library-picker";
+import { RequestChangesPanel } from "./request-changes-panel";
 
 const APPROVAL_TONE = { pending: "purple", approved: "green", changes_requested: "amber", revoked: "neutral", expired: "neutral" } as const;
 
@@ -26,6 +27,9 @@ const APPROVAL_TONE = { pending: "purple", approved: "green", changes_requested:
  *
  * On a per-item ticket the Deliverables card comes first: each design asked for, its state, and Upload, which picks it for the upload form.
  * A proof is always for one design; the ticket is Delivered once every design is approved.
+ *
+ * A design lead can send the newest proof of a design back with Request changes (a comment and optional files): it goes to the designer and
+ * the requester, and the ticket returns to In progress.
  */
 export function ProofsTab({ d, editable, lead }: { d: TicketDetail; editable: boolean; lead: boolean }) {
   const { act, pending } = useAct();
@@ -45,6 +49,17 @@ export function ProofsTab({ d, editable, lead }: { d: TicketDetail; editable: bo
   const [itemKey, setItemKey] = useState<string>(uploadable[0]?.key ?? "");
   const uploadRef = useRef<HTMLDivElement>(null);
   const forItem = d.perItem ? (uploadable.some((i) => i.key === itemKey) ? itemKey : "") : null;
+  const [changing, setChanging] = useState<string | null>(null);
+  // The newest proof of each design (of the whole ticket when it has no per-design proofs): the one that can be sent back.
+  const newest = new Map<string | null, string>();
+  for (const p of d.proofs) if (!newest.has(p.itemKey)) newest.set(p.itemKey, p.id);
+  const canSendBack = (p: (typeof d.proofs)[number]) =>
+    lead &&
+    editable &&
+    ["assigned", "in_progress", "waiting_on_requester", "in_review"].includes(d.card.status) &&
+    newest.get(p.itemKey) === p.id &&
+    p.requests[0]?.status !== "changes_requested" &&
+    (!p.itemKey || d.deliverables.find((i) => i.key === p.itemKey)?.state !== "approved");
 
   const copy = async (text: string) => {
     try {
@@ -256,7 +271,7 @@ export function ProofsTab({ d, editable, lead }: { d: TicketDetail; editable: bo
                           <li key={r.id} className="text-xs">
                             <Badge tone={APPROVAL_TONE[r.status]}>{APPROVAL_LABEL[r.status]}</Badge>{" "}
                             <span className="ds-muted">
-                              sent {formatDateTime(r.createdAt)}
+                              {r.decidedByName?.endsWith(TEAM_SUFFIX) ? "sent back" : `sent ${formatDateTime(r.createdAt)}`}
                               {r.emailedTo ? ` to ${r.emailedTo}` : ""}
                               {r.status === "pending" ? ` · closes ${formatDateTime(r.expiresAt)}` : ""}
                               {r.decidedAt ? ` · ${r.decidedByName ?? "requester"}, ${formatDateTime(r.decidedAt)}` : ""}
@@ -287,7 +302,15 @@ export function ProofsTab({ d, editable, lead }: { d: TicketDetail; editable: bo
                             <Undo2 size={14} /> Withdraw link
                           </button>
                         )}
+                        {canSendBack(p) && (
+                          <button type="button" className="btn btn-ghost btn-sm" aria-expanded={changing === p.id} disabled={pending} onClick={() => setChanging((c) => (c === p.id ? null : p.id))}>
+                            <CornerUpLeft size={14} /> Request Changes
+                          </button>
+                        )}
                       </div>
+                    )}
+                    {changing === p.id && canSendBack(p) && (
+                      <RequestChangesPanel proofId={p.id} label={`${p.itemKey ? `${itemName.get(p.itemKey) ?? p.itemKey} · ` : ""}V${p.version}`} onClose={() => setChanging(null)} />
                     )}
                   </div>
                 </li>

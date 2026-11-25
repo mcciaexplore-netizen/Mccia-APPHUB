@@ -109,6 +109,23 @@ export async function proofSent(t: T & { requesterId: string }, version: number,
   );
 }
 
+/**
+ * A design lead sent a proof back to the designer: the designer (unless they did it themselves) and the requester are told, by bell and
+ * email, with the comment. `item` names the design on a per-item ticket.
+ */
+export async function teamChanges(t: T & { requesterId: string; assigneeId: string | null }, by: { id: string; name: string }, item: string | null, comment: string) {
+  const what = item ? ` (${item})` : "";
+  const designer = t.assigneeId && t.assigneeId !== by.id ? [...(await peopleByIds([t.assigneeId])).values()] : [];
+  const key = `team-changes:${t.id}:${Date.now()}`;
+  await tellTeam(designer, t, `Changes requested for ${t.title}`, `${by.name} asked for changes${what} on ${t.number}:\n\n${comment}`, key);
+  await tellRequester(
+    t,
+    "Admin has requested changes on your ticket",
+    `The design team has asked for changes${what} on "${t.title}" (${t.number}):\n\n${comment}\n\nThe designer is working on it. You will get a new link when it is ready.\n\nFollow its progress here:\n${trackingUrl(t.number)}`,
+    key,
+  );
+}
+
 /** `item` names the deliverable decided on a per-item ticket (each item's decision is its own notice). */
 export async function decided(t: T & { assigneeId: string | null }, approved: boolean, by: string, newTicket: T | null, item: string | null = null) {
   const designer = t.assigneeId ? [...(await peopleByIds([t.assigneeId])).values()] : [];

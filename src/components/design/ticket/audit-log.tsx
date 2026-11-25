@@ -1,6 +1,8 @@
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Download } from "lucide-react";
 import type { AuditDto } from "@/lib/design/detail";
+import { TEAM_CHANGES_ACTION } from "@/lib/design/rules";
 import { Card, formatDateTime } from "../ui";
+import { fileHref } from "../upload";
 
 const KEY_LABEL: Record<string, string> = {
   status: "Status",
@@ -21,6 +23,7 @@ const KEY_LABEL: Record<string, string> = {
   via: "Via",
   designs: "Designs",
   files: "Files",
+  item: "Design",
 };
 
 const show = (v: unknown): string => {
@@ -35,7 +38,7 @@ const show = (v: unknown): string => {
 /** One line per detail: "Status: Assigned → In progress", "Comment: …". Internal keys (ids, dedupe keys) are skipped. */
 function detailLines(details: Record<string, unknown>): string[] {
   return Object.entries(details)
-    .filter(([k]) => k !== "key" && k !== "auto")
+    .filter(([k]) => k !== "key" && k !== "auto" && k !== "attachments")
     .map(([k, v]) => {
       const label = KEY_LABEL[k] ?? k.replace(/_/g, " ");
       if (v && typeof v === "object" && !Array.isArray(v) && "from" in v && "to" in v) {
@@ -45,6 +48,10 @@ function detailLines(details: Record<string, unknown>): string[] {
       return `${label}: ${show(v)}`;
     });
 }
+
+/** The files a lead attached to a change request, each with its download. */
+const attachedFiles = (details: Record<string, unknown>): { id: string; name: string }[] =>
+  Array.isArray(details.attachments) ? details.attachments.filter((f): f is { id: string; name: string } => !!f && typeof f.id === "string" && typeof f.name === "string") : [];
 
 /** The ticket's history, newest first, with who accepted it from Pending Review shown above it all. */
 export function AuditLog({ items }: { items: AuditDto[] }) {
@@ -62,18 +69,39 @@ export function AuditLog({ items }: { items: AuditDto[] }) {
         <p className="text-sm ds-muted">Nothing yet.</p>
       ) : (
         <ol className="flex flex-col gap-3">
-          {items.map((a) => (
-            <li key={a.id} className="border-l-2 border-[var(--ds-navy-line)] pl-3 text-sm">
-              <p className="text-ink">
-                <strong>{a.action}</strong> <span className="ds-muted">· {a.who} · {formatDateTime(a.at)}</span>
-              </p>
-              {detailLines(a.details).map((l) => (
-                <p key={l} className="break-words text-xs ds-muted">
-                  {l}
+          {items.map((a) =>
+            a.action === TEAM_CHANGES_ACTION ? (
+              <li key={a.id} className="border-l-2 border-[var(--ds-amber)] pl-3 text-sm" data-testid="ds-team-changes">
+                <p className="text-ink">
+                  <strong>{a.who} requested changes</strong> <span className="ds-muted">· {formatDateTime(a.at)}</span>
                 </p>
-              ))}
-            </li>
-          ))}
+                {typeof a.details.item === "string" && <p className="text-xs ds-muted">Design: {a.details.item}</p>}
+                {typeof a.details.comment === "string" && <p className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-[var(--ds-amber-tint)] px-3 py-2 text-ink">{a.details.comment}</p>}
+                {attachedFiles(a.details).length > 0 && (
+                  <ul className="mt-1.5 flex flex-col gap-1">
+                    {attachedFiles(a.details).map((f) => (
+                      <li key={f.id}>
+                        <a href={fileHref(f.id)} className="inline-flex items-center gap-1.5 break-all text-xs font-semibold text-[var(--ds-navy)] hover:underline">
+                          <Download size={13} aria-hidden /> {f.name}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ) : (
+              <li key={a.id} className="border-l-2 border-[var(--ds-navy-line)] pl-3 text-sm">
+                <p className="text-ink">
+                  <strong>{a.action}</strong> <span className="ds-muted">· {a.who} · {formatDateTime(a.at)}</span>
+                </p>
+                {detailLines(a.details).map((l) => (
+                  <p key={l} className="break-words text-xs ds-muted">
+                    {l}
+                  </p>
+                ))}
+              </li>
+            ),
+          )}
         </ol>
       )}
     </Card>

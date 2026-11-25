@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, eq, ilike, or } from "drizzle-orm";
 import { db } from "./db";
 import { auditLogs, tickets, type Ticket, type TicketStatus } from "@/db/design-schema";
-import { STATUS_LABEL, STEPS, stepOf } from "./rules";
+import { STATUS_LABEL, STEPS, TEAM_CHANGES_ACTION, stepOf } from "./rules";
 import { numberFromTrackingToken } from "./tokens";
 
 /**
@@ -55,6 +55,9 @@ export async function progressOf(t: Ticket): Promise<{ currentStep: number; step
       // On a per-item request one approval is one design; the request is Delivered only once all are ("All designs approved").
       history.push({ at: at.toISOString(), text: d.item ? `${d.item} approved` : "Design approved" });
       for (let i = 1; i <= (d.item ? 3 : 4); i++) mark(i, at);
+    } else if (l.action === TEAM_CHANGES_ACTION) {
+      // The requester sees that the design was sent back, never who did it.
+      history.push({ at: at.toISOString(), text: d.item ? `Changes requested on ${d.item}` : "Changes requested" });
     } else if (l.action === "All designs approved") {
       history.push({ at: at.toISOString(), text: "All designs approved: ready to close" });
       for (let i = 1; i <= 4; i++) mark(i, at);

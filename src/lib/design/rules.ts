@@ -132,6 +132,9 @@ export const REVIEW_REMINDER_AFTER_HOURS = 24;
 export const REVIEW_FILE_GRACE_DAYS = 7;
 export const EXTRA_REVISION_TAG = "Extra revision";
 export const LAST_MINUTE_TAG = "Last-Minute Change";
+/** The history line for a design lead sending a proof back, and the suffix on the name recorded as having decided it. */
+export const TEAM_CHANGES_ACTION = "Team requested changes";
+export const TEAM_SUFFIX = " (design team)";
 
 /**
  * Changes stop 12 hours before the event (from the start of the event day, IST). Without an event date the deadline is used instead, but

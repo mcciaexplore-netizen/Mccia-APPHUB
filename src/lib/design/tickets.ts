@@ -325,7 +325,7 @@ export async function askQuestion(u: SessionUser, id: string, text: string): Pro
 // ── Moving a ticket along ────────────────────────────────────────────────────
 
 /** Changes every status change needs, wherever it happens: the waiting clock, the edit window, and withdrawing stale review links. */
-async function statusSideEffects(t: Ticket, to: TicketStatus): Promise<Partial<Ticket>> {
+export async function statusSideEffects(t: Ticket, to: TicketStatus): Promise<Partial<Ticket>> {
   const now = new Date();
   const patch: Partial<Ticket> = {};
   if (to === "waiting_on_requester" && t.status !== "waiting_on_requester") patch.pausedAt = now;

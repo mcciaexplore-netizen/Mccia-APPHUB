@@ -17,7 +17,7 @@ import {
   updateTicket,
   type TicketPatch,
 } from "../tickets";
-import { addProof, revokeReview, sendForReview } from "../approvals";
+import { addProof, requestChanges, revokeReview, sendForReview } from "../approvals";
 import { decideCdr, requestCdr, uploadCdr, cdrDownloadLink } from "../cdr";
 import { deleteTime, logTime, startTimer, stopTimer } from "../time";
 import { addPin, deleteView, saveView, setPin } from "../detail";
@@ -92,6 +92,10 @@ export async function addProofAction(ticketId: string, fileId: string, note: str
 
 export async function sendForReviewAction(proofId: string): Promise<ActionResult<{ link: string; emailedTo: string | null }>> {
   return ok(async () => sendForReview(await assertTeam(), proofId));
+}
+
+export async function requestChangesAction(proofId: string, comment: string, fileIds: string[]): Promise<ActionResult<{ status: string }>> {
+  return ok(async () => requestChanges(await assertLead(), proofId, comment, fileIds), "Changes requested. The designer and the requester have been told.");
 }
 
 export async function revokeReviewAction(requestId: string): Promise<ActionResult> {

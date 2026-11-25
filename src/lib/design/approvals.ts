@@ -1,17 +1,18 @@
 import "server-only";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "./db";
-import { approvalRequests, attachments, designTypes, proofVersions, tickets, type ApprovalStatus, type Ticket } from "@/db/design-schema";
+import { approvalRequests, attachments, designTypes, proofVersions, tickets, type ApprovalStatus, type Ticket, type TicketStatus } from "@/db/design-schema";
 import { audit } from "./audit";
 import { DesignError, type SessionUser } from "./dal";
-import { claimFiles, filesByIds, type StoredFile } from "./files";
+import { claimFiles, filesByIds, releaseFiles, type StoredFile } from "./files";
+import { MAX_FILES } from "./form";
 import { getSettings, typeNames, workingDeadline } from "./config";
 import { statusAfterDecision } from "./deliverables";
 import { itemStatesOf } from "./deliverables-data";
 import { peopleByIds } from "./host-adapter";
 import * as notice from "./notify";
-import { getTicket, ticketForRequester, ticketForTeam } from "./tickets";
-import { changeCutoff, REVIEW_FILE_GRACE_DAYS, REVIEW_TTL_HOURS, revisionTags, versionNumber, baseNumber, LAST_MINUTE_TAG } from "./rules";
+import { getTicket, statusSideEffects, ticketForRequester, ticketForTeam } from "./tickets";
+import { changeCutoff, REVIEW_FILE_GRACE_DAYS, REVIEW_TTL_HOURS, revisionTags, versionNumber, baseNumber, LAST_MINUTE_TAG, TEAM_CHANGES_ACTION, TEAM_SUFFIX } from "./rules";
 import { hashToken, newReviewToken } from "./tokens";
 
 /**
@@ -123,6 +124,80 @@ export async function sendForReview(u: SessionUser, proofId: string): Promise<{ 
   if (t.isLocked) throw new DesignError("This version is closed.");
   if (t.perItem && p.itemKey && (await itemStatesOf(t)).get(p.itemKey) === "approved") throw new DesignError("That design is already approved.");
   return openReview(u, t, p);
+}
+
+/** Where a ticket can be when a lead sends a proof back (not before it is accepted, and not once it is delivered or closed). */
+const CHANGE_STAGES: TicketStatus[] = ["assigned", "in_progress", "waiting_on_requester", "in_review"];
+
+/**
+ * A design lead reviews a proof and sends it back to the designer, with a comment and optional files (kept on the ticket). The proof's open
+ * review link, if any, is withdrawn, and the ticket goes back to In progress (on a per-item ticket only this design goes back: the ticket
+ * stays In review while another design still waits for the requester, so that one can still be approved). The designer and the requester
+ * are told. It is recorded as a review decision ("changes requested" by the design team) so the design shows as Changes requested until a
+ * new proof is uploaded. No new version of the ticket is made.
+ */
+export async function requestChanges(u: SessionUser, proofId: string, comment: string, fileIds: string[]): Promise<{ status: TicketStatus }> {
+  const [p] = await db.select().from(proofVersions).where(eq(proofVersions.id, proofId)).limit(1);
+  if (!p) throw new DesignError("That proof was not found.");
+  const t = await ticketForTeam(u, p.ticketId);
+  if (!u.lead) throw new DesignError("Only a design lead can request changes.");
+  if (t.isLocked) throw new DesignError("This version is closed.");
+  if (!CHANGE_STAGES.includes(t.status)) throw new DesignError("Changes can only be requested while the request is being worked on or reviewed.");
+  const text = comment.trim().slice(0, 2000);
+  if (!text) throw new DesignError("Describe what needs to change.");
+  if (fileIds.length > MAX_FILES) throw new DesignError(`Attach at most ${MAX_FILES} files.`);
+  const itemKey = t.perItem ? p.itemKey : null;
+  if (t.perItem && (!itemKey || (await itemStatesOf(t)).get(itemKey) === "approved")) throw new DesignError("That design is already approved.");
+  const [newest] = await db
+    .select({ v: proofVersions.version })
+    .from(proofVersions)
+    .where(and(eq(proofVersions.ticketId, t.id), itemKey ? eq(proofVersions.itemKey, itemKey) : undefined))
+    .orderBy(desc(proofVersions.version))
+    .limit(1);
+  if (newest && p.version < newest.v) throw new DesignError("Request changes on the newest version of this design.");
+
+  const claimed = await claimFiles(u.id, fileIds, "attachment");
+  try {
+    const now = new Date();
+    // Withdraw the requester's open link for this design (the others' reviews carry on), then record the decision.
+    const open = await db
+      .select({ id: approvalRequests.id, itemKey: proofVersions.itemKey })
+      .from(approvalRequests)
+      .innerJoin(proofVersions, eq(proofVersions.id, approvalRequests.proofVersionId))
+      .where(and(eq(approvalRequests.ticketId, t.id), eq(approvalRequests.status, "pending")));
+    const withdraw = open.filter((r) => !t.perItem || r.itemKey === itemKey).map((r) => r.id);
+    if (withdraw.length) await db.update(approvalRequests).set({ status: "revoked" }).where(and(inArray(approvalRequests.id, withdraw), eq(approvalRequests.status, "pending")));
+    await db.insert(approvalRequests).values({
+      ticketId: t.id,
+      proofVersionId: p.id,
+      tokenHash: hashToken(newReviewToken()),
+      expiresAt: now,
+      status: "changes_requested",
+      decidedAt: now,
+      decidedByName: `${u.name}${TEAM_SUFFIX}`,
+      decisionComment: text,
+      createdBy: u.id,
+    });
+    if (claimed.length) await db.insert(attachments).values(claimed.map((f) => ({ ticketId: t.id, fileId: f.id, uploadedBy: u.id })));
+
+    const next: TicketStatus = t.perItem ? statusAfterDecision(await itemStatesOf(t)) : "in_progress";
+    const patch: Partial<Ticket> = { updatedAt: now };
+    if (next !== t.status) Object.assign(patch, await statusSideEffects(t, next), { status: next });
+    await db.update(tickets).set(patch).where(eq(tickets.id, t.id));
+
+    const item = itemKey ? ((await typeNames()).get(itemKey) ?? itemKey) : null;
+    await audit(t.id, u.id, TEAM_CHANGES_ACTION, {
+      ...(item ? { item } : {}),
+      proof_version: p.version,
+      comment: text,
+      ...(claimed.length ? { attachments: claimed.map((f) => ({ id: f.id, name: f.fileName })) } : {}),
+    });
+    await notice.teamChanges(t, u, item, text);
+    return { status: next };
+  } catch (e) {
+    await releaseFiles(claimed.map((f) => f.id));
+    throw e;
+  }
 }
 
 export async function revokeReview(u: SessionUser, requestId: string): Promise<void> {

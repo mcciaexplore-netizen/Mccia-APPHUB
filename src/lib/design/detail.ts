@@ -14,7 +14,7 @@ import { runningTimer, timeFor, type TimeDto } from "./time";
 import { canWork, ticketForTeam, toCards, versionChain, type TicketCard } from "./tickets";
 import { inPastDesigns, isLibraryFile } from "./library";
 import { isPostImage } from "./campaigns";
-import { changeCutoff } from "./rules";
+import { changeCutoff, TEAM_CHANGES_ACTION } from "./rules";
 
 /** Everything the ticket page shows, in one load. */
 
@@ -151,6 +151,7 @@ const activityText = (action: string, d: Record<string, unknown>, who: string): 
   if (action === "Created") return d.revision_of ? `new version (changes requested)` : `new request from ${who}`;
   if (action === "Requester approved") return `${d.item ? `${String(d.item)} ` : ""}approved by ${who.replace(/ \(.*\)$/, "")}`;
   if (action === "Requester asked for changes") return `changes requested${d.item ? ` on ${String(d.item)}` : ""} by ${who.replace(/ \(.*\)$/, "")}`;
+  if (action === TEAM_CHANGES_ACTION) return `changes requested${d.item ? ` on ${String(d.item)}` : ""} by ${who}`;
   if (action === "All designs approved") return "all designs approved: ready to close";
   if (action === "Closed by requester") return `closed by ${who.replace(/ \(.*\)$/, "")}`;
   if (action === "Sent for review") return `V${d.proof_version ?? "?"} sent for review by ${who}`;
@@ -159,7 +160,7 @@ const activityText = (action: string, d: Record<string, unknown>, who: string): 
   return `${action.toLowerCase()} · ${who}`;
 };
 
-const FEED_ACTIONS = ["Created", "Updated", "Requester approved", "Requester asked for changes", "Sent for review", "Accepted", "Declined", "Client changes added", "Auto-closed", "Uploaded proof", "All designs approved", "Closed by requester"];
+const FEED_ACTIONS = ["Created", "Updated", "Requester approved", "Requester asked for changes", "Sent for review", "Accepted", "Declined", "Client changes added", "Auto-closed", "Uploaded proof", "All designs approved", "Closed by requester", TEAM_CHANGES_ACTION];
 
 /** The newest events: every ticket, or only one designer's (`mine`). */
 export async function activity(mine: string | null, limit = 30): Promise<ActivityDto[]> {
