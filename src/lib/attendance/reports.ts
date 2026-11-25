@@ -8,6 +8,7 @@ import { leaveHistory, leaveTracker } from "./admin";
 import { STATUS_LABEL } from "./calendar";
 import { tally, type MonthLine } from "./summary";
 import { placeLabel, placeOfPunch } from "./checkin-rules";
+import type { DailyRow } from "./daily";
 import { eachDay, istClock, istDay, monthRange } from "./time";
 
 /**
@@ -85,6 +86,42 @@ export async function personMonthRows(userId: string, from: string, to: string):
       v.leave ? `${v.leave.typeName}${v.leave.half !== "none" ? ` (${v.leave.half} half)` : ""}` : "",
     ];
   })];
+}
+
+// ── Daily report (the rows' shape and the CSV are in daily.ts) ──────────
+
+/** Everyone who checked in on `day` (members only), by name, with where and when. */
+export async function dailyReport(day: string): Promise<DailyRow[]> {
+  const members = await listMembers();
+  const data = await loadDays(
+    members.map((m) => m.id),
+    day,
+    day,
+  );
+  const rows: DailyRow[] = [];
+  const now = Date.now();
+  const today = istDay(now);
+  for (const m of members) {
+    const r = recordOf(data, m.id, day);
+    if (!r?.checkInTime) continue;
+    rows.push({
+      userId: m.id,
+      name: m.name,
+      email: m.email,
+      checkIn: r.checkInTime.toISOString(),
+      checkOut: r.checkOutTime?.toISOString() ?? null,
+      place: placeOfPunch(r.checkInPlace, r.checkInMethod),
+      area: r.checkInArea,
+      distanceM: r.checkInDistanceM,
+      hoursWorked: r.hoursWorked == null ? null : Number(r.hoursWorked),
+      hoursSoFar: day === today && !r.checkOutTime ? Math.max(0, now - +r.checkInTime) / 3_600_000 : null,
+      isLate: r.isLate,
+      isEarlyOut: r.isEarlyOut,
+      isWfh: r.isWfh,
+      regularized: !!r.regularizationId,
+    });
+  }
+  return rows.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export const reportFileName = (what: string, a: string, b?: string) => `attendance-${what}-${a}${b && b !== a ? `-to-${b}` : ""}.csv`;

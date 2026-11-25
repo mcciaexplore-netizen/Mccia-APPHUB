@@ -4,7 +4,7 @@
  *
  * The module shows in the hub as two applications, each an ordinary row in Administrator → Applications:
  *   Attendance        URL /attendance         every member of staff: check in/out, leave, WFH, regularization, comp-off, time, feeds
- *   Attendance Admin  URL /attendance/admin   HR: today, approvals, people, attendance, leave and time trackers, reports, settings
+ *   Attendance Admin  URL /attendance/admin   HR: today, daily report, approvals, people, attendance, leave and time trackers, reports, settings
  *
  * Roles:
  *   attendance_member       anyone given the Attendance tile (user_app_access on /attendance)
@@ -40,7 +40,7 @@ export const isSuperAdmin = (roles: readonly AttRole[]) => roles.includes("atten
 export const isAdmin = (roles: readonly AttRole[]) => roles.includes("attendance_admin") || isSuperAdmin(roles);
 export const isMember = (roles: readonly AttRole[]) => roles.includes("attendance_member") || isAdmin(roles);
 
-export type AttNavItem = { label: string; href: string; icon: "home" | "leave" | "time" | "more" | "today" | "approvals" | "people" | "attendance" | "tracker" | "reports" | "settings" | "back" | "profile"; adminOnly?: boolean };
+export type AttNavItem = { label: string; href: string; icon: "home" | "leave" | "time" | "more" | "today" | "approvals" | "people" | "attendance" | "tracker" | "reports" | "daily" | "settings" | "back" | "profile"; adminOnly?: boolean };
 
 /** The phone's bottom bar (below 768 px wide; the sidebar takes over from there). */
 export const BOTTOM_NAV: AttNavItem[] = [
@@ -67,6 +67,7 @@ export const ATT_NAV: Record<AttSection, { title: string; items: AttNavItem[] }>
     title: "Attendance Admin",
     items: [
       { label: "Today", href: "/attendance/admin", icon: "today" },
+      { label: "Daily Report", href: "/attendance/admin/daily-report", icon: "daily" },
       { label: "Approvals", href: "/attendance/admin/approvals", icon: "approvals" },
       { label: "People", href: "/attendance/admin/people", icon: "people" },
       { label: "Attendance", href: "/attendance/admin/attendance", icon: "attendance" },

@@ -228,7 +228,7 @@ try {
     check("staff on a phone: no Attendance Admin in More", !(await mainText(sp.page)).includes("Attendance Admin"));
     await sp.ctx.close();
   }
-  for (const p of ["/attendance/admin", "/attendance/admin/approvals", "/attendance/admin/approvals?tab=history", "/attendance/admin/people", "/attendance/admin/attendance", "/attendance/admin/leave", "/attendance/admin/time", "/attendance/admin/reports", "/attendance/admin/settings", "/attendance"]) {
+  for (const p of ["/attendance/admin", "/attendance/admin/daily-report", "/attendance/admin/approvals", "/attendance/admin/approvals?tab=history", "/attendance/admin/people", "/attendance/admin/attendance", "/attendance/admin/leave", "/attendance/admin/time", "/attendance/admin/reports", "/attendance/admin/settings", "/attendance"]) {
     const r = await go(h.page, p);
     check(`HR page ${p} opens`, r?.status() === 200 && pathOf(h.page) === p.split("?")[0], r?.status());
   }
@@ -346,12 +346,50 @@ try {
     const month = await fetchIn(h2.page, `/api/attendance/export?report=monthly&month=${istDay().slice(0, 7)}`);
     check("report: the monthly report counts days checked in remote", month.body.split("\n")[0].includes("Checked in remote"), month.body.split("\n")[0]);
     await h2.ctx.close();
+    // Daily Report: today has Asha (office network), Manju (office network, sent from the phone's queue) and Rhea (remote).
+    const d = await signedIn(hr.email);
+    await go(d.page, "/attendance/admin/daily-report");
+    const navText = await d.page.locator("aside nav").innerText();
+    check("daily report: in the HR menu between Today and Approvals", /Today\s+Daily Report\s+Approvals/.test(navText), navText.slice(0, 120));
+    const dText = await mainText(d.page);
+    check("daily report: title, today's date and the four totals", dText.includes("Daily Report") && /Checked In Today/i.test(dText) && /In Office/i.test(dText) && /Remote/i.test(dText) && /Late/i.test(dText));
+    const table = d.page.getByTestId("daily-table");
+    const names = async () => (await table.locator("tbody tr td:first-child .font-semibold").allInnerTexts()).map((t) => t.trim());
+    const all = await names();
+    check("daily report: only people who checked in (Asha, Manju, Rhea; not Nisha or Hema)", all.includes("ZZA Asha") && all.includes("ZZA Rhea") && !all.includes("ZZA Nisha") && !all.includes("ZZA Hema"), all);
+    check("daily report: Rhea's row shows 📍 Remote and — for check-out", /📍 Remote[\s\S]*/.test(await table.locator("tr", { hasText: "ZZA Rhea" }).innerText()) && (await table.locator("tr", { hasText: "ZZA Rhea" }).locator("td").nth(2).innerText()).trim() === "—");
+    await d.page.getByRole("button", { name: "Remote", exact: true }).click();
+    const remoteOnly = await names();
+    check("daily report: filter Remote shows only Rhea", remoteOnly.length >= 1 && remoteOnly.every((n) => !n.startsWith("ZZA ") || n === "ZZA Rhea") && remoteOnly.includes("ZZA Rhea"), remoteOnly);
+    await d.page.getByRole("button", { name: "In Office", exact: true }).click();
+    check("daily report: filter In Office leaves Rhea out", !(await names()).includes("ZZA Rhea"));
+    await d.page.getByRole("button", { name: "All", exact: true }).click();
+    await d.page.getByLabel("Search by name").fill("rhe");
+    check("daily report: search by name", JSON.stringify((await names()).filter((n) => n.startsWith("ZZA "))) === JSON.stringify(["ZZA Rhea"]));
+    await d.page.getByLabel("Search by name").fill("");
+    await d.page.getByLabel("Sort by").selectOption("location");
+    const byPlace = (await names()).filter((n) => n.startsWith("ZZA "));
+    check("daily report: sort by Location puts in-office people before remote", byPlace.indexOf("ZZA Rhea") > byPlace.indexOf("ZZA Asha"), byPlace);
+    const dl = await fetchIn(d.page, `/api/attendance/export?report=daily&date=${istDay()}`);
+    const lines = dl.body.replace(/^\uFEFF/, "").split("\n");
+    check("daily report CSV: the asked-for columns, Rhea remote with her distance and Late Yes/No", lines[0].trim() === "Name,Email,Check In,Check Out,Location,Distance from Office,Hours Worked,Status,Late" && lines.some((l) => l.startsWith("ZZA Rhea,zza-zzarhea@mcciapune.com,") && l.includes("Remote") && l.includes("2.3 km") && /,(Yes|No)\s*$/.test(l)), lines.slice(0, 4));
+    const dlName = await d.page.request.get(BASE + `/api/attendance/export?report=daily&date=${istDay()}`);
+    const [y, m, dd] = istDay().split("-");
+    const mon = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"][Number(m) - 1];
+    check("daily report CSV: file name daily-report-D-mon-YYYY.csv", (dlName.headers()["content-disposition"] ?? "").includes(`daily-report-${Number(dd)}-${mon}-${y}.csv`), dlName.headers()["content-disposition"]);
+    const main = d.page.locator("main");
+    await Promise.all([d.page.waitForURL(/date=/), main.getByRole("link", { name: "Previous day" }).click()]);
+    await d.page.getByTestId("daily-date").waitFor();
+    check("daily report: Prev goes to yesterday, with a Today button back", d.page.url().includes(`date=${addDays(istDay(), -1)}`) && (await d.page.getByTestId("daily-today").count()) === 1, d.page.url());
+    await Promise.all([d.page.waitForURL((u) => !u.search.includes("date=")), d.page.getByTestId("daily-today").click()]);
+    check("daily report: Today returns to today; Next is disabled on today", (await main.getByRole("link", { name: "Next day" }).count()) === 0 && (await d.page.getByTestId("daily-today").count()) === 0);
+    await d.ctx.close();
     await sql`update att_settings set value = value || ${JSON.stringify({ officeIps: ["127.0.0.1", "::1"] })}::jsonb where key = 'config'`;
   }
 
   section("Every page at every width");
   const STAFF = ["/attendance", "/attendance?tab=team", "/attendance/leave", "/attendance/leave/apply", "/attendance/time", "/attendance/more", "/attendance/more/summary", "/attendance/more/profile", "/attendance/more/regularization", "/attendance/more/wfh"];
-  const ADMIN = ["/attendance/admin", "/attendance/admin/approvals", "/attendance/admin/people", "/attendance/admin/leave", "/attendance/admin/settings"];
+  const ADMIN = ["/attendance/admin", "/attendance/admin/daily-report", "/attendance/admin/approvals", "/attendance/admin/people", "/attendance/admin/leave", "/attendance/admin/settings"];
   for (const width of [320, 375, 414, 428, 768, 1024, 1280]) {
     const vp = { width, height: width < 768 ? 800 : 900 };
     const st = await signedIn(asha.email, vp);

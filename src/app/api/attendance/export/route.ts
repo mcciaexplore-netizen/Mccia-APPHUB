@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { toCsv } from "@/lib/csv";
 import { HttpError, assertAdmin, assertMember } from "@/lib/attendance/dal";
-import { leaveBalanceRows, leaveHistoryRows, monthRows, monthlyReport, personMonthRows, reportFileName, timeByProjectRows } from "@/lib/attendance/reports";
+import { dailyReport, leaveBalanceRows, leaveHistoryRows, monthRows, monthlyReport, personMonthRows, reportFileName, timeByProjectRows } from "@/lib/attendance/reports";
+import { dailyFileName, dailyRows } from "@/lib/attendance/daily";
 import { listMembers, logError } from "@/lib/attendance/host-adapter";
 import { isUuid } from "@/lib/attendance/att.manifest";
 import { daysBetween, isDay, isMonth, istDay, monthRange } from "@/lib/attendance/time";
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic";
 // The CSV downloads. ?report=
 //   mine     &month=YYYY-MM          anyone in Attendance: their own month, day by day
 //   person   &user=&from=&to=        HR: one person's days
+//   daily    &date=YYYY-MM-DD        HR: everyone who checked in that day
 //   monthly  &month=YYYY-MM          HR: the monthly attendance report
 //   balance  &year=YYYY              HR: leave balances
 //   history  &from=&to=              HR: leave history
@@ -42,6 +44,11 @@ export async function GET(req: NextRequest) {
         const { from, to } = range();
         rows = await personMonthRows(user, from, to);
         name = reportFileName("person", from, to);
+      } else if (report === "daily") {
+        const date = q.get("date");
+        if (!isDay(date) || date > istDay()) throw new HttpError(400, "Choose a day (today or earlier).");
+        rows = dailyRows(await dailyReport(date));
+        name = dailyFileName(date);
       } else if (report === "monthly") {
         const month = q.get("month");
         if (!isMonth(month)) throw new HttpError(400, "Choose a month.");

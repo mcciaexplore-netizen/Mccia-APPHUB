@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, BarChart3, CalendarCheck, CalendarDays, CheckSquare, Clock, Home, LayoutGrid, Settings, Sun, UserRound, Users, Wallet, type LucideIcon } from "lucide-react";
+import { ArrowLeft, BarChart3, ClipboardList, CalendarCheck, CalendarDays, CheckSquare, Clock, Home, LayoutGrid, Settings, Sun, UserRound, Users, Wallet, type LucideIcon } from "lucide-react";
 import { ATT_NAV, BOTTOM_NAV, navFor, type AttNavItem, type AttRole, type AttSection } from "@/lib/attendance/att.manifest";
 
 const ICONS: Record<AttNavItem["icon"], LucideIcon> = {
@@ -17,6 +17,7 @@ const ICONS: Record<AttNavItem["icon"], LucideIcon> = {
   attendance: CalendarCheck,
   tracker: Wallet,
   reports: BarChart3,
+  daily: ClipboardList,
   settings: Settings,
   back: ArrowLeft,
   profile: UserRound,
