@@ -1,4 +1,4 @@
-import { bigint, boolean, check, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, date, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { branches } from "./schema";
 
@@ -281,6 +281,38 @@ export const invAuditLog = pgTable(
     index("inv_audit_log_actor_idx").on(t.actorId),
     index("inv_audit_log_branch_idx").on(t.branchId),
   ],
+);
+
+export const inventoryAmcType = pgEnum("inventory_amc_type", ["comprehensive", "non_comprehensive", "service", "cec"]);
+
+/**
+ * Annual Maintenance Contracts (Inventory > Maintenance > AMC): one row per piece of equipment or service a branch has a contract for. A
+ * contract is kept for a pair of financial years (April to March): fy_start_year is the first one's starting year (2025 = FY 2025-26), and
+ * the two amounts are what the contract costs in that year (amount_current_fy) and in the next (amount_next_fy), in paise like all money in
+ * this module. The vendor is the name as written (vendor_name) and, when it was picked from the directory, a link to it (vendor_id), which is
+ * cleared if that vendor is deleted: the name stays. The person who added it is a user id without a foreign key, like the other modules.
+ */
+export const inventoryAmc = pgTable(
+  "inventory_amc",
+  {
+    id: id(),
+    branchId: uuid("branch_id").notNull().references(() => branches.id, { onDelete: "restrict" }),
+    categoryId: uuid("category_id").references(() => inventoryCategories.id, { onDelete: "set null" }),
+    equipmentService: text("equipment_service").notNull(),
+    vendorName: text("vendor_name").notNull(),
+    vendorId: uuid("vendor_id").references(() => inventoryVendors.id, { onDelete: "set null" }),
+    amcType: inventoryAmcType("amc_type").notNull(),
+    fyStartYear: integer("fy_start_year").notNull(),
+    startDate: date("start_date"),
+    endDate: date("end_date"),
+    amountCurrentFy: paise("amount_current_fy"),
+    amountNextFy: paise("amount_next_fy"),
+    notes: text("notes"),
+    createdBy: uuid("created_by").notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("inventory_amc_branch_idx").on(t.branchId), index("inventory_amc_fy_idx").on(t.fyStartYear)],
 );
 
 export type InventoryItem = typeof inventoryItems.$inferSelect;

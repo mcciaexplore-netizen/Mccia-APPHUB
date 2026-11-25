@@ -1,5 +1,5 @@
 {
-  "id": "74133b09-2eba-450a-8867-df8cf8321454",
+  "id": "e847f968-c2ad-4448-8235-c35aef421480",
   "prevId": "e7587aa5-c6e3-4aac-ad0a-2e9f11793981",
   "version": "7",
   "dialect": "postgresql",
@@ -4680,6 +4680,190 @@
           "tableTo": "branches",
           "columnsFrom": [
             "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.inventory_amc": {
+      "name": "inventory_amc",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "equipment_service": {
+          "name": "equipment_service",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vendor_name": {
+          "name": "vendor_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vendor_id": {
+          "name": "vendor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amc_type": {
+          "name": "amc_type",
+          "type": "inventory_amc_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fy_start_year": {
+          "name": "fy_start_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "start_date": {
+          "name": "start_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "end_date": {
+          "name": "end_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amount_current_fy": {
+          "name": "amount_current_fy",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amount_next_fy": {
+          "name": "amount_next_fy",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "inventory_amc_branch_idx": {
+          "name": "inventory_amc_branch_idx",
+          "columns": [
+            {
+              "expression": "branch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "inventory_amc_fy_idx": {
+          "name": "inventory_amc_fy_idx",
+          "columns": [
+            {
+              "expression": "fy_start_year",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "inventory_amc_branch_id_branches_id_fk": {
+          "name": "inventory_amc_branch_id_branches_id_fk",
+          "tableFrom": "inventory_amc",
+          "tableTo": "branches",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "inventory_amc_category_id_inventory_categories_id_fk": {
+          "name": "inventory_amc_category_id_inventory_categories_id_fk",
+          "tableFrom": "inventory_amc",
+          "tableTo": "inventory_categories",
+          "columnsFrom": [
+            "category_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "inventory_amc_vendor_id_inventory_vendors_id_fk": {
+          "name": "inventory_amc_vendor_id_inventory_vendors_id_fk",
+          "tableFrom": "inventory_amc",
+          "tableTo": "inventory_vendors",
+          "columnsFrom": [
+            "vendor_id"
           ],
           "columnsTo": [
             "id"
@@ -14229,31 +14413,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "is_future": {
-          "name": "is_future",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "planned_date": {
-          "name": "planned_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "planned_checkin": {
-          "name": "planned_checkin",
-          "type": "time",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "planned_checkout": {
-          "name": "planned_checkout",
-          "type": "time",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -14268,12 +14427,6 @@
             },
             {
               "expression": "date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "is_future",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -15180,6 +15333,16 @@
         "rejected",
         "skipped",
         "returned"
+      ]
+    },
+    "public.inventory_amc_type": {
+      "name": "inventory_amc_type",
+      "schema": "public",
+      "values": [
+        "comprehensive",
+        "non_comprehensive",
+        "service",
+        "cec"
       ]
     },
     "public.inventory_movement_kind": {
