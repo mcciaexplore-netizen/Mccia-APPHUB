@@ -1,12 +1,12 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, CalendarClock, CalendarPlus, CheckCircle2, Clock, Hourglass } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarClock, CalendarDays, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Clock, Hourglass } from "lucide-react";
 import { useState } from "react";
 import { Modal } from "@/components/Modal";
 import { applyPlanAction, applyRegularizationAction, cancelRequestAction } from "@/lib/attendance/actions/staff";
 import { PAST_CARD_TEXT } from "@/lib/attendance/regularization";
-import type { PastDayCard, PlanCard } from "@/lib/attendance/requests";
-import { formatDay, weekdayName } from "@/lib/attendance/time";
+import type { CalendarRange, PastDayCard, PlanCard } from "@/lib/attendance/requests";
+import { eachDay, formatDay, formatMonth, monthRange, shiftMonth, weekday, weekdayName } from "@/lib/attendance/time";
 import { hm12 } from "@/lib/attendance/time-wheel";
 import { TimePicker } from "../TimePicker";
 import { Badge, Card, Empty } from "../ui";
@@ -23,10 +23,12 @@ const grid = (n: number) => `att-cards${n >= SWIPE_FROM ? " att-cards-swipe" : "
 
 type Open = { kind: "past"; card: PastDayCard } | { kind: "plan"; day: string } | null;
 
-export function RegularizationView({ past, plans, approver, windowDays, aheadDays }: { past: PastDayCard[]; plans: PlanCard[]; approver: string; windowDays: number; aheadDays: number }) {
+export function RegularizationView({ past, plans, approver, windowDays, aheadDays, cal }: { past: PastDayCard[]; plans: PlanCard[]; approver: string; windowDays: number; aheadDays: number; cal: CalendarRange }) {
   const [open, setOpen] = useState<Open>(null);
   return (
     <>
+      <RegCalendar past={past} plans={plans} cal={cal} onOpen={setOpen} />
+
       <Card title="Missed punches" subtitle={`Working days in the last ${windowDays} days with a check-in or check-out missing.`} icon={Clock} iconTone="orange">
         {past.length ? (
           <div className={grid(past.length)} data-testid="reg-past">
@@ -196,5 +198,121 @@ function PlanDialog({ day, approver, onClose }: { day: string; approver: string;
         </div>
       </form>
     </Modal>
+  );
+}
+
+// ── The calendar: tap a date to regularize it (a past day) or plan it (a day ahead) ──
+
+type CalState = "missed" | "sent" | "done" | "plan" | "plan_pending" | "planned" | "plan_rejected" | "none" | "out";
+
+const CAL_TAG: Partial<Record<CalState, string>> = { missed: "Missed", sent: "Sent", done: "Fixed", plan_pending: "Pending", planned: "Planned", plan_rejected: "Rejected" };
+
+function RegCalendar({ past, plans, cal, onOpen }: { past: PastDayCard[]; plans: PlanCard[]; cal: CalendarRange; onOpen: (o: Open) => void }) {
+  const pastBy = new Map(past.map((c) => [c.day, c]));
+  const planBy = new Map(plans.map((p) => [p.day, p]));
+  const first = cal.from.slice(0, 7);
+  const last = cal.to.slice(0, 7);
+  const [month, setMonth] = useState(cal.today.slice(0, 7));
+  const [picked, setPicked] = useState<string | null>(null);
+
+  const stateOf = (day: string): CalState => {
+    if (day < cal.from || day > cal.to) return "out";
+    const c = pastBy.get(day);
+    if (c) return c.state === "pending" ? "sent" : c.state === "regularized" ? "done" : "missed";
+    const p = planBy.get(day);
+    if (p) return !p.plan ? "plan" : p.plan.status === "pending" ? "plan_pending" : p.plan.status === "approved" ? "planned" : "plan_rejected";
+    return "none";
+  };
+  const tap = (day: string) => {
+    const st = stateOf(day);
+    setPicked(day);
+    if (st === "missed") onOpen({ kind: "past", card: pastBy.get(day)! });
+    else if (st === "plan" || st === "plan_rejected") onOpen({ kind: "plan", day });
+  };
+  const noteOf = (day: string): string => {
+    const st = stateOf(day);
+    const c = pastBy.get(day);
+    const p = planBy.get(day)?.plan;
+    const times = (a: string | null | undefined, b: string | null | undefined) => [a && `in ${hm12(a)}`, b && `out ${hm12(b)}`].filter(Boolean).join(", ");
+    if (st === "sent") return `Request sent (${times(c?.checkIn, c?.checkOut)}), waiting for approval.`;
+    if (st === "done") return `Regularized (${times(c?.checkIn, c?.checkOut)}).`;
+    if (st === "missed") return PAST_CARD_TEXT[c!.state].label + ".";
+    if (st === "plan_pending" && p) return `Planned ${hm12(p.checkIn)} – ${hm12(p.checkOut)}, waiting for approval.`;
+    if (st === "planned" && p) return `Planned ${hm12(p.checkIn)} – ${hm12(p.checkOut)}, approved.`;
+    if (st === "plan") return "Working day: tap to plan it.";
+    return cal.notes[day] ?? "Outside the days that can be regularized or planned.";
+  };
+
+  const { from, to } = monthRange(month);
+  const days = eachDay(from, to);
+  const lead = (weekday(from) + 6) % 7;
+  return (
+    <Card
+      title="Calendar"
+      subtitle="Tap a date: a past day with a missed punch to correct it, a working day ahead to plan it."
+      icon={CalendarDays}
+      iconTone="green"
+      actions={
+        <div className="inline-flex items-center gap-1" data-testid="reg-cal-nav">
+          <button type="button" className="btn btn-ghost btn-sm att-cal-navbtn" aria-label="Previous month" disabled={month <= first} onClick={() => setMonth(shiftMonth(month, -1))}>
+            <ChevronLeft size={16} />
+          </button>
+          <span className="min-w-[8.5rem] text-center text-sm font-bold text-(--att-text)" data-testid="reg-cal-month">
+            {formatMonth(month)}
+          </span>
+          <button type="button" className="btn btn-ghost btn-sm att-cal-navbtn" aria-label="Next month" disabled={month >= last} onClick={() => setMonth(shiftMonth(month, 1))}>
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      }
+    >
+      <div className="att-cal mb-1" aria-hidden>
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+          <div key={d} className="text-center text-[0.68rem] font-bold uppercase tracking-wider att-muted">
+            {d}
+          </div>
+        ))}
+      </div>
+      <div className="att-cal" data-testid="reg-cal">
+        {Array.from({ length: lead }, (_, i) => (
+          <div key={`lead-${i}`} />
+        ))}
+        {days.map((d) => {
+          const st = stateOf(d);
+          const tag = CAL_TAG[st];
+          return (
+            <button
+              key={d}
+              type="button"
+              disabled={st === "out"}
+              onClick={() => tap(d)}
+              className={`att-regcal att-regcal-${st}${d === cal.today ? " att-today" : ""}${picked === d ? " is-picked" : ""}`}
+              data-day={d}
+              data-state={st}
+              aria-label={`${longDay(d)}: ${st === "out" ? "not available" : noteOf(d)}`}
+            >
+              <span className="font-bold">{Number(d.slice(8))}</span>
+              {tag && <span className="att-regcal-tag">{tag}</span>}
+              {tag && <span className="att-regcal-dot" aria-hidden />}
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-3 min-h-[1.25rem] text-sm" data-testid="reg-cal-note" aria-live="polite">
+        {picked ? (
+          <>
+            <span className="font-semibold text-(--att-text)">{longDay(picked)}</span> · <span className="att-muted">{noteOf(picked)}</span>
+          </>
+        ) : (
+          <span className="att-muted">Tap a date to see it or act on it.</span>
+        )}
+      </p>
+      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs att-muted" aria-label="Key">
+        <li className="inline-flex items-center gap-1.5"><span className="att-regcal-key att-regcal-missed" /> Missed punch</li>
+        <li className="inline-flex items-center gap-1.5"><span className="att-regcal-key att-regcal-sent" /> Sent / fixed</li>
+        <li className="inline-flex items-center gap-1.5"><span className="att-regcal-key att-regcal-plan_pending" /> Plan pending</li>
+        <li className="inline-flex items-center gap-1.5"><span className="att-regcal-key att-regcal-planned" /> Planned</li>
+      </ul>
+    </Card>
   );
 }

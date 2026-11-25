@@ -405,7 +405,6 @@ try {
     // A phone (375 px): cards, swiping, the picker by touch, arrows and keys.
     const ph = await signedIn(asha.email, { width: 375, height: 800 });
     await go(ph.page, "/attendance/more/regularization");
-    const past = ph.page.getByTestId("reg-day");
     const missing = ph.page.locator('[data-testid=reg-day][data-state=missing_checkout]');
     check("regularization: each past day with a missed check-out is a card", (await missing.count()) >= 6, await missing.count());
     const first = missing.first();
@@ -444,6 +443,42 @@ try {
     const [rq] = await sql`select requested_checkout, is_future from att_regularization_requests where user_id = ${asha.id} and date = ${day1}`;
     check("regularization: stored with the chosen time (16:35), not a plan", rq?.requested_checkout?.startsWith("16:35") && rq.is_future === false, rq);
     check("regularization (375px): no page error", true);
+    // The calendar: tap a date to act on it.
+    const calCell = (d) => ph.page.locator(`[data-testid=reg-cal] [data-day="${d}"]`);
+    check("calendar: shows this month, every date a button", (await ph.page.getByTestId("reg-cal-month").innerText()).length > 0 && (await ph.page.locator("[data-testid=reg-cal] button").count()) >= 28);
+    if (day1.slice(0, 7) !== istDay().slice(0, 7)) await ph.page.getByRole("button", { name: "Previous month" }).click();
+    check("calendar: the day just sent shows as sent", (await calCell(day1).getAttribute("data-state")) === "sent");
+    await calCell(day1).click();
+    check("calendar: tapping it says the request is waiting (no form)", /Request sent .*waiting for approval/.test(await ph.page.getByTestId("reg-cal-note").innerText()) && (await ph.page.getByRole("dialog", { name: /Add/ }).count()) === 0, await ph.page.getByTestId("reg-cal-note").innerText());
+    const missedCell = ph.page.locator("[data-testid=reg-cal] [data-state=missed]").first();
+    const missedDay = await missedCell.getAttribute("data-day");
+    await missedCell.click();
+    const calDlg = ph.page.getByRole("dialog", { name: / · Add / });
+    await calDlg.locator("[role=group]").first().waitFor({ timeout: 10000 }).catch(() => {});
+    check("calendar: tapping a missed day opens its correction form", (await calDlg.count()) === 1 && (await calDlg.getAttribute("aria-label")).startsWith(`${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date(missedDay + "T00:00:00Z").getUTCDay()]},`));
+    await ph.page.keyboard.press("Escape");
+    await calDlg.waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
+    const offCell = ph.page.locator("[data-testid=reg-cal] [data-state=none]").filter({ hasNot: ph.page.locator(".att-regcal-tag") });
+    let sundayDay = null;
+    for (const d of await offCell.evaluateAll((els) => els.map((e) => e.getAttribute("data-day")))) if (new Date(d + "T00:00:00Z").getUTCDay() === 0) { sundayDay = d; break; }
+    if (sundayDay) {
+      await calCell(sundayDay).click();
+      check("calendar: tapping a Sunday explains it is a weekly off", /Weekly off/.test(await ph.page.getByTestId("reg-cal-note").innerText()), await ph.page.getByTestId("reg-cal-note").innerText());
+    }
+    // Ahead: the next month (or this one) has working days to plan.
+    if (day1.slice(0, 7) !== istDay().slice(0, 7)) await ph.page.getByRole("button", { name: "Next month" }).click();
+    await ph.page.getByRole("button", { name: "Next month" }).click();
+    const planCell = ph.page.locator("[data-testid=reg-cal] [data-state=plan]").first();
+    check("calendar: next month has working days to plan", (await planCell.count()) === 1);
+    await planCell.click();
+    const calPlan = ph.page.getByRole("dialog", { name: /^Plan / });
+    await calPlan.getByTestId("pick-in").waitFor({ timeout: 10000 }).catch(() => {});
+    check("calendar: tapping a working day ahead opens the plan form", (await calPlan.count()) === 1);
+    await ph.page.keyboard.press("Escape");
+    await calPlan.waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
+    check("calendar: Next stops at the last month that can be planned", await ph.page.getByRole("button", { name: "Next month" }).isDisabled());
+    const cellBox = await planCell.boundingBox();
+    check("calendar (375px): date buttons are at least 44 px tall, and the page does not scroll sideways", cellBox && cellBox.height >= 44 && (await overflow(ph.page)) <= 1, cellBox);
     await ph.ctx.close();
 
     // A tablet (768 px): two columns; plan a day with the mouse wheel.
@@ -508,6 +543,8 @@ try {
     const fit = await sd.evaluate((el) => ({ over: el.scrollWidth - el.clientWidth, right: el.getBoundingClientRect().right, vw: innerWidth }));
     check("regularization (320px): the form and its wheels fit the screen", fit.over <= 1 && fit.right <= fit.vw, fit);
     check("regularization (320px): the page does not scroll sideways", (await overflow(sm.page)) <= 1);
+    const calFit = await sm.page.getByTestId("reg-cal").evaluate((el) => ({ over: el.scrollWidth - el.clientWidth, right: el.getBoundingClientRect().right, vw: innerWidth }));
+    check("calendar (320px): seven columns fit the screen", calFit.over <= 1 && calFit.right <= calFit.vw, calFit);
     await sm.ctx.close();
   }
 

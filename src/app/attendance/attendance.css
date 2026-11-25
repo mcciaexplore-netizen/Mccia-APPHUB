@@ -222,6 +222,33 @@
 .att-wheel-colon { font-size: 1.4rem; font-weight: 700; color: var(--att-text); padding-bottom: 2px; }
 .att-wheel-caption { display: flex; justify-content: center; gap: 2.4rem; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--att-grey); }
 
+/* ── Regularization calendar: every date a button (44 px+ tall), coloured by what it needs. ── */
+.att-regcal { position: relative; min-height: 3.6rem; border-radius: 10px; padding: 0.35rem 0.4rem; border: 1px solid var(--att-line); background: var(--att-card); font-size: 0.8rem; line-height: 1.2; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; color: var(--att-text); cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.att-regcal:hover:not(:disabled) { border-color: var(--att-primary-line); background: var(--att-card-hover); }
+.att-regcal:focus-visible { outline: 2px solid var(--att-primary); outline-offset: 1px; }
+.att-regcal:disabled { opacity: 0.35; cursor: default; }
+.att-regcal.att-today { outline: 2px solid var(--att-primary); outline-offset: -1px; }
+.att-regcal.is-picked { box-shadow: 0 0 0 2px var(--att-primary) inset; }
+.att-regcal-none, .att-regcal-out { color: var(--att-grey); }
+.att-regcal-tag { font-size: 0.66rem; font-weight: 700; }
+.att-regcal-dot { display: none; width: 7px; height: 7px; border-radius: 999px; background: currentColor; }
+.att-regcal-missed { background: var(--att-amber-tint); border-color: color-mix(in srgb, var(--att-amber) 45%, var(--att-line)); color: var(--att-amber-text); }
+.att-regcal-sent, .att-regcal-done { background: var(--att-grey-tint); color: var(--att-grey); }
+.att-regcal-plan_pending { border: 1px dashed var(--att-amber); color: var(--att-amber-text); }
+.att-regcal-planned { background: var(--att-primary-tint); border-color: var(--att-primary-line); color: var(--att-primary-2); }
+.att-regcal-plan_rejected { color: var(--att-red); }
+.att-regcal-key { display: inline-block; width: 12px; height: 12px; min-height: 0; padding: 0; border-radius: 4px; border: 1px solid var(--att-line); }
+.att-regcal-key.att-regcal-missed { background: var(--att-amber); border-color: var(--att-amber); }
+.att-regcal-key.att-regcal-sent { background: var(--att-grey); border-color: var(--att-grey); }
+.att-regcal-key.att-regcal-plan_pending { background: transparent; border: 2px dashed var(--att-amber); }
+.att-regcal-key.att-regcal-planned { background: var(--att-primary); border-color: var(--att-primary); }
+.att-cal-navbtn { min-width: 44px; min-height: 44px; justify-content: center; }
+@media (max-width: 640px) {
+  .att-regcal { min-height: 2.9rem; padding: 0.3rem; align-items: center; justify-content: center; font-size: 0.8rem; }
+  .att-regcal-tag { display: none; }
+  .att-regcal-dot { display: block; }
+}
+
 /* ── Day cards (Regularization): one column on a phone, two on a tablet, three on a desktop. Many cards on a phone become a row to swipe. ── */
 .att-cards { display: grid; gap: 0.75rem; grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 768px) { .att-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

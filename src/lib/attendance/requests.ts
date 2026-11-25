@@ -5,7 +5,7 @@ import { attendance, compoffRequests, earlyDepartures, leaveRequests, regulariza
 import { AttError } from "./dal";
 import { calendarFor, getSettings, profileOf } from "./config";
 import { loadDays, recordOf, viewOf } from "./days";
-import { dayKind } from "./calendar";
+import { dayKind, STATUS_LABEL } from "./calendar";
 import { regularizationEligibility, checkRegularizationTimes, checkPlanTimes, pastCardState, planEligibility, PLAN_AHEAD_DAYS, type PastCardState } from "./regularization";
 import { checkCompoffClaim, compoffDays, expiryFor } from "./compoff";
 import { approverIdFor } from "./leave";
@@ -275,6 +275,28 @@ export async function applyPlan(user: { id: string; name: string }, input: { dat
   if (!row) throw new AttError("That day is already planned.");
   await notifyNewRequest({ kind: "regularization", id: row.id, requester: user, approverId: row.approverId, summary: `Planned working day ${formatDay(input.date)}: ${checkIn} – ${checkOut}${reason ? `. ${reason}` : ""}` });
   return { id: row.id };
+}
+
+/** The Regularization calendar: the days it lets you tap (the window behind to the plan horizon ahead) and, for each, what the day is. */
+export type CalendarRange = { from: string; to: string; today: string; notes: Record<string, string> };
+
+export async function regularizationCalendar(userId: string): Promise<CalendarRange> {
+  const [settings, today] = [await getSettings(), istDay()];
+  const from = addDays(today, -settings.regularizationWindowDays);
+  const to = addDays(today, PLAN_AHEAD_DAYS);
+  const data = await loadDays([userId], from, to);
+  const notes: Record<string, string> = {};
+  for (const day of eachDay(from, to)) {
+    const v = viewOf(data, userId, day, today);
+    if (day === today) notes[day] = "Today: check in or out from Home.";
+    else if (v.status === "untracked") notes[day] = "Attendance was not tracked yet on this day.";
+    else if (v.leave?.half === "none") notes[day] = `On leave (${v.leave.typeName}). Nothing to regularize.`;
+    else if (v.kind === "holiday" && !v.record?.checkIn) notes[day] = `Holiday${v.holidayName ? `: ${v.holidayName}` : ""}. Not a working day.`;
+    else if (v.kind === "weekly_off" && !v.record?.checkIn) notes[day] = "Weekly off. Not a working day.";
+    else if (day > today) notes[day] = "Working day.";
+    else notes[day] = `${STATUS_LABEL[v.status]}: both punches are recorded. Nothing to regularize.`;
+  }
+  return { from, to, today, notes };
 }
 
 // ── Comp-off ──────────────────────────────────────────────────────────────
