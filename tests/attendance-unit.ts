@@ -15,6 +15,7 @@ import { canEditWeek, checkSubmitWeek, checkTimeEntry, weekDays } from "../src/l
 import { eventsBetween, fillTemplate, onYear, todaysEvents, upcomingEvents, cleanWish } from "../src/lib/attendance/feeds";
 import { approverFor, attRolesFor, canDecide, isAdmin, isMember, navFor } from "../src/lib/attendance/att.manifest";
 import { tally } from "../src/lib/attendance/summary";
+import * as DR from "../src/lib/attendance/daily";
 import { BOTTOM_NAV } from "../src/lib/attendance/att.manifest";
 import { b64urlToBytes, bytesToB64url, isPushHost, pushAudience, subscriptionGone, validSubscription, vapidJwk } from "../src/lib/attendance/push-rules";
 import { isDarkTheme, isIosSafari, parseThemePref, themeColorFor } from "../src/lib/attendance/pwa-rules";
@@ -231,6 +232,16 @@ export function attendanceUnit(eq: Eq): void {
     attRolesFor({ hubRole: "super_admin", access: false, adminAppAdmin: false }),
   ], [["attendance_member"], ["attendance_member", "attendance_admin"], ["attendance_member", "attendance_admin", "attendance_super_admin"], []]);
   eq("att roles: isMember / isAdmin", [isMember(["attendance_admin"]), isAdmin(["attendance_member"])], [true, false]);
+  eq("att nav: HR menu has Daily Report between Today and Approvals", navFor("admin", ["attendance_admin"]).slice(0, 3).map((i) => [i.label, i.href]), [["Today", "/attendance/admin"], ["Daily Report", "/attendance/admin/daily-report"], ["Approvals", "/attendance/admin/approvals"]]);
+  const drow = (o: Partial<DR.DailyRow>): DR.DailyRow => ({ userId: "u", name: "Asha", email: "asha@x.in", checkIn: "2026-11-25T04:35:00Z", checkOut: "2026-11-25T12:10:00Z", place: "in_office", area: null, distanceM: 40, hoursWorked: 7.58, hoursSoFar: null, isLate: false, isEarlyOut: false, isWfh: false, regularized: false, ...o });
+  eq("att daily: file name daily-report-25-nov-2026.csv (no leading zero)", [DR.dailyFileName("2026-11-25"), DR.dailyFileName("2026-01-05")], ["daily-report-25-nov-2026.csv", "daily-report-5-jan-2026.csv"]);
+  eq("att daily: status Present / Late / Early Out / both", [DR.dailyStatus(drow({})), DR.dailyStatus(drow({ isLate: true })), DR.dailyStatus(drow({ isEarlyOut: true })), DR.dailyStatus(drow({ isLate: true, isEarlyOut: true }))], ["Present", "Late", "Early Out", "Late · Early Out"]);
+  eq("att daily: CSV header and rows (in office; remote with area and distance, not out yet, late; regularized)", DR.dailyRows([drow({}), drow({ name: "Rhea", email: "r@x.in", place: "remote", area: "Baner, Pune", distanceM: 2297, checkOut: null, hoursWorked: null, isLate: true }), drow({ name: "Ben", place: null, distanceM: null })]), [
+    ["Name", "Email", "Check In", "Check Out", "Location", "Distance from Office", "Hours Worked", "Status", "Late"],
+    ["Asha", "asha@x.in", "10:05", "17:40", "In Office", "40 m", 7.58, "Present", "No"],
+    ["Rhea", "r@x.in", "10:05", "", "Remote · Baner, Pune", "2.3 km", "", "Late", "Yes"],
+    ["Ben", "asha@x.in", "10:05", "17:40", "", "", 7.58, "Present", "No"],
+  ]);
   eq("att roles: staff menu (HR also see Attendance Admin); admin menu only for HR", [navFor("staff", ["attendance_member"]).map((i) => i.label), navFor("staff", ["attendance_member", "attendance_admin"]).length, navFor("admin", ["attendance_member"]).length, navFor("admin", ["attendance_admin"])[0].label], [["Dashboard", "Attendance", "Leave", "Time", "More"], 6, 0, "Today"]);
   eq("att approvals: to the active manager; no manager, inactive manager or self → HR (null)", [approverFor({ id: "u", managerId: "m" }, true), approverFor({ id: "u", managerId: null }, true), approverFor({ id: "u", managerId: "m" }, false), approverFor({ id: "u", managerId: "u" }, true)], ["m", null, null, null]);
   eq("att approvals: who decides: the reporting manager it was sent to; HR cannot decide a manager's request; HR decide what was sent to HR (no manager) or what waits for a manager who left; nobody decides their own", [
