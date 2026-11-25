@@ -42,21 +42,49 @@ export type InventoryNavItem = {
   disabled?: boolean;
 };
 
+/** A collapsible heading with the pages under it (Inventory, Maintenance). It is not a page itself. */
+export type InventoryNavGroup = { label: string; children: InventoryNavItem[] };
+export type InventoryNavEntry = InventoryNavItem | InventoryNavGroup;
+export const isNavGroup = (e: InventoryNavEntry): e is InventoryNavGroup => "children" in e;
+
 const ADMIN = ["inventory_admin"] as const;
 
-export const inventoryNav: InventoryNavItem[] = [
+/** The AMC page lives under /inventory/admin/, beside the Audit Log: Inventory admins only. */
+export const AMC_PATH = "/inventory/admin/maintenance/amc";
+
+export const inventoryNav: InventoryNavEntry[] = [
   { label: "Dashboard", href: "/inventory" },
-  { label: "Items", href: "/inventory/items", roles: SEES_ITEMS },
-  { label: "Categories", href: "/inventory/categories", roles: ADMIN },
-  { label: "Requests", href: "/inventory/requests" },
-  { label: "Issues & returns", href: "/inventory/issues", roles: ADMIN },
-  { label: "Stock movements", href: "/inventory/movements", roles: ADMIN },
-  { label: "Transfers", href: "/inventory/transfers", roles: ADMIN },
-  { label: "Purchases", href: "/inventory/purchases", roles: ADMIN },
-  { label: "Purchase orders", href: "/inventory/purchase-orders", roles: ADMIN },
+  {
+    label: "Inventory",
+    children: [
+      { label: "Items", href: "/inventory/items", roles: SEES_ITEMS },
+      { label: "Categories", href: "/inventory/categories", roles: ADMIN },
+      { label: "Requests", href: "/inventory/requests" },
+      { label: "Issues & Returns", href: "/inventory/issues", roles: ADMIN },
+      { label: "Stock Movements", href: "/inventory/movements", roles: ADMIN },
+      { label: "Transfers", href: "/inventory/transfers", roles: ADMIN },
+      { label: "Purchases", href: "/inventory/purchases", roles: ADMIN },
+      { label: "Purchase Orders", href: "/inventory/purchase-orders", roles: ADMIN },
+    ],
+  },
   { label: "Vendors", href: "/inventory/vendors", roles: ADMIN },
-  { label: "Maintenance", href: "/inventory/maintenance" },
+  {
+    label: "Maintenance",
+    children: [
+      // The maintenance tickets everyone raises and Inventory admins resolve: the page that was "Maintenance" before it became a group.
+      { label: "Tickets", href: "/inventory/maintenance" },
+      { label: "AMC", href: AMC_PATH, roles: ADMIN },
+    ],
+  },
   { label: "Audit Log", href: "/inventory/admin/audit", roles: ADMIN },
 ];
 
-export const navFor = (roles: readonly InventoryRole[]) => inventoryNav.filter((i) => !i.roles || i.roles.some((r) => roles.includes(r)));
+const visible = (i: InventoryNavItem, roles: readonly InventoryRole[]) => !i.roles || i.roles.some((r) => roles.includes(r));
+
+/** The menu this person sees: what their roles open, and a group only while at least one page under it is open to them. */
+export const navFor = (roles: readonly InventoryRole[]): InventoryNavEntry[] =>
+  inventoryNav.flatMap((e): InventoryNavEntry[] => {
+    if (!isNavGroup(e)) return visible(e, roles) ? [e] : [];
+    const children = e.children.filter((c) => visible(c, roles));
+    return children.length ? [{ ...e, children }] : [];
+  });

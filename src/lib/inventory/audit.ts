@@ -24,12 +24,15 @@ export const AUDIT_ACTIONS = {
   request_rejected: "Request rejected",
   ticket_created: "Maintenance ticket created",
   ticket_resolved: "Maintenance ticket resolved",
+  amc_added: "AMC added",
+  amc_edited: "AMC edited",
+  amc_deleted: "AMC deleted",
 } as const;
 export type InventoryAuditAction = keyof typeof AUDIT_ACTIONS;
 export const isAuditAction = (v: string): v is InventoryAuditAction => Object.hasOwn(AUDIT_ACTIONS, v);
 
 export type InventoryAuditEntry = {
-  targetType: "item" | "request" | "ticket";
+  targetType: "item" | "request" | "ticket" | "amc";
   targetId?: string | null;
   targetLabel: string;
   branchId?: string | null;

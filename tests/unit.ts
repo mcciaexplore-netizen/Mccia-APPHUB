@@ -37,7 +37,8 @@ import { activeVersion, budgetBalance, budgetIdOf, compareVersions, comparisonPa
 import { budgetRequestInput, budgetRevisionInput } from "../src/lib/approvals/request-schemas";
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
-import { INVENTORY_URL_PATTERN, inventoryRoleFor, navFor } from "../src/lib/inventory/inventory.manifest";
+import { AMC_PATH, INVENTORY_URL_PATTERN, inventoryRoleFor, isNavGroup, navFor } from "../src/lib/inventory/inventory.manifest";
+import { amcTotals, fyChoices, fyLabel, fyPairLabel, fyStartOf, pickFy } from "../src/lib/inventory/amc-shared";
 import { IVR_ADMIN_URL_PATTERN, IVR_NAV, IVR_USER_URL_PATTERN, SECTION_ROLES as IVR_SECTION_ROLES, effectiveRole as ivrEffectiveRole, ivrRolesFor, navFor as ivrNavFor } from "../src/lib/ivr/ivr.manifest";
 import { formatPhone as ivrFormatPhone, maskPhone as ivrMaskPhone, normalizePhone as ivrPhone } from "../src/lib/ivr/phone";
 import { deriveOutcome as ivrOutcome } from "../src/lib/ivr/outcome";
@@ -54,7 +55,7 @@ import { assignInput, costInput, driverInput, fuelInput, invoiceInput, istLocalT
 import { OTP_MAX_ATTEMPTS, mapsLink, otpExpiry } from "../src/lib/cabs/otp-rules";
 import { DRIVER_SESSION_HOURS, LOGIN_MAX_ATTEMPTS, LOGIN_OTP_HOURS, driverLoginInput, loginPhone, pickDriver } from "../src/lib/cabs/driver-login-rules";
 import { MCCIA_OFFICES, officeText, officesFor } from "../src/components/cabs/offices";
-import { issueInput, poInput, receiveInput, ticketInput, ticketUpdate, requestDecision, requestInput, returnInput, rupeesToPaise, transferInput, vendorInput } from "../src/lib/inventory/validation";
+import { issueInput, poInput, receiveInput, ticketInput, ticketUpdate, requestDecision, requestInput, returnInput, rupeesToPaise, transferInput, vendorInput, amcInput } from "../src/lib/inventory/validation";
 import { financialYear, nextPoNo, poPrefix } from "../src/lib/inventory/po-number";
 import { MAX_PHOTO_BYTES, checkPhoto, sniffPhoto } from "../src/lib/inventory/photos";
 import {
@@ -748,18 +749,46 @@ eq("inventory roles: the Inventory application's App Staff are Staff; an App Adm
 ], ["inventory_staff", "inventory_staff", "inventory_admin", "inventory_admin"]);
 eq("inventory access: only an application whose URL is /inventory stands for the module", ["/inventory", "/inventory/", "/inventory/items", "/inventory-old", "https://mccia-inventory-management.vercel.app/", "/approvals"]
   .map((u) => new RegExp(INVENTORY_URL_PATTERN).test(u)), [true, true, false, false, false, false]);
-const navLabels = (roles: Parameters<typeof navFor>[0]) => navFor(roles).map((i) => i.label);
-eq("inventory menu: no Settings any more; Categories, purchase orders and the stock history for Inventory admins; Items for Staff and admins; requests for everyone", [
-  navLabels(["requester", "inventory_admin"]).includes("Settings"), navLabels(["requester"]).includes("Categories"), navLabels(["requester"]).includes("Purchase orders"),
-  navLabels(["requester"]).includes("Stock movements"), navLabels(["requester", "inventory_admin"]).includes("Categories"), navLabels(["requester"]).includes("Items"), navLabels(["requester"]).includes("Requests"),
+const okParse = (schema: { safeParse: (v: unknown) => { success: boolean } }, v: unknown) => schema.safeParse(v).success;
+const navLabels = (roles: Parameters<typeof navFor>[0]) => navFor(roles).flatMap((e) => (isNavGroup(e) ? [e.label, ...e.children.map((c) => c.label)] : [e.label]));
+const navShape = (roles: Parameters<typeof navFor>[0]) => navFor(roles).map((e) => (isNavGroup(e) ? [e.label, e.children.map((c) => c.label)] : e.label));
+eq("inventory menu: no Settings; Categories, Purchase Orders and the stock history for Inventory admins; Items for Staff and admins; requests for everyone", [
+  navLabels(["requester", "inventory_admin"]).includes("Settings"), navLabels(["requester"]).includes("Categories"), navLabels(["requester"]).includes("Purchase Orders"),
+  navLabels(["requester"]).includes("Stock Movements"), navLabels(["requester", "inventory_admin"]).includes("Categories"), navLabels(["requester"]).includes("Items"), navLabels(["requester"]).includes("Requests"),
   navLabels(["requester", "inventory_staff"]).includes("Items"), navLabels(["requester", "inventory_admin"]).includes("Items"),
 ], [false, false, false, false, true, false, true, true, true]);
-eq("inventory menu: a user sees exactly the dashboard, their requests and maintenance; Staff also the items; an admin sees all twelve, Transfers and the Audit Log among them",
-  [navLabels(["requester"]), navLabels(["requester", "inventory_staff"]), navLabels(["requester", "inventory_admin"]).length, navLabels(["requester", "inventory_staff"]).includes("Transfers"), navLabels(["requester", "inventory_admin"]).includes("Transfers"),
-    navLabels(["requester", "inventory_staff"]).includes("Audit Log"), navLabels(["requester", "inventory_admin"]).includes("Audit Log")],
-  [["Dashboard", "Requests", "Maintenance"], ["Dashboard", "Items", "Requests", "Maintenance"], 12, false, true, false, true]);
+eq("inventory menu: a user sees the dashboard, their requests and their maintenance tickets; Staff also the items; neither sees the AMC, Transfers or the Audit Log",
+  [navShape(["requester"]), navShape(["requester", "inventory_staff"]), ["requester", "inventory_staff"].map((r) => navLabels(["requester", r as "inventory_staff"]).some((l) => ["AMC", "Transfers", "Audit Log"].includes(l)))],
+  [["Dashboard", ["Inventory", ["Requests"]], ["Maintenance", ["Tickets"]]], ["Dashboard", ["Inventory", ["Items", "Requests"]], ["Maintenance", ["Tickets"]]], [false, false]]);
+eq("inventory menu: an Inventory admin gets exactly Dashboard, Inventory (eight pages), Vendors, Maintenance (Tickets, AMC) and the Audit Log",
+  navShape(["requester", "inventory_admin"]),
+  ["Dashboard", ["Inventory", ["Items", "Categories", "Requests", "Issues & Returns", "Stock Movements", "Transfers", "Purchases", "Purchase Orders"]], "Vendors", ["Maintenance", ["Tickets", "AMC"]], "Audit Log"]);
+eq("inventory menu: the AMC page is at /inventory/admin/maintenance/amc", AMC_PATH, "/inventory/admin/maintenance/amc");
+
+// Annual Maintenance Contracts
+eq("amc financial years: April to March in India time, labelled 2025-26", [fyLabel(2025), fyLabel(2099), fyPairLabel(2025), fyStartOf(new Date("2026-11-14T10:00:00+05:30")), fyStartOf(new Date("2027-02-03T10:00:00+05:30")), fyStartOf(new Date("2026-03-31T23:00:00+05:30")), fyStartOf(new Date("2026-04-01T00:30:00+05:30"))],
+  ["2025-26", "2099-00", "2025-26 & 2026-27", 2026, 2026, 2025, 2026]);
+eq("amc financial years: the choices are every year in use and the ones around now, newest first; the page opens on the one asked for, else the newest in use, else this year",
+  [fyChoices([2024, 2025], new Date("2026-11-14T10:00:00+05:30")), pickFy(2025, [2026]), pickFy(null, [2024, 2026]), pickFy(null, [], new Date("2026-11-14T10:00:00+05:30")), pickFy(1999, [2026]), pickFy(Number.NaN, [])],
+  [[2027, 2026, 2025, 2024], 2025, 2026, 2026, 2026, fyStartOf()]);
+// The SB Road contracts, in paise: both years' totals as added up from the eleven rows (the second is 3,91,237, not 5,09,254)
+const sbRoad = [[32500, 33500], [21000, 16992], [23200, 22000], [19125, 19125], [12600, 12000], [14400, 14400], [9450, 9920], [9600, 9600], [8500, 9500], [24500, 24500], [260624, 219700]]
+  .map(([a, b]) => ({ amountCurrentFy: a * 100, amountNextFy: b * 100 }));
+eq("amc totals: the SB Road contracts add up to 4,35,499 and 3,91,237; a missing amount counts as nothing; no rows is zero",
+  [amcTotals(sbRoad), amcTotals([{ amountCurrentFy: null, amountNextFy: 500 }, { amountCurrentFy: 250, amountNextFy: null }]), amcTotals([])],
+  [{ current: 43549900, next: 39123700 }, { current: 250, next: 500 }, { current: 0, next: 0 }]);
+const amcBase = { branchId: "11111111-1111-4111-8111-111111111111", equipmentService: "30 KVA UPS", vendorName: "Powertechnics Info Solutions Pvt Ltd", amcType: "non_comprehensive", fyStartYear: 2025 };
+const amcOk = amcInput.safeParse({ ...amcBase, amountCurrentFy: "32,500", amountNextFy: "33500.50", startDate: "2025-04-01", endDate: "2026-03-31", notes: " yearly " });
+eq("amc form: rupees become paise, empty amounts and dates are none, notes are trimmed", [amcOk.success && amcOk.data.amountCurrentFy, amcOk.success && amcOk.data.amountNextFy, amcOk.success && amcOk.data.notes, amcInput.safeParse(amcBase).success && amcInput.parse(amcBase).amountCurrentFy, amcInput.parse(amcBase).startDate, amcInput.parse(amcBase).vendorId], [3250000, 3350050, "yearly", null, null, null]);
+eq("amc form: the branch, equipment, vendor and a real type are required; the four types are accepted",
+  [okParse(amcInput, { ...amcBase, branchId: "" }), okParse(amcInput, { ...amcBase, equipmentService: " " }), okParse(amcInput, { ...amcBase, vendorName: "" }), okParse(amcInput, { ...amcBase, amcType: "gold" }), okParse(amcInput, { ...amcBase, amcType: "" }),
+    ["comprehensive", "non_comprehensive", "service", "cec"].map((t) => okParse(amcInput, { ...amcBase, amcType: t }))],
+  [false, false, false, false, false, [true, true, true, true]]);
+eq("amc form: bad amounts, impossible dates and an end before the start are refused", [
+  okParse(amcInput, { ...amcBase, amountCurrentFy: "12abc" }), okParse(amcInput, { ...amcBase, amountNextFy: "-5" }), okParse(amcInput, { ...amcBase, startDate: "2026-02-31" }),
+  okParse(amcInput, { ...amcBase, startDate: "2026-04-01", endDate: "2026-03-31" }), okParse(amcInput, { ...amcBase, startDate: "2026-04-01", endDate: "2026-04-01" }), okParse(amcInput, { ...amcBase, fyStartYear: 1999 }),
+], [false, false, false, false, true, false]);
 eq("inventory rupees: amounts become paise; bad input is refused", [rupeesToPaise("1,250.50"), rupeesToPaise("₹ 35"), rupeesToPaise(""), rupeesToPaise("1.234"), rupeesToPaise("-5"), rupeesToPaise("abc")], [125050, 3500, null, "invalid", "invalid", "invalid"]);
-const okParse = (schema: { safeParse: (v: unknown) => { success: boolean } }, v: unknown) => schema.safeParse(v).success;
 {
   const b1 = "11111111-1111-4111-8111-111111111111", b2 = "22222222-2222-4222-8222-222222222222", it = "33333333-3333-4333-8333-333333333333";
   eq("inventory transfers: two different branches and a whole quantity of at least 1", [

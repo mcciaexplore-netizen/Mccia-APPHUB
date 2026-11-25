@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { checkPhoto } from "./photos";
+import { AMC_TYPES } from "./amc-shared";
 
 /**
  * What the Inventory forms may send. No server-only imports, so the client forms use the same rules. Money arrives as rupees typed by a
@@ -117,6 +118,52 @@ export const vendorInput = z.object({
   active: z.boolean().optional().default(true),
 });
 export type VendorInput = z.output<typeof vendorInput>;
+
+/** A day written YYYY-MM-DD that exists on the calendar (not 31 February), or empty. */
+const optionalDay = (what: string) =>
+  z.string().trim().optional().transform((v, ctx) => {
+    if (!v) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) !== v) {
+      ctx.addIssue({ code: "custom", message: `${what} is not a valid date` });
+      return z.NEVER;
+    }
+    return v;
+  });
+
+/** An amount in rupees typed by a person, optional: "32,500" → 3250000 paise; empty → none. */
+const optionalRupees = (what: string) =>
+  z.string().max(20).optional().default("").transform((v, ctx) => {
+    const p = rupeesToPaise(v);
+    if (p === "invalid") {
+      ctx.addIssue({ code: "custom", message: `${what} must be an amount in rupees, such as 32500 or 32,500.50` });
+      return z.NEVER;
+    }
+    return p;
+  });
+
+/**
+ * An Annual Maintenance Contract: the branch, the equipment or service, the vendor (a name, with the directory entry's id when one was
+ * picked) and the type are required. fyStartYear is the first of the two financial years the amounts are for (2025 = FY 2025-26 and 2026-27).
+ */
+export const amcInput = z
+  .object({
+    branchId: z.string().uuid("Choose a branch"),
+    categoryId: z.union([idSchema, z.literal("")]).optional().transform((v) => (v ? v : null)),
+    equipmentService: name("Equipment / service"),
+    vendorName: name("Vendor"),
+    vendorId: z.union([idSchema, z.literal("")]).optional().transform((v) => (v ? v : null)),
+    amcType: z.enum(AMC_TYPES, { error: "Choose the AMC type" }),
+    fyStartYear: z.coerce.number({ error: "Choose the financial year" }).int().min(2000, "Choose the financial year").max(2100, "Choose the financial year"),
+    startDate: optionalDay("The start date"),
+    endDate: optionalDay("The end date"),
+    amountCurrentFy: optionalRupees("The first year's amount"),
+    amountNextFy: optionalRupees("The second year's amount"),
+    notes: optionalText(1000),
+  })
+  .superRefine((v, ctx) => {
+    if (v.startDate && v.endDate && v.endDate < v.startDate) ctx.addIssue({ code: "custom", path: ["endDate"], message: "The end date must be on or after the start date" });
+  });
+export type AmcInput = z.output<typeof amcInput>;
 
 /** One line of a purchase order: a catalogue item or a free-text description (one is needed), a quantity, and a rate in rupees (required). */
 export const poLineInput = z
