@@ -187,7 +187,7 @@ export async function previewImport(fileName: string, text: string): Promise<Pre
 }
 
 export type ImportOutcome = { legacyId: string; index: number; outcome: "imported" | "skipped" | "failed"; message: string; requestId?: string; requestNo?: string };
-export type ImportResult = { batchId: string; total: number; imported: number; skipped: number; failed: number; rows: ImportOutcome[] };
+export type ImportResult = { batchId: string; form: "hr" | "expenditure"; total: number; imported: number; skipped: number; failed: number; rows: ImportOutcome[] };
 
 /** Saves the importable records of a file as archived tickets, in date order (so their numbers follow the dates within each year; undated ones by the time they are listed by). */
 export async function runImport(actor: ApprovalsUser, fileName: string, text: string, decisions: Record<string, CategoryDecision>): Promise<ImportResult> {
@@ -297,7 +297,7 @@ export async function runImport(actor: ApprovalsUser, fileName: string, text: st
   }
   outcomes.sort((a, b) => a.index - b.index);
   const count = (o: ImportOutcome["outcome"]) => outcomes.filter((x) => x.outcome === o).length;
-  const result: ImportResult = { batchId: batch.id, total: records.length, imported: count("imported"), skipped: count("skipped"), failed: count("failed"), rows: outcomes };
+  const result: ImportResult = { batchId: batch.id, form: adapter.form, total: records.length, imported: count("imported"), skipped: count("skipped"), failed: count("failed"), rows: outcomes };
   if (result.imported + result.skipped + result.failed !== result.total) throw new ApprovalsError("The import's count does not add up. Nothing more was done; check the import history.", 500);
   await db.update(aprImportBatches).set({ mapping: applied, summary: result }).where(eq(aprImportBatches.id, batch.id));
   await recordAudit(actor, "historical_import", batch.id, "create",
@@ -307,7 +307,7 @@ export async function runImport(actor: ApprovalsUser, fileName: string, text: st
 }
 
 export type BatchRow = {
-  id: string; fileName: string; systemLabel: string; recordCount: number; imported: number; skipped: number; failed: number;
+  id: string; fileName: string; systemLabel: string; form: "hr" | "expenditure"; recordCount: number; imported: number; skipped: number; failed: number;
   importedByName: string; createdAt: Date; undoneAt: Date | null; undoneByName: string | null; tickets: number;
 };
 
@@ -324,7 +324,7 @@ export async function listBatches(): Promise<BatchRow[]> {
   return rows.map((r) => {
     const s = (r.summary ?? {}) as Partial<ImportResult>;
     return {
-      id: r.id, fileName: r.fileName, systemLabel: adapterByKey(r.sourceKey)?.systemLabel ?? r.sourceKey, recordCount: r.recordCount,
+      id: r.id, fileName: r.fileName, systemLabel: adapterByKey(r.sourceKey)?.systemLabel ?? r.sourceKey, form: adapterByKey(r.sourceKey)?.form ?? "expenditure", recordCount: r.recordCount,
       imported: s.imported ?? 0, skipped: s.skipped ?? 0, failed: s.failed ?? 0, importedByName: r.importedByName, createdAt: r.createdAt,
       undoneAt: r.undoneAt, undoneByName: r.undoneByName, tickets: r.tickets,
     };
@@ -333,8 +333,8 @@ export async function listBatches(): Promise<BatchRow[]> {
 
 /** One import's per-record report (what was imported as which number, what was skipped or failed and why). */
 export async function batchReport(batchId: string): Promise<ImportResult | null> {
-  const [b] = await db.select({ summary: aprImportBatches.summary }).from(aprImportBatches).where(eq(aprImportBatches.id, batchId));
-  return b ? (b.summary as ImportResult) : null;
+  const [b] = await db.select({ summary: aprImportBatches.summary, sourceKey: aprImportBatches.sourceKey }).from(aprImportBatches).where(eq(aprImportBatches.id, batchId));
+  return b ? { ...(b.summary as ImportResult), form: adapterByKey(b.sourceKey)?.form ?? "expenditure" } : null;
 }
 
 /**

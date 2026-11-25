@@ -261,7 +261,7 @@ export function HistoricalImport({ batches }: { batches: BatchRow[] }) {
                     <td className="whitespace-nowrap">
                       {b.undoneAt ? <span className="text-xs text-subtle">Undone {formatDate(b.undoneAt)}{b.undoneByName ? ` by ${b.undoneByName}` : ""}</span> : (
                         <span className="flex gap-2">
-                          <Link className="btn btn-ghost btn-sm" href="/approvals/expenditures/all?status=historical">View tickets</Link>
+                          <Link className="btn btn-ghost btn-sm" href={ticketsHref(b.form)}>View tickets</Link>
                           <button type="button" className="btn btn-ghost btn-sm" disabled={pending || b.tickets === 0} onClick={() => undo(b)} data-testid="hist-undo"><Undo2 size={14} aria-hidden /> Undo</button>
                         </span>
                       )}
@@ -277,6 +277,11 @@ export function HistoricalImport({ batches }: { batches: BatchRow[] }) {
   );
 }
 
+/** The list an import's tickets are in: All Hr for an HR export, All Expenditures otherwise. */
+function ticketsHref(form: "hr" | "expenditure") {
+  return form === "hr" ? "/approvals/hr/all?status=historical" : "/approvals/expenditures/all?status=historical";
+}
+
 /** What the import did with every record: the reconciliation. */
 function Report({ result }: { result: ImportResult }) {
   const notImported = result.rows.filter((r) => r.outcome !== "imported");
@@ -287,7 +292,7 @@ function Report({ result }: { result: ImportResult }) {
         <b>{result.total}</b> records in the file: <b>{result.imported}</b> imported, <b>{result.skipped}</b> skipped, <b>{result.failed}</b> failed.
         {result.imported + result.skipped + result.failed === result.total ? " Every record is accounted for." : ""}
       </p>
-      <p className="text-sm"><Link className="apr-link" href="/approvals/expenditures/all?status=historical">See the imported tickets</Link> (All Expenditures, status Historical).</p>
+      <p className="text-sm"><Link className="apr-link" href={ticketsHref(result.form)}>See the imported tickets</Link> ({result.form === "hr" ? "All Hr" : "All Expenditures"}, status Historical).</p>
       {notImported.length > 0 && (
         <div className="table-wrap">
           <table>
