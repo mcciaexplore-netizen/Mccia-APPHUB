@@ -3,7 +3,8 @@
  * No server-only imports. Amounts are integer paise, like all money in the Inventory module.
  */
 
-export const AMC_TYPES = ["comprehensive", "non_comprehensive", "service", "cec"] as const;
+/** The order of the form's dropdown. (The branch page groups in AMC_GROUP_ORDER.) */
+export const AMC_TYPES = ["comprehensive", "non_comprehensive", "service", "cec", "labour"] as const;
 export type AmcType = (typeof AMC_TYPES)[number];
 
 export const AMC_TYPE_LABEL: Record<AmcType, string> = {
@@ -11,6 +12,7 @@ export const AMC_TYPE_LABEL: Record<AmcType, string> = {
   non_comprehensive: "Non-Comprehensive",
   service: "Service",
   cec: "CEC",
+  labour: "Labour",
 };
 /** What the shorter names mean, for the form's dropdown and a tooltip. */
 export const AMC_TYPE_HINT: Record<AmcType, string> = {
@@ -18,7 +20,11 @@ export const AMC_TYPE_HINT: Record<AmcType, string> = {
   non_comprehensive: "Non-Comprehensive",
   service: "Service",
   cec: "CEC (Compressor Excluded Contract)",
+  labour: "Labour",
 };
+
+/** The order a branch's contracts are grouped in on its page. */
+export const AMC_GROUP_ORDER: readonly AmcType[] = ["non_comprehensive", "comprehensive", "service", "cec", "labour"];
 
 /** 2025 → "2025-26": the financial year that starts in April of that year. */
 export const fyLabel = (startYear: number) => `${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
@@ -50,4 +56,25 @@ type Amounts = { amountCurrentFy: number | null; amountNextFy: number | null };
 /** The sum of each year's amounts (a missing amount counts as nothing), in paise. */
 export function amcTotals(rows: readonly Amounts[]): { current: number; next: number } {
   return rows.reduce((t, r) => ({ current: t.current + (r.amountCurrentFy ?? 0), next: t.next + (r.amountNextFy ?? 0) }), { current: 0, next: 0 });
+}
+
+/**
+ * A branch's contracts grouped by type, in AMC_GROUP_ORDER, each with its own totals. A type with no contracts has no group. Within a group
+ * the rows keep the order they came in.
+ */
+export function groupAmc<T extends Amounts & { amcType: AmcType }>(rows: readonly T[]): { type: AmcType; rows: T[]; totals: { current: number; next: number } }[] {
+  return AMC_GROUP_ORDER.map((type) => {
+    const mine = rows.filter((r) => r.amcType === type);
+    return { type, rows: mine, totals: amcTotals(mine) };
+  }).filter((g) => g.rows.length > 0);
+}
+
+/**
+ * What a contract costs in one particular financial year (given as its start year), or null when it does not cover that year: a contract
+ * kept for 2025 and 2026 has its first amount in 2025 and its second in 2026.
+ */
+export function amountInFy(r: Amounts & { fyStartYear: number }, fy: number): number | null {
+  if (r.fyStartYear === fy) return r.amountCurrentFy;
+  if (r.fyStartYear === fy - 1) return r.amountNextFy;
+  return null;
 }

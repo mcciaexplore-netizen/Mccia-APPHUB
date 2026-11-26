@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, ilike, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { branches } from "@/db/schema";
 import { inventoryAmc as a, inventoryCategories, inventoryVendors } from "@/db/inventory-schema";
@@ -65,10 +65,29 @@ export async function listAmc(f: AmcFilters): Promise<AmcRow[]> {
     .limit(5000);
 }
 
-/** The financial years any contract is kept for, newest first. */
-export async function amcYearsInUse(): Promise<number[]> {
-  const rows = await db.selectDistinct({ y: a.fyStartYear }).from(a).orderBy(desc(a.fyStartYear));
+/** The financial years contracts are kept for (a branch's only, when one is given), newest first. */
+export async function amcYearsInUse(branchId?: string): Promise<number[]> {
+  const rows = await db.selectDistinct({ y: a.fyStartYear }).from(a).where(isId(branchId) ? eq(a.branchId, branchId) : undefined).orderBy(desc(a.fyStartYear));
   return rows.map((r) => r.y);
+}
+
+export type AmcBranchSummary = { id: string; name: string; active: boolean; count: number; amount: number };
+
+/**
+ * One line per branch for the AMC landing page: how many contracts it has (of any year) and what they cost in the financial year `fy`
+ * (given as its start year; see amountInFy), in paise. Every active branch is listed, with zero when it has none; a branch that has since
+ * been switched off only while it still has contracts.
+ */
+export async function amcBranchSummaries(fy: number): Promise<AmcBranchSummary[]> {
+  const count = sql<number>`count(${a.id})`.mapWith(Number);
+  const amount = sql<number>`coalesce(sum(case when ${a.fyStartYear} = ${fy} then ${a.amountCurrentFy} when ${a.fyStartYear} = ${fy - 1} then ${a.amountNextFy} end), 0)`.mapWith(Number);
+  return db
+    .select({ id: branches.id, name: branches.name, active: branches.isActive, count, amount })
+    .from(branches)
+    .leftJoin(a, eq(a.branchId, branches.id))
+    .groupBy(branches.id)
+    .having(or(eq(branches.isActive, true), sql`count(${a.id}) > 0`))
+    .orderBy(asc(sql`lower(${branches.name})`));
 }
 
 /** The vendor chosen from the directory, or none when it is gone (the name typed is kept either way). */

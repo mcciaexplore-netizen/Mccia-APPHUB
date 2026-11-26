@@ -283,7 +283,7 @@ export const invAuditLog = pgTable(
   ],
 );
 
-export const inventoryAmcType = pgEnum("inventory_amc_type", ["comprehensive", "non_comprehensive", "service", "cec"]);
+export const inventoryAmcType = pgEnum("inventory_amc_type", ["comprehensive", "non_comprehensive", "service", "cec", "labour"]);
 
 /**
  * Annual Maintenance Contracts (Inventory > Maintenance > AMC): one row per piece of equipment or service a branch has a contract for. A

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."inventory_amc_type" ADD VALUE 'labour';

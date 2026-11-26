@@ -38,7 +38,7 @@ import { budgetRequestInput, budgetRevisionInput } from "../src/lib/approvals/re
 import { recommendationScreen, resolveScreen, reviewScreen, screenFor } from "../src/lib/approvals/screens";
 import { BUILTIN, FORM_KEYS, checkCustomAnswers, mergeFields, type FormField, type FormFieldRow } from "../src/lib/approvals/form-fields";
 import { AMC_PATH, INVENTORY_URL_PATTERN, inventoryRoleFor, isNavGroup, navFor } from "../src/lib/inventory/inventory.manifest";
-import { amcTotals, fyChoices, fyLabel, fyPairLabel, fyStartOf, pickFy } from "../src/lib/inventory/amc-shared";
+import { AMC_GROUP_ORDER, AMC_TYPES, AMC_TYPE_LABEL, amcTotals, amountInFy, fyChoices, fyLabel, fyPairLabel, fyStartOf, groupAmc, pickFy } from "../src/lib/inventory/amc-shared";
 import { IVR_ADMIN_URL_PATTERN, IVR_NAV, IVR_USER_URL_PATTERN, SECTION_ROLES as IVR_SECTION_ROLES, effectiveRole as ivrEffectiveRole, ivrRolesFor, navFor as ivrNavFor } from "../src/lib/ivr/ivr.manifest";
 import { formatPhone as ivrFormatPhone, maskPhone as ivrMaskPhone, normalizePhone as ivrPhone } from "../src/lib/ivr/phone";
 import { deriveOutcome as ivrOutcome } from "../src/lib/ivr/outcome";
@@ -780,10 +780,29 @@ eq("amc totals: the SB Road contracts add up to 4,35,499 and 3,91,237; a missing
 const amcBase = { branchId: "11111111-1111-4111-8111-111111111111", equipmentService: "30 KVA UPS", vendorName: "Powertechnics Info Solutions Pvt Ltd", amcType: "non_comprehensive", fyStartYear: 2025 };
 const amcOk = amcInput.safeParse({ ...amcBase, amountCurrentFy: "32,500", amountNextFy: "33500.50", startDate: "2025-04-01", endDate: "2026-03-31", notes: " yearly " });
 eq("amc form: rupees become paise, empty amounts and dates are none, notes are trimmed", [amcOk.success && amcOk.data.amountCurrentFy, amcOk.success && amcOk.data.amountNextFy, amcOk.success && amcOk.data.notes, amcInput.safeParse(amcBase).success && amcInput.parse(amcBase).amountCurrentFy, amcInput.parse(amcBase).startDate, amcInput.parse(amcBase).vendorId], [3250000, 3350050, "yearly", null, null, null]);
-eq("amc form: the branch, equipment, vendor and a real type are required; the four types are accepted",
+eq("amc form: the branch, equipment, vendor and a real type are required; the five types (Labour among them) are accepted",
   [okParse(amcInput, { ...amcBase, branchId: "" }), okParse(amcInput, { ...amcBase, equipmentService: " " }), okParse(amcInput, { ...amcBase, vendorName: "" }), okParse(amcInput, { ...amcBase, amcType: "gold" }), okParse(amcInput, { ...amcBase, amcType: "" }),
-    ["comprehensive", "non_comprehensive", "service", "cec"].map((t) => okParse(amcInput, { ...amcBase, amcType: t }))],
-  [false, false, false, false, false, [true, true, true, true]]);
+    ["comprehensive", "non_comprehensive", "service", "cec", "labour"].map((t) => okParse(amcInput, { ...amcBase, amcType: t }))],
+  [false, false, false, false, false, [true, true, true, true, true]]);
+eq("amc types: five, Labour the new one, each with a label; a branch's groups run Non-Comprehensive, Comprehensive, Service, CEC, Labour",
+  [[...AMC_TYPES], AMC_TYPES.map((t) => AMC_TYPE_LABEL[t]), [...AMC_GROUP_ORDER].sort(), [...AMC_TYPES].sort(), AMC_GROUP_ORDER.map((t) => AMC_TYPE_LABEL[t])],
+  [["comprehensive", "non_comprehensive", "service", "cec", "labour"], ["Comprehensive", "Non-Comprehensive", "Service", "CEC", "Labour"], [...AMC_TYPES].sort(), [...AMC_TYPES].sort(), ["Non-Comprehensive", "Comprehensive", "Service", "CEC", "Labour"]]);
+// The SB Road contracts by type, as on the branch page: groups in order, empty ones left out, a subtotal for each
+const sbTypes = ["non_comprehensive", "service", "service", "non_comprehensive", "non_comprehensive", "non_comprehensive", "non_comprehensive", "non_comprehensive", "non_comprehensive", "comprehensive", "cec"] as const;
+const sbGroups = groupAmc(sbRoad.map((r, i) => ({ ...r, amcType: sbTypes[i], n: i + 1 })));
+eq("amc groups: SB Road has Non-Comprehensive (7), Comprehensive (1), Service (2), CEC (1) and no Labour, in that order, rows kept in the order given",
+  [sbGroups.map((g) => [g.type, g.rows.length]), sbGroups[0].rows.map((r) => r.n), groupAmc([]).length],
+  [[["non_comprehensive", 7], ["comprehensive", 1], ["service", 2], ["cec", 1]], [1, 4, 5, 6, 7, 8, 9], 0]);
+eq("amc groups: each subtotal is its rows' sum (in rupees) and the subtotals add up to the branch total",
+  [sbGroups.map((g) => g.totals.current / 100), sbGroups.map((g) => g.totals.next / 100), amcTotals(sbGroups.flatMap((g) => g.rows))],
+  [
+    [32500 + 19125 + 12600 + 14400 + 9450 + 9600 + 8500, 24500, 21000 + 23200, 260624],
+    [33500 + 19125 + 12000 + 14400 + 9920 + 9600 + 9500, 24500, 16992 + 22000, 219700],
+    { current: 43549900, next: 39123700 },
+  ]);
+eq("amc years: a contract kept for 2025 and 2026 costs its first amount in 2025-26 and its second in 2026-27, and nothing outside them",
+  [2024, 2025, 2026, 2027].map((y) => amountInFy({ fyStartYear: 2025, amountCurrentFy: 100, amountNextFy: 200 }, y)),
+  [null, 100, 200, null]);
 eq("amc form: bad amounts, impossible dates and an end before the start are refused", [
   okParse(amcInput, { ...amcBase, amountCurrentFy: "12abc" }), okParse(amcInput, { ...amcBase, amountNextFy: "-5" }), okParse(amcInput, { ...amcBase, startDate: "2026-02-31" }),
   okParse(amcInput, { ...amcBase, startDate: "2026-04-01", endDate: "2026-03-31" }), okParse(amcInput, { ...amcBase, startDate: "2026-04-01", endDate: "2026-04-01" }), okParse(amcInput, { ...amcBase, fyStartYear: 1999 }),
