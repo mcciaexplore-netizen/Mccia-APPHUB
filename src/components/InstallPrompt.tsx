@@ -29,15 +29,15 @@ export function InstallPrompt() {
   const [offer, setOffer] = useState<InstallEvent | null>(null);
   const [show, setShow] = useState<"popup" | "banner" | null>(null);
   const [ios, setIos] = useState(false);
-  const [app, setApp] = useState(HUB);
+  // Nothing shows before the first moment in the browser, so the server (which always picks the hub) and the browser draw the same.
+  const [app] = useState(() => (typeof window !== "undefined" && isDriverAppPath(window.location.pathname) ? DRIVER : HUB));
   const SEEN = app.seen;
   const SNOOZE = app.snooze;
 
   useEffect(() => {
     // Attendance ("MCCIA People") is its own installable app with its own service worker and install banner: nothing from the hub there.
     if (window.location.pathname === "/attendance" || window.location.pathname.startsWith("/attendance/")) return;
-    const a = isDriverAppPath(window.location.pathname) ? DRIVER : HUB;
-    setApp(a);
+    const a = app;
     if ("serviceWorker" in navigator) navigator.serviceWorker.register(a.sw, a.scope ? { scope: a.scope } : undefined).catch(() => {});
     const installed = window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
     if (installed) return;
@@ -56,7 +56,7 @@ export function InstallPrompt() {
       else if (Number(read(a.snooze) ?? 0) < Date.now()) setShow("banner");
     }, 1500);
     return () => { clearTimeout(t); window.removeEventListener("mccia-install-ready", onOffer); window.removeEventListener("appinstalled", onInstalled); };
-  }, []);
+  }, [app]);
 
   const close = (snooze: boolean) => {
     write(SEEN, "1");
