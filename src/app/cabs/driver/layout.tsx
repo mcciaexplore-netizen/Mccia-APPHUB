@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { CabsTopBar } from "@/components/cabs/CabsShell";
@@ -7,10 +8,12 @@ import { OnlineToggle } from "@/components/cabs/OnlineToggle";
 import { listRides } from "@/lib/cabs/bookings";
 import { HubBell } from "@/components/HubBell";
 import { requireDriverPage } from "@/lib/cabs/guard";
+import { DRIVER_APP_META } from "@/lib/cabs/driver-app";
 import { noticeUnread } from "@/lib/notice-feed";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Cabs Driver · MCCIA App Hub" };
+/** "MCCIA Driver": the driver app installs as its own app (manifest /cabs/driver/manifest.json, service worker /cabs-driver-sw.js). */
+export const metadata: Metadata = { title: "Cabs Driver · MCCIA App Hub", ...DRIVER_APP_META };
 
 /**
  * The driver app, built for a phone (480 px wide, centred on a bigger screen): a top bar with the Online/Offline switch, the page, and four

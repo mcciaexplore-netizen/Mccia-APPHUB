@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { DriverLoginForm } from "@/components/cabs/DriverLoginForm";
 import { SECTION_ROLES } from "@/lib/cabs/cabs.manifest";
+import { DRIVER_APP_META } from "@/lib/cabs/driver-app";
 import { hasAnyRole, resolveAccess } from "@/lib/cabs/host-adapter";
 
-export const metadata = { title: "Driver Login · MCCIA Cabs" };
+export const metadata: Metadata = { title: "Driver Login · MCCIA Cabs", ...DRIVER_APP_META };
 
 /**
  * Where drivers without a hub account sign in to Cabs Driver: their name and phone ("Request Login" tells the Cabs admins), then the
