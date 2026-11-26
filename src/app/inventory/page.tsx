@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, ClipboardCheck, ClipboardList, History, Package, Truck, Users, Wrench, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ClipboardCheck, ClipboardList, History, Package, Truck, Wrench, type LucideIcon } from "lucide-react";
 import { ROLE_LABEL, SEES_ALL_BRANCHES, SEES_ITEMS, type InventoryRole } from "@/lib/inventory/inventory.manifest";
 import { NO_BRANCH_MESSAGE } from "@/lib/inventory/branches";
 import { dashboardStats, lowStockItems, recentMovements } from "@/lib/inventory/catalog";
@@ -7,7 +7,7 @@ import { formatCount, formatRupees } from "@/lib/inventory/format";
 import { requirePage } from "@/lib/inventory/guard";
 import { Suspense } from "react";
 import { StatSkeleton, TableSkeleton } from "@/components/approvals/Skeletons";
-import { canManagePeople, hasAnyRole, hasRole, listBranches } from "@/lib/inventory/host-adapter";
+import { hasAnyRole, hasRole, listBranches } from "@/lib/inventory/host-adapter";
 import { idSchema } from "@/lib/inventory/validation";
 import { formatIST } from "@/lib/format";
 
@@ -19,7 +19,7 @@ import { formatIST } from "@/lib/format";
 
 const KIND_LABEL: Record<string, string> = { inward: "Inward", issue: "Issue", return: "Return", adjust: "Adjust", recount: "Recount", transfer: "Transfer" };
 
-type Card = { href: string; icon: LucideIcon; title: string; text: string; roles?: readonly InventoryRole[]; people?: boolean };
+type Card = { href: string; icon: LucideIcon; title: string; text: string; roles?: readonly InventoryRole[] };
 const ADMIN = ["inventory_admin"] as const;
 
 /** Users: request and maintenance. Staff: those and the item list. Inventory admins: everything. */
@@ -29,8 +29,6 @@ const CARDS: Card[] = [
   { href: "/inventory/maintenance", icon: Wrench, title: "Report a maintenance problem", text: "Tell the admin team about something broken, with a photo, and see when it is fixed." },
   { href: "/inventory/requests?status=pending", icon: ClipboardCheck, title: "Approve requests", text: "Approve or reject what people have asked the store for, and issue it.", roles: ADMIN },
   { href: "/inventory/vendors", icon: Truck, title: "Manage vendors", text: "Keep the suppliers you buy from, with their contact, GST and PAN details.", roles: ADMIN },
-  // Who is Admin and Staff here is set on the Inventory application in Administrator → Applications: shown only to those who can open it.
-  { href: "/administrator/inventory", icon: Users, title: "Manage users", text: "Choose who is Inventory Staff or Admin, on the Inventory application in Administrator → Applications.", roles: ADMIN, people: true },
 ];
 
 /** One thing to do: a white card with the icon at the top left, a bold title and a line about it. Lifts a little on hover. */
@@ -65,8 +63,7 @@ export default async function InventoryDashboard({ searchParams }: { searchParam
   const admin = hasRole(user, "inventory_admin");
   const allBranches = hasAnyRole(user, SEES_ALL_BRANCHES);
   const role: InventoryRole = admin ? "inventory_admin" : hasRole(user, "inventory_staff") ? "inventory_staff" : "requester";
-  const people = admin && (await canManagePeople());
-  const cards = CARDS.filter((c) => (!c.roles || hasAnyRole(user, c.roles)) && (!c.people || people));
+  const cards = CARDS.filter((c) => !c.roles || hasAnyRole(user, c.roles));
 
   const heading = (
     <div>

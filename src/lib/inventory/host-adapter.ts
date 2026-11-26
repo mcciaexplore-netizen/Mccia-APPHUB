@@ -4,7 +4,6 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { branches, departments, users } from "@/db/schema";
 import { getCurrentUser as hostCurrentUser } from "@/lib/permissions";
-import { hasArea } from "@/lib/rbac";
 import { INVENTORY_URL_PATTERN, inventoryRoleFor, type InventoryRole } from "./inventory.manifest";
 
 /**
@@ -52,15 +51,6 @@ export const resolveAccess = cache(async (): Promise<Access> => {
   const roles: InventoryRole[] = role === "requester" ? ["requester"] : ["requester", role];
   return { status: "ok", user: { id: host.id, name: host.name, email: host.email, roles, hubRole: host.role, branchId: branch ? host.branchId : null, branchName: branch?.name ?? null } };
 });
-
-/**
- * Whether the person may open Administrator → Applications, where the Inventory application's App Admins and App Staff are set (who is
- * Admin and Staff here). Only then does the dashboard offer "Manage users".
- */
-export const canManagePeople = async () => {
-  const host = await hostCurrentUser();
-  return !!host && hasArea(host, "apps");
-};
 
 /** Whether the person is still on the temporary password they were emailed: they must choose their own before using the module. */
 export const needsOwnPassword = async () => !!(await hostCurrentUser())?.mustChangePassword;
