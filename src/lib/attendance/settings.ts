@@ -6,7 +6,7 @@
 import { isDay, parseHm } from "./time";
 
 export type AttSettings = {
-  /** The office the phone check-in is measured from (ICC Trade Tower, SB Road, Pune by default). */
+  /** The office the phone check-in is measured from (MCCIA Trade Tower, SB Road, Pune by default; 200 m covers the basement parking too, where GPS is weaker). */
   office: { name: string; lat: number; lng: number; radiusM: number };
   /** Office network addresses a laptop may check in from: exact IPv4/IPv6 addresses or IPv4 ranges (CIDR, e.g. 203.0.113.0/28). */
   officeIps: string[];
@@ -32,7 +32,7 @@ export type AttSettings = {
 };
 
 export const DEFAULT_SETTINGS: AttSettings = {
-  office: { name: "ICC Trade Tower, SB Road, Pune", lat: 18.5195, lng: 73.8553, radiusM: 150 },
+  office: { name: "MCCIA Trade Tower, SB Road, Pune", lat: 18.5355973, lng: 73.8297353, radiusM: 200 },
   officeIps: [],
   regularizationWindowDays: 31,
   offSaturdays: [2, 4],

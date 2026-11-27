@@ -19,7 +19,7 @@ import { tally } from "../src/lib/attendance/summary";
 import * as DR from "../src/lib/attendance/daily";
 import { BOTTOM_NAV } from "../src/lib/attendance/att.manifest";
 import { b64urlToBytes, bytesToB64url, isPushHost, pushAudience, subscriptionGone, validSubscription, vapidJwk } from "../src/lib/attendance/push-rules";
-import { isDarkTheme, isIosSafari, parseThemePref, themeColorFor } from "../src/lib/attendance/pwa-rules";
+import { installState, isDarkTheme, isIosSafari, parseThemePref, themeColorFor } from "../src/lib/attendance/pwa-rules";
 import { generateKeyPairSync } from "node:crypto";
 import { SignJWT, importJWK, jwtVerify } from "jose";
 import { layout, ORG_ROOT } from "../src/lib/attendance/org-layout";
@@ -55,7 +55,12 @@ export function attendanceUnit(eq: Eq): void {
 
   // ── Settings ────────────────────────────────────────────────────────────
   const dflt = parseSettings({});
-  eq("att settings: empty row gives the defaults (ICC Trade Tower 18.5195, 73.8553, 150 m; 31-day window; 2nd and 4th Saturdays off; 90-day comp-off)", dflt, DEFAULT_SETTINGS);
+  eq("att settings: empty row gives the defaults (MCCIA Trade Tower 18.5355973, 73.8297353, 200 m; 31-day window; 2nd and 4th Saturdays off; 90-day comp-off)", dflt, DEFAULT_SETTINGS);
+  eq("att settings: the default office is MCCIA Trade Tower, SB Road at 18.5355973, 73.8297353 with a 200 m radius", DEFAULT_SETTINGS.office, { name: "MCCIA Trade Tower, SB Road, Pune", lat: 18.5355973, lng: 73.8297353, radiusM: 200 });
+  // The row scripts/update-attendance-office-location.sql leaves on an empty row; radiusM must win over a stale hand-written "radius".
+  const afterSql = parseSettings({ office: { name: "MCCIA Trade Tower, SB Road, Pune", lat: 18.5355973, lng: 73.8297353, radiusM: 200 }, allowedIps: ["49.248.67.194"] });
+  eq("att settings: the row the location script writes is read as the new office, 200 m, with that IP as an office IP", [afterSql.office, afterSql.officeIps], [{ name: "MCCIA Trade Tower, SB Road, Pune", lat: 18.5355973, lng: 73.8297353, radiusM: 200 }, ["49.248.67.194"]]);
+  eq("att settings: radiusM wins over a leftover 'radius' (why the script removes it)", [parseSettings({ office: { radiusM: 200, radius: 150 } }).office.radiusM, parseSettings({ office: { radius: 150 } }).office.radiusM], [200, 150]);
   eq("att settings: bad values fall back, invalid IPs dropped, duplicates removed", parseSettings({ regularizationWindowDays: 500, officeIps: ["203.0.113.5", "203.0.113.5", "nope", "10.0.0.0/33", "10.0.0.0/24"], offSaturdays: [4, 2, 9] }), {
     ...DEFAULT_SETTINGS,
     officeIps: ["203.0.113.5", "10.0.0.0/24"],
@@ -90,25 +95,25 @@ export function attendanceUnit(eq: Eq): void {
 
   // ── Check-in rules ──────────────────────────────────────────────────────
   const office = DEFAULT_SETTINGS.office;
-  const near = { lat: 18.5195 + 100 / 111_320, lng: 73.8553 };
-  const far = { lat: 18.5195 + 200 / 111_320, lng: 73.8553 };
-  eq("att checkin: distance ~100 m and ~200 m north of the office", [Math.round(C.distanceMeters(office, near)), Math.round(C.distanceMeters(office, far))], [100, 200]);
-  eq("att checkin: geofence: 100 m in, 200 m out, no position out", [C.withinGeofence(near, office), C.withinGeofence(far, office), C.withinGeofence(null, office)], [true, false, false]);
+  const near = { lat: office.lat + 100 / 111_320, lng: office.lng };
+  const far = { lat: office.lat + 250 / 111_320, lng: office.lng };
+  eq("att checkin: distance ~100 m and ~250 m north of the office", [Math.round(C.distanceMeters(office, near)), Math.round(C.distanceMeters(office, far))], [100, 250]);
+  eq("att checkin: geofence: 100 m in, 250 m out, no position out", [C.withinGeofence(near, office), C.withinGeofence(far, office), C.withinGeofence(null, office)], [true, false, false]);
   eq("att checkin: IP exact, IPv4 range, IPv4-mapped IPv6, outside", [C.ipAllowed("203.0.113.10", ["203.0.113.10"]), C.ipAllowed("203.0.113.14", ["203.0.113.0/28"]), C.ipAllowed("203.0.113.16", ["203.0.113.0/28"]), C.ipAllowed("::ffff:203.0.113.10", ["203.0.113.10"]), C.ipAllowed(null, ["203.0.113.10"]), C.ipAllowed("1.1.1.1", [])], [true, true, false, true, false, false]);
 
   const s = { ...DEFAULT_SETTINGS, officeIps: ["203.0.113.10"] };
   const ci = (o: Partial<Parameters<typeof C.decideCheckIn>[0]>) => C.decideCheckIn({ alreadyCheckedIn: false, leaveToday: null, kind: "working", wfhApproved: false, ip: null, position: null, settings: s, ...o });
-  const far2k = { lat: 18.5195 + 2300 / 111_320, lng: 73.8553 };
-  eq("att checkin: within 150 m is in office (gps), with the distance", ci({ position: near }), { ok: true, method: "gps", place: "in_office", distanceM: 100, isWfh: false, isExtraWork: false });
+  const far2k = { lat: office.lat + 2300 / 111_320, lng: office.lng };
+  eq("att checkin: within 200 m is in office (gps), with the distance", ci({ position: near }), { ok: true, method: "gps", place: "in_office", distanceM: 100, isWfh: false, isExtraWork: false });
   eq("att checkin: anywhere is allowed: 2.3 km away is remote", ci({ position: far2k }), { ok: true, method: "gps", place: "remote", distanceM: 2297, isWfh: false, isExtraWork: false });
-  eq("att checkin: just outside the radius (200 m) is remote", ci({ position: far, ip: "8.8.8.8" }), { ok: true, method: "gps", place: "remote", distanceM: 200, isWfh: false, isExtraWork: false });
+  eq("att checkin: just outside the radius (250 m) is remote", ci({ position: far, ip: "8.8.8.8" }), { ok: true, method: "gps", place: "remote", distanceM: 250, isWfh: false, isExtraWork: false });
   eq("att checkin: no position and not the office network is refused with the exact message", ci({ ip: "8.8.8.8" }), { ok: false, error: "Location access is required to check in. Please allow location in your browser settings." });
   eq("att checkin: office network without a position is in office (ip)", ci({ ip: "203.0.113.10" }), { ok: true, method: "ip", place: "in_office", distanceM: null, isWfh: false, isExtraWork: false });
   eq("att checkin: office network with a far position is still in office (ip), distance kept", ci({ ip: "203.0.113.10", position: far2k }), { ok: true, method: "ip", place: "in_office", distanceM: 2297, isWfh: false, isExtraWork: false });
   eq("att checkin: GPS within the radius is preferred over the network (gps)", ci({ ip: "203.0.113.10", position: near }).ok && (ci({ ip: "203.0.113.10", position: near }) as { method: string }).method, "gps");
   eq("att checkin: remote with WFH approved is WFH; in office with WFH approved is not", [ci({ position: far2k, wfhApproved: true }), ci({ position: near, wfhApproved: true })].map((d) => d.ok && d.isWfh), [true, false]);
   eq("att checkin: an invalid position counts as none", ci({ position: { lat: 200, lng: 0 } }).ok, false);
-  eq("att checkin: the radius comes from Settings (300 m makes 200 m in office)", (C.decideCheckIn({ alreadyCheckedIn: false, leaveToday: null, kind: "working", wfhApproved: false, ip: null, position: far, settings: { ...s, office: { ...s.office, radiusM: 300 } } }) as { place: string }).place, "in_office");
+  eq("att checkin: the radius comes from Settings (300 m makes 250 m in office)", (C.decideCheckIn({ alreadyCheckedIn: false, leaveToday: null, kind: "working", wfhApproved: false, ip: null, position: far, settings: { ...s, office: { ...s.office, radiusM: 300 } } }) as { place: string }).place, "in_office");
   eq("att checkin: a holiday or weekly off is extra work", [ci({ kind: "holiday", position: near }), ci({ kind: "weekly_off", ip: "203.0.113.10" })].map((d) => d.ok && d.isExtraWork), [true, true]);
   eq("att checkin: cannot check in twice", ci({ alreadyCheckedIn: true, position: near }).ok, false);
   eq("att checkin: cannot check in on full-day leave; can with half-day leave", [ci({ leaveToday: "none", position: near }).ok, ci({ leaveToday: "first", position: near }).ok], [false, true]);
@@ -321,6 +326,13 @@ export function attendanceUnit(eq: Eq): void {
     isIosSafari("Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/124.0 Mobile/15E148 Safari/604.1"),
     isIosSafari("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"),
   ], [true, false, false]);
+  const inst = (o: Partial<Parameters<typeof installState>[0]> = {}) => installState({ standalone: false, installedNow: false, hasOffer: false, ios: false, declined: false, ...o });
+  eq("att install button: shown when the browser has offered its install box (ready) or on iPhone Safari (ios); nothing when the browser offers nothing",
+    [inst({ hasOffer: true }), inst({ ios: true }), inst()], ["ready", "ios", "unavailable"]);
+  eq("att install button: gone once the app is installed, or opened as the app, whatever the browser still says",
+    [inst({ standalone: true, hasOffer: true }), inst({ installedNow: true, hasOffer: true }), inst({ installedNow: true, ios: true }), inst({ standalone: true, ios: true })], ["installed", "installed", "installed", "installed"]);
+  eq("att install button: after the one-time offer was turned down it stays, with the menu steps (manual); a fresh offer or iPhone still win over that",
+    [inst({ declined: true }), inst({ declined: true, hasOffer: true }), inst({ declined: true, ios: true })], ["manual", "ready", "ios"]);
   eq("att dark mode: no choice follows the device; a choice (light or dark) wins over the device", [isDarkTheme(null, true), isDarkTheme(null, false), isDarkTheme("light", true), isDarkTheme("dark", false)], [true, false, false, true]);
   eq("att dark mode: only \"light\" and \"dark\" are choices; anything else means the device setting", [parseThemePref("dark"), parseThemePref("light"), parseThemePref("auto"), parseThemePref(null)], ["dark", "light", null, null]);
   eq("att dark mode: browser bar colour", [themeColorFor(true), themeColorFor(false)], ["#000000", "#16A34A"]);

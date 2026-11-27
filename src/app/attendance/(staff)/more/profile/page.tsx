@@ -2,6 +2,7 @@ import { Users } from "lucide-react";
 import { Card, PageHeader } from "@/components/attendance/ui";
 import { NotificationsCard } from "@/components/attendance/pwa/NotificationsCard";
 import { AppearanceCard } from "@/components/attendance/pwa/AppearanceCard";
+import { InstallButton } from "@/components/attendance/pwa/InstallButton";
 import { vapidPublicKey } from "@/lib/attendance/push";
 import { getSettings } from "@/lib/attendance/config";
 import { requireMember } from "@/lib/attendance/dal";
@@ -36,6 +37,7 @@ export default async function ProfilePage() {
     <>
       <PageHeader title="Profile" subtitle="If anything here is wrong, ask HR to correct it." />
       <div className="flex flex-col gap-5">
+        <InstallButton variant="card" />
         <AppearanceCard />
         {vapidKey && <NotificationsCard vapidKey={vapidKey} reminders={settings.reminders.enabled ? settings.reminders : null} />}
         <Card pad={false}>

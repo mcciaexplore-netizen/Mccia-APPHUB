@@ -133,6 +133,9 @@
 .att-side::before { content: ""; position: absolute; left: 4.5rem; bottom: 1.25rem; width: 2.2rem; height: 2.2rem; border-radius: 999px; background: var(--att-blob-2); pointer-events: none; }
 .att-side-item { display: flex; align-items: center; gap: 0.75rem; border-radius: 999px; padding: 0.55rem 1rem; font-size: 0.9rem; font-weight: 600; color: var(--att-text-2); transition: background 0.15s ease, color 0.15s ease; }
 .att-side-item:hover { background: var(--att-hover); }
+.att-install-app { display: flex; width: 100%; align-items: center; justify-content: center; gap: 0.5rem; border-radius: 999px; background: var(--att-green); padding: 0.6rem 1rem; font-size: 0.9rem; font-weight: 700; color: #fff; transition: background 0.15s ease; }
+.att-install-app:hover { background: var(--att-green-dark); }
+.att-install-app:focus-visible { outline: 2px solid var(--att-green-dark); outline-offset: 2px; }
 .att-side-item[aria-current="page"] { background: var(--att-primary-tint); color: var(--att-primary); }
 .att-side-item[aria-current="page"] svg { color: var(--att-primary); }
 .att-side-item svg { color: var(--att-text-muted); }

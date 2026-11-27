@@ -4,7 +4,7 @@
  *
  * Where a person may punch from: anywhere. Every check-in and check-out is tagged with where it was made:
  *   - in_office: the request's IP (set by Vercel, so the visitor cannot fake it) is one of the office IPs in Settings, or the phone's reported
- *     position is within the office radius (150 m by default);
+ *     position is within the office radius (200 m by default);
  *   - remote: anywhere else.
  * The phone's position is required, except on the office network (which alone proves the office): without either the punch is refused
  * with LOCATION_REQUIRED. The position is recorded whenever the browser gives it, with its distance from the office, even on the office

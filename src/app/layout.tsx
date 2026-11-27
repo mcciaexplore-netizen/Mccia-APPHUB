@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
-import { InstallPrompt } from "@/components/InstallPrompt";
+import { DriverInstallPrompt } from "@/components/DriverInstallPrompt";
 import { NavigationProgress } from "@/components/NavigationProgress";
 import { Toaster } from "@/components/Toast";
 import "./globals.css";
@@ -25,13 +25,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // suppressHydrationWarning: Attendance adds its dark-mode class to <html> before React starts (only that attribute is exempt).
     <html lang="en" className={`font-sans ${geist.variable}`} suppressHydrationWarning>
       <head>
-        {/* The browser's install offer can come before the page has loaded its scripts: keep it so the Download buttons can use it. */}
+        {/* The browser's install offer can come before the page has loaded its scripts: keep it so the install buttons (MCCIA People's "Install App", the driver app's Download) can use it. */}
         <script dangerouslySetInnerHTML={{ __html: `window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.__mcciaInstall=e;window.dispatchEvent(new Event("mccia-install-ready"));});` }} />
       </head>
       <body className="min-h-screen font-sans">
         <Suspense fallback={null}><NavigationProgress /></Suspense>
         <Toaster>{children}</Toaster>
-        <InstallPrompt />
+        <DriverInstallPrompt />
       </body>
     </html>
   );

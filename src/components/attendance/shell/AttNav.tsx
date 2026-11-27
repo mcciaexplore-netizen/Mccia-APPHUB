@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeft, BarChart3, ClipboardList, CalendarCheck, CalendarDays, CheckSquare, Clock, Home, LayoutGrid, Settings, Sun, UserRound, Users, Wallet, type LucideIcon } from "lucide-react";
 import { ATT_NAV, BOTTOM_NAV, navFor, type AttNavItem, type AttRole, type AttSection } from "@/lib/attendance/att.manifest";
+import { InstallButton } from "@/components/attendance/pwa/InstallButton";
 
 const ICONS: Record<AttNavItem["icon"], LucideIcon> = {
   home: Home,
@@ -32,7 +33,8 @@ function activeHref(pathname: string, items: AttNavItem[], section: AttSection):
 
 /**
  * The section's sidebar (laptop and up; on a phone the staff app uses the bottom bar, the admin app the menu button): the MCCIA logo (back
- * to the App Hub), "APP HUB", the section's pages as pills (the current one light green), and a soft green blob at the bottom.
+ * to the App Hub), "APP HUB", the section's pages as pills (the current one light green), the green "Install App" button when the browser can
+ * install MCCIA People (see InstallButton), and a soft green blob at the bottom.
  */
 export function AttSidebar({ section, roles, badges = {} }: { section: AttSection; roles: AttRole[]; badges?: Record<string, number> }) {
   const pathname = usePathname();
@@ -60,6 +62,7 @@ export function AttSidebar({ section, roles, badges = {} }: { section: AttSectio
           );
         })}
       </ul>
+      <InstallButton />
     </nav>
   );
 }

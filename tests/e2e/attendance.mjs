@@ -313,7 +313,7 @@ try {
     check("no location: the card says how to allow it", (await mainText(n.page)).includes("Location access is required to check in."));
     await n.ctx.close();
 
-    const away = { latitude: 18.5195 + 2300 / 111_320, longitude: 73.8553, accuracy: 15 };
+    const away = { latitude: 18.5355973 + 2300 / 111_320, longitude: 73.8297353, accuracy: 15 };
     const r = await signedIn(rhea.email, undefined, { geo: away });
     await go(r.page, "/attendance");
     await r.page.getByRole("button", { name: "Check In", exact: true }).click();

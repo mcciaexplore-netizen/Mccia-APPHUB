@@ -148,11 +148,11 @@ try {
   const [rec] = await db.select().from(T.attendance).where(and(eq(T.attendance.userId, asha.id), eq(T.attendance.date, today)));
   check("check-in: from the office network, recorded as ip; extra work exactly when today is not a working day", rec?.checkInMethod === "ip" && rec.isExtraWork === (kindToday !== "working") && /network/.test(inMsg.message), { rec, kindToday });
   check("check-in: a second check-in today is refused", (await refused(() => CI.checkIn(asha.id, { ip: OFFICE_IP, position: null }), /already checked in/)) === true);
-  const near = { lat: 18.5195 + 50 / 111_320, lng: 73.8553 };
+  const near = { lat: 18.5355973 + 50 / 111_320, lng: 73.8297353 };   // 50 m from the default office
   await CI.checkIn(ben.id, { ip: null, position: near });
   const card = await CI.todayCard(ben.id);
-  check("check-in: within 150 m by phone, recorded as gps, in office, with its distance; the card shows it open", card.record?.method === "gps" && card.record.place === "in_office" && card.record.distanceM === 50 && !!card.record.checkIn && !card.record.checkOut, card.record);
-  const away = { lat: 18.5195 + 2300 / 111_320, lng: 73.8553, accuracy: 12 };
+  check("check-in: within 200 m by phone, recorded as gps, in office, with its distance; the card shows it open", card.record?.method === "gps" && card.record.place === "in_office" && card.record.distanceM === 50 && !!card.record.checkIn && !card.record.checkOut, card.record);
+  const away = { lat: 18.5355973 + 2300 / 111_320, lng: 73.8297353, accuracy: 12 };
   const remoteMsg = await CI.checkIn(rhea.id, { ip: "8.8.8.8", position: away });
   const [rr] = await db.select().from(T.attendance).where(and(eq(T.attendance.userId, rhea.id), eq(T.attendance.date, today)));
   check("check-in: from anywhere: 2.3 km away is allowed, tagged remote with coordinates, accuracy and distance", rr?.checkInPlace === "remote" && rr.checkInMethod === "gps" && rr.checkInDistanceM === 2297 && rr.checkInLat === away.lat && rr.checkInAccuracyM === 12 && /remotely \(2\.3 km from the office\)/.test(remoteMsg.message), { rr, remoteMsg });
