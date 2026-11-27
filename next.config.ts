@@ -15,11 +15,20 @@ import type { NextConfig } from "next";
  * site is Payment Desk, shown inside /payment-desk.
  * Once no violations show, rename the header to Content-Security-Policy to enforce it.
  */
+// Profile photos are served from Supabase Storage's public bucket: allow the project's own address to show them.
+const supabaseOrigin = (() => {
+  try {
+    return new URL((process.env.SUPABASE_URL ?? "").trim()).origin;
+  } catch {
+    return "";
+  }
+})();
+
 const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://maps.geoapify.com https://tile.openstreetmap.org https://*.basemaps.cartocdn.com",
+  `img-src 'self' data: blob: https://maps.geoapify.com https://tile.openstreetmap.org https://*.basemaps.cartocdn.com${supabaseOrigin ? ` ${supabaseOrigin}` : ""}`,
   "font-src 'self' data:",
   "connect-src 'self' https://api.geoapify.com https://nominatim.openstreetmap.org",
   "worker-src 'self'",

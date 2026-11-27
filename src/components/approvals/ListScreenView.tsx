@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Avatar } from "@/components/Avatar";
 import { BudgetId } from "@/components/approvals/BudgetId";
 import { requestNoText } from "@/lib/approvals/budget";
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
@@ -94,7 +95,7 @@ export async function ListScreenView({ slug, screen, params, user }: { slug: str
                 <ClickableRow key={r.id} href={href}>
                   <td className="whitespace-nowrap font-bold"><Link href={href} className="text-[var(--z-accent)] hover:underline">{r.type === "budget" ? <BudgetId requestNo={r.requestNo} status={r.status} /> : (r.requestNo ?? "—")}</Link></td>
                   {mixed && <td className="hidden md:table-cell">{TYPE_SHORT[r.type]}</td>}
-                  <td>{r.name}</td>
+                  <td><span className="inline-flex items-center gap-2"><Avatar name={r.name} src={r.avatarUrl} size={24} />{r.name}</span></td>
                   <td className="hidden md:table-cell">{r.categoryName ?? ""}</td>
                   {screen.branch && <td>{r.branchName ?? ""}</td>}
                   {screen.vendor && <td className="hidden md:table-cell max-w-48 truncate" title={r.vendorName ?? ""}>{r.vendorName ?? ""}</td>}

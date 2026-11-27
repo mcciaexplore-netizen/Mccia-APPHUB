@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { Avatar } from "@/components/Avatar";
 import { Download, Paperclip } from "lucide-react";
 import { StatusPill } from "@/components/approvals/shared-ui";
 import { BudgetId } from "@/components/approvals/BudgetId";
@@ -264,8 +265,9 @@ export function RequestDetailView({ d, submitter, viewerName }: { d: RequestDeta
       <section aria-labelledby="req-details">
         <h2 id="req-details" className="mb-3">Request</h2>
         <dl className="zdl">
-          <Item label="Name">{name}</Item>
-          <Item label="Email">{d.requesterEmail}</Item>
+          {/* The submitter's photo goes beside their own name; an HR ticket's "Name" is the employee, so there it goes beside the email. */}
+          <Item label="Name">{name === d.requesterName ? <span className="inline-flex items-center gap-2"><Avatar name={d.requesterName} src={d.requesterAvatarUrl} size={28} />{name}</span> : name}</Item>
+          <Item label="Email">{name === d.requesterName ? d.requesterEmail : <span className="inline-flex items-center gap-2"><Avatar name={d.requesterName} src={d.requesterAvatarUrl} size={28} />{d.requesterEmail}</span>}</Item>
           {!b && <Item label="Category">{d.hr?.categoryName ?? e?.categoryName}</Item>}
           {e?.branchName && <Item label="Branch">{e.branchName}</Item>}
           {e && <Item label="Nature of Expenditure"><span className="whitespace-pre-wrap">{e.nature}</span></Item>}

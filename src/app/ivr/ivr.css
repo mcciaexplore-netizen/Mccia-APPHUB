@@ -15,9 +15,9 @@
   --ivr-fg: var(--c-text);
   --ivr-muted: var(--c-muted);
   --ivr-subtle: var(--c-subtle);
-  --ivr-surface: #ffffff;
+  --ivr-surface: var(--c-white);
   --ivr-surface-2: var(--c-alt);
-  --ivr-card: #ffffff;
+  --ivr-card: var(--c-white);
   --ivr-line: var(--c-border);
   --ivr-line-strong: #cbd5e1;
   --ivr-line-hover: var(--c-border-hover);
@@ -34,6 +34,10 @@
   --ivr-font-display: var(--font-sans);
   --ivr-ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* The hub's dark mode (html.hub-dark, src/app/globals.css): the two colours here that are not hub tokens. */
+html.hub-dark { --ivr-line-strong: #2e2e2e; --ivr-row-hover: rgba(255, 255, 255, 0.04); }
+html.hub-dark .ivr-stat-number { color: var(--c-primary-text); }
 
 /* Small uppercase labels */
 .ivr-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ivr-subtle); }
@@ -98,7 +102,7 @@ tbody tr:last-child > .ivr-td { border-bottom-width: 0; }
 }
 
 /* Dialogs */
-.ivr-modal { border: 1px solid var(--ivr-line); border-radius: var(--radius-lg, 14px); padding: 0; color: var(--ivr-fg); background: #fff; box-shadow: var(--ivr-shadow-card-hover); }
+.ivr-modal { border: 1px solid var(--ivr-line); border-radius: var(--radius-lg, 14px); padding: 0; color: var(--ivr-fg); background: var(--ivr-surface); box-shadow: var(--ivr-shadow-card-hover); }
 .ivr-modal::backdrop, .ivr-modal-scrim { background: rgba(15, 23, 42, 0.4); }
 
 /* A draggable or clickable item (pipeline cards) */

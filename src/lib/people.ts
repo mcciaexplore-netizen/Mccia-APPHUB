@@ -71,7 +71,7 @@ function filterSql(f: Partial<PeopleFilters>): SQL[] {
 }
 
 export type PersonRow = {
-  id: string; name: string; email: string; designation: string | null; role: Role; isActive: boolean; status: AccountStatus; mainAdmin: boolean; passwordInSettings: boolean;
+  id: string; name: string; email: string; avatarUrl: string | null; designation: string | null; role: Role; isActive: boolean; status: AccountStatus; mainAdmin: boolean; passwordInSettings: boolean;
   branch: string | null; team: string | null; manager: string | null; lastLoginAt: Date | null; createdAt: Date;
   apps: { id: string; name: string; active: boolean }[];
 };
@@ -96,7 +96,7 @@ export async function listPeople(actor: Actor, f: PeopleFilters, pageSize = PEOP
 
   const base = await db
     .select({
-      id: users.id, name: users.name, email: users.email, designation: users.designation, role: users.role, isActive: users.isActive,
+      id: users.id, name: users.name, email: users.email, avatarUrl: users.avatarUrl, designation: users.designation, role: users.role, isActive: users.isActive,
       hasPassword: sql<boolean>`(${users.passwordHash} is not null and not ${users.mustChangePassword})`, lastLoginAt: users.lastLoginAt, createdAt: users.createdAt,
       branch: branches.name, team: teams.name, manager: manager.name,
     })
@@ -125,7 +125,7 @@ export async function listPeople(actor: Actor, f: PeopleFilters, pageSize = PEOP
     const passwordInSettings = isEnvAdmin(b.email);
     const mainAdmin = passwordInSettings || b.role === "super_admin";
     return {
-      id: b.id, name: b.name, email: b.email, designation: b.designation, role: b.role, isActive: b.isActive, mainAdmin, passwordInSettings,
+      id: b.id, name: b.name, email: b.email, avatarUrl: b.avatarUrl, designation: b.designation, role: b.role, isActive: b.isActive, mainAdmin, passwordInSettings,
       status: accountStatus({ isActive: b.isActive, hasPassword: b.hasPassword, passwordInSettings }),
       branch: b.branch, team: b.team, manager: b.manager, lastLoginAt: b.lastLoginAt, createdAt: b.createdAt,
       apps: byUser.get(b.id) ?? [],
@@ -156,7 +156,7 @@ export async function peopleIds(actor: Actor, spec: TargetSpec): Promise<string[
 }
 
 export type PersonDetail = {
-  id: string; name: string; email: string; designation: string | null; phone: string | null; role: Role; adminAreas: string[]; isActive: boolean; status: AccountStatus; mainAdmin: boolean; passwordInSettings: boolean; /** The settings put this account's role back at every sign-in (the Support Admin and the Super Admin). */ roleFixed: boolean;
+  id: string; name: string; email: string; avatarUrl: string | null; designation: string | null; phone: string | null; role: Role; adminAreas: string[]; isActive: boolean; status: AccountStatus; mainAdmin: boolean; passwordInSettings: boolean; /** The settings put this account's role back at every sign-in (the Support Admin and the Super Admin). */ roleFixed: boolean;
   branchId: string | null; teamId: string | null; managerId: string | null;
   branch: string | null; team: string | null; manager: string | null;
   lastLoginAt: Date | null; createdAt: Date; appIds: string[];
@@ -188,7 +188,7 @@ export async function getPerson(actor: User, id: string): Promise<PersonDetail |
   const passwordInSettings = isEnvAdmin(u.email);
   const mainAdmin = passwordInSettings || u.role === "super_admin";
   return {
-    id: u.id, name: u.name, email: u.email, designation: u.designation, phone: u.phone, role: u.role, adminAreas: u.adminAreas, isActive: u.isActive, mainAdmin, passwordInSettings, roleFixed: envRoleIsFixed(u.email),
+    id: u.id, name: u.name, email: u.email, avatarUrl: u.avatarUrl, designation: u.designation, phone: u.phone, role: u.role, adminAreas: u.adminAreas, isActive: u.isActive, mainAdmin, passwordInSettings, roleFixed: envRoleIsFixed(u.email),
     status: accountStatus({ isActive: u.isActive, hasPassword: !!u.passwordHash && !u.mustChangePassword, passwordInSettings }),
     branchId: u.branchId, teamId: u.teamId, managerId: u.reportingManagerId,
     branch: row.branch, team: row.team, manager: row.manager,

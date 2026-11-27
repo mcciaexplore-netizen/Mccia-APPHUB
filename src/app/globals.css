@@ -323,3 +323,82 @@ nav[data-indicator-ready] a[aria-current="page"] { border-left-color: transparen
     @apply font-sans;
   }
 }
+
+/* ------------------------------------------------------------------ dark mode (the class hub-dark on <html>; src/components/HubTheme.tsx)
+   Every colour above is a token, so dark mode is the same tokens with other values; components need no dark variants. Which pages get it, and
+   which keep their own look (Attendance has its own dark mode): src/lib/hub-theme-rules.ts. The primary teal and the colours of the application
+   cards are kept as they are. Unlayered, so these win over Tailwind's utilities (which sit in a layer). */
+html.hub-dark {
+  color-scheme: dark; /* scrollbars, date pickers and dropdown lists draw dark too */
+  --c-canvas: #0a0a0a;      /* the page */
+  --grad-page: #0a0a0a;
+  --c-white: #111111;       /* the surface colour: cards, menus, dialogs, inputs, tables, the top bar */
+  --c-card: #111111;
+  --c-card-hover: #161616;
+  --c-alt: #161616;         /* stripes, headers of tables, quiet fills */
+  --c-text: #f5f5f5;
+  --c-muted: #a3a3a3;
+  --c-subtle: #8a8a8a;
+  --c-border: #1a1a1a;
+  --c-border-hover: rgba(42, 107, 124, 0.6);
+  --c-blue-tint: rgba(42, 107, 124, 0.22);
+  --c-blue-tint-border: rgba(42, 107, 124, 0.4);
+  --c-nav-active: rgba(42, 107, 124, 0.32);
+  --c-green-tint: rgba(16, 185, 129, 0.14);
+  --c-green-tint-border: rgba(16, 185, 129, 0.3);
+  --c-red-tint: rgba(239, 68, 68, 0.14);
+  --c-red-tint-border: rgba(239, 68, 68, 0.32);
+  --c-purple-tint: rgba(139, 92, 246, 0.16);
+  --c-purple-tint-border: rgba(139, 92, 246, 0.34);
+  --c-overlay: rgba(0, 0, 0, 0.65);
+  /* The primary teal itself is kept (buttons, fills, borders, the switch); only TEXT in it uses this lighter shade of the same colour, since the
+     teal on a dark surface reads at about 2.4 to 3 to 1, and this at over 6 to 1. */
+  --c-primary-text: #6bbad0;
+  --background: #0a0a0a;
+  --foreground: #f5f5f5;
+  --border: #1a1a1a;
+  --ring: #525252;
+}
+html.hub-dark { background: var(--c-canvas); }
+/* Buttons and a few colours that are written into components rather than taken from a token. */
+html.hub-dark .btn-ghost { background: linear-gradient(180deg, #1c1c1c 0%, #151515 100%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 6px rgba(0, 0, 0, 0.4); }
+html.hub-dark .btn-ghost:hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 6px 14px rgba(0, 0, 0, 0.5); }
+html.hub-dark .btn-danger { background: linear-gradient(180deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.12) 100%); color: #f87171; box-shadow: none; }
+html.hub-dark .btn-danger:hover:not(:disabled) { box-shadow: none; }
+html.hub-dark .text-primary, html.hub-dark .hover\:text-primary:hover { color: var(--c-primary-text); }
+html.hub-dark .badge:not(.badge-green):not(.badge-red):not(.badge-purple):not(.badge-neutral),
+html.hub-dark .alert:not(.alert-green):not(.alert-red),
+html.hub-dark .big-number:not(.big-number-green),
+html.hub-dark .icon-tile { color: var(--c-primary-text); }
+html.hub-dark .btn-ghost:hover:not(:disabled) { color: var(--c-primary-text); }
+html.hub-dark .apr-root { --z-accent: var(--c-primary-text); }
+html.hub-dark .table-wrap tbody tr:hover { background: rgba(255, 255, 255, 0.04); }
+html.hub-dark .bg-white { background-color: var(--c-white); }
+html.hub-dark .from-white { --tw-gradient-from: var(--c-white); }
+html.hub-dark .to-slate-50 { --tw-gradient-to: var(--c-alt); }
+html.hub-dark .border-gray-200 { border-color: var(--c-border); }
+html.hub-dark .bg-gray-300 { background-color: #2a2a2a; }
+html.hub-dark .bg-\[\#f0f7f9\] { background-color: var(--c-nav-active); }
+/* Colours written with Tailwind's ! (important): its !important rules sit in the utilities layer, where a layered !important beats an unlayered one, so these
+   have to be in that layer too (the selected filter chips; one dim label). */
+@layer utilities {
+  html.hub-dark .\!bg-\[\#f0f7f9\] { background-color: var(--c-nav-active) !important; }
+  html.hub-dark .\!text-\[\#8a9099\] { color: var(--c-subtle) !important; }
+}
+html.hub-dark .bg-\[\#f7f8f9\], html.hub-dark .bg-\[\#eee\] { background-color: var(--c-alt); }
+html.hub-dark .bg-\[\#fff8e1\], html.hub-dark .bg-\[\#fff7e6\] { background-color: rgba(251, 191, 36, 0.12); }
+html.hub-dark .border-\[\#fcd34d\] { border-color: rgba(251, 191, 36, 0.35); }
+html.hub-dark .border-red-300 { border-color: rgba(239, 68, 68, 0.5); }
+html.hub-dark .text-red-700 { color: #f87171; }
+html.hub-dark .text-green-700 { color: #34d399; }
+html.hub-dark .text-\[\#b45309\], html.hub-dark .text-\[\#b7791f\] { color: #fbbf24; }
+html.hub-dark .text-gray-600 { color: var(--c-muted); }
+html.hub-dark .text-gray-400, html.hub-dark .text-\[\#777\], html.hub-dark .text-\[\#999\], html.hub-dark .text-\[\#8a9099\], html.hub-dark .text-\[\#9CA3AF\] { color: var(--c-subtle); }
+html.hub-dark .text-\[\#444\], html.hub-dark .text-\[\#222\] { color: var(--c-text); }
+/* Only while the colours are changing (the switch in the menu turns this on for 0.3 s): they fade over 0.2 s instead of jumping. Not for
+   people who asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  html.hub-theme-fade, html.hub-theme-fade *, html.hub-theme-fade *::before, html.hub-theme-fade *::after {
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, fill 0.2s ease, stroke 0.2s ease !important;
+  }
+}

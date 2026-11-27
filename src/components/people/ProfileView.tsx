@@ -3,6 +3,7 @@
 import { ApplicationAccess } from "@/components/people/ApplicationAccess";
 import { RoleOptions, type RoleHolder } from "@/components/people/RoleOptions";
 import Link from "next/link";
+import { Avatar } from "@/components/Avatar";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { ArrowLeft, KeyRound, Mail, Power, Trash2 } from "lucide-react";
@@ -102,11 +103,14 @@ export function ProfileView({ base, person, caps, options, catalog, templates, o
       <Link href={base} className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-primary"><ArrowLeft size={14} /> Back to people</Link>
 
       <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
+        <div className="flex min-w-0 items-start gap-4">
+          <Avatar name={person.name} src={person.avatarUrl} size={64} />
+          <div className="min-w-0">
           <h2 className="text-2xl">{person.name}</h2>
           <p className="text-sm text-muted">{person.email}</p>
           <p className="mt-2 flex flex-wrap items-center gap-2"><span className={roleBadge[person.role]}>{roleLabel[person.role]}</span><span className={STATUS_BADGE[person.status]}>{STATUS_LABEL[person.status]}</span>
             {person.mainAdmin && person.role !== "head_admin" && <span className="badge badge-neutral">{person.role === "super_admin" ? "Main admin" : "Main account"}{person.passwordInSettings ? " · password in settings" : ""}</span>}</p>
+          </div>
         </div>
         {((caps.invite && !person.passwordInSettings) || (caps.toggleActive && !self) || (caps.remove && !self)) && (
           <div className="flex flex-wrap gap-2">

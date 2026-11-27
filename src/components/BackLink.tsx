@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ArrowLeft, ChevronLeft } from "lucide-react";
-import { PAGES_SEEN } from "@/components/HubShell";
+import { PAGES_SEEN } from "@/components/pages-seen";
 
 /**
  * "← Back" at the top of a page, to the page it belongs under. With `history`, it goes back to the page the person came from inside the hub

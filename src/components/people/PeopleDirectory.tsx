@@ -2,6 +2,7 @@
 
 import type { RoleHolder } from "@/components/people/RoleOptions";
 import Link from "next/link";
+import { Avatar } from "@/components/Avatar";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { ArrowDown, ArrowUp, KeyRound, Mail, Plus, Search, ShieldCheck, Trash2, Upload, Users, X } from "lucide-react";
@@ -181,9 +182,14 @@ export function PeopleDirectory({ base, result, filters, options, catalog, templ
                     onChange={(e) => setSelected((s) => (e.target.checked ? [...s, u.id] : s.filter((id) => id !== u.id)))} /></td>
                 )}
                 <td>
+                  <div className="flex items-start gap-3">
+                    <Avatar name={u.name} src={u.avatarUrl} size={36} className="mt-0.5" />
+                    <div className="min-w-0">
                   <Link href={`${base}/${u.id}`} className="font-bold text-ink hover:text-primary">{u.name}</Link>{u.designation && <span className="text-xs text-muted"> · {u.designation}</span>}
                   <span className="block text-xs text-muted">{u.email}</span>
                   {u.mainAdmin && u.role !== "head_admin" && <span className="badge badge-neutral mt-1">{u.role === "super_admin" ? "Main admin" : "Main account"}{u.passwordInSettings ? " · password in settings" : ""}</span>}
+                    </div>
+                  </div>
                 </td>
                 <td><span className={roleBadge[u.role]}>{roleLabel[u.role]}</span></td>
                 <td className="text-xs">
