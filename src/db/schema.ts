@@ -89,6 +89,8 @@ export const users = pgTable(
   reportingManagerId: uuid("reporting_manager_id").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
   phone: text("phone"),
   designation: text("designation"),
+  // The profile photo: the public address of the picture in the "avatars" storage bucket (src/lib/avatar-storage.ts), or none (initials show instead).
+  avatarUrl: text("avatar_url"),
   passwordHash: text("password_hash"),
   mustChangePassword: boolean("must_change_password").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),

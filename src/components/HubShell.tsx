@@ -1,57 +1,20 @@
-"use client";
-
-import { useEffect, useRef } from "react";
-import Image from "next/image";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { lockAdmin } from "@/actions/auth";
-import { isAdminPath } from "@/lib/admin-paths";
-import type { Role } from "@/db/schema";
-import { HubBell } from "@/components/HubBell";
+import { HubFrame, type ShellUser } from "@/components/HubFrame";
 import { UserMenu } from "@/components/UserMenu";
+import { getCurrentUser } from "@/lib/permissions";
 
-export type ShellUser = { name: string; role: Role };
-
-/** The sessionStorage key BackLink reads (see there). */
-export const PAGES_SEEN = "hub:pagesSeen";
+export type { ShellUser };
 
 /**
- * The frame of every page: a top bar (the hub's name, which goes home, the bell and the person's menu) and the page under it. There is no
- * sidebar; everything is reached from the cards on the home page and on the pages they open.
+ * The frame of every page (see HubFrame). Pages give the name and role they already have; the person's email and profile photo, which the
+ * menu shows, are read here from the signed-in person's record. That read is the one every page already makes to know who is asking (it is
+ * cached for the request), so it costs no extra query, and no page has to carry the photo.
  */
-export function HubShell({ user, unread, bleed = false, children }: {
+export async function HubShell({ user, unread, bleed = false, children }: {
   user: ShellUser | null; /** Unread notifications; the bell is shown when this is given. */ unread?: number;
   /** The page fills the space under the top bar edge to edge, without the usual margins (Payment Desk's frame). */ bleed?: boolean;
   children: React.ReactNode;
 }) {
-  const pathname = usePathname();
-  const inAdmin = isAdminPath(pathname);
-  // Administrator locks itself the moment you leave it (the proxy only re-checks on the way in).
-  const wasInAdmin = useRef(inAdmin);
-  useEffect(() => {
-    if (wasInAdmin.current && !inAdmin) void lockAdmin();
-    wasInAdmin.current = inAdmin;
-  }, [inAdmin]);
-  // Counts the pages opened in this tab, so a "← Back" that returns to the previous page knows there is a hub page to return to.
-  useEffect(() => {
-    try { sessionStorage.setItem(PAGES_SEEN, String(Number(sessionStorage.getItem(PAGES_SEEN) ?? "0") + 1)); } catch {}
-  }, [pathname]);
-
-  return (
-    <div className="min-h-screen bg-canvas">
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-line bg-white px-5 sm:px-8 lg:px-12">
-        <Link href="/" className="flex items-center gap-3" aria-label="MCCIA App Hub, home">
-          <Image src="/mccia-logo.png" alt="MCCIA" width={134} height={36} priority className="h-8 w-auto" />
-          <span className="hidden whitespace-nowrap border-l border-line pl-3 text-[0.68rem] font-bold uppercase tracking-widest text-primary sm:inline">App Hub</span>
-        </Link>
-        {user ? (
-          <div className="flex items-center gap-3">
-            {unread !== undefined && <HubBell unread={unread} />}
-            <UserMenu name={user.name} role={user.role} />
-          </div>
-        ) : null}
-      </header>
-      <main className={bleed ? "page-slot" : "page-slot px-5 py-6 sm:px-8 sm:py-8 lg:px-12"}>{children}</main>
-    </div>
-  );
+  const me = user ? await getCurrentUser() : null;
+  const menu = user ? <UserMenu name={user.name} email={me?.email ?? ""} role={user.role} avatarUrl={me?.avatarUrl ?? null} /> : null;
+  return <HubFrame user={user} unread={unread} bleed={bleed} menu={menu}>{children}</HubFrame>;
 }

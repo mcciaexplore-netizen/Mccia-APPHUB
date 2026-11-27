@@ -386,6 +386,13 @@
       "when": 1795670610430,
       "tag": "0054_inventory_amc_labour",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1795759073319,
+      "tag": "0055_user_avatar",
+      "breakpoints": true
     }
   ]
 }

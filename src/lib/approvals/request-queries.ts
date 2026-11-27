@@ -13,7 +13,7 @@ import { rulesMatch, typesOfForm, type WatchRule } from "./watching";
 import { BRANCH_KEY, splitBranch } from "./expense-branch";
 import { decisionMode, type DecisionMode } from "./calc";
 import { REVIEW_KEYS, isDgOnly, type ReviewItem, type ReviewKey } from "./approvals.manifest";
-import { hasAnyRole, type ApprovalsUser } from "./host-adapter";
+import { avatarsByIds, hasAnyRole, type ApprovalsUser } from "./host-adapter";
 import { historicalView, type HistoricalView } from "./historical/view";
 import type { SortKey } from "./list-params";
 
@@ -103,6 +103,9 @@ export type RequestRow = {
   type: AprRequestType;
   status: AprRequestStatus;
   name: string;
+  /** Who submitted it, and their profile photo (none: their initials show). */
+  requesterUserId: string;
+  avatarUrl: string | null;
   categoryName: string | null;
   branchName: string | null;
   amountPaise: number | null;
@@ -210,7 +213,7 @@ export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Pro
   const [rows, [{ n: total }]] = await Promise.all([
     db
       .select({
-        id: aprRequests.id, requestNo: aprRequests.requestNo, type: aprRequests.type, status: aprRequests.status, name: aprRequests.requesterName,
+        id: aprRequests.id, requestNo: aprRequests.requestNo, type: aprRequests.type, status: aprRequests.status, name: aprRequests.requesterName, requesterUserId: aprRequests.requesterUserId,
         categoryName, branchName, amountPaise: aprRequests.amountPaise, requestedAt: aprRequests.requestedAt, decidedAt: aprRequests.decidedAt,
         approverName, overBudget: aprRequests.overBudget, vendorName: aprExpenditureDetails.vendorName, taxInvoiceDate: aprExpenditureDetails.taxInvoiceDate,
         currentStep: aprRequests.currentStep, totalSteps: aprRequests.totalSteps,
@@ -238,7 +241,9 @@ export async function listRequests(user: ApprovalsUser, f: ListFilter = {}): Pro
       .leftJoin(aprBranches, eq(aprBranches.id, aprExpenditureDetails.branchId))
       .where(where),
   ]);
-  return { rows, total, page, pageSize };
+  // The submitters' photos, in one read for the page's rows.
+  const avatars = await avatarsByIds(rows.map((r) => r.requesterUserId));
+  return { rows: rows.map((r) => ({ ...r, avatarUrl: avatars.get(r.requesterUserId) ?? null })), total, page, pageSize };
 }
 
 /** The people who submitted the requests a list shows (for its "Submitted by" filter), by name. */
@@ -364,6 +369,8 @@ export type RequestDetail = {
   status: AprRequestStatus;
   requesterUserId: string;
   requesterName: string;
+  /** The submitter's profile photo, if they have one. */
+  requesterAvatarUrl: string | null;
   requesterEmail: string;
   requestedAt: Date;
   financialYear: string | null;
@@ -576,9 +583,10 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
     hr = { firstName: d.firstName, lastName: d.lastName, categoryName: hrRow.categoryName, description: d.description, budget: d.budgetAllocatedPaise != null ? budgetOf(d) : null };
   }
 
-  const [budget, historical] = await Promise.all([
+  const [budget, historical, avatars] = await Promise.all([
     budgetViewOf(req, user, steps),
     req.status === "historical" ? historicalView(requestId, hasAnyRole(user, ["approvals_admin"])) : Promise.resolve(null),
+    avatarsByIds([req.requesterUserId]),
   ]);
   const pending = req.status === "pending";
   const returnedStep = req.status === "returned" ? steps.find((x) => x.stepNo === req.currentStep && x.status === "returned") : undefined;
@@ -586,7 +594,7 @@ export async function getRequestDetail(requestId: string, user: ApprovalsUser): 
   const involved = req.requesterUserId === user.id || steps.some((x) => x.approverUserId === user.id);
   const watching = !involved && rulesMatch(await watchRules(user.id), req.type, exp?.d.categoryId ?? null, req.requesterUserId);
   return {
-    id: req.id, requestNo: req.requestNo, type: req.type, status: req.status, requesterUserId: req.requesterUserId, requesterName: req.requesterName,
+    id: req.id, requestNo: req.requestNo, type: req.type, status: req.status, requesterUserId: req.requesterUserId, requesterName: req.requesterName, requesterAvatarUrl: avatars.get(req.requesterUserId) ?? null,
     requesterEmail: req.requesterEmail, requestedAt: req.requestedAt, financialYear: req.financialYear, amountPaise: req.amountPaise, overBudget: req.overBudget,
     decidedAt: req.decidedAt, decisionComment: req.decisionComment, currentApproverUserId: req.currentApproverUserId,
     custom: splitBranch(req.customValues).rest.map((c) => ({ label: c.label, value: c.value })),

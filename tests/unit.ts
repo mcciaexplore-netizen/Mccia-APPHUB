@@ -1,6 +1,7 @@
 /** Fast checks for the pure helpers: CSV parsing/exporting, the email-domain rule and the Approvals money, date and menu rules. Run: npm run test:unit */
 import { readdirSync, readFileSync } from "node:fs";
 import { attendanceUnit, attendanceUnitAsync } from "./attendance-unit";
+import { hubProfileUnit } from "./hub-profile-unit";
 import { strToU8, zipSync } from "fflate";
 import { parseCsv, toCsv } from "../src/lib/csv";
 import { accountStatus } from "../src/lib/account-status";
@@ -544,7 +545,7 @@ eq("xlsx: entities, inline strings, shared strings with formatting runs, and spa
 eq("xlsx: a file that is not a spreadsheet gives a plain-language error", (() => { try { xlsxToTable(new Uint8Array([1, 2, 3, 4])); return "no error"; } catch (e) { return (e as Error).message; } })(), "That does not look like a valid Excel (.xlsx) file.");
 
 // Every server action must prove who is asking. This reads the source of src/actions/*.ts, so an action added later without a guard fails here.
-const SELF_CHECKING = new Set(["login", "logout", "unlockAdmin", "lockAdmin", "changePassword", "finishSetup", "sendResetLink", "resetPassword", "markNotificationRead", "markAllNotificationsRead"]); // sign-in itself, the person's own password, the one-time link page, "Forgot password?" (public by design: the emailed link's secret is the key), and a person marking their own notifications read
+const SELF_CHECKING = new Set(["login", "logout", "unlockAdmin", "lockAdmin", "changePassword", "finishSetup", "sendResetLink", "resetPassword", "markNotificationRead", "markAllNotificationsRead", "uploadAvatar", "removeAvatar"]); // sign-in itself, the person's own password, the one-time link page, "Forgot password?" (public by design: the emailed link's secret is the key), a person marking their own notifications read, and a person changing their own profile photo (they check the signed-in person themselves and take no user id, so they can only ever change their own)
 const actionsDir = new URL("../src/actions/", import.meta.url);
 const unguarded: string[] = [];
 let actionCount = 0;
@@ -2047,6 +2048,9 @@ eq("payment desk: nothing can be smuggled into the address", paymentDeskEmbedUrl
 
 // Attendance: check-in, calendar, leave, comp-off, regularization, timesheets, feeds, roles (tests/attendance-unit.ts)
 attendanceUnit(eq);
+
+// The hub's profile photo and dark mode (tests/hub-profile-unit.ts)
+hubProfileUnit(eq);
 
 Promise.all([ssoTests, eruAsync, eruImports, attendanceUnitAsync(eq)]).then(() => {
   console.log(`\n${ok}/${ok + bad} unit checks passed`);

@@ -66,6 +66,14 @@ export async function listUsers(): Promise<DirectoryUser[]> {
     .then((rows) => rows.map((u) => ({ id: u.id, name: u.name, email: u.email, headAdmin: u.role === "head_admin", active: true })));
 }
 
+/** The profile photo addresses of these people (someone with no photo is simply absent), for showing a request's submitter beside it. */
+export async function avatarsByIds(ids: string[]): Promise<Map<string, string>> {
+  const want = [...new Set(ids)].filter(Boolean);
+  if (!want.length) return new Map();
+  const rows = await db.select({ id: users.id, url: users.avatarUrl }).from(users).where(inArray(users.id, want));
+  return new Map(rows.flatMap((r) => (r.url ? [[r.id, r.url] as const] : [])));
+}
+
 /** A few people by id, active or not, for naming approvers and notifying them. Missing ids are simply absent from the result. */
 export async function getDirectoryUsers(ids: string[]): Promise<DirectoryUser[]> {
   if (ids.length === 0) return [];
