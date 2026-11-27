@@ -11,7 +11,8 @@ import type { AccessResult } from "@/lib/access-ops";
 import type { CatalogApp, CatalogDept } from "@/lib/catalog";
 import { generatePassword } from "@/lib/generate-password";
 
-export type Option = { id: string; name: string };
+/** `active: false` is a branch or team switched off in Administrator > Branches & teams: still shown in filters (people belong to it), but not offered for a new assignment. */
+export type Option = { id: string; name: string; active?: boolean };
 export type Manager = { id: string; name: string; email: string };
 export type Catalog = { departments: CatalogDept[]; apps: CatalogApp[] };
 export type Template = { id: string; name: string; appIds: string[] };
@@ -132,8 +133,8 @@ export function AddPersonDialog({ options, catalog, domains, canPromote, onClose
         <Field label="Designation (optional)"><input className="input" value={v.designation} onChange={(e) => set("designation", e.target.value)} maxLength={120} /></Field>
         <Field label="Role">
           <select className="input" value={v.role} onChange={(e) => set("role", e.target.value)}><RoleOptions holders={options.roleHolders ?? []} personId={null} canPromote={canPromote} current={v.role} /></select></Field>
-        <Field label="Branch (optional)"><select className="input" value={v.branchId} onChange={(e) => set("branchId", e.target.value)}><option value="">None</option>{options.branches.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
-        <Field label="Team (optional)"><select className="input" value={v.teamId} onChange={(e) => set("teamId", e.target.value)}><option value="">None</option>{options.teams.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+        <Field label="Branch (optional)"><select className="input" value={v.branchId} onChange={(e) => set("branchId", e.target.value)}><option value="">None</option>{options.branches.filter((d) => d.active !== false).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
+        <Field label="Team (optional)"><select className="input" value={v.teamId} onChange={(e) => set("teamId", e.target.value)}><option value="">None</option>{options.teams.filter((d) => d.active !== false).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
         <Field label="Reporting manager (optional)"><select className="input" value={v.managerId} onChange={(e) => set("managerId", e.target.value)}><option value="">None</option>{options.managers.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.email})</option>)}</select></Field>
 
         <fieldset className="space-y-2 sm:col-span-2">

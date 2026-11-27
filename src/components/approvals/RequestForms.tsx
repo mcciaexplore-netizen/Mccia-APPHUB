@@ -142,8 +142,10 @@ export function HrForm({ me, categories: initialCategories, fields, canAdd, now,
   const lab = labeller(fields);
   const [custom, setCustom] = useState<Record<string, string>>(edit?.custom ?? {});
   const [first, ...rest] = me.name.trim().split(/\s+/);
+  // A returned request whose category has since been switched off no longer has it in the list: start empty, so "Choose a category." asks for another,
+  // rather than a box that looks empty yet is still filled in.
   const defaults = edit?.initial
-    ? { first: edit.initial.first, last: edit.initial.last, email: edit.initial.email, categoryId: edit.initial.categoryId, amount: edit.initial.amount, description: edit.initial.description }
+    ? { first: edit.initial.first, last: edit.initial.last, email: edit.initial.email, categoryId: initialCategories.some((c) => c.value === edit.initial.categoryId) ? edit.initial.categoryId : "", amount: edit.initial.amount, description: edit.initial.description }
     : { first: first ?? "", last: rest.join(" "), email: me.email, categoryId: "", amount: "", description: "" };
   const [categories, setCategories] = useState(initialCategories);
   const [firstName, setFirstName] = useState(defaults.first);
@@ -265,7 +267,9 @@ export function ExpenditureForm(p: ExpenditureFormProps) {
   const defaultEmployee = start.employeeId && p.people.some((x) => x.value === start.employeeId) ? start.employeeId : meListed ? p.meId : "";
   const emailOf = (id: string) => p.people.find((x) => x.value === id)?.email ?? "";
   const defaults = {
-    employeeId: defaultEmployee, email: start.email || emailOf(defaultEmployee), categoryId: start.categoryId ?? "", branchId: start.branchId ?? "",
+    employeeId: defaultEmployee, email: start.email || emailOf(defaultEmployee),
+    // Only what the lists still offer (a category or branch switched off since is not carried over, like an employee who is no longer listed).
+    categoryId: p.categories.some((c) => c.value === start.categoryId) ? start.categoryId! : "", branchId: p.branches.some((b) => b.value === start.branchId) ? start.branchId! : "",
     nature: start.nature ?? "", vendor: start.vendor ?? "", amount: start.amount ?? "",
   };
 

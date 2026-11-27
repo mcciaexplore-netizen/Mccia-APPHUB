@@ -2,6 +2,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { attendanceUnit, attendanceUnitAsync } from "./attendance-unit";
 import { hubProfileUnit } from "./hub-profile-unit";
+import { hrCategoriesUnit } from "./hr-categories-unit";
 import { strToU8, zipSync } from "fflate";
 import { parseCsv, toCsv } from "../src/lib/csv";
 import { accountStatus } from "../src/lib/account-status";
@@ -2051,6 +2052,9 @@ attendanceUnit(eq);
 
 // The hub's profile photo and dark mode (tests/hub-profile-unit.ts)
 hubProfileUnit(eq);
+
+// The HR Approval form's standard categories (tests/hr-categories-unit.ts)
+hrCategoriesUnit(eq);
 
 Promise.all([ssoTests, eruAsync, eruImports, attendanceUnitAsync(eq)]).then(() => {
   console.log(`\n${ok}/${ok + bad} unit checks passed`);

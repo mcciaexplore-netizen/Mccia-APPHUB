@@ -258,7 +258,7 @@ export async function listSubmitters(user: ApprovalsUser, f: ListFilter): Promis
     .leftJoin(aprCategories, eq(aprCategories.id, aprExpenditureDetails.categoryId))
     .leftJoin(aprBranches, eq(aprBranches.id, aprExpenditureDetails.branchId))
     .where(where)
-    .limit(500);
+    .limit(5000);
   // One entry per person (their name as on their latest request wins; names rarely change).
   const byId = new Map<string, string>();
   for (const r of rows) if (r.id) byId.set(r.id, r.name);

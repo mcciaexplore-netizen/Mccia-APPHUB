@@ -1,5 +1,6 @@
 import { config } from "dotenv";
 import { and, eq, sql } from "drizzle-orm";
+import { STANDARD_HR_CATEGORIES } from "../src/lib/approvals/standard-hr-categories";
 
 config({ path: ".env.local" });
 config();
@@ -29,7 +30,8 @@ const ALIASES: Record<string, string[]> = {
   Marketing: ["Marketting"],
 };
 
-const HR_CATEGORIES = ["Experience Certificate", "Letter Draft (Offer Letter)", "Certificate", "Circular", "Celebration", "Expenses"];
+/** The HR Approval form's Category dropdown: see src/lib/approvals/standard-hr-categories.ts. */
+const HR_CATEGORIES = STANDARD_HR_CATEGORIES;
 
 /** Who handles what, by email (they must already be users in the hub): see APPROVALS_*_EMAIL in .env.example. */
 const RULES = [

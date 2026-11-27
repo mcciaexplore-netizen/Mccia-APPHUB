@@ -75,7 +75,8 @@
 }
 .apr-root .zd-search { display: flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--z-line); color: var(--z-muted); }
 .apr-root .zd-search input { flex: 1; min-width: 0; border: 0; outline: 0; font-size: 0.9rem; color: var(--z-text); background: transparent; }
-.apr-root .zd-list { max-height: 14rem; overflow-y: auto; }
+/* About ten lines show at once (not seven), never more than almost half the screen, and the rest scroll: a list of 30 or so categories should look like a long list, not a short one. */
+.apr-root .zd-list { max-height: min(20rem, 45vh); overflow-y: auto; }
 .apr-root .zd-opt { display: block; width: 100%; text-align: left; padding: 0.45rem 0.8rem; font-size: 0.9rem; cursor: pointer; }
 .apr-root .zd-opt[data-hot="true"] { background: var(--c-primary); color: #fff; }
 .apr-root .zd-opt[aria-selected="true"]:not([data-hot="true"]) { background: var(--z-tint); font-weight: 600; }

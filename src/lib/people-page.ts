@@ -30,8 +30,8 @@ async function grantableCatalog(actor: Pick<User, "id" | "role">) {
 
 const loadOptions = async () => {
   const [brs, tms, appList, holders] = await Promise.all([
-    db.select({ id: branches.id, name: branches.name }).from(branches).orderBy(asc(branches.name)),
-    db.select({ id: teams.id, name: teams.name }).from(teams).orderBy(asc(teams.name)),
+    db.select({ id: branches.id, name: branches.name, active: branches.isActive }).from(branches).orderBy(asc(branches.name)),
+    db.select({ id: teams.id, name: teams.name, active: teams.isActive }).from(teams).orderBy(asc(teams.name)),
     db.select({ id: apps.id, name: apps.name }).from(apps).orderBy(asc(apps.name)),
     // Who holds the roles only one person may have, so the Role dropdown can say "taken by ...".
     db.select({ id: users.id, name: users.name, role: users.role }).from(users).where(inArray(users.role, [...SINGLE_HOLDER_ROLES])),
