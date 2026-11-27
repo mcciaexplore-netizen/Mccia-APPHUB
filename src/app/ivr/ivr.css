@@ -38,6 +38,9 @@
 /* The hub's dark mode (html.hub-dark, src/app/globals.css): the two colours here that are not hub tokens. */
 html.hub-dark { --ivr-line-strong: #2e2e2e; --ivr-row-hover: rgba(255, 255, 255, 0.04); }
 html.hub-dark .ivr-stat-number { color: var(--c-primary-text); }
+/* The accent as text or an icon, on the dark teal tint (the chosen filter chip, a chip under the pointer, icon tiles, the notice icon): the plain primary
+   teal reads at 2.6 to 2.8 to 1 there, this lighter shade of it at over 6 to 1. Fills and borders keep the primary. */
+html.hub-dark .ivr-chip-on, html.hub-dark .ivr-chip:hover, html.hub-dark .ivr-icon-tile, html.hub-dark .ivr-alert > svg { color: var(--c-primary-text); }
 
 /* Small uppercase labels */
 .ivr-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ivr-subtle); }

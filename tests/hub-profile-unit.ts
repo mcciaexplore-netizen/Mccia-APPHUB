@@ -3,6 +3,7 @@
  * initials shown instead, which pages get the hub's dark mode and which keep their own look, and the first-paint script that applies it.
  * Run as part of `npm run test:unit` (tests/unit.ts calls hubProfileUnit()).
  */
+import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { MAX_AVATAR_BYTES, avatarSizeProblem, initialsOf, sniffAvatar } from "../src/lib/avatar-rules";
 import { HUB_DARK_EXCLUDED, HUB_THEME_KEY, HUB_THEME_SCRIPT, hubDarkAllowed, isHubDark, parseHubThemePref } from "../src/lib/hub-theme-rules";
@@ -55,4 +56,24 @@ export function hubProfileUnit(eq: Eq): void {
   eq("hub dark first paint: a saved light choice beats a dark device", firstPaint("/", "light", true), []);
   eq("hub dark first paint: never on Attendance or a module with its own look, even when dark is saved", ["/attendance", "/attendance/admin/settings", "/design/admin", "/eru", "/aistudio", "/cabs/driver"].map((p) => firstPaint(p, "dark", true)), Array(6).fill([]));
   eq("hub dark first paint: a browser that blocks storage falls back to nothing, without an error (and the device setting is not consulted)", firstPaint("/", "dark", true, true), []);
+  // Dropdowns in dark mode (src/app/globals.css): a #111111 panel with #F5F5F5 text, #1A1A1A under the row the pointer is on, the primary teal under the
+  // chosen row, a dark search box and a dark scrollbar, for the Approval System's searchable dropdown, the people picker and the icon picker.
+  const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ selectors: m[1].replace(/\/\*[\s\S]*?\*\//g, "").split(",").map((x) => x.trim()), body: m[2] }));
+  const bodyOf = (selector: string) => rules.filter((r) => r.selectors.includes(selector)).map((r) => r.body).join(" ");
+  const token = (name: string) => new RegExp(`${name}:\\s*([^;]+);`).exec(css)?.[1].trim();
+  const APR = "html.hub-dark .apr-root";
+  eq("dark dropdowns: the colours are #111111 panel, #F5F5F5 text, #1A1A1A hover, the primary teal for the chosen row, and a darker search box",
+    ["--dd-bg", "--dd-text", "--dd-hover", "--dd-selected", "--dd-search-bg"].map(token), ["#111111", "#f5f5f5", "#1a1a1a", "var(--c-primary)", "#0a0a0a"]);
+  eq("dark dropdowns: the Approval System's dropdown panel (white in light mode) gets the dark panel, light text and a dark scrollbar",
+    [`${APR} .zd-pop`, `${APR} .zd-list`].map((s) => bodyOf(s)).map((b) => [b.includes("var(--dd-bg)"), b.includes("var(--dd-text)") || b.includes("scrollbar-color")]), [[true, true], [true, true]]);
+  eq("dark dropdowns: the hovered row, the chosen row and the search box each have their own dark colour",
+    [bodyOf(`${APR} .zd-opt[data-hot="true"]`).includes("background: var(--dd-hover)"), bodyOf(`${APR} .zd-opt[aria-selected="true"]`).includes("background: var(--dd-selected)"), bodyOf(`${APR} .zd-search input`).includes("background: var(--dd-search-bg)")],
+    [true, true, true]);
+  eq("dark dropdowns: the chosen row has white text and the hovered row light text (neither is left to the light-mode colours)",
+    [bodyOf(`${APR} .zd-opt[aria-selected="true"]`).includes("color: var(--dd-selected-text)"), bodyOf(`${APR} .zd-opt[data-hot="true"]`).includes("color: var(--dd-text)")], [true, true]);
+  eq("dark mode: a primary button's text is a fixed white, not the surface token (which is near-black in dark mode: black on teal)",
+    [/color:\s*#fff(fff)?\b/.test(bodyOf(".btn-primary")), /(^|[;\s])color:\s*var\(--c-white\)/.test(bodyOf(".btn-primary"))], [true, false]);
+  eq("dark dropdowns: the people picker marks its active row (data-active) so dark mode can colour it, and the browser's own option lists get the dark colours",
+    [readFileSync(new URL("../src/components/ivr/admin/agent-picker.tsx", import.meta.url), "utf8").includes("data-active={i === active}"), bodyOf("html.hub-dark option").includes("background-color: var(--dd-bg)")], [true, true]);
 }

@@ -105,6 +105,7 @@ export function AgentPicker({ label, disabled, picked, onPick }: { label: string
                 id={optId(i)}
                 role="option"
                 aria-selected={i === active}
+                data-active={i === active}
                 onMouseEnter={() => setActive(i)}
                 onMouseDown={(e) => { e.preventDefault(); choose(p); }}
                 className={`flex cursor-pointer items-center gap-3 px-3 py-2 ${i === active ? "bg-[#f0f7f9]" : ""}`}
